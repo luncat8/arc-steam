@@ -1,0 +1,26 @@
+smooth seed  1  t 131s  extracted  470  caught   98  lost  367  sold   98  credits   688.7  sales 19  battery 11.96 kJ  maxSpeed 19.5
+smooth seed  2  t 159s  extracted  464  caught   88  lost  372  sold   88  credits   582.5  sales 16  battery 11.96 kJ  maxSpeed 18.8
+smooth seed  3  t 141s  extracted  471  caught  120  lost  333  sold   98  credits   700.5  sales 27  battery 11.96 kJ  maxSpeed 18.7
+smooth seed  4  t 139s  extracted  561  caught  208  lost  353  sold  205  credits  1420.3  sales 42  battery 11.96 kJ  maxSpeed 19.8
+smooth seed  5  t 138s  extracted  379  caught  140  lost  239  sold  119  credits   807.7  sales 7  battery 11.96 kJ  maxSpeed 19.2
+smooth seed  6  t 202s  extracted  521  caught  123  lost  398  sold   23  credits   182.7  sales 4  battery 11.99 kJ  maxSpeed 21.5
+smooth seed  7  t 146s  extracted  378  caught  102  lost  276  sold  102  credits   704.6  sales 10  battery 11.96 kJ  maxSpeed 18.4
+smooth seed  8  t 240s  extracted  349  caught  137  lost  212  sold   37  credits   253.3  sales 5  battery 5.87 kJ  maxSpeed 20.3
+square seed  1  t 138s  extracted  723  caught  178  lost  545  sold  178  credits  1182.6  sales 16  battery 11.97 kJ  maxSpeed 19.1
+square seed  2  t 146s  extracted  713  caught  219  lost  494  sold  219  credits  1491.2  sales 23  battery 11.99 kJ  maxSpeed 21.4
+square seed  3  t 125s  extracted  987  caught  187  lost  800  sold  187  credits  1346.3  sales 15  battery 12.00 kJ  maxSpeed 20.9
+square seed  4  t 120s  extracted 1225  caught  187  lost 1034  sold  164  credits   998.1  sales 14  battery 11.96 kJ  maxSpeed 21.0
+square seed  5  t 160s  extracted  707  caught  163  lost  544  sold  163  credits  1060.6  sales 16  battery 11.96 kJ  maxSpeed 20.7
+square seed  6  t 133s  extracted  673  caught  168  lost  497  sold  168  credits  1111.2  sales 24  battery 11.96 kJ  maxSpeed 19.3
+square seed  7  t 123s  extracted  547  caught  112  lost  435  sold  112  credits   752.2  sales 8  battery 11.99 kJ  maxSpeed 19.7
+square seed  8  t 114s  extracted  582  caught  140  lost  442  sold  124  credits   939.7  sales 6  battery 11.96 kJ  maxSpeed 20.1
+
+smooth averages over 8 seeds of 131 s:
+  extraction rate 166.4 cells/min, catch rate 28.3%
+  sale value 247.4 cr/min, 16.3 wall sales, 41 cr/sale
+  energy 69.2 W average draw, maxSpeed 19.5 m/s
+
+square averages over 8 seeds of 131 s:
+  extraction rate 348.4 cells/min, catch rate 22.0%
+  sale value 502.6 cr/min, 15.3 wall sales, 73 cr/sale
+  energy 90.3 W average draw, maxSpeed 20.3 m/s

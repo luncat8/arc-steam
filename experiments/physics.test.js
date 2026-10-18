@@ -243,6 +243,112 @@ test('ball reflects at an angle off a smooth heightmap crater and conserves ener
 	ceiling.setShape('smooth');
 });
 
+test('rock reflection keeps the ball impulse: speed never grows beyond gravity', () => {
+	for (const shape of ['smooth', 'square']) {
+		ceiling.reset(11);
+		ceiling.setShape(shape);
+		// Jagged surface: strong hits leave spikes and steep slopes.
+		for (let x = 2; x < 22; x += 2.5) ceiling.damage(x + 0.06, 8.06, 35);
+		const w = physics.createWorld();
+		ceiling.reset(11);
+		ceiling.setShape(shape);
+		for (let x = 2; x < 22; x += 2.5) ceiling.damage(x + 0.06, 8.06, 35);
+		w.ball.x = 10.2; w.ball.y = 7.2; w.ball.vx = 5; w.ball.vy = 9;
+		w.ball.state = 'flying';
+		w.drive = false;
+		sync(w);
+		let travelled = 0;
+		for (let i = 0; i < 240 * 4 && w.ball.state === 'flying'; i++) {
+			const before = Math.hypot(w.ball.vx, w.ball.vy);
+			const px = w.ball.x;
+			const py = w.ball.y;
+			physics.step(w, c.step);
+			travelled += Math.hypot(w.ball.x - px, w.ball.y - py);
+			const after = Math.hypot(w.ball.vx, w.ball.vy);
+			assert.ok(after <= before + c.gravity * c.step + 1e-9, `${shape}: ${before} -> ${after}`);
+		}
+		assert.ok(travelled > 2, `${shape}: ball frozen, travelled ${travelled}`);
+		balanced(w);
+	}
+	ceiling.setShape('smooth');
+});
+
+test('rock shape switch cannot tunnel the ball through the rock', () => {
+	function smoothSurface(state, x) {
+		const v = Math.max(0, Math.min(state.columns - 1, Math.floor(x / state.cell)));
+		const t = Math.max(0, Math.min(1, (x - v * state.cell) / state.cell));
+		return state.heightmap[v] + (state.heightmap[v + 1] - state.heightmap[v]) * t;
+	}
+	function carve() {
+		for (let x = 10; x < 12; x += 0.25) ceiling.damage(x + 0.06, 8.06, 60);
+	}
+	// smooth -> square: the smooth surface cuts into square cells at crater
+	// edges, so a ball resting on it is inside the square solid after a switch.
+	ceiling.reset(1);
+	ceiling.setShape('smooth');
+	carve();
+	const state = ceiling.state();
+	let bestCol = 0;
+	let bestMis = 0;
+	for (let col = 0; col < state.columns; col++) {
+		const mis = state.heightmap[col] - (state.bottom + state.firstRow[col] * state.cell);
+		if (mis > bestMis) { bestMis = mis; bestCol = col; }
+	}
+	assert.ok(bestMis > c.radius);
+	const w = physics.createWorld();
+	ceiling.reset(1);
+	ceiling.setShape('smooth');
+	carve();
+	w.ball.x = (bestCol + 0.5) * state.cell;
+	w.ball.y = smoothSurface(state, w.ball.x) - c.radius;
+	w.ball.vx = 0;
+	w.ball.vy = 2;
+	w.ball.state = 'flying';
+	ceiling.setShape('square');
+	const v0 = Math.hypot(w.ball.vx, w.ball.vy);
+	const startY = w.ball.y;
+	sync(w);
+	for (let i = 0; i < 240; i++) {
+		physics.step(w, c.step);
+		assert.ok(Math.hypot(w.ball.vx, w.ball.vy) <= v0 + c.gravity + 1e-6);
+		const col = Math.floor(w.ball.x / state.cell);
+		assert.ok(w.ball.y <= state.bottom + state.firstRow[col] * state.cell + 1e-9, 'ball inside square rock');
+	}
+	assert.ok(w.ball.y < startY - 0.2, 'ball frozen after switch');
+	balanced(w);
+	// square -> smooth: at crater edges the smooth surface dips below the
+	// square cells, so a ball resting on a square face is inside the smooth solid.
+	const sq = physics.createWorld();
+	ceiling.reset(1);
+	ceiling.setShape('square');
+	carve();
+	let craterCol = 0;
+	let reverseMis = 0;
+	for (let col = 0; col < state.columns; col++) {
+		const mis = state.bottom + state.firstRow[col] * state.cell - smoothSurface(state, (col + 0.5) * state.cell);
+		if (mis > reverseMis) { reverseMis = mis; craterCol = col; }
+	}
+	assert.ok(reverseMis > 0.05);
+	sq.ball.x = (craterCol + 0.5) * state.cell;
+	sq.ball.y = smoothSurface(state, sq.ball.x) + 0.02;
+	sq.ball.vx = 0;
+	sq.ball.vy = 2;
+	sq.ball.state = 'flying';
+	ceiling.setShape('smooth');
+	assert.ok(sq.ball.y < state.bottom + state.firstRow[craterCol] * state.cell, 'mismatch setup');
+	const sqV0 = Math.hypot(sq.ball.vx, sq.ball.vy);
+	const sqStartY = sq.ball.y;
+	sync(sq);
+	for (let i = 0; i < 240; i++) {
+		physics.step(sq, c.step);
+		assert.ok(Math.hypot(sq.ball.vx, sq.ball.vy) <= sqV0 + c.gravity + 1e-6);
+		assert.ok(sq.ball.y <= smoothSurface(state, sq.ball.x) + 1e-9, 'ball inside smooth rock');
+	}
+	assert.ok(sq.ball.y < sqStartY - 0.2, 'ball frozen after switch');
+	balanced(sq);
+	ceiling.setShape('smooth');
+});
+
 test('replay is deterministic with identical fixed-step commands', () => {
 	const a = physics.createWorld(); const b = physics.createWorld();
 	a.drive = b.drive = true;

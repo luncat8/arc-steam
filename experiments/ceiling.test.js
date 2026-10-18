@@ -71,6 +71,29 @@ test('smooth heightmap and optional square shape reflect at angled slopes', () =
 	ceiling.setShape('smooth');
 });
 
+test('overlapping contacts resolve at the surface instead of being skipped', () => {
+	ceiling.reset(3);
+	ceiling.setShape('smooth');
+	const state = ceiling.state();
+	const h = state.heightmap[Math.floor(6 / state.cell)];
+	// Ball centre slightly inside the rock face must still get its contact.
+	const hit = ceiling.trace(6, h - 0.175, 0, 1, 0.02, 0.18);
+	assert.ok(Number.isFinite(hit.time));
+	assert.equal(hit.time, 0);
+	near(hit.y, h - 0.18, 1e-6);
+	assert.ok(hit.ny < -0.9);
+	// A centre deep inside the solid (shape-switch residue) is dropped below
+	// the surface so the ball keeps its impulse and cannot fly through.
+	const deep = ceiling.trace(6, h + 0.4, 0, -2, 0.02, 0.18);
+	assert.equal(deep.time, 0);
+	near(deep.y, h - 0.18, 1e-6);
+	ceiling.setShape('square');
+	const inside = ceiling.trace(6, h + 0.4, 0, -2, 0.02, 0.18);
+	assert.equal(inside.time, 0);
+	assert.ok(inside.y <= state.bottom + state.firstRow[Math.floor(6 / state.cell)] * state.cell - 0.18 + 1e-9);
+	ceiling.setShape('smooth');
+});
+
 test('storage stops at 100 cells, adds one dry-platform mass, and sells at once', () => {
 	ceiling.reset(5);
 	for (let x = 1; x < 23; x += 2) ceiling.damage(x, 8.2, 20);

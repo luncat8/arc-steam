@@ -7,7 +7,7 @@
 	const ids = ['clock', 'drive', 'launch', 'status', 'force', 'force-value', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'error', 'motion', 'pause', 'speed', 'shape', 'view',
 		'mineral-column', 'column-label', 'mineral-layer', 'layer-label', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
-		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger'];
+		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger', 'equipment-rows', 'equipment-status'];
 	const ui = {};
 	for (const id of ids) ui[id] = document.getElementById(id);
 	let selectedColumn = 95;
@@ -35,6 +35,43 @@
 		}
 	})();
 	let world = physics.createWorld();
+	const equipmentRows = [];
+	(function buildEquipment() {
+		for (const item of SteamEquipment.list()) {
+			const row = document.createElement('div');
+			row.className = 'equipment-row';
+			const name = document.createElement('b');
+			const sign = item.mass >= 0 ? '+' : '−';
+			name.textContent = item.name.toUpperCase() + ' · ' + item.cost + ' CR · ' + sign + Math.abs(item.mass) + ' KG';
+			const button = document.createElement('button');
+			button.type = 'button';
+			button.textContent = 'Buy';
+			const note = document.createElement('small');
+			note.textContent = item.effect;
+			row.appendChild(name);
+			row.appendChild(button);
+			row.appendChild(note);
+			ui['equipment-rows'].appendChild(row);
+			button.addEventListener('click', function () { buyEquipment(item.id); });
+			equipmentRows.push({ item, button });
+		}
+	})();
+	function buyEquipment(id) {
+		const item = SteamEquipment.find(id);
+		const ok = SteamEquipment.install(id, world);
+		if (ok) ui['equipment-status'].textContent = 'Installed ' + item.name + ' at ' + world.time.toFixed(1) + ' s.';
+		else if (SteamEquipment.isInstalled(id)) ui['equipment-status'].textContent = item.name + ' is already installed.';
+		else ui['equipment-status'].textContent = 'Not enough funds for ' + item.name + ' (' + item.cost + ' cr needed).';
+		readout();
+	}
+	function refreshEquipment() {
+		const funds = window.SteamCeiling.state().funds();
+		for (const row of equipmentRows) {
+			const installed = SteamEquipment.isInstalled(row.item.id);
+			row.button.disabled = installed || funds < row.item.cost;
+			row.button.textContent = installed ? 'Installed' : 'Buy';
+		}
+	}
 	let paused = false;
 	let accumulator = 0;
 	let previous = 0;
@@ -164,12 +201,16 @@
 		for (let i = renderedSales - 1; i >= Math.max(0, renderedSales - 8); i--) {
 			const entry = ceiling.ledger[i];
 			const item = document.createElement('li');
-			item.textContent = entry.time.toFixed(1) + ' s · Sold ' + entry.mass.toFixed(1) + ' kg (' + entry.cells + ' cells) · +' + entry.credits.toFixed(1) + ' cr';
+			item.textContent = entry.type === 'buy'
+				? entry.time.toFixed(1) + ' s · Bought ' + entry.label + ' · −' + entry.credits.toFixed(0) + ' cr'
+				: entry.time.toFixed(1) + ' s · Sold ' + entry.mass.toFixed(1) + ' kg (' + entry.cells + ' cells) · +' + entry.credits.toFixed(1) + ' cr';
 			ui.ledger.appendChild(item);
 		}
 		if (renderedSales > 0) {
 			const last = ceiling.ledger[renderedSales - 1];
-			ui['transaction-status'].textContent = 'Sold ' + last.mass.toFixed(1) + ' kg for ' + last.credits.toFixed(1) + ' cr at ' + last.time.toFixed(1) + ' s.';
+			ui['transaction-status'].textContent = last.type === 'buy'
+				? 'Bought ' + last.label + ' for ' + last.credits.toFixed(0) + ' cr at ' + last.time.toFixed(1) + ' s.'
+				: 'Sold ' + last.mass.toFixed(1) + ' kg for ' + last.credits.toFixed(1) + ' cr at ' + last.time.toFixed(1) + ' s.';
 		} else {
 			ui['transaction-status'].textContent = 'Catch fragments in the amber collector, then touch a SELL wall.';
 		}
@@ -177,12 +218,13 @@
 
 	function readout() {
 		miningReadout();
+		refreshEquipment();
 		ui.clock.textContent = world.time.toFixed(1) + ' s';
 		ui.battery.textContent = (world.battery / 1000).toFixed(2) + ' kJ';
 		const ceiling = window.SteamCeiling.state();
 		const heldMass = world.ball.state === 'held' ? config.mass : 0;
 		ui.cargo.textContent = ceiling.cargoCells() + ' / ' + ceiling.storageLimit;
-		ui['platform-mass'].textContent = (config.platformMass + ceiling.cargoMass() + heldMass).toFixed(1) + ' kg';
+		ui['platform-mass'].textContent = (physics.dryMass() + ceiling.cargoMass() + heldMass).toFixed(1) + ' kg';
 		ui.funds.textContent = ceiling.funds().toFixed(1) + ' cr';
 		ui['ball-energy'].textContent = physics.ballEnergy(world.ball).toFixed(1) + ' J';
 		ui.heat.textContent = world.heat.toFixed(1) + ' J';
@@ -266,7 +308,9 @@
 	}
 
 	document.getElementById('reset').addEventListener('click', function () {
-		world = physics.createWorld(); window.SteamCeiling.setShape(ui.shape.value); renderedSales = -1; clearInput(); setForce(world.forceSetting); accumulator = 0; readout();
+		world = physics.createWorld(); window.SteamCeiling.setShape(ui.shape.value); renderedSales = -1; clearInput(); setForce(world.forceSetting); accumulator = 0;
+		ui['equipment-status'].textContent = 'Sell cargo at a wall to earn credits.';
+		readout();
 	});
 	ui.drive.addEventListener('click', toggleDrive);
 	ui.launch.addEventListener('click', releaseBall);

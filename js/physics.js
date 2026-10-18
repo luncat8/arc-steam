@@ -13,8 +13,23 @@
 	function platformMin() { return config.platformWidth * 0.5 - config.pocketDepth; }
 	function platformMax() { return config.width - config.platformWidth * 0.5; }
 
+	// Installed equipment contributes explicit deltas on top of base tuning.
+	function retentionNow() {
+		const eq = root.SteamEquipment;
+		return config.retention + (eq ? eq.retentionBonus() : 0);
+	}
+	function pulseNow() {
+		const eq = root.SteamEquipment;
+		return config.pulse + (eq ? eq.pulseBonus() : 0);
+	}
+	function dryMass() {
+		const eq = root.SteamEquipment;
+		return config.platformMass + (eq ? eq.massDelta() : 0);
+	}
+
 	function createWorld() {
 		if (root.SteamCeiling) root.SteamCeiling.reset(1);
+		if (root.SteamEquipment) root.SteamEquipment.reset();
 		const world = {
 			time: 0, battery: config.battery, heat: 0, fractureEnergy: 0, initialEnergy: 0,
 			drive: false, forceSetting: 0.6, direction: 0, target: NaN,
@@ -36,7 +51,7 @@
 	}
 
 	function platformMass(world) {
-		return config.platformMass + cargoMass() + (world.ball.state === 'held' ? config.mass : 0);
+		return dryMass() + cargoMass() + (world.ball.state === 'held' ? config.mass : 0);
 	}
 
 	function totalEnergy(world) {
@@ -70,7 +85,7 @@
 		if (ball.state !== 'held' || !world.drive) return false;
 		const lift = config.mass * config.gravity * config.deck;
 		if (world.battery * config.efficiency <= lift) return false;
-		const energy = spend(world, config.pulse);
+		const energy = spend(world, pulseNow());
 		ball.x = world.platform.x + config.platformWidth * 0.25;
 		ball.y = config.deck + config.radius;
 		ball.vx = world.platform.vx;
@@ -133,9 +148,10 @@
 		const ball = world.ball;
 		const normalVelocity = ball.vx * nx + ball.vy * ny;
 		if (normalVelocity >= 0) return;
-		const lost = 0.5 * config.mass * normalVelocity * normalVelocity * (1 - config.retention);
+		const retention = retentionNow();
+		const lost = 0.5 * config.mass * normalVelocity * normalVelocity * (1 - retention);
 		const spentOnRock = Math.min(lost, fracture || 0);
-		const impulseVelocity = (1 + Math.sqrt(config.retention)) * normalVelocity;
+		const impulseVelocity = (1 + Math.sqrt(retention)) * normalVelocity;
 		world.fractureEnergy += spentOnRock;
 		world.heat += lost - spentOnRock;
 		ball.vx -= impulseVelocity * nx;
@@ -154,11 +170,14 @@
 		}
 		let remaining = dt;
 		let elapsed = 0;
+		let rockImpulse = false;
 		for (let event = 0; event < 12 && remaining > 1e-10; event++) {
 			let time = remaining;
 			let type = 0;
 			let rockNx = 0;
 			let rockNy = 0;
+			let rockX = 0;
+			let rockY = 0;
 			const wall = ball.vx > 0 ? config.width - config.radius : config.radius;
 			const wallTime = ball.vx ? (wall - ball.x) / ball.vx : Infinity;
 			if (wallTime >= 0 && wallTime <= time) { time = wallTime; type = 1; }
@@ -174,6 +193,8 @@
 					type = 5;
 					rockNx = rockHit.nx;
 					rockNy = rockHit.ny;
+					rockX = rockHit.x;
+					rockY = rockHit.y;
 				}
 			}
 			const deckTime = ball.y >= config.deck + config.radius - 1e-10 ? downwardTime(ball, config.deck + config.radius) : Infinity;
@@ -201,13 +222,22 @@
 				continue;
 			}
 			if (type === 5) {
+				// Contact position is exact (separated to radius), so the ball
+				// cannot sit inside the surface between events. The snap's
+				// potential change is booked so the energy ledger stays exact.
+				world.heat += config.mass * config.gravity * (ball.y - rockY);
+				ball.x = rockX;
+				ball.y = rockY;
 				const normalVelocity = ball.vx * rockNx + ball.vy * rockNy;
-				if (normalVelocity < 0) {
+				// One impulse per step: later zero-time contacts only separate,
+				// keeping the ball's contact impulse instead of stacking flips.
+				if (normalVelocity < 0 && !rockImpulse) {
 					const damageBudget = 0.5 * config.mass * normalVelocity * normalVelocity * (1 - config.retention);
 					const contactX = ball.x - rockNx * config.radius;
 					const contactY = ball.y - rockNy * config.radius;
 					const fracture = root.SteamCeiling.damage(contactX, contactY, damageBudget);
 					passiveImpact(world, rockNx, rockNy, fracture);
+					rockImpulse = true;
 				}
 				continue;
 			}
@@ -215,7 +245,7 @@
 			if (ball.x < collectorEdge) { capture(world); return; }
 			const carriedMass = platformMass(world);
 			const relativeVx = ball.vx - (world.platform.x - oldPlatformX) / dt;
-			const normalImpulse = config.mass * Math.abs(ball.vy) * (1 + Math.sqrt(config.retention));
+			const normalImpulse = config.mass * Math.abs(ball.vy) * (1 + Math.sqrt(retentionNow()));
 			const frictionImpulse = Math.max(-normalImpulse * 0.35, Math.min(normalImpulse * 0.35, -relativeVx / (1 / config.mass + 1 / carriedMass)));
 			const beforeTangential = 0.5 * config.mass * ball.vx * ball.vx + 0.5 * carriedMass * world.platform.vx * world.platform.vx;
 			ball.vx += frictionImpulse / config.mass;
@@ -226,7 +256,7 @@
 			world.bounces++;
 			world.lastPush = 0;
 			if (world.drive) {
-				world.lastPush = spend(world, config.pulse);
+				world.lastPush = spend(world, pulseNow());
 				ball.vy = Math.sqrt(ball.vy * ball.vy + 2 * world.lastPush / config.mass);
 				world.pushes++;
 			}
@@ -240,7 +270,7 @@
 		advanceBall(world, dt, oldX);
 		if (root.SteamCeiling) {
 			const heldMass = world.ball.state === 'held' ? config.mass : 0;
-			root.SteamCeiling.step(world, dt, config.platformMass + heldMass);
+			root.SteamCeiling.step(world, dt, dryMass() + heldMass);
 			const minX = platformMin();
 			const maxX = platformMax();
 			if (world.platform.x <= minX + 1e-9 || world.platform.x >= maxX - 1e-9) {
@@ -251,7 +281,7 @@
 		world.time += dt;
 	}
 
-	const api = { config, createWorld, step, launch, ballEnergy, totalEnergy, platformMin, platformMax };
+	const api = { config, createWorld, step, launch, ballEnergy, totalEnergy, platformMin, platformMax, dryMass };
 	root.SteamPhysics = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

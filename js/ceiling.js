@@ -270,6 +270,21 @@
 
 	function traceSmooth(x, y, vx, vy, duration, radius) {
 		updateHeightmap();
+		// A centre above the heightmap is inside the solid (reachable on shape
+		// switches). Resolve at once: drop it onto the surface so the contact
+		// impulse applies instead of the ball flying through at full speed.
+		const vf = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
+		const vt = Math.max(0, Math.min(1, (x - vf * cell) / cell));
+		const surfaceY = heightmap[vf] + (heightmap[vf + 1] - heightmap[vf]) * vt;
+		if (y > surfaceY) {
+			hit.time = 0;
+			hit.x = x;
+			hit.y = surfaceY - radius;
+			hit.nx = 0;
+			hit.ny = -1;
+			hit.index = Math.min(rows - 1, firstRow[vf]) * columns + vf;
+			return hit;
+		}
 		const dx = vx * duration;
 		const dy = vy * duration - 0.5 * gravity * duration * duration;
 		const minColumn = Math.max(0, Math.floor((Math.min(x, x + dx) - radius) / cell));
@@ -296,17 +311,22 @@
 			if (vn >= -1e-12) continue;
 			const dist0 = (x - x0) * nx + (y - y0) * ny;
 			let s = -1;
+			let push = 0;
 			if (dist0 >= radius) {
 				s = (radius - dist0) / vn;
-			} else if (dist0 >= radius - 1e-4) {
+			} else {
+				// Touching or overlapping: resolve immediately when the contact
+				// foot lies on the segment, separating out to exactly radius.
 				const cx0 = x - nx * dist0;
 				const cy0 = y - ny * dist0;
 				const proj0 = ((cx0 - x0) * sx + (cy0 - y0) * sy) / (len * len);
-				if (proj0 >= -1e-6 && proj0 <= 1 + 1e-6) s = 0;
+				if (proj0 < -1e-6 || proj0 > 1 + 1e-6) continue;
+				s = 0;
+				push = radius - dist0;
 			}
 			if (s < 0 || s > 1 || s >= best) continue;
-			const hx = x + dx * s;
-			const hy = y + dy * s;
+			const hx = x + dx * s + nx * push;
+			const hy = y + dy * s + ny * push;
 			const cx = hx - nx * radius;
 			const cy = hy - ny * radius;
 			const proj = ((cx - x0) * sx + (cy - y0) * sy) / (len * len);
@@ -330,19 +350,25 @@
 			const vy0 = heightmap[v];
 			const ox = x - vx0;
 			const oy = y - vy0;
+			const cdist = Math.hypot(ox, oy);
+			if (cdist <= 1e-9) continue;
 			const b = 2 * (ox * dx + oy * dy);
 			if (b >= -1e-12) continue;
-			const cQuad = ox * ox + oy * oy - radius * radius;
+			const cQuad = cdist * cdist - radius * radius;
 			let s = -1;
+			let push = 0;
 			if (cQuad >= 0) {
 				const disc = b * b - 4 * a * cQuad;
-				if (disc >= 0) s = (-b - Math.sqrt(disc)) / (2 * a);
-			} else if (cQuad >= -2 * radius * 1e-4) {
+				if (disc < 0) continue;
+				s = (-b - Math.sqrt(disc)) / (2 * a);
+			} else {
+				// Overlapping the corner disc: resolve at once, separate to radius.
 				s = 0;
+				push = radius - cdist;
 			}
 			if (s < 0 || s > 1 || s >= best) continue;
-			const hx = x + dx * s;
-			const hy = y + dy * s;
+			const hx = x + dx * s + (ox / cdist) * push;
+			const hy = y + dy * s + (oy / cdist) * push;
 			const rx = hx - vx0;
 			const ry = hy - vy0;
 			const rlen = Math.hypot(rx, ry);
@@ -365,33 +391,51 @@
 	function testCorner(x, y, dx, dy, a, cx0, cy0, radius, index, best) {
 		const ox = x - cx0;
 		const oy = y - cy0;
+		const cdist = Math.hypot(ox, oy);
+		if (cdist <= 1e-9) return best;
 		const b = 2 * (ox * dx + oy * dy);
 		if (b >= -1e-12) return best;
-		const cQuad = ox * ox + oy * oy - radius * radius;
+		const cQuad = cdist * cdist - radius * radius;
 		let s = -1;
+		let push = 0;
 		if (cQuad >= 0) {
 			const disc = b * b - 4 * a * cQuad;
-			if (disc >= 0) s = (-b - Math.sqrt(disc)) / (2 * a);
-		} else if (cQuad >= -2 * radius * 1e-4) {
+			if (disc < 0) return best;
+			s = (-b - Math.sqrt(disc)) / (2 * a);
+		} else {
+			// Overlapping the corner disc: resolve at once, separate to radius.
 			s = 0;
+			push = radius - cdist;
 		}
 		if (s < 0 || s > 1 || s >= best) return best;
-		const hx = x + dx * s;
-		const hy = y + dy * s;
-		const rx = hx - cx0;
-		const ry = hy - cy0;
-		const rlen = Math.hypot(rx, ry);
-		if (rlen <= 1e-9) return best;
+		const hx = x + dx * s + (ox / cdist) * push;
+		const hy = y + dy * s + (oy / cdist) * push;
 		hit.time = s;
 		hit.x = hx;
 		hit.y = hy;
-		hit.nx = rx / rlen;
-		hit.ny = ry / rlen;
+		hit.nx = (hx - cx0) / radius;
+		hit.ny = (hy - cy0) / radius;
 		hit.index = index;
 		return s;
 	}
 
 	function traceSquare(x, y, vx, vy, duration, radius) {
+		updateHeightmap();
+		// A centre inside an intact cell is inside the solid (reachable on shape
+		// switches). Resolve at once: drop it below the column surface so the
+		// contact impulse applies instead of the ball flying through at full speed.
+		const insideColumn = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
+		const insideRow = Math.max(0, Math.min(rows - 1, Math.floor((y - bottom) / cell)));
+		if (y >= bottom && strength[insideRow * columns + insideColumn] > 0) {
+			const surfaceY = bottom + firstRow[insideColumn] * cell;
+			hit.time = 0;
+			hit.x = x;
+			hit.y = surfaceY - radius;
+			hit.nx = 0;
+			hit.ny = -1;
+			hit.index = insideRow * columns + insideColumn;
+			return hit;
+		}
 		const dx = vx * duration;
 		const dy = vy * duration - 0.5 * gravity * duration * duration;
 		const minColumn = Math.max(0, Math.floor((Math.min(x, x + dx) - radius) / cell));
@@ -414,34 +458,38 @@
 			const expRight = column < columns - 1 && strength[index + 1] <= 0;
 			if (expBottom && dy > 1e-12) {
 				const dist0 = y0 - y;
-				const s = dist0 >= radius ? (dist0 - radius) / dy : (dist0 >= radius - 1e-4 && x >= x0 && x <= x1 ? 0 : -1);
+				const push = dist0 >= radius ? 0 : radius - dist0;
+				const s = dist0 >= radius ? (dist0 - radius) / dy : (x >= x0 && x <= x1 ? 0 : -1);
 				const hx = x + dx * s;
 				if (s >= 0 && s <= 1 && s < best && hx >= x0 - 1e-7 && hx <= x1 + 1e-7) {
-					best = s; hit.time = s; hit.x = hx; hit.y = y + dy * s; hit.nx = 0; hit.ny = -1; hit.index = index;
+					best = s; hit.time = s; hit.x = hx; hit.y = y + dy * s - push; hit.nx = 0; hit.ny = -1; hit.index = index;
 				}
 			}
 			if (expTop && dy < -1e-12) {
 				const dist0 = y - y1;
-				const s = dist0 >= radius ? (dist0 - radius) / -dy : (dist0 >= radius - 1e-4 && x >= x0 && x <= x1 ? 0 : -1);
+				const push = dist0 >= radius ? 0 : radius - dist0;
+				const s = dist0 >= radius ? (dist0 - radius) / -dy : (x >= x0 && x <= x1 ? 0 : -1);
 				const hx = x + dx * s;
 				if (s >= 0 && s <= 1 && s < best && hx >= x0 - 1e-7 && hx <= x1 + 1e-7) {
-					best = s; hit.time = s; hit.x = hx; hit.y = y + dy * s; hit.nx = 0; hit.ny = 1; hit.index = index;
+					best = s; hit.time = s; hit.x = hx; hit.y = y + dy * s + push; hit.nx = 0; hit.ny = 1; hit.index = index;
 				}
 			}
 			if (expLeft && dx > 1e-12) {
 				const dist0 = x0 - x;
-				const s = dist0 >= radius ? (dist0 - radius) / dx : (dist0 >= radius - 1e-4 && y >= y0 && y <= y1 ? 0 : -1);
+				const push = dist0 >= radius ? 0 : radius - dist0;
+				const s = dist0 >= radius ? (dist0 - radius) / dx : (y >= y0 && y <= y1 ? 0 : -1);
 				const hy = y + dy * s;
 				if (s >= 0 && s <= 1 && s < best && hy >= y0 - 1e-7 && hy <= y1 + 1e-7) {
-					best = s; hit.time = s; hit.x = x + dx * s; hit.y = hy; hit.nx = -1; hit.ny = 0; hit.index = index;
+					best = s; hit.time = s; hit.x = x + dx * s - push; hit.y = hy; hit.nx = -1; hit.ny = 0; hit.index = index;
 				}
 			}
 			if (expRight && dx < -1e-12) {
 				const dist0 = x - x1;
-				const s = dist0 >= radius ? (dist0 - radius) / -dx : (dist0 >= radius - 1e-4 && y >= y0 && y <= y1 ? 0 : -1);
+				const push = dist0 >= radius ? 0 : radius - dist0;
+				const s = dist0 >= radius ? (dist0 - radius) / -dx : (y >= y0 && y <= y1 ? 0 : -1);
 				const hy = y + dy * s;
 				if (s >= 0 && s <= 1 && s < best && hy >= y0 - 1e-7 && hy <= y1 + 1e-7) {
-					best = s; hit.time = s; hit.x = x + dx * s; hit.y = hy; hit.nx = 1; hit.ny = 0; hit.index = index;
+					best = s; hit.time = s; hit.x = x + dx * s + push; hit.y = hy; hit.nx = 1; hit.ny = 0; hit.index = index;
 				}
 			}
 			if (a <= 1e-18) continue;
@@ -456,6 +504,10 @@
 
 	function trace(x, y, vx, vy, duration, radius) {
 		hit.time = Infinity;
+		hit.x = x;
+		hit.y = y;
+		hit.nx = 0;
+		hit.ny = 0;
 		hit.index = -1;
 		return rockShape === 'square' ? traceSquare(x, y, vx, vy, duration, radius) : traceSmooth(x, y, vx, vy, duration, radius);
 	}
@@ -543,6 +595,20 @@
 			debrisCells[i] = 0;
 			debrisValue[i] = 0;
 		}
+	}
+
+	// Purchases debit funds and append a ledger entry; false when funds are short.
+	function purchase(label, amount, time) {
+		if (!(amount > 0) || funds < amount) return false;
+		funds -= amount;
+		ledger.push(Object.freeze({
+			id: ledger.length + 1,
+			type: 'buy',
+			time: typeof time === 'number' ? time : 0,
+			label,
+			credits: amount
+		}));
+		return true;
 	}
 
 	function sellCargo(platformVelocity, time) {
@@ -661,7 +727,7 @@
 	reset(1);
 	function currentCargoMass() { return cargoCells * cellMass; }
 
-	const api = { reset, damage, trace, step, sellCargo, energy, draw, state, setShape, cargoMass: currentCargoMass };
+	const api = { reset, damage, trace, step, sellCargo, purchase, energy, draw, state, setShape, cargoMass: currentCargoMass };
 	root.SteamCeiling = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
