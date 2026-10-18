@@ -85,7 +85,7 @@ test('force limits, braking, and wall stops preserve total accounting', () => {
 	const w = physics.createWorld();
 	w.ball.state = 'held'; w.direction = 1;
 	sync(w); run(w, 0.25);
-	near(w.platform.vx, c.force * w.forceSetting / c.platformMass * 0.25);
+	near(w.platform.vx, c.force * w.forceSetting / (c.platformMass + c.mass) * 0.25);
 	w.direction = -1; run(w, 0.25);
 	near(w.platform.vx, 0); balanced(w);
 	w.direction = 1; run(w, 60);
@@ -104,6 +104,26 @@ test('swept collisions prevent ceiling, wall and deck tunneling', () => {
 	deck.ball.x = 12.8; deck.ball.vx = 0; deck.ball.y = 1; deck.ball.vy = -1000;
 	sync(deck); physics.step(deck, c.step);
 	assert.equal(deck.bounces, 1); balanced(deck);
+});
+
+test('release inherits platform momentum and preserves horizontal kinetic energy', () => {
+	const w = physics.createWorld();
+	w.ball.state = 'held'; w.platform.vx = 3; w.drive = true; sync(w);
+	const beforeHorizontal = 0.5 * (c.platformMass + c.mass) * w.platform.vx ** 2;
+	assert.ok(physics.launch(w));
+	near(w.ball.vx, 3);
+	near(0.5 * c.platformMass * w.platform.vx ** 2 + 0.5 * c.mass * w.ball.vx ** 2, beforeHorizontal);
+	balanced(w);
+});
+
+test('moving platform exchanges horizontal momentum with a bouncing ball', () => {
+	const w = physics.createWorld();
+	w.ball.x = 12.8; w.ball.y = c.deck + c.radius; w.ball.vx = 3; w.ball.vy = -5;
+	w.platform.vx = -2; sync(w);
+	physics.step(w, c.step);
+	assert.notEqual(w.ball.vx, 3);
+	assert.notEqual(w.platform.vx, -2);
+	balanced(w);
 });
 
 test('replay is deterministic with identical fixed-step commands', () => {

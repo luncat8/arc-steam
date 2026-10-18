@@ -11,7 +11,7 @@
 	<main>
 		<section class="heading"><div><p class="eyebrow">ENERGY IS THE GAME</p><h1>Keep the system moving.</h1><p>Catch. Recharge. Climb again. Every push has a cost.</p></div><button id="reset" class="quiet">Reset experiment ↺</button></section>
 		<section class="workspace">
-			<div class="mine-panel"><div class="panel-title"><span><i class="live"></i> TEST CHAMBER / 24 × 10 M</span><span id="clock">0.0 s</span></div><div class="canvas-wrap"><canvas id="c" tabindex="0" aria-label="Side view of a bouncing ball and movable mining platform"></canvas><div class="canvas-label">INERT CEILING · MINING NOT YET INSTALLED</div></div><div class="mine-footer"><span><i class="key-color collector"></i> COLLECTOR · CATCH & HOLD</span><span><i class="key-color reflector"></i> REFLECTOR · POWERED BOUNCE</span></div></div>
+			<div class="mine-panel"><div class="panel-title"><span><i class="live"></i> TEST CHAMBER / 24 × 10 M</span><span id="clock">0.0 s</span></div><div class="canvas-wrap"><canvas id="c" tabindex="0" aria-label="Side view of a bouncing ball and movable mining platform"></canvas><div class="canvas-label">MINERAL CEILING · IMPACT DAMAGE & DEBRIS</div></div><div class="mine-footer"><span><i class="key-color collector"></i> COLLECTOR · CATCH & HOLD</span><span><i class="key-color reflector"></i> REFLECTOR · POWERED BOUNCE</span></div></div>
 			<aside>
 				<div class="panel-title">PLATFORM / LOW-TIER DRIVE</div>
 				<div class="controls"><p class="eyebrow">BOUNCE ASSIST</p><button id="drive" class="drive" aria-pressed="false">Drive off <span>SPACE</span></button><p class="hint">Adds at most 36 J per contact. Several pushes are needed to reach the ceiling.</p><button id="launch" disabled>Release held ball <span>E</span></button><p id="status" role="status">Ball in flight</p><label for="force">Movement force <output id="force-value">60%</output></label><input id="force" type="range" min="10" max="100" value="60"><div class="control-row"><button id="left" aria-label="Move left">← A</button><button id="right" aria-label="Move right">D →</button></div><p class="hint">Hold A / D to drive or brake. W / S adjusts force. Click the chamber to set a travel target.</p></div>
@@ -21,6 +21,7 @@
 		<section class="telemetry" aria-label="System telemetry"><article><span>ENERGY RESERVE</span><strong id="battery">—</strong><small>Shared movement & bounce supply</small></article><article><span>BALL ENERGY</span><strong id="ball-energy">—</strong><small>Kinetic + gravitational</small></article><article><span>DISSIPATED HEAT</span><strong id="heat">—</strong><small>Impacts, braking & drive losses</small></article><article><span>ENERGY BALANCE ERROR</span><strong id="error">—</strong><small>Reserve + motion + heat − initial</small></article></section>
 		<footer><div><button id="pause" class="quiet">Pause</button><label for="speed">Simulation <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label></div><span>Fixed-step physics · No free bounce energy · <span id="motion">0.00 m/s</span></span></footer>
 	</main>
+	<script src="js/ceiling.js"></script>
 	<script src="js/physics.js"></script>
 	<script src="js/main.js"></script>
 </body>

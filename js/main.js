@@ -47,6 +47,7 @@
 		context.fillStyle = '#29383d';
 		context.fillRect(0, config.ceiling, config.width, 0.35);
 		context.fillRect(0, -0.35, config.width, 0.35);
+		if (window.SteamCeiling) window.SteamCeiling.draw(context, scale);
 		context.strokeStyle = '#657578';
 		context.beginPath(); context.moveTo(0, 0); context.lineTo(config.width, 0); context.stroke();
 		if (Number.isFinite(world.target)) {

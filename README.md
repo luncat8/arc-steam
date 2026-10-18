@@ -1,6 +1,6 @@
 # Arc Steam
 
-A side-view energy-driven mining simulation. The current milestone is a physics sandbox: a passive ball, a horizontally driven platform, separate collector/reflector regions, limited bounce pulses, and an explicit energy ledger. The ceiling is inert; mining, temperature/cooling, wear, and progression are later milestones.
+A side-view energy-driven mining simulation. The current prototype combines a passive ball, a horizontally driven platform, collector/reflector regions, limited bounce pulses, explicit energy accounting, impact-damaged mineral ceiling cells, and falling debris. Temperature/cooling, wear, cargo management, and progression remain later milestones.
 
 ## Run
 
@@ -25,12 +25,12 @@ python3 -m http.server 8000 --bind 0.0.0.0
 
 Ground impact loses all ball energy. Move the platform over a grounded ball to recover it. The amber collector catches and holds balls, dissipating their energy; the green reflector bounces them. Release transfers a stored ball onto the reflector and pays for lifting it. A 36 J pulse at 80% efficiency debits up to 45 J from the shared reserve. From rest, approximately three powered pushes reach the ceiling in the initial calibration.
 
-Passive deck/ceiling impacts retain 90% of vertical kinetic energy. Side walls are ideal elastic boundaries. Heat is cumulative dissipated energy, **not temperature**; cooling and thermal limits are not implemented yet. The accounting error compares reserve + ball/platform mechanical energy + dissipated heat with initial total energy. Stored balls have zero mechanical energy; release pays their lifting cost.
+Passive deck/ceiling impacts retain 90% of vertical kinetic energy. A ceiling impact spends part of its dissipated energy on radial cell damage; failed cells shed fragments, which the collector can catch (basic cargo mass/value counters are simulation-side only). Platform/ball horizontal contact friction exchanges momentum and energy, and capture/release carries the platform's horizontal velocity. Side walls are ideal elastic boundaries. Heat is cumulative dissipated energy, **not temperature**; cooling and thermal limits are not implemented yet. The accounting error compares reserve + ball/platform mechanical energy + dissipated heat with initial total energy. Stored balls have zero mechanical energy; release pays their lifting cost.
 
 ## Validate
 
 ```sh
-node --test experiments/physics.test.js
+node --test experiments/*.test.js
 node --check js/main.js
 ```
 

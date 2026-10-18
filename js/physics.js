@@ -8,8 +8,9 @@
 	});
 
 	function createWorld() {
+		if (root.SteamCeiling) root.SteamCeiling.reset(1);
 		const world = {
-			time: 0, battery: config.battery, heat: 0, initialEnergy: 0,
+			time: 0, battery: config.battery, heat: 0, fractureEnergy: 0, initialEnergy: 0,
 			drive: false, forceSetting: 0.6, direction: 0, target: NaN,
 			platform: { x: 12, vx: 0 },
 			ball: { x: 12.8, y: 5, vx: 1.2, vy: 0, state: 'flying' },
@@ -24,8 +25,12 @@
 		return config.mass * (0.5 * (ball.vx * ball.vx + ball.vy * ball.vy) + config.gravity * (ball.y - config.radius));
 	}
 
+	function platformMass(world) {
+		return config.platformMass + (world.ball.state === 'held' ? config.mass : 0);
+	}
+
 	function totalEnergy(world) {
-		return world.battery + world.heat + ballEnergy(world.ball) + 0.5 * config.platformMass * world.platform.vx * world.platform.vx;
+		return world.battery + world.heat + world.fractureEnergy + ballEnergy(world.ball) + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
 	}
 
 	function spend(world, useful) {
@@ -38,11 +43,14 @@
 
 	function capture(world) {
 		const ball = world.ball;
-		world.heat += ballEnergy(ball);
+		const platform = world.platform;
+		const before = ballEnergy(ball) + 0.5 * config.platformMass * platform.vx * platform.vx;
+		platform.vx = (config.platformMass * platform.vx + config.mass * ball.vx) / (config.platformMass + config.mass);
 		ball.state = 'held';
 		ball.vx = 0;
 		ball.vy = 0;
 		ball.y = config.radius;
+		world.heat += before - 0.5 * platformMass(world) * platform.vx * platform.vx;
 	}
 
 	function launch(world) {
@@ -53,7 +61,7 @@
 		const energy = spend(world, config.pulse);
 		ball.x = world.platform.x + config.platformWidth * 0.25;
 		ball.y = config.deck + config.radius;
-		ball.vx = 0;
+		ball.vx = world.platform.vx;
 		ball.vy = Math.sqrt(2 * (energy - lift) / config.mass);
 		ball.state = 'flying';
 		world.lastPush = energy;
@@ -63,27 +71,28 @@
 
 	function movePlatform(world, dt) {
 		const platform = world.platform;
+		const mass = platformMass(world);
 		let direction = world.direction;
 		if (!direction && Number.isFinite(world.target)) {
 			const distance = world.target - platform.x;
-			const acceleration = config.force * world.forceSetting / config.platformMass;
+			const acceleration = config.force * world.forceSetting / mass;
 			const stopping = platform.vx * platform.vx / (2 * acceleration);
 			direction = Math.sign(distance);
 			if (platform.vx * distance > 0 && Math.abs(distance) < stopping + 0.04) direction = -Math.sign(platform.vx);
 			if (Math.abs(distance) < 0.04 && Math.abs(platform.vx) < acceleration * dt * 2) {
-				world.heat += 0.5 * config.platformMass * platform.vx * platform.vx;
+				world.heat += 0.5 * mass * platform.vx * platform.vx;
 				platform.vx = 0;
 				direction = 0;
 			}
 		}
 		const oldVelocity = platform.vx;
-		let velocity = oldVelocity + direction * config.force * world.forceSetting / config.platformMass * dt;
+		let velocity = oldVelocity + direction * config.force * world.forceSetting / mass * dt;
 		velocity = Math.max(-config.maxSpeed, Math.min(config.maxSpeed, velocity));
-		const before = 0.5 * config.platformMass * oldVelocity * oldVelocity;
-		const after = 0.5 * config.platformMass * velocity * velocity;
+		const before = 0.5 * mass * oldVelocity * oldVelocity;
+		const after = 0.5 * mass * velocity * velocity;
 		if (after > before) {
 			const available = spend(world, after - before);
-			velocity = Math.sign(velocity) * Math.sqrt(2 * (before + available) / config.platformMass);
+			velocity = Math.sign(velocity) * Math.sqrt(2 * (before + available) / mass);
 		} else {
 			world.heat += before - after;
 		}
@@ -92,7 +101,7 @@
 		const half = config.platformWidth * 0.5;
 		if (platform.x >= half && platform.x <= config.width - half) return;
 		platform.x = Math.max(half, Math.min(config.width - half, platform.x));
-		world.heat += 0.5 * config.platformMass * velocity * velocity;
+		world.heat += 0.5 * mass * velocity * velocity;
 		platform.vx = 0;
 	}
 
@@ -103,10 +112,12 @@
 		return time >= -1e-10 ? Math.max(0, time) : Infinity;
 	}
 
-	function passiveVertical(world) {
+	function passiveVertical(world, fracture) {
 		const ball = world.ball;
 		const energy = 0.5 * config.mass * ball.vy * ball.vy;
-		world.heat += energy * (1 - config.retention);
+		const lost = energy * (1 - config.retention);
+		world.fractureEnergy += fracture || 0;
+		world.heat += lost - (fracture || 0);
 		ball.vy = -ball.vy * Math.sqrt(config.retention);
 	}
 
@@ -153,9 +164,22 @@
 				world.groundings++;
 				return;
 			}
-			if (type === 3) { passiveVertical(world); continue; }
+			if (type === 3) {
+				const incoming = 0.5 * config.mass * ball.vy * ball.vy;
+				const fracture = root.SteamCeiling ? root.SteamCeiling.damage(ball.x, incoming * (1 - config.retention)) : 0;
+				passiveVertical(world, fracture);
+				continue;
+			}
 			const collectorEdge = platformX - config.platformWidth * 0.5 + config.platformWidth * config.collectorFraction;
 			if (ball.x < collectorEdge) { capture(world); return; }
+			const relativeVx = ball.vx - (world.platform.x - oldPlatformX) / dt;
+			const normalImpulse = config.mass * Math.abs(ball.vy) * (1 + Math.sqrt(config.retention));
+			const frictionImpulse = Math.max(-normalImpulse * 0.35, Math.min(normalImpulse * 0.35, -relativeVx / (1 / config.mass + 1 / config.platformMass)));
+			const beforeTangential = 0.5 * config.mass * ball.vx * ball.vx + 0.5 * config.platformMass * world.platform.vx * world.platform.vx;
+			ball.vx += frictionImpulse / config.mass;
+			world.platform.vx -= frictionImpulse / config.platformMass;
+			const afterTangential = 0.5 * config.mass * ball.vx * ball.vx + 0.5 * config.platformMass * world.platform.vx * world.platform.vx;
+			world.heat += Math.max(0, beforeTangential - afterTangential);
 			passiveVertical(world);
 			world.bounces++;
 			world.lastPush = 0;
@@ -172,6 +196,7 @@
 		const oldX = world.platform.x;
 		movePlatform(world, dt);
 		advanceBall(world, dt, oldX);
+		if (root.SteamCeiling) root.SteamCeiling.step(world, dt);
 		world.time += dt;
 	}
 
