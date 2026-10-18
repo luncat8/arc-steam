@@ -13,6 +13,27 @@
 	const cellMass = 0.6;
 	const gravity = 9.81;
 	const cargoHeight = 0.7;
+	// Impact tuning: each joule of impact loss removes 2 J of rock strength, spread
+	// over a 4.5-cell radius with linear falloff to zero at the edge. Energy cost
+	// booked to the ledger is strength removed divided by the multiplier, so the
+	// energy balance stays exact while rock breaks faster and wider.
+	const damageRadius = 4.5;
+	const damageMultiplier = 2;
+	const damageRange = 5;
+	// Unbreakable left-wall deflector. Keep in sync with js/physics.js: the wedge
+	// sits on the pocket top (deck height) and funnels falling bodies away from
+	// the wall toward the reflector. Triangle (0,1.5) (0,0.7) (0.7,0.7).
+	const wedgeX0 = 0;
+	const wedgeY0 = 1.5;
+	const wedgeX1 = 0.7;
+	const wedgeY1 = 0.7;
+	const wedgeDx = wedgeX1 - wedgeX0;
+	const wedgeDy = wedgeY1 - wedgeY0;
+	const wedgeLen = Math.sqrt(wedgeDx * wedgeDx + wedgeDy * wedgeDy);
+	const wedgeNx = -wedgeDy / wedgeLen;
+	const wedgeNy = wedgeDx / wedgeLen;
+	const wedgeC = wedgeNx * wedgeX0 + wedgeNy * wedgeY0;
+	const debrisRestitution = 0.4;
 	const initialStrength = new Float32Array(count);
 	const strength = new Float32Array(count);
 	const elements = new Float32Array(count * 3);
@@ -31,6 +52,9 @@
 	const hit = { time: Infinity, x: 0, y: 0, nx: 0, ny: 0, index: -1 };
 	const mineralColors = [[184, 91, 64], [65, 174, 133], [133, 153, 202]];
 	const mineralPrices = [3, 7, 11];
+	const mineralNames = ['Iron', 'Copper', 'Crystal'];
+	const cargoMinerals = new Float64Array(3);
+	const soldMinerals = new Float64Array(3);
 	for (let i = 0; i <= 100; i++) {
 		const remaining = i / 100;
 		strengthPalette[i] = 'rgb(' + Math.round(75 + remaining * 130) + ' ' + Math.round(45 + remaining * 125) + ' ' + Math.round(38 + remaining * 82) + ')';
@@ -39,12 +63,14 @@
 	let extractedCells = 0;
 	let caughtCells = 0;
 	let lostCells = 0;
+	let lostValue = 0;
 	let cargoCells = 0;
 	let cargoValue = 0;
 	let soldCells = 0;
 	let soldValue = 0;
 	let funds = 0;
 	let exportedEnergy = 0;
+	let ledger = [];
 
 	function hash(x, y, channel) {
 		let value = Math.imul(x + seed * 101 + channel * 7919, 374761393) ^ Math.imul(y + 17, 668265263);
@@ -68,12 +94,16 @@
 		extractedCells = 0;
 		caughtCells = 0;
 		lostCells = 0;
+		lostValue = 0;
 		cargoCells = 0;
 		cargoValue = 0;
 		soldCells = 0;
 		soldValue = 0;
 		funds = 0;
 		exportedEnergy = 0;
+		ledger = [];
+		cargoMinerals[0] = cargoMinerals[1] = cargoMinerals[2] = 0;
+		soldMinerals[0] = soldMinerals[1] = soldMinerals[2] = 0;
 		active.fill(0);
 		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
 			const index = row * columns + column;
@@ -107,25 +137,30 @@
 		}
 	}
 
+	function damageWeight(distance) {
+		return Math.max(0, 1 - distance / damageRadius);
+	}
+
 	function damage(x, y, impactJ) {
 		const centerColumn = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
 		const centerRow = Math.max(0, Math.min(rows - 1, Math.floor((y - bottom) / cell)));
 		let weightTotal = 0;
-		for (let rowOffset = -3; rowOffset <= 3; rowOffset++) for (let columnOffset = -3; columnOffset <= 3; columnOffset++) {
+		for (let rowOffset = -damageRange; rowOffset <= damageRange; rowOffset++) for (let columnOffset = -damageRange; columnOffset <= damageRange; columnOffset++) {
 			const distance = Math.sqrt(columnOffset * columnOffset + rowOffset * rowOffset);
-			if (distance <= 3) weightTotal += 1 - distance / 4;
+			if (distance <= damageRadius) weightTotal += damageWeight(distance);
 		}
+		const budget = impactJ * damageMultiplier;
 		let removed = 0;
-		for (let rowOffset = -3; rowOffset <= 3; rowOffset++) for (let columnOffset = -3; columnOffset <= 3; columnOffset++) {
+		for (let rowOffset = -damageRange; rowOffset <= damageRange; rowOffset++) for (let columnOffset = -damageRange; columnOffset <= damageRange; columnOffset++) {
 			const row = centerRow + rowOffset;
 			const column = centerColumn + columnOffset;
 			const distance = Math.sqrt(columnOffset * columnOffset + rowOffset * rowOffset);
-			if (row < 0 || row >= rows || column < 0 || column >= columns || distance > 3) continue;
+			if (row < 0 || row >= rows || column < 0 || column >= columns || distance > damageRadius) continue;
 			const index = row * columns + column;
 			if (strength[index] <= 0) continue;
-			const amount = Math.min(strength[index], impactJ * (1 - distance / 4) / weightTotal);
+			const amount = Math.min(strength[index], budget * damageWeight(distance) / weightTotal);
 			strength[index] -= amount;
-			removed += amount;
+			removed += amount / damageMultiplier;
 			if (strength[index] > 0.0001) continue;
 			strength[index] = 0;
 			spawn(index);
@@ -145,7 +180,11 @@
 			extractedCells++;
 			return;
 		}
+		// A failed cell is extracted even when the fragment pool is full; its
+		// mass is immediately lost and its potential exported for accounting.
+		extractedCells++;
 		lostCells++;
+		lostValue += prices[index];
 		exportedEnergy += cellMass * gravity * (bottom + (Math.floor(index / columns) + 0.5) * cell);
 	}
 
@@ -224,10 +263,12 @@
 		const after = 0.5 * (carriedMass + cellMass) * world.platform.vx * world.platform.vx;
 		world.heat += Math.max(0, before - after);
 		const index = debrisCell[i];
+		const offset = index * 3;
 		active[i] = 0;
 		cargoCells++;
 		caughtCells++;
 		cargoValue += prices[index];
+		for (let m = 0; m < 3; m++) cargoMinerals[m] += cellMass * minerals[offset + m];
 		return true;
 	}
 
@@ -238,49 +279,117 @@
 		return time >= 0 ? time : Infinity;
 	}
 
+	function wedgeDistance(x, y) {
+		return wedgeNx * x + wedgeNy * y - wedgeC;
+	}
+
+	function reflectDebris(world, i, x, y, vx, vy) {
+		const normalVelocity = vx * wedgeNx + vy * wedgeNy;
+		if (normalVelocity >= 0) return { vx, vy };
+		const before = 0.5 * cellMass * (vx * vx + vy * vy) + cellMass * gravity * Math.max(0, y);
+		const impulse = (1 + debrisRestitution) * normalVelocity;
+		vx -= impulse * wedgeNx;
+		vy -= impulse * wedgeNy;
+		const after = 0.5 * cellMass * (vx * vx + vy * vy) + cellMass * gravity * Math.max(0, y);
+		world.heat += Math.max(0, before - after);
+		return { vx, vy };
+	}
+
 	function step(world, dt, carriedMass) {
 		for (let i = 0; i < maxDebris; i++) {
 			if (!active[i]) continue;
-			const oldX = debrisX[i];
-			const oldY = debrisY[i];
-			const oldVy = debrisVy[i];
+			let oldX = debrisX[i];
+			let oldY = debrisY[i];
+			let oldVx = debrisVx[i];
+			let oldVy = debrisVy[i];
+			let timeLeft = dt;
+			// Unbreakable wedge: fragments above the pocket top bounce off the
+			// slope instead of falling through it. Debris is treated as a point.
+			if (oldY >= wedgeY1 - 0.05 && oldX >= -0.05 && oldX <= wedgeX1 + 0.5) {
+				const oldDistance = wedgeDistance(oldX, oldY);
+				if (oldDistance < 0 && oldY >= wedgeY1 && oldX >= wedgeX0 && oldX <= wedgeX1) {
+					// Penetrating after a fast step: project out to the slope.
+					oldX += wedgeNx * -oldDistance;
+					oldY += wedgeNy * -oldDistance;
+					const reflected = reflectDebris(world, i, oldX, oldY, oldVx, oldVy);
+					oldVx = reflected.vx;
+					oldVy = reflected.vy;
+				} else if (oldDistance >= 0) {
+					const endX = oldX + oldVx * timeLeft;
+					const endY = oldY + oldVy * timeLeft - 0.5 * gravity * timeLeft * timeLeft;
+					const endDistance = wedgeDistance(endX, endY);
+					if (endDistance < 0 && endY >= wedgeY1 - 0.02) {
+						const hitTime = oldDistance / (oldDistance - endDistance) * timeLeft;
+						const hitX = oldX + oldVx * hitTime;
+						const hitY = oldY + oldVy * hitTime - 0.5 * gravity * hitTime * hitTime;
+						if (hitX >= wedgeX0 - 1e-9 && hitX <= wedgeX1 + 1e-9 && hitY >= wedgeY1 - 1e-9) {
+							const hitVy = oldVy - gravity * hitTime;
+							const reflected = reflectDebris(world, i, hitX, hitY, oldVx, hitVy);
+							oldX = hitX;
+							oldY = hitY;
+							oldVx = reflected.vx;
+							oldVy = reflected.vy;
+							timeLeft -= hitTime;
+						}
+					}
+				}
+			}
 			const deckTime = oldY >= cargoHeight ? fallTime(oldY, oldVy, cargoHeight) : Infinity;
-			const deckX = oldX + debrisVx[i] * deckTime;
+			const deckX = oldX + oldVx * deckTime;
 			const platformLeft = world.platform.x - 1.8;
-			if (deckTime <= dt && deckX >= platformLeft && deckX <= platformLeft + 1.26 && cargoCells < storageLimit) {
+			if (deckTime <= timeLeft && deckX >= platformLeft && deckX <= platformLeft + 1.26 && cargoCells < storageLimit) {
 				debrisX[i] = deckX;
 				debrisY[i] = cargoHeight;
+				debrisVx[i] = oldVx;
 				debrisVy[i] = oldVy - gravity * deckTime;
 				catchFragment(world, i, carriedMass + cargoCells * cellMass);
 				continue;
 			}
 			const floorTime = oldY >= 0 ? fallTime(oldY, oldVy, 0) : 0;
-			if (floorTime <= dt) {
-				debrisX[i] = oldX + debrisVx[i] * floorTime;
+			if (floorTime <= timeLeft) {
+				debrisX[i] = oldX + oldVx * floorTime;
 				debrisY[i] = 0;
+				debrisVx[i] = oldVx;
 				debrisVy[i] = oldVy - gravity * floorTime;
 				world.heat += fragmentMechanical(i);
 				active[i] = 0;
 				lostCells++;
+				lostValue += prices[debrisCell[i]];
 				continue;
 			}
-			debrisX[i] = oldX + debrisVx[i] * dt;
-			debrisY[i] = oldY + oldVy * dt - 0.5 * gravity * dt * dt;
-			debrisVy[i] = oldVy - gravity * dt;
+			debrisX[i] = oldX + oldVx * timeLeft;
+			debrisY[i] = oldY + oldVy * timeLeft - 0.5 * gravity * timeLeft * timeLeft;
+			debrisVx[i] = oldVx;
+			debrisVy[i] = oldVy - gravity * timeLeft;
 			if (debrisX[i] >= 0 && debrisX[i] <= width) continue;
 			world.heat += fragmentMechanical(i);
 			active[i] = 0;
 			lostCells++;
+			lostValue += prices[debrisCell[i]];
 		}
 	}
 
-	function sellCargo(platformVelocity) {
+	function sellCargo(platformVelocity, time) {
 		if (!cargoCells) return 0;
 		const value = cargoValue;
 		exportedEnergy += cargoCells * cellMass * (gravity * cargoHeight + 0.5 * platformVelocity * platformVelocity);
 		soldCells += cargoCells;
 		soldValue += value;
 		funds += value;
+		const quantities = Object.freeze([cargoMinerals[0], cargoMinerals[1], cargoMinerals[2]]);
+		for (let m = 0; m < 3; m++) {
+			soldMinerals[m] += cargoMinerals[m];
+			cargoMinerals[m] = 0;
+		}
+		ledger.push(Object.freeze({
+			id: ledger.length + 1,
+			type: 'sell',
+			time: typeof time === 'number' ? time : 0,
+			cells: cargoCells,
+			mass: cargoCells * cellMass,
+			credits: value,
+			quantities
+		}));
 		cargoCells = 0;
 		cargoValue = 0;
 		return value;
@@ -291,6 +400,18 @@
 		for (let index = 0; index < count; index++) if (strength[index] > 0) value += cellMass * gravity * (bottom + (Math.floor(index / columns) + 0.5) * cell);
 		for (let i = 0; i < maxDebris; i++) if (active[i]) value += fragmentMechanical(i);
 		return value;
+	}
+
+	function airborneCells() {
+		let total = 0;
+		for (let i = 0; i < maxDebris; i++) if (active[i]) total++;
+		return total;
+	}
+
+	function airborneValue() {
+		let total = 0;
+		for (let i = 0; i < maxDebris; i++) if (active[i]) total += prices[debrisCell[i]];
+		return total;
 	}
 
 	function colorFor(index, mode) {
@@ -315,8 +436,14 @@
 	function state() {
 		return {
 			columns, rows, cell, bottom, top, defaultPixelSize, storageLimit, cellMass,
+			damageRadius, damageMultiplier,
+			wedgeX0, wedgeY0, wedgeX1, wedgeY1, wedgeNx, wedgeNy,
+			mineralNames, mineralPrices,
 			strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell,
+			cargoMinerals, soldMinerals, ledger,
 			extractedCells: () => extractedCells, caughtCells: () => caughtCells, lostCells: () => lostCells,
+			lostValue: () => lostValue, airborneCells, airborneValue,
+			caughtValue: () => cargoValue + soldValue,
 			cargoCells: () => cargoCells, cargoMass: () => cargoCells * cellMass, cargoValue: () => cargoValue,
 			soldCells: () => soldCells, soldValue: () => soldValue, funds: () => funds
 		};

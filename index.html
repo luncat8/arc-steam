@@ -14,11 +14,38 @@
 			<div class="mine-panel"><div class="panel-title"><span><i class="live"></i> TEST CHAMBER / 24 × 10 M</span><span id="clock">0.0 s</span></div><div class="canvas-wrap"><canvas id="c" tabindex="0" aria-label="Side view of a bouncing ball and movable mining platform"></canvas><div class="canvas-label">MINERAL ROCK · 2D CELLS · IMPACT DAMAGE</div></div><div class="mine-footer"><span><i class="key-color collector"></i> COLLECTOR · CATCH & STORE</span><span><i class="key-color reflector"></i> REFLECTOR · POWERED BOUNCE</span><label for="view">ROCK VIEW <select id="view"><option value="minerals">Minerals</option><option value="elements">Elements R/G/B</option><option value="price">Price</option><option value="strength">Remain strength</option></select></label></div></div>
 			<aside>
 				<div class="panel-title">PLATFORM / LOW-TIER DRIVE</div>
-				<div class="controls"><p class="eyebrow">BOUNCE ASSIST</p><button id="drive" class="drive" aria-pressed="false">Drive off <span>SPACE</span></button><p class="hint">Adds at most 36 J per contact. Several pushes are needed to reach the ceiling.</p><button id="launch" disabled>Release held ball <span>E</span></button><p id="status" role="status">Ball in flight</p><label for="force">Movement force <output id="force-value">60%</output></label><input id="force" type="range" min="10" max="100" value="60"><div class="control-row"><button id="left" aria-label="Move left">← A</button><button id="right" aria-label="Move right">D →</button></div><p class="hint">Hold A / D to drive or brake. W / S adjusts force. Click the chamber to set a travel target.</p></div>
+				<div class="controls"><p class="eyebrow">BOUNCE ASSIST</p><button id="drive" class="drive" aria-pressed="false">Drive off <span>SPACE</span></button><p class="hint">Adds at most 36 J per contact. Several pushes are needed to reach the ceiling.</p><button id="launch" disabled>Release held ball <span>E</span></button><p id="status" role="status">Ball in flight</p><label for="force">Movement force <output id="force-value">60%</output></label><input id="force" type="range" min="10" max="100" value="60"><div class="control-row"><button id="left" aria-label="Move left">← A</button><button id="right" aria-label="Move right">D →</button></div><p class="hint">Hold A / D to drive or brake. W / S adjusts force. Click the chamber to set a travel target. The collector docks into the left-wall pocket so the reflector can cover the wall; the wedge above is unbreakable.</p></div>
 				<div class="experiment"><span class="eyebrow">RECOVERY RULE</span><p>Ground contact dissipates all ball energy. Move over the ball to collect it, then enable the drive and release.</p><p>The collector also dissipates energy. Release transfers a held ball to the reflector; lifting energy is included in the pulse.</p></div>
 			</aside>
 		</section>
 		<section class="telemetry" aria-label="System telemetry"><article><span>ENERGY RESERVE</span><strong id="battery">—</strong><small>Shared movement & bounce supply</small></article><article><span>CARGO STORAGE</span><strong id="cargo">—</strong><small>100 cells maximum · cargo adds mass</small></article><article><span>PLATFORM MASS</span><strong id="platform-mass">—</strong><small>Dry 60 kg + cargo + held ball</small></article><article><span>FUNDS / SOLD</span><strong id="funds">—</strong><small>Automatic sale at either wall</small></article><article><span>BALL ENERGY</span><strong id="ball-energy">—</strong><small>Kinetic + gravitational</small></article><article><span>DISSIPATED HEAT</span><strong id="heat">—</strong><small>Impacts, braking & drive losses</small></article><article><span>ENERGY BALANCE ERROR</span><strong id="error">—</strong><small>Includes rock, debris, cargo & exports</small></article></section>
+		<section class="mining" aria-label="Mining and market">
+			<article class="mineral-panel">
+				<div class="panel-title">MINERAL INSPECTOR / ROCK CELLS</div>
+				<div class="mining-body">
+					<label for="mineral-column">Column <output id="column-label">96 / 192</output></label>
+					<input id="mineral-column" type="range" min="1" max="192" value="96">
+					<label for="mineral-layer">Layer from bottom <output id="layer-label">1 / 16</output></label>
+					<input id="mineral-layer" type="range" min="1" max="16" value="1">
+					<strong id="mineral-strength">—</strong>
+					<progress id="strength-meter" max="1" value="1" aria-label="Remaining cell strength"></progress>
+					<p id="mineral-composition">—</p>
+					<p id="mineral-price">—</p>
+					<p class="hint">Strength is the fracture energy still needed, in joules. Click the rock to select a cell; the outlined cell is selected. A depleted cell emits material only once.</p>
+					<dl class="mass-readouts"><div><dt>Extracted</dt><dd id="extracted">—</dd></div><div><dt>Falling</dt><dd id="falling">—</dd></div><div><dt>Caught · lifetime</dt><dd id="caught">—</dd></div><div><dt>Lost</dt><dd id="lost">—</dd></div></dl>
+				</div>
+			</article>
+			<article class="market-panel">
+				<div class="panel-title"><span>CARGO / MARKET</span><span id="credits">0.0 cr</span></div>
+				<div class="mining-body">
+					<div class="cargo-summary"><div><span>Cargo</span><strong id="cargo-mass">—</strong><small id="cargo-value">—</small></div><div><span>Sold · lifetime</span><strong id="sold-mass">—</strong><small id="sold-value">—</small></div><div><span>Ledger</span><strong id="sale-count">—</strong><small>Automatic wall sales</small></div></div>
+					<div class="table-wrap"><table><caption>Material quantities in kg; prices in credits per cell (0.6 kg)</caption><thead><tr><th>Material</th><th>cr/cell</th><th>Cargo</th><th>Sold</th></tr></thead><tbody id="inventory-rows"></tbody></table></div>
+					<p class="hint">Cargo is limited to 100 cells and adds mass to the platform. Touch either wall marked SELL to sell the entire load automatically; each sale is recorded below with its mineral mix.</p>
+					<p id="transaction-status" role="status">Catch fragments in the amber collector, then touch a SELL wall.</p>
+					<details><summary>Sale ledger <span id="transaction-count">(0)</span></summary><ol id="ledger" reversed aria-label="Latest eight sales"></ol></details>
+				</div>
+			</article>
+		</section>
 		<footer><div><button id="pause" class="quiet">Pause</button><label for="speed">Simulation <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label></div><span>Fixed-step physics · No free bounce energy · <span id="motion">0.00 m/s</span></span></footer>
 	</main>
 	<script src="js/ceiling.js"></script>

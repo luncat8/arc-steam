@@ -163,13 +163,99 @@ test('touching either sell wall empties cargo without losing mass-energy account
 	assert.equal(prepareCargo(w, 12), 12);
 	physics.step(w, c.step);
 	assert.equal(ceiling.state().cargoCells(), 12);
-	w.platform.x = c.platformWidth * 0.5;
+	w.platform.x = physics.platformMin();
 	sync(w);
 	physics.step(w, c.step);
 	assert.equal(ceiling.state().cargoCells(), 0);
 	assert.equal(w.sales, 1);
 	assert.ok(ceiling.state().funds() > 0);
+	assert.equal(ceiling.state().ledger.length, 1);
 	balanced(w);
+	const v = physics.createWorld();
+	const state = ceiling.state();
+	for (let x = 1; x < 23 && state.extractedCells() < 8; x += 2) ceiling.damage(x, 8.2, 10000);
+	let prepared = 0;
+	for (let i = 0; i < state.active.length && prepared < 8; i++) {
+		if (!state.active[i]) continue;
+		state.debrisX[i] = v.platform.x - 1;
+		state.debrisY[i] = 0.701;
+		state.debrisVx[i] = 0;
+		state.debrisVy[i] = -1;
+		prepared++;
+	}
+	physics.step(v, c.step);
+	assert.equal(ceiling.state().cargoCells(), 8);
+	v.platform.x = physics.platformMax();
+	sync(v);
+	physics.step(v, c.step);
+	assert.equal(ceiling.state().cargoCells(), 0);
+	assert.equal(v.sales, 1);
+	balanced(v);
+});
+
+test('left pocket lets the reflector cover the wall and the wedge defends it', () => {
+	const w = physics.createWorld();
+	near(physics.platformMin(), c.platformWidth * 0.5 - c.pocketDepth);
+	w.platform.x = physics.platformMin();
+	const collectorEdge = w.platform.x - c.platformWidth * 0.5 + c.platformWidth * c.collectorFraction;
+	near(collectorEdge, 0, 1e-9);
+	// A ball above the docked reflector bounces instead of being captured.
+	w.ball.x = 1.5; w.ball.vx = 0; w.ball.y = c.deck + c.radius; w.ball.vy = -5;
+	w.ball.state = 'flying';
+	sync(w);
+	physics.step(w, c.step);
+	assert.equal(w.bounces, 1);
+	assert.equal(w.ball.state, 'flying');
+	balanced(w);
+	// Driving left docks into the pocket rather than stopping at the old limit.
+	const docked = physics.createWorld();
+	docked.ball.state = 'held';
+	docked.direction = -1;
+	sync(docked);
+	run(docked, 30);
+	near(docked.platform.x, physics.platformMin());
+	balanced(docked);
+});
+
+test('wedge slope deflects a wall-side fall toward the reflector', () => {
+	const w = physics.createWorld();
+	w.platform.x = 12;
+	w.ball.x = 0.3; w.ball.vx = 0; w.ball.y = 3; w.ball.vy = 0;
+	w.ball.state = 'flying';
+	sync(w);
+	let deflected = false;
+	for (let i = 0; i < Math.round(3 / c.step); i++) {
+		physics.step(w, c.step);
+		if (w.ball.vx > 1 && w.ball.x > 0.5) { deflected = true; break; }
+		if (w.ball.state !== 'flying') break;
+	}
+	assert.ok(deflected);
+	balanced(w);
+});
+
+test('wedge base blocks entry from below without trapping deck bounces', () => {
+	const w = physics.createWorld();
+	w.platform.x = 12;
+	w.ball.x = 0.3; w.ball.vx = 0; w.ball.y = 0.4; w.ball.vy = 5;
+	w.ball.state = 'flying';
+	sync(w);
+	physics.step(w, c.step);
+	for (let i = 0; i < Math.round(0.5 / c.step) && w.ball.vy > 0; i++) physics.step(w, c.step);
+	assert.ok(w.ball.vy < 0);
+	assert.ok(w.ball.y < c.wedgeY1);
+	balanced(w);
+	// A powered bounce right of the wedge clears it instead of sticking.
+	const v = physics.createWorld();
+	v.platform.x = physics.platformMin();
+	v.ball.x = 1.5; v.ball.vx = 0; v.ball.y = c.deck + c.radius; v.ball.vy = -5;
+	v.ball.state = 'flying';
+	v.drive = true;
+	sync(v);
+	physics.step(v, c.step);
+	assert.ok(v.ball.vy > 5);
+	run(v, 1);
+	assert.equal(v.ball.state, 'flying');
+	balanced(v);
 });
 
 test('replay is deterministic with identical fixed-step commands', () => {

@@ -35,6 +35,15 @@ async function main() {
 		await page.locator('#reset').click();
 		assert.equal(await page.locator('#force').inputValue(), '60');
 		await page.locator('#pause').click();
+		await page.locator('#mineral-column').fill('10');
+		assert.equal(await page.locator('#column-label').textContent(), '10 / 192');
+		await page.locator('#mineral-layer').fill('2');
+		assert.equal(await page.locator('#layer-label').textContent(), '2 / 16');
+		assert.match(await page.locator('#mineral-strength').textContent(), /J/);
+		assert.equal(await page.locator('#transaction-count').textContent(), '(0)');
+		await page.locator('#c').click({ position: { x: 500, y: 50 } });
+		assert.notEqual(await page.locator('#column-label').textContent(), '10 / 192');
+		assert.notEqual(await page.locator('#layer-label').textContent(), '2 / 16');
 		await page.locator('#c').click({ position: { x: 100, y: 200 } });
 		await page.waitForTimeout(400);
 		assert.notEqual(await page.locator('#motion').textContent(), '0.00 m/s');
@@ -44,7 +53,7 @@ async function main() {
 		await page.waitForTimeout(100);
 		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
 		assert.deepEqual(errors, []);
-		console.log('PASS: startup, rendering, drive toggle, keyboard force, pause/reset, target travel, ledger, narrow layout; no page errors.');
+		console.log('PASS: startup, rendering, drive toggle, keyboard force, pause/reset, inspector select, target travel, ledger, narrow layout; no page errors.');
 	} finally {
 		await browser.close();
 	}
