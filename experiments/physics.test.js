@@ -28,7 +28,7 @@ function prepareCargo(world, count, fragmentVx = 0) {
 	return prepared;
 }
 
-test('ball response is 1.5x slower while the platform engine gets 1.5x more force', () => {
+test('ball response is 1.5x slower while platform force and top speed step up', () => {
 	const w = physics.createWorld();
 	near(c.ballSpeedScale, 1 / 1.5);
 	near(c.ballMass * c.ballGravity, c.gravity);
@@ -41,8 +41,31 @@ test('ball response is 1.5x slower while the platform engine gets 1.5x more forc
 	const oldFallTime = Math.sqrt(2 / c.gravity);
 	const newFallTime = Math.sqrt(2 / c.ballGravity);
 	near(newFallTime, oldFallTime * 1.5);
-	near(c.force, 180 * 1.5);
-	assert.equal(c.maxSpeed, 7);
+	// Second 1.5x drive-response step: 270 N -> 400 N and 7 m/s -> 10 m/s,
+	// each rounded to a whole number instead of keeping 405 N / 10.5 m/s.
+	near(c.force, 400);
+	assert.equal(c.maxSpeed, 10);
+	assert.ok(Math.abs(c.force / 270 - 1.5) < 0.02, 'force is the rounded 1.5x step');
+	assert.ok(Math.abs(c.maxSpeed / 7 - 1.5) < 0.08, 'top speed is the rounded 1.5x step');
+	const sprint = physics.createWorld();
+	sprint.ball.state = 'held';
+	sprint.direction = 1;
+	sprint.forceSetting = 1;
+	sync(sprint);
+	run(sprint, 60);
+	near(Math.abs(sprint.platform.vx), 0, 1e-9);
+	near(sprint.platform.x, c.width - c.platformWidth / 2);
+	balanced(sprint);
+	const brake = physics.createWorld();
+	brake.ball.state = 'held';
+	brake.platform.vx = c.maxSpeed;
+	brake.direction = -1;
+	brake.forceSetting = 1;
+	sync(brake);
+	run(brake, 60);
+	near(brake.platform.vx, 0, 1e-9);
+	balanced(brake);
+	physics.createWorld();
 });
 
 test('analytic free fall is exact across fixed steps', () => {

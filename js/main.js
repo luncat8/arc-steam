@@ -4,10 +4,12 @@
 	const config = physics.config;
 	const canvas = document.getElementById('c');
 	const context = canvas.getContext('2d');
-	const ids = ['clock', 'drive', 'launch', 'status', 'force', 'force-value', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'view',
+	const ids = ['clock', 'drive', 'launch', 'status', 'prediction-status', 'force', 'force-value', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'view',
+		'platform-spec', 'research-rows', 'research-status', 'research-progress',
 		'mineral-column', 'column-label', 'mineral-layer', 'layer-label', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
-		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger', 'equipment-rows', 'equipment-status'];
+		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger', 'equipment-rows', 'equipment-status',
+		'refuel', 'refuel-cost', 'fuel-price'];
 	const ui = {};
 	for (const id of ids) ui[id] = document.getElementById(id);
 	let selectedColumn = 95;
@@ -35,42 +37,147 @@
 		}
 	})();
 	let world = physics.createWorld();
+	let showPrediction = false;
 	const equipmentRows = [];
-	(function buildEquipment() {
+	const researchRows = [];
+	const specValues = [];
+	const specLabels = ['Dry mass', 'Engine force', 'Top speed', 'Bounce pulse', 'Retention', 'Convective cooling', 'Brake recovery'];
+
+	// Equipment and research rows share one layout: a title with cost and mass, an
+	// action button, the measured effect, and a prerequisite/unlock note. Built
+	// once at startup; only text and the disabled flag change afterwards.
+	function buildRow(container, title, action, effect, note, activate) {
+		const row = document.createElement('div');
+		row.className = 'upgrade-row';
+		const heading = document.createElement('b');
+		heading.textContent = title;
+		const button = document.createElement('button');
+		button.type = 'button';
+		button.textContent = action;
+		const detail = document.createElement('small');
+		detail.textContent = effect;
+		const requirement = document.createElement('small');
+		requirement.className = 'requirement';
+		requirement.textContent = note;
+		row.append(heading, button, detail, requirement);
+		container.appendChild(row);
+		button.addEventListener('click', activate);
+		return { row, button, requirement };
+	}
+
+	// Names are quoted exactly as authored, so the equipment and research notes
+	// read the same way.
+	function prerequisiteNames(node) {
+		let names = '';
+		for (const id of node.requires) names += (names ? ', ' : '') + SteamResearch.find(id).name;
+		return names;
+	}
+
+	function unlockText(node) {
+		if (node.capability === 'prediction') return 'the predicted trajectory overlay';
+		let names = '';
+		for (const item of SteamEquipment.items) if (item.requires === node.id) names += (names ? ', ' : '') + item.name;
+		return names;
+	}
+
+	(function buildUpgrades() {
+		ui['fuel-price'].textContent = String(window.SteamCeiling.state.fuelPrice);
 		for (const item of SteamEquipment.items) {
-			const row = document.createElement('div');
-			row.className = 'equipment-row';
-			const name = document.createElement('b');
-			const sign = item.mass >= 0 ? '+' : '−';
-			name.textContent = item.name.toUpperCase() + ' · ' + item.cost + ' CR · ' + sign + Math.abs(item.mass) + ' KG';
-			const button = document.createElement('button');
-			button.type = 'button';
-			button.textContent = 'Buy';
-			const note = document.createElement('small');
-			note.textContent = item.effect;
-			row.appendChild(name);
-			row.appendChild(button);
-			row.appendChild(note);
-			ui['equipment-rows'].appendChild(row);
-			button.addEventListener('click', function () { buyEquipment(item.id); });
-			equipmentRows.push({ item, button });
+			const mass = item.mass ? ' · ' + (item.mass > 0 ? '+' : '−') + Math.abs(item.mass) + ' KG' : '';
+			const technology = SteamResearch.find(item.requires);
+			const row = buildRow(ui['equipment-rows'], item.name.toUpperCase() + ' · ' + item.cost + ' CR' + mass, 'Buy', item.effect,
+				technology ? 'Needs research: ' + technology.name : 'No research needed',
+				function () { buyEquipment(item.id); });
+			row.item = item;
+			equipmentRows.push(row);
+		}
+		for (const node of SteamResearch.nodes) {
+			const unlocked = unlockText(node);
+			const note = (node.requires.length ? 'Needs research: ' + prerequisiteNames(node) : 'No prerequisites') + (unlocked ? ' · unlocks ' + unlocked : '');
+			const row = buildRow(ui['research-rows'], node.name.toUpperCase() + ' · ' + node.cost + ' CR', 'Research', node.effect, note,
+				function () { buyResearch(node.id); });
+			row.node = node;
+			researchRows.push(row);
+		}
+		for (const label of specLabels) {
+			const term = document.createElement('dt');
+			term.textContent = label;
+			const value = document.createElement('dd');
+			value.textContent = '—';
+			ui['platform-spec'].append(term, value);
+			specValues.push(value);
 		}
 	})();
+
 	function buyEquipment(id) {
 		const item = SteamEquipment.find(id);
-		const ok = SteamEquipment.install(id, world);
-		if (ok) ui['equipment-status'].textContent = 'Installed ' + item.name + ' at ' + world.time.toFixed(1) + ' s.';
+		if (SteamEquipment.install(id, world)) ui['equipment-status'].textContent = 'Installed ' + item.name + ' at ' + world.time.toFixed(1) + ' s.';
 		else if (SteamEquipment.isInstalled(id)) ui['equipment-status'].textContent = item.name + ' is already installed.';
+		else if (!SteamEquipment.isUnlocked(id)) ui['equipment-status'].textContent = item.name + ' needs the ' + SteamResearch.find(item.requires).name + ' research first.';
 		else ui['equipment-status'].textContent = 'Not enough funds for ' + item.name + ' (' + item.cost + ' cr needed).';
 		readout();
 	}
-	function refreshEquipment() {
+
+	function buyResearch(id) {
+		const node = SteamResearch.find(id);
+		if (SteamResearch.research(id, world)) ui['research-status'].textContent = 'Researched ' + node.name + ' at ' + world.time.toFixed(1) + ' s.';
+		else if (SteamResearch.isResearched(id)) ui['research-status'].textContent = node.name + ' is already researched.';
+		else if (SteamResearch.status(id) === SteamResearch.constants.LOCKED) ui['research-status'].textContent = node.name + ' stays locked until ' + prerequisiteNames(node) + ' is researched.';
+		else ui['research-status'].textContent = 'Not enough funds for ' + node.name + ' (' + node.cost + ' cr needed).';
+		readout();
+	}
+
+	// Locked, available and researched states drive both the button and the row
+	// styling, so the panel shows progression without relying on colour alone.
+	function refreshUpgrades() {
 		const funds = window.SteamCeiling.state.funds;
 		for (const row of equipmentRows) {
 			const installed = SteamEquipment.isInstalled(row.item.id);
-			row.button.disabled = installed || funds < row.item.cost;
-			row.button.textContent = installed ? 'Installed' : 'Buy';
+			const unlocked = SteamEquipment.isUnlocked(row.item.id);
+			row.button.disabled = installed || !unlocked || funds < row.item.cost;
+			row.button.textContent = installed ? 'Installed' : unlocked ? 'Buy' : 'Locked';
+			row.row.dataset.state = installed ? 'installed' : unlocked ? 'available' : 'locked';
 		}
+		let completed = 0;
+		for (const row of researchRows) {
+			const status = SteamResearch.status(row.node.id);
+			if (status === SteamResearch.constants.RESEARCHED) completed++;
+			row.button.disabled = status !== SteamResearch.constants.AVAILABLE || funds < row.node.cost;
+			// 'Locked' means a missing prerequisite; an unaffordable but available
+			// node still reads 'Research' and is simply disabled.
+			row.button.textContent = status === SteamResearch.constants.RESEARCHED ? 'Done' : status === SteamResearch.constants.AVAILABLE ? 'Research' : 'Locked';
+			row.row.dataset.state = status;
+		}
+		ui['research-progress'].textContent = completed + ' / ' + researchRows.length;
+	}
+
+	// Installed specification: the live result of base tuning plus every equipment
+	// and research delta, which is what the row effects compare against.
+	function specReadout() {
+		specValues[0].textContent = physics.dryMass().toFixed(1) + ' kg';
+		specValues[1].textContent = config.force.toFixed(0) + ' N';
+		specValues[2].textContent = config.maxSpeed.toFixed(0) + ' m/s';
+		specValues[3].textContent = physics.pulseNow().toFixed(0) + ' J';
+		specValues[4].textContent = (physics.retentionNow() * 100).toFixed(0) + '%';
+		specValues[5].textContent = physics.conductanceNow().toFixed(2) + ' W/K';
+		specValues[6].textContent = (physics.recoveryNow() * 100).toFixed(0) + '%';
+	}
+
+	function predictionReadout() {
+		if (!SteamResearch.state.prediction) {
+			ui['prediction-status'].hidden = true;
+			return false;
+		}
+		ui['prediction-status'].hidden = false;
+		const computer = window.SteamPrediction;
+		const kinds = computer.kinds;
+		const path = computer.predict(world);
+		if (path.kind === kinds.PARKED) ui['prediction-status'].textContent = 'Ballistic computer: the ball is ' + world.ball.state + ', so there is no flight to predict.';
+		else if (path.kind === kinds.ROCK) ui['prediction-status'].textContent = 'Predicted rock contact at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + ' s · the rebound depends on fracture, so the path stops there.';
+		else if (path.kind === kinds.TIMEOUT) ui['prediction-status'].textContent = 'Ballistic computer: still airborne after ' + computer.horizon.toFixed(0) + ' s of prediction.';
+		else ui['prediction-status'].textContent = 'Landing ' + (path.kind === kinds.DECK ? 'on the deck' : 'on the ground') + ' at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + ' s · ghost coasts to ' + path.ghostX.toFixed(1) + ' m · '
+			+ (path.reachable ? 'intercept reachable at full thrust' : 'intercept short by ' + path.gap.toFixed(1) + ' m at full thrust');
+		return true;
 	}
 	let paused = false;
 	let accumulator = 0;
@@ -134,6 +241,7 @@
 			context.strokeStyle = '#627765';
 			context.beginPath(); context.moveTo(world.target, 0); context.lineTo(world.target, 1.7); context.stroke();
 		}
+		if (showPrediction) drawPrediction();
 		const platform = world.platform;
 		const left = platform.x - config.platformWidth * 0.5;
 		const collectorWidth = config.platformWidth * config.collectorFraction;
@@ -156,6 +264,28 @@
 		drawSellLabel(offsetX + config.width * scale - 8, floorY - scale * 1.4, Math.PI * 0.5);
 	}
 
+	// Ballistic overlay, drawn in world units inside the chamber transform: the
+	// dotted flight path, the landing mark, and the platform ghost coasting to the
+	// predicted landing time. Amber means the intercept is not reachable or the
+	// outcome is unknown.
+	function drawPrediction() {
+		const path = window.SteamPrediction.state;
+		if (path.samples < 2) return;
+		context.save();
+		context.strokeStyle = path.uncertain ? '#9c8a55' : '#5f9c74';
+		context.lineWidth = 1.2 / scale;
+		context.setLineDash([0.1, 0.13]);
+		context.beginPath();
+		context.moveTo(path.pathX[0], path.pathY[0]);
+		for (let i = 1; i < path.samples; i++) context.lineTo(path.pathX[i], path.pathY[i]);
+		context.stroke();
+		context.setLineDash([]);
+		context.beginPath(); context.arc(path.endX, path.endY, 0.26, 0, Math.PI * 2); context.stroke();
+		context.strokeStyle = path.reachable ? '#b9ed91' : '#e6b66e';
+		context.strokeRect(path.ghostX - config.platformWidth * 0.5, config.deck - 0.06, config.platformWidth, 0.12);
+		context.restore();
+	}
+
 	function drawSellLabel(x, y, rotation) {
 		context.save();
 		context.translate(x, y);
@@ -165,6 +295,23 @@
 		context.textAlign = 'center';
 		context.fillText('SELL', 0, 0);
 		context.restore();
+	}
+
+	// One ledger carries sales, purchases and research; each entry keeps its own
+	// wording so the money trail stays explicit.
+	function ledgerText(entry) {
+		const stamp = entry.time.toFixed(1) + ' s · ';
+		if (entry.type === 'fuel') return stamp + 'Recharged ' + (entry.energy / 1000).toFixed(2) + ' kJ · −' + entry.credits.toFixed(1) + ' cr';
+		if (entry.type === 'research') return stamp + 'Researched ' + entry.label + ' · −' + entry.credits.toFixed(0) + ' cr';
+		if (entry.type === 'buy') return stamp + 'Bought ' + entry.label + ' · −' + entry.credits.toFixed(0) + ' cr';
+		return stamp + 'Sold ' + entry.mass.toFixed(1) + ' kg (' + entry.cells + ' cells) · +' + entry.credits.toFixed(1) + ' cr';
+	}
+
+	function ledgerStatus(entry) {
+		if (entry.type === 'fuel') return 'Recharged ' + (entry.energy / 1000).toFixed(2) + ' kJ of reserve for ' + entry.credits.toFixed(1) + ' cr at ' + entry.time.toFixed(1) + ' s.';
+		if (entry.type === 'research') return 'Researched ' + entry.label + ' for ' + entry.credits.toFixed(0) + ' cr at ' + entry.time.toFixed(1) + ' s.';
+		if (entry.type === 'buy') return 'Bought ' + entry.label + ' for ' + entry.credits.toFixed(0) + ' cr at ' + entry.time.toFixed(1) + ' s.';
+		return 'Sold ' + entry.mass.toFixed(1) + ' kg for ' + entry.credits.toFixed(1) + ' cr at ' + entry.time.toFixed(1) + ' s.';
 	}
 
 	function miningReadout() {
@@ -187,8 +334,13 @@
 		ui['cargo-value'].textContent = ceiling.cargoValue.toFixed(1) + ' cr · ' + ceiling.cargoCells + ' cells';
 		ui['sold-mass'].textContent = (ceiling.soldCells * ceiling.cellMass).toFixed(1) + ' kg';
 		ui['sold-value'].textContent = ceiling.soldValue.toFixed(1) + ' cr · ' + ceiling.soldCells + ' cells';
-		ui['sale-count'].textContent = ceiling.ledger.length + ' sales';
+		ui['sale-count'].textContent = ceiling.ledger.length + ' entries';
 		ui.credits.textContent = ceiling.funds.toFixed(1) + ' cr';
+		// Recharge is offered whenever the reserve is short and funds cover a joule.
+		const refill = window.SteamCeiling.rechargeCost(world);
+		ui['refuel-cost'].textContent = refill.toFixed(1) + ' cr';
+		ui.refuel.disabled = refill <= 0 || ceiling.funds < ceiling.fuelPrice / 1000;
+		ui.refuel.textContent = refill > 0 ? 'Recharge ' + ((config.battery - world.battery) / 1000).toFixed(2) + ' kJ' : 'Reserve full';
 		for (let i = 0; i < 3; i++) {
 			inventoryCells[i * 2].textContent = ceiling.cargoMinerals[i].toFixed(3);
 			inventoryCells[i * 2 + 1].textContent = ceiling.soldMinerals[i].toFixed(3);
@@ -201,16 +353,11 @@
 		for (let i = renderedSales - 1; i >= Math.max(0, renderedSales - 8); i--) {
 			const entry = ceiling.ledger[i];
 			const item = document.createElement('li');
-			item.textContent = entry.type === 'buy'
-				? entry.time.toFixed(1) + ' s · Bought ' + entry.label + ' · −' + entry.credits.toFixed(0) + ' cr'
-				: entry.time.toFixed(1) + ' s · Sold ' + entry.mass.toFixed(1) + ' kg (' + entry.cells + ' cells) · +' + entry.credits.toFixed(1) + ' cr';
+			item.textContent = ledgerText(entry);
 			ui.ledger.appendChild(item);
 		}
 		if (renderedSales > 0) {
-			const last = ceiling.ledger[renderedSales - 1];
-			ui['transaction-status'].textContent = last.type === 'buy'
-				? 'Bought ' + last.label + ' for ' + last.credits.toFixed(0) + ' cr at ' + last.time.toFixed(1) + ' s.'
-				: 'Sold ' + last.mass.toFixed(1) + ' kg for ' + last.credits.toFixed(1) + ' cr at ' + last.time.toFixed(1) + ' s.';
+			ui['transaction-status'].textContent = ledgerStatus(ceiling.ledger[renderedSales - 1]);
 		} else {
 			ui['transaction-status'].textContent = 'Catch fragments in the amber collector, then touch a SELL wall.';
 		}
@@ -218,7 +365,9 @@
 
 	function readout() {
 		miningReadout();
-		refreshEquipment();
+		refreshUpgrades();
+		specReadout();
+		showPrediction = predictionReadout();
 		ui.clock.textContent = world.time.toFixed(1) + ' s';
 		ui.battery.textContent = (world.battery / 1000).toFixed(2) + ' kJ';
 		const ceiling = window.SteamCeiling.state;
@@ -320,9 +469,15 @@
 	document.getElementById('reset').addEventListener('click', function () {
 		world = physics.createWorld(); window.SteamCeiling.setShape(ui.shape.value); renderedSales = -1; clearInput(); setForce(world.forceSetting); accumulator = 0;
 		ui['equipment-status'].textContent = 'Sell cargo at a wall to earn credits.';
+		ui['research-status'].textContent = 'Sell cargo at a wall to fund research.';
 		readout();
 	});
 	ui.drive.addEventListener('click', toggleDrive);
+	ui.refuel.addEventListener('click', function () {
+		const imported = window.SteamCeiling.recharge(world, world.time);
+		readout();
+		if (!imported) ui['transaction-status'].textContent = 'Not enough funds to recharge · ' + window.SteamCeiling.rechargeCost(world).toFixed(1) + ' cr fills the reserve.';
+	});
 	ui.launch.addEventListener('click', releaseBall);
 	ui.pause.addEventListener('click', togglePause);
 	ui.shape.addEventListener('change', function () { window.SteamCeiling.setShape(ui.shape.value); });

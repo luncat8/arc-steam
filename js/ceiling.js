@@ -41,6 +41,9 @@
 	const hit = { time: Infinity, x: 0, y: 0, nx: 0, ny: 0, index: -1 };
 	const mineralColors = [[184, 91, 64], [65, 174, 133], [133, 153, 202]];
 	const mineralPrices = [3, 7, 11];
+	// Bought energy is the only import into the closed system: 25 cr per kJ of
+	// reserve, measured against a scripted shift grossing roughly 560 cr.
+	const fuelPrice = 25;
 	const mineralNames = ['Iron', 'Copper', 'Crystal'];
 	const cargoMinerals = new Float64Array(3);
 	const soldMinerals = new Float64Array(3);
@@ -600,18 +603,52 @@
 		}
 	}
 
-	// Purchases debit funds and append a ledger entry; false when funds are short.
-	function purchase(label, amount, time) {
+	// Purchases and research debit funds and append a ledger entry; false when
+	// funds are short.
+	function purchase(label, amount, time, type) {
 		if (!(amount > 0) || funds < amount) return false;
 		funds -= amount;
 		ledger.push(Object.freeze({
 			id: ledger.length + 1,
-			type: 'buy',
+			type: type || 'buy',
 			time: typeof time === 'number' ? time : 0,
 			label,
 			credits: amount
 		}));
 		return true;
+	}
+
+	// Top the reserve up towards its capacity with bought energy. Funds buy as
+	// much as they cover, so a poor shift still refuels partially. Returns the
+	// imported joules, or 0 when the reserve is full or nothing is affordable.
+	function recharge(world, time) {
+		const physics = root.SteamPhysics;
+		if (!physics || !world) return 0;
+		const deficit = physics.config.battery - world.battery;
+		if (deficit < 1) return 0;
+		const energy = Math.min(deficit, Math.floor(funds * 1000 / fuelPrice));
+		if (energy < 1) return 0;
+		const credits = energy * fuelPrice / 1000;
+		if (funds < credits) return 0;
+		funds -= credits;
+		world.battery += energy;
+		world.importedEnergy += energy;
+		ledger.push(Object.freeze({
+			id: ledger.length + 1,
+			type: 'fuel',
+			time: typeof time === 'number' ? time : 0,
+			label: (energy / 1000).toFixed(2) + ' kJ reserve recharge',
+			credits,
+			energy
+		}));
+		return energy;
+	}
+
+	// Credits needed to fill the reserve; the panel shows it before the click.
+	function rechargeCost(world) {
+		const physics = root.SteamPhysics;
+		if (!physics || !world) return 0;
+		return Math.max(0, physics.config.battery - world.battery) / 1000 * fuelPrice;
 	}
 
 	function sellCargo(platformVelocity, time) {
@@ -716,7 +753,7 @@
 		columns, rows, cell, bottom, top, defaultPixelSize, storageLimit, cellMass,
 		damageRadius, damageMultiplier,
 		get shape() { return rockShape; }, heightmap, firstRow,
-		mineralNames, mineralPrices,
+		mineralNames, mineralPrices, fuelPrice,
 		strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
 		cargoMinerals, soldMinerals,
 		get ledger() { return ledger; },
@@ -738,7 +775,7 @@
 
 	reset(1);
 
-	const api = { reset, damage, trace, step, sellCargo, purchase, draw, state, setShape };
+	const api = { reset, damage, trace, step, sellCargo, purchase, recharge, rechargeCost, draw, state, setShape };
 	root.SteamCeiling = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

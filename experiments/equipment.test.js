@@ -1,58 +1,34 @@
-'use strict';
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const ceiling = require('../js/ceiling.js');
-const equipment = require('../js/equipment.js');
-const physics = require('../js/physics.js');
-const c = physics.config;
+const { ceiling, equipment, research, physics, c, near, balanced, sync, run, earnFunds, unlockResearch, buy } = require('./harness.cjs');
 
-function near(actual, expected, tolerance = 1e-6) {
-	assert.ok(Math.abs(actual - expected) < tolerance, `${actual} != ${expected}`);
-}
-function balanced(world) { near(physics.totalEnergy(world), world.initialEnergy, 1e-6); }
-function sync(world) { world.initialEnergy = physics.totalEnergy(world); }
-
-function earnFunds(world, cells) {
-	const target = ceiling.state.extractedCells + cells;
-	for (let x = 1; x < 23 && ceiling.state.extractedCells < target; x += 2) ceiling.damage(x, 8.2, 20);
-	const state = ceiling.state;
-	let prepared = 0;
-	for (let i = 0; i < state.active.length && prepared < cells; i++) {
-		if (!state.active[i]) continue;
-		state.debrisX[i] = world.platform.x - 1;
-		state.debrisY[i] = 0.701;
-		state.debrisVx[i] = 0;
-		state.debrisVy[i] = -1;
-		prepared++;
-	}
-	physics.step(world, c.step);
-	ceiling.sellCargo(0, world.time);
-	// Settle the remaining fragments and drain incidental catches so later
-	// measurements run with empty storage and no falling debris.
-	for (let i = 0; i < 240 * 3; i++) physics.step(world, c.step);
-	ceiling.sellCargo(0, world.time);
-	assert.equal(ceiling.state.airborneCells, 0, 'debris settled');
-	assert.equal(ceiling.state.cargoCells, 0, 'storage empty');
-	return ceiling.state.funds;
-}
-
-test('purchase requires funds, debits once, and appends a frozen ledger entry', () => {
+test('purchase needs funds and the unlocking research, debits once, and appends frozen ledger entries', () => {
 	const w = physics.createWorld();
 	assert.equal(equipment.install('pad', w), false, 'no funds yet');
+	assert.equal(equipment.isUnlocked('pad'), false, 'the pad is locked before its research');
 	const earned = earnFunds(w, 60);
-	assert.ok(earned > 250);
+	assert.ok(earned > 180 + 250);
+	assert.equal(equipment.install('pad', w), false, 'funds alone do not unlock it');
+	near(ceiling.state.funds, earned);
+	assert.equal(research.research('materials', w), true);
+	assert.equal(equipment.isUnlocked('pad'), true);
 	assert.equal(equipment.install('pad', w), true);
-	near(ceiling.state.funds, earned - 250);
+	near(ceiling.state.funds, earned - 180 - 250);
 	assert.ok(equipment.isInstalled('pad'));
 	assert.equal(equipment.install('pad', w), false, 'no duplicate charge');
-	near(ceiling.state.funds, earned - 250);
+	near(ceiling.state.funds, earned - 180 - 250);
 	const ledger = ceiling.state.ledger;
-	const buy = ledger[ledger.length - 1];
-	assert.equal(buy.type, 'buy');
-	assert.equal(buy.label, 'Rebound pad');
-	assert.equal(buy.credits, 250);
-	assert.ok(Object.isFrozen(buy));
-	assert.equal(equipment.install('coil', w), false, 'coil costs more than remains');
+	const studied = ledger[ledger.length - 2];
+	assert.equal(studied.type, 'research');
+	assert.equal(studied.label, 'Rebound materials');
+	assert.equal(studied.credits, 180);
+	assert.ok(Object.isFrozen(studied));
+	const buyEntry = ledger[ledger.length - 1];
+	assert.equal(buyEntry.type, 'buy');
+	assert.equal(buyEntry.label, 'Rebound pad');
+	assert.equal(buyEntry.credits, 250);
+	assert.ok(Object.isFrozen(buyEntry));
+	assert.equal(equipment.install('coil', w), false, 'the coil is locked behind its own research');
 	physics.createWorld();
 });
 
@@ -60,54 +36,69 @@ test('installed equipment changes retention, pulse and dry mass in the simulatio
 	const w = physics.createWorld();
 	earnFunds(w, 100);
 	earnFunds(w, 100);
-	assert.ok(ceiling.state.funds >= 1000, 'two full loads fund the first tier');
-	// Pad: passive bounce keeps 93% instead of 90% of normal kinetic energy.
+	earnFunds(w, 100);
+	assert.ok(ceiling.state.funds >= 1000, 'full loads fund the first tier');
+	// Pad: researched rebound materials plus the pad lift retention to 94%.
+	unlockResearch(w, 'materials');
+	near(physics.retentionNow(), 0.91);
 	const beforePad = physics.dryMass();
-	assert.equal(equipment.install('pad', w), true);
+	near(beforePad, c.platformMass);
+	buy(w, 'pad');
+	near(physics.retentionNow(), 0.94);
 	near(physics.dryMass(), beforePad + 6);
 	w.ball.state = 'flying';
 	w.ball.x = 12.8; w.ball.vx = 0; w.ball.y = c.deck + c.radius; w.ball.vy = -5;
 	sync(w);
 	physics.step(w, c.step);
-	near(w.ball.vy + c.ballGravity * c.step, 5 * Math.sqrt(0.93), 1e-6);
+	near(w.ball.vy + c.ballGravity * c.step, 5 * Math.sqrt(physics.retentionNow()));
 	balanced(w);
-	// Coil: launch delivers the larger pulse from the reserve.
+	// Coil: launch delivers the researched and installed pulse from the reserve.
+	unlockResearch(w, 'electromagnetics');
+	near(physics.pulseNow(), 40);
 	const beforeCoil = physics.dryMass();
-	assert.equal(equipment.install('coil', w), true);
+	buy(w, 'coil');
+	near(physics.pulseNow(), 52);
 	near(physics.dryMass(), beforeCoil + 12);
 	w.ball.state = 'held';
 	w.drive = true;
 	sync(w);
 	assert.ok(physics.launch(w));
-	near(w.lastPush, 48);
+	near(w.lastPush, 52);
 	balanced(w);
-	// Chassis: dry platform mass drops by 12 kg and acceleration rises.
+	// Chassis: researched alloys and the chassis both cut dry mass.
+	unlockResearch(w, 'alloys');
 	const beforeChassis = physics.dryMass();
-	assert.equal(equipment.install('chassis', w), true);
+	near(beforeChassis, c.platformMass + 6 + 12 - 4);
+	buy(w, 'chassis');
 	near(physics.dryMass(), beforeChassis - 12);
 	w.ball.state = 'held';
 	w.platform.vx = 0;
 	w.direction = 1;
 	sync(w);
-	for (let i = 0; i < Math.round(0.25 / c.step); i++) physics.step(w, c.step);
-	near(w.platform.vx, c.force * w.forceSetting / (physics.dryMass() + c.ballMass) * 0.25, 1e-6);
+	run(w, 0.25);
+	near(w.platform.vx, c.force * w.forceSetting / (physics.dryMass() + c.ballMass) * 0.25);
 	balanced(w);
 	physics.createWorld();
 	near(physics.dryMass(), c.platformMass, 1e-9);
 	assert.equal(equipment.isInstalled('pad'), false, 'world reset clears equipment');
+	assert.equal(research.isResearched('materials'), false, 'world reset clears research');
+	assert.equal(equipment.isUnlocked('pad'), false, 'and re-locks the equipment');
 });
 
 test('radiator installation increases real convective and radiative cooling', () => {
 	const w = physics.createWorld();
 	earnFunds(w, 100);
 	earnFunds(w, 100);
-	assert.ok(ceiling.state.funds >= 650);
+	earnFunds(w, 100);
+	unlockResearch(w, 'thermodynamics');
+	near(physics.conductanceNow(), c.convectiveConductance + 0.5);
 	w.heat = c.heatCapacity * 100;
 	sync(w);
 	const baseCooling = physics.coolingPower(w);
 	const baseMass = physics.dryMass();
-	assert.equal(equipment.install('radiator', w), true);
+	buy(w, 'radiator');
 	near(equipment.state.radiatorArea, 0.35);
+	near(physics.conductanceNow(), c.convectiveConductance + 0.5 + c.radiatorConvectionCoefficient * 0.35);
 	near(physics.dryMass(), baseMass + 8);
 	sync(w);
 	assert.ok(physics.coolingPower(w) > baseCooling);
@@ -117,17 +108,65 @@ test('radiator installation increases real convective and radiative cooling', ()
 	physics.createWorld();
 });
 
+test('brake flywheel returns part of the braking energy to the reserve', () => {
+	const w = physics.createWorld();
+	earnFunds(w, 100);
+	earnFunds(w, 100);
+	earnFunds(w, 100);
+	assert.equal(equipment.isUnlocked('flywheel'), false, 'flywheel storage research is missing');
+	unlockResearch(w, 'storage');
+	buy(w, 'flywheel');
+	near(physics.recoveryNow(), 0.55);
+	near(physics.dryMass(), c.platformMass - 4 + 14);
+	w.ball.state = 'held';
+	w.platform.vx = c.maxSpeed;
+	w.direction = -1;
+	w.forceSetting = 1;
+	sync(w);
+	const battery = w.battery;
+	const heatBefore = w.heat;
+	const cooledBefore = w.cooledEnergy;
+	const mass = physics.platformMass(w);
+	const before = 0.5 * mass * w.platform.vx * w.platform.vx;
+	let steps = 0;
+	while (w.platform.vx > 0 && steps < 240 * 10) { physics.step(w, c.step); steps++; }
+	const after = 0.5 * mass * w.platform.vx * w.platform.vx;
+	assert.ok(steps < 240 * 10, 'the platform braked to a stop');
+	near(w.battery - battery, (before - after) * 0.55 * c.recoveryEfficiency);
+	assert.ok(w.heat > heatBefore, 'the round-trip loss stays in the machinery');
+	near(w.heat - heatBefore + w.cooledEnergy - cooledBefore + (w.battery - battery), before - after, 1e-6);
+	balanced(w);
+	// A wall stop is a crash rather than braking, so the flywheel recovers nothing.
+	w.platform.x = physics.platformMax() - 0.01;
+	w.platform.vx = c.maxSpeed;
+	w.direction = 0;
+	w.target = NaN;
+	sync(w);
+	const crashBattery = w.battery;
+	const crashHeat = w.heat;
+	physics.step(w, c.step);
+	assert.equal(w.platform.vx, 0);
+	near(w.battery, crashBattery);
+	assert.ok(w.heat > crashHeat);
+	balanced(w);
+	physics.createWorld();
+	near(physics.recoveryNow(), 0);
+});
+
 test('mass changes are booked so the energy ledger stays exact', () => {
 	const w = physics.createWorld();
 	earnFunds(w, 100);
 	earnFunds(w, 100);
+	earnFunds(w, 100);
 	w.platform.vx = 3;
 	sync(w);
-	assert.equal(equipment.install('chassis', w), true);
+	unlockResearch(w, 'alloys');
 	balanced(w);
-	// Heavy items draw the added kinetic energy from the heat ledger instead
-	// of appearing from nowhere.
-	assert.equal(equipment.install('coil', w), true);
+	buy(w, 'chassis');
+	balanced(w);
+	// Heavy items draw the added kinetic energy from the heat ledger instead of
+	// appearing from nowhere.
+	buy(w, 'coil');
 	balanced(w);
 	physics.createWorld();
 });

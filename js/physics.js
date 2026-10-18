@@ -6,8 +6,11 @@
 		width: 24, ceiling: 10, gravity, ballGravity: gravity * ballSpeedScale * ballSpeedScale,
 		ballMass: 1 / (ballSpeedScale * ballSpeedScale), ballSpeedScale, radius: 0.18,
 		platformWidth: 3.6, deck: 0.7, collectorFraction: 0.35,
-		platformMass: 60, force: 180 * 1.5, maxSpeed: 7,
+		// Drive response: two 1.5x increases over the original 180 N / 7 m/s
+		// tuning, each rounded down to a whole number.
+		platformMass: 60, force: 400, maxSpeed: 10,
 		retention: 0.9, pulse: 36, efficiency: 0.8, battery: 12000, step: 1 / 240,
+		recoveryEfficiency: 0.9,
 		ambientTemperature: 20, heatCapacity: 300,
 		convectiveConductance: 1.1, radiatorConvectionCoefficient: 8,
 		radiatingArea: 0.08, emissivity: 0.85,
@@ -20,25 +23,55 @@
 	function platformMin() { return config.platformWidth * 0.5 - config.pocketDepth; }
 	function platformMax() { return config.width - config.platformWidth * 0.5; }
 
-	// Installed equipment contributes explicit deltas on top of base tuning.
-	function retentionNow() {
-		const eq = root.SteamEquipment;
-		return config.retention + (eq ? eq.state.retentionBonus : 0);
+	// Installed equipment and completed research contribute explicit deltas on
+	// top of base tuning through the same named channels.
+	function installed(channel) {
+		const machinery = root.SteamEquipment;
+		const technology = root.SteamResearch;
+		return (machinery ? machinery.state[channel] || 0 : 0) + (technology ? technology.state[channel] || 0 : 0);
 	}
-	function pulseNow() {
-		const eq = root.SteamEquipment;
-		return config.pulse + (eq ? eq.state.pulseBonus : 0);
+	function retentionNow() { return config.retention + installed('retentionBonus'); }
+	function pulseNow() { return config.pulse + installed('pulseBonus'); }
+	function dryMass() { return config.platformMass + installed('massDelta'); }
+	function recoveryNow() { return installed('recoveryFraction'); }
+	function radiatorArea() { return installed('radiatorArea'); }
+	function conductanceNow() {
+		return config.convectiveConductance + installed('coolingBonus') + config.radiatorConvectionCoefficient * radiatorArea();
 	}
-	function dryMass() {
-		const eq = root.SteamEquipment;
-		return config.platformMass + (eq ? eq.state.massDelta : 0);
+
+	// Added or removed machinery couples to the moving platform: momentum is
+	// conserved for added mass and the kinetic-energy difference becomes heat, so
+	// purchases and research never break the energy ledger.
+	function applyMassChange(world, delta, oldMass) {
+		if (!world || !delta) return;
+		const velocity = world.platform.vx;
+		if (delta < 0) {
+			world.heat += 0.5 * -delta * velocity * velocity;
+			return;
+		}
+		const nextMass = oldMass + delta;
+		const before = 0.5 * oldMass * velocity * velocity;
+		world.platform.vx = oldMass * velocity / nextMass;
+		world.heat += before - 0.5 * nextMass * world.platform.vx * world.platform.vx;
+	}
+
+	// Braking energy first charges an installed flywheel; only the round-trip loss
+	// and the unrecovered remainder stay in the machinery as heat.
+	function dissipate(world, energy) {
+		if (energy <= 0) return;
+		const recovery = recoveryNow();
+		const returned = energy * recovery * config.recoveryEfficiency;
+		world.battery += returned;
+		world.heat += energy - returned;
 	}
 
 	function createWorld() {
 		if (root.SteamCeiling) root.SteamCeiling.reset(1);
 		if (root.SteamEquipment) root.SteamEquipment.reset();
+		if (root.SteamResearch) root.SteamResearch.reset();
 		const world = {
-			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, initialEnergy: 0,
+			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0,
+			initialEnergy: 0,
 			drive: false, forceSetting: 0.6, direction: 0, target: NaN,
 			platform: { x: 12, vx: 0 },
 			ball: { x: 12.8, y: 5, vx: 1.2 * config.ballSpeedScale, vy: 0, state: 'flying' },
@@ -61,9 +94,11 @@
 		return dryMass() + cargoMass() + (world.ball.state === 'held' ? config.ballMass : 0);
 	}
 
+	// Imported (bought) energy is subtracted and exported (sold, cooled) energy is
+	// added, so the balance stays exact across both directions of trade.
 	function totalEnergy(world) {
 		const ceilingEnergy = root.SteamCeiling ? root.SteamCeiling.state.energy : 0;
-		return world.battery + world.heat + world.cooledEnergy + world.fractureEnergy + ceilingEnergy + ballEnergy(world.ball) + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
+		return world.battery + world.heat + world.cooledEnergy + world.fractureEnergy - world.importedEnergy + ceilingEnergy + ballEnergy(world.ball) + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
 	}
 
 	function temperature(world) {
@@ -79,14 +114,13 @@
 		const temperatureC = temperature(world);
 		const delta = temperatureC - config.ambientTemperature;
 		if (delta <= 0 || world.heat <= 0) return 0;
-		const equipment = root.SteamEquipment;
-		const radiatorArea = equipment ? equipment.state.radiatorArea : 0;
-		const area = config.radiatingArea + radiatorArea;
+		const fins = radiatorArea();
+		const area = config.radiatingArea + fins;
 		const surfaceKelvin = temperatureC + 273.15;
 		const ambientKelvin = config.ambientTemperature + 273.15;
 		const surfaceSquared = surfaceKelvin * surfaceKelvin;
 		const ambientSquared = ambientKelvin * ambientKelvin;
-		const convection = (config.convectiveConductance + config.radiatorConvectionCoefficient * radiatorArea) * delta;
+		const convection = conductanceNow() * delta;
 		const radiation = config.emissivity * 5.670374419e-8 * area * (surfaceSquared * surfaceSquared - ambientSquared * ambientSquared);
 		return convection + radiation;
 	}
@@ -175,20 +209,19 @@
 			const available = spend(world, after - before);
 			velocity = Math.sign(velocity) * Math.sqrt(2 * (before + available) / mass);
 		} else {
-			world.heat += before - after;
+			dissipate(world, before - after);
 		}
 		platform.vx = velocity;
 		platform.x += (oldVelocity + velocity) * 0.5 * dt;
 		const minX = platformMin();
 		const maxX = platformMax();
 		if (platform.x >= minX && platform.x <= maxX) return;
+		// A wall stop is a crash, not braking: all of it becomes heat. The sale
+		// itself is handled once per step by step(), which also covers fragments
+		// caught during the same step.
 		platform.x = Math.max(minX, Math.min(maxX, platform.x));
 		world.heat += 0.5 * mass * velocity * velocity;
 		platform.vx = 0;
-		if (root.SteamCeiling) {
-			world.lastSale = root.SteamCeiling.sellCargo(platform.vx, world.time);
-			if (world.lastSale > 0) world.sales++;
-		}
 	}
 
 	function downwardTime(ball, height) {
@@ -340,7 +373,8 @@
 
 	const api = {
 		config, createWorld, step, launch, canLaunch, ballEnergy, totalEnergy, temperature,
-		thermalFactor, coolingPower, platformMass, platformMin, platformMax, dryMass
+		thermalFactor, coolingPower, platformMass, platformMin, platformMax, dryMass,
+		retentionNow, pulseNow, recoveryNow, conductanceNow, radiatorArea, applyMassChange
 	};
 	root.SteamPhysics = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;

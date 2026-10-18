@@ -20,6 +20,23 @@ async function main() {
 		page.on('pageerror', error => errors.push(error.message));
 		await page.goto(process.env.TEST_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href);
 		await page.waitForFunction(() => document.getElementById('clock').textContent !== '0.0 s');
+		// Telemetry is a strip inside the chamber panel, spanning the canvas width.
+		assert.deepEqual(await page.evaluate(() => {
+			const telemetry = document.querySelector('.telemetry');
+			const canvas = document.getElementById('c');
+			return [
+				telemetry.parentElement === document.querySelector('.mine-panel'),
+				Boolean(telemetry.compareDocumentPosition(canvas) & Node.DOCUMENT_POSITION_FOLLOWING),
+				Math.abs(telemetry.getBoundingClientRect().width - canvas.getBoundingClientRect().width) < 1,
+				getComputedStyle(document.querySelector('.telemetry strong')).fontSize
+			];
+		}), [true, true, true, '17px']);
+		assert.equal(await page.locator('#research-rows .upgrade-row').count(), 6);
+		assert.equal(await page.locator('#equipment-rows .upgrade-row').count(), 5);
+		assert.equal(await page.locator('#research-progress').textContent(), '0 / 6');
+		assert.equal(await page.locator('#platform-spec').evaluate(node => node.children.length), 14);
+		assert.equal(await page.locator('#refuel').isDisabled(), true, 'a full reserve needs no recharge');
+		assert.equal(await page.locator('#prediction-status').isHidden(), true, 'the overlay waits for its research');
 		assert.match(await page.locator('#temperature').textContent(), /°C/);
 		assert.match(await page.locator('#heat').textContent(), /J/);
 		assert.match(await page.locator('#cooled').textContent(), /J/);
@@ -58,6 +75,11 @@ async function main() {
 		assert.equal(await page.locator('#layer-label').textContent(), '2 / 16');
 		assert.match(await page.locator('#mineral-strength').textContent(), /J/);
 		assert.equal(await page.locator('#transaction-count').textContent(), '(0)');
+		// Locked upgrades explain themselves instead of failing silently.
+		await page.locator('#research-rows .upgrade-row').last().locator('button').click({ force: true });
+		assert.match(await page.locator('#research-status').textContent(), /stays locked until/);
+		await page.locator('#equipment-rows .upgrade-row').first().locator('button').click({ force: true });
+		assert.match(await page.locator('#equipment-status').textContent(), /needs the .* research first/);
 		await page.locator('#c').click({ position: { x: 500, y: 50 } });
 		assert.notEqual(await page.locator('#column-label').textContent(), '10 / 192');
 		assert.notEqual(await page.locator('#layer-label').textContent(), '2 / 16');
@@ -70,7 +92,7 @@ async function main() {
 		await page.waitForTimeout(100);
 		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
 		assert.deepEqual(errors, []);
-		console.log('PASS: startup, rendering, drive toggle (Space/Q without pressing GUI controls), keyboard force, pause/reset, shape selector, inspector select, target travel, ledger, narrow layout; no page errors.');
+		console.log('PASS: startup, rendering, telemetry strip above the canvas, drive toggle (Space/Q without pressing GUI controls), keyboard force, pause/reset, shape selector, inspector select, target travel, research/equipment gating, ledger, narrow layout; no page errors.');
 	} finally {
 		await browser.close();
 	}

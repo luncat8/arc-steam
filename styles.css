@@ -45,36 +45,48 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 13px 0; 
 .control-row button { text-align: center; user-select: none; }
 .experiment { border-top: 1px solid var(--line); padding: 16px 19px; }
 .experiment p { font-size: 11px; margin-bottom: 0; }
-.equipment-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
-.equipment-row:last-of-type { border-bottom: 0; }
-.equipment-row b { font-size: 11px; letter-spacing: 0.6px; }
-.equipment-row small { grid-column: 1 / -1; font-size: 10px; line-height: 1.55; color: #9fb0b2; }
-.equipment-row button { padding: 7px 12px; font-size: 10px; letter-spacing: 0.8px; }
-.equipment-row .installed { padding: 7px 12px; font-size: 10px; letter-spacing: 0.8px; color: var(--accent); border: 1px dashed var(--accent); border-radius: 4px; }
-.equipment .hint { margin-bottom: 10px; }
-.telemetry { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--line); margin-top: 18px; border-radius: 6px; overflow: hidden; background: var(--line); }
-.telemetry article { padding: 16px; background: #0c1215; }
+/* Equipment and research rows share one upgrade-row layout. */
+.upgrade-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.upgrade-row:last-of-type { border-bottom: 0; }
+.upgrade-row b { font-size: 11px; letter-spacing: 0.6px; }
+.upgrade-row small { grid-column: 1 / -1; font-size: 10px; line-height: 1.55; color: #9fb0b2; }
+.upgrade-row .requirement { color: #7d9094; font: 9px ui-monospace, monospace; letter-spacing: 0.7px; line-height: 1.5; }
+.upgrade-row button { padding: 7px 12px; font-size: 10px; letter-spacing: 0.8px; }
+.upgrade-row[data-state="locked"] { opacity: 0.55; }
+.upgrade-row[data-state="installed"] b, .upgrade-row[data-state="researched"] b { color: var(--accent); }
+.equipment .hint, .tech-panel .hint { margin-bottom: 10px; }
+.spec { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; margin: 0 0 12px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 4px; background: #0c1215; }
+.spec dt { font-size: 10px; color: var(--muted); }
+.spec dd { margin: 0; text-align: right; font: 11px ui-monospace, monospace; color: #cfe0da; }
+#research-progress { color: var(--accent); }
+#prediction-status { color: #9fd3b0; }
+#prediction-status[hidden] { display: none; }
+/* Telemetry is a strip inside the chamber panel, so it spans exactly the canvas width. */
+.telemetry { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; border-bottom: 1px solid var(--line); background: var(--line); }
+.telemetry article { min-width: 0; padding: 11px 16px 12px; background: #0c1215; }
 .telemetry span { font: 9px ui-monospace, monospace; color: #94a8ac; letter-spacing: 1px; }
-.telemetry strong { display: block; font: 25px ui-monospace, monospace; margin: 13px 0 8px; }
+.telemetry strong { display: block; font: 17px ui-monospace, monospace; margin: 7px 0 5px; }
 .telemetry small { font-size: 10px; color: #71868a; }
 footer { display: flex; justify-content: space-between; align-items: center; padding-top: 18px; color: #71868a; font-size: 10px; gap: 12px; }
 footer > div { display: flex; gap: 16px; align-items: center; }
 select { padding: 6px; margin-left: 8px; font-size: 11px; }
-@media (max-width: 1100px) { .telemetry { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-@media (max-width: 950px) { main { padding: 25px 20px; } header { padding: 0 20px; }.workspace { grid-template-columns: minmax(0, 1fr) 250px; }.canvas-wrap { height: 480px; }.telemetry article { padding: 14px; }.telemetry strong { font-size: 20px; } }
+@media (max-width: 950px) { main { padding: 25px 20px; } header { padding: 0 20px; }.workspace { grid-template-columns: minmax(0, 1fr) 250px; }.canvas-wrap { height: 480px; }.telemetry article { padding: 10px 12px; }.telemetry strong { font-size: 13px; } }
 @media (max-width: 700px) { header { height: 70px; }.badge { display: none; }.heading { align-items: start; gap: 16px; }.workspace { grid-template-columns: 1fr; }.canvas-wrap { height: 340px; }aside { border-left: 0; border-top: 1px solid var(--line); }.telemetry { grid-template-columns: 1fr 1fr; }footer { flex-wrap: wrap; }.mine-footer { gap: 12px; }.mine-footer label, .mine-footer label:first-of-type { width: 100%; margin-left: 0; }.canvas-label { font-size: 8px; } }
-.mining { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 18px; margin-top: 18px; }
+.mining { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.35fr); gap: 18px; margin-top: 18px; }
 .mining article { min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: #101a1e; }
 .mining-body { padding: 18px; }
 #mineral-strength { display: block; font: 14px ui-monospace, monospace; line-height: 1.6; }
 progress { width: 100%; height: 8px; accent-color: #e6b66e; margin-top: 12px; }
 #mineral-composition, #mineral-price { font-size: 12px; }
 .mass-readouts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 0; }
-.mass-readouts dt, .cargo-summary span { font-size: 11px; color: var(--muted); }
+.mass-readouts dt, .cargo-summary span, .refuel span { font-size: 11px; color: var(--muted); }
 .mass-readouts dd { margin: 5px 0 0; font: 15px ui-monospace, monospace; }
 .cargo-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.cargo-summary strong { display: block; font: 20px ui-monospace, monospace; margin: 8px 0; }
-.cargo-summary small { font-size: 10px; color: var(--muted); }
+.cargo-summary strong, .refuel strong { display: block; font: 20px ui-monospace, monospace; margin: 8px 0; }
+.cargo-summary small, .refuel small { font-size: 10px; color: var(--muted); }
+.refuel { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
+.refuel button { flex: none; font-size: 11px; }
+#refuel-cost { color: #e6b66e; }
 .table-wrap { overflow-x: auto; margin: 18px 0; }
 table { border-collapse: collapse; width: 100%; font: 11px ui-monospace, monospace; white-space: nowrap; }
 caption { text-align: left; color: var(--muted); font-size: 10px; padding-bottom: 10px; white-space: normal; }
@@ -86,5 +98,5 @@ thead { color: var(--muted); }
 details { font-size: 11px; color: var(--muted); line-height: 1.8; }
 summary { cursor: pointer; }
 #ledger { padding-left: 25px; }
-@media (max-width: 950px) { .mining { grid-template-columns: 1fr; } }
-@media (max-width: 400px) { .cargo-summary strong { font-size: 16px; } .mining-body { padding: 12px; } }
+@media (max-width: 1150px) { .mining { grid-template-columns: 1fr; } }
+@media (max-width: 400px) { .cargo-summary strong, .refuel strong { font-size: 16px; }.refuel { flex-wrap: wrap; }.mining-body { padding: 12px; } }

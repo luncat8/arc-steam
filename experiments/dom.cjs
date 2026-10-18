@@ -1,0 +1,147 @@
+'use strict';
+// Minimal DOM shim. No browser or Playwright install is available here, so the
+// interface wiring (ids, handlers, canvas calls, panel states) is smoke-tested
+// against this instead. It implements only what js/main.js touches and records
+// canvas commands rather than rasterising them.
+const fs = require('node:fs');
+const path = require('node:path');
+
+const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+
+class Element {
+	constructor(tagName, id) {
+		this.tagName = tagName.toUpperCase();
+		this.id = id || '';
+		this.children = [];
+		this.dataset = {};
+		this.attributes = {};
+		this.listeners = {};
+		this.textContent = '';
+		this.hidden = false;
+		this.disabled = false;
+		this.type = '';
+		this.raw = initialValue(id);
+		this.textNode = { textContent: '' };
+	}
+	// Form controls stringify assignments, exactly like the DOM does.
+	get value() { return this.raw; }
+	set value(next) { this.raw = next === null || next === undefined ? '' : String(next); }
+	get firstChild() { return this.textNode; }
+	appendChild(child) { this.children.push(child); return child; }
+	append(...children) { for (const child of children) this.appendChild(child); }
+	replaceChildren(...children) { this.children = children; }
+	setAttribute(name, value) { this.attributes[name] = String(value); }
+	getAttribute(name) { return name in this.attributes ? this.attributes[name] : null; }
+	addEventListener(type, handler) {
+		if (!this.listeners[type]) this.listeners[type] = [];
+		this.listeners[type].push(handler);
+	}
+	dispatch(type, extra) {
+		const event = Object.assign({ type, target: this, preventDefault() {}, stopPropagation() {} }, extra);
+		for (const handler of this.listeners[type] || []) handler.call(this, event);
+		return event;
+	}
+	closest() { return null; }
+	focus() { document.activeElement = this; }
+	blur() { document.activeElement = document.body; }
+	setPointerCapture() {}
+	getBoundingClientRect() { return { left: 0, top: 0, width: 1000, height: 420 }; }
+	getContext() { return this.context; }
+}
+
+// Selected options live in markup, so a select reports the value the browser
+// would report before any script runs.
+function initialValue(id) {
+	if (!id) return '';
+	const tag = html.match(new RegExp('<[^>]*\\bid="' + id + '"[^>]*>'));
+	if (!tag) return '';
+	const attribute = tag[0].match(/\bvalue="([^"]*)"/);
+	if (attribute) return attribute[1];
+	if (!tag[0].startsWith('<select')) return '';
+	const body = html.slice(html.indexOf(tag[0]) + tag[0].length, html.indexOf('</select>', html.indexOf(tag[0])));
+	const selected = body.match(/<option value="([^"]*)"[^>]*selected/) || body.match(/<option value="([^"]*)"/);
+	return selected ? selected[1] : '';
+}
+
+const contextCalls = [];
+function createContext() {
+	const context = { calls: contextCalls };
+	const commands = ['clearRect', 'save', 'restore', 'translate', 'scale', 'setTransform', 'beginPath', 'moveTo',
+		'lineTo', 'stroke', 'fill', 'fillRect', 'strokeRect', 'arc', 'closePath', 'setLineDash', 'fillText', 'rotate'];
+	for (const command of commands) context[command] = function () { contextCalls.push(command); };
+	return context;
+}
+
+const elements = new Map();
+for (const match of html.matchAll(/<([a-z]+)[^>]*\bid="([^"]+)"/g)) {
+	const element = new Element(match[1], match[2]);
+	if (match[1] === 'canvas') element.context = createContext();
+	elements.set(match[2], element);
+}
+
+const listeners = {};
+const document = {
+	body: new Element('body'),
+	activeElement: null,
+	hidden: false,
+	elements,
+	getElementById(id) { return elements.get(id) || null; },
+	createElement(tagName) { return new Element(tagName); },
+	addEventListener(type, handler) {
+		if (!listeners[type]) listeners[type] = [];
+		listeners[type].push(handler);
+	},
+	dispatch(type, extra) {
+		const event = Object.assign({ type, target: document.body, preventDefault() {}, stopPropagation() {} }, extra);
+		for (const handler of listeners[type] || []) handler(event);
+		return event;
+	}
+};
+document.body.addEventListener = document.addEventListener;
+document.body.dispatch = document.dispatch;
+
+let frameCallback = null;
+let resizeCallback = null;
+
+function install() {
+	globalThis.document = document;
+	globalThis.window = globalThis;
+	globalThis.devicePixelRatio = 2;
+	globalThis.innerWidth = 1440;
+	globalThis.innerHeight = 1000;
+	globalThis.addEventListener = document.addEventListener;
+	globalThis.requestAnimationFrame = function (callback) { frameCallback = callback; return 1; };
+	globalThis.ResizeObserver = class {
+		constructor(callback) { resizeCallback = callback; }
+		observe() {}
+	};
+	document.activeElement = document.body;
+	return api;
+}
+
+const api = {
+	document,
+	elements,
+	contextCalls,
+	install,
+	element(id) {
+		const element = elements.get(id);
+		if (!element) throw new Error('missing #' + id);
+		return element;
+	},
+	resize() { if (resizeCallback) resizeCallback(); },
+	// Frames run only when asked, so a test controls simulated time exactly.
+	frame(now) {
+		if (!frameCallback) throw new Error('no frame scheduled');
+		const callback = frameCallback;
+		frameCallback = null;
+		callback(now);
+	},
+	frames(count, from = 0, step = 1000 / 60) {
+		for (let i = 0; i < count; i++) api.frame(from + i * step);
+	},
+	key(code, extra) { return document.dispatch('keydown', Object.assign({ code, repeat: false }, extra)); },
+	keyUp(code) { return document.dispatch('keyup', { code }); }
+};
+
+module.exports = api;
