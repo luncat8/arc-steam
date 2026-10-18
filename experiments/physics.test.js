@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
+const ceiling = require('../js/ceiling.js');
 const physics = require('../js/physics.js');
 const c = physics.config;
 
@@ -11,6 +12,20 @@ function balanced(world) { near(physics.totalEnergy(world), world.initialEnergy,
 function sync(world) { world.initialEnergy = physics.totalEnergy(world); }
 function run(world, seconds) {
 	for (let i = 0; i < Math.round(seconds / c.step); i++) physics.step(world, c.step);
+}
+function prepareCargo(world, count, fragmentVx = 0) {
+	for (let x = 1; x < 23 && ceiling.state().extractedCells() < count; x += 2) ceiling.damage(x, 8.2, 10000);
+	const state = ceiling.state();
+	let prepared = 0;
+	for (let i = 0; i < state.active.length && prepared < count; i++) {
+		if (!state.active[i]) continue;
+		state.debrisX[i] = world.platform.x - 1;
+		state.debrisY[i] = 0.701;
+		state.debrisVx[i] = fragmentVx;
+		state.debrisVy[i] = -1;
+		prepared++;
+	}
+	return prepared;
 }
 
 test('analytic free fall is exact across fixed steps', () => {
@@ -123,6 +138,37 @@ test('moving platform exchanges horizontal momentum with a bouncing ball', () =>
 	physics.step(w, c.step);
 	assert.notEqual(w.ball.vx, 3);
 	assert.notEqual(w.platform.vx, -2);
+	balanced(w);
+});
+
+test('caught cargo transfers momentum, doubles full-load mass, and remains energy-accounted', () => {
+	const w = physics.createWorld();
+	assert.equal(prepareCargo(w, 100, 2), 100);
+	sync(w);
+	physics.step(w, c.step);
+	assert.equal(ceiling.state().cargoCells(), 100);
+	near(ceiling.state().cargoMass(), c.platformMass);
+	assert.ok(w.platform.vx > 0);
+	balanced(w);
+	w.platform.vx = 0;
+	w.direction = 1;
+	sync(w);
+	run(w, 0.25);
+	near(w.platform.vx, c.force * w.forceSetting / (c.platformMass * 2) * 0.25);
+	balanced(w);
+});
+
+test('touching either sell wall empties cargo without losing mass-energy accounting', () => {
+	const w = physics.createWorld();
+	assert.equal(prepareCargo(w, 12), 12);
+	physics.step(w, c.step);
+	assert.equal(ceiling.state().cargoCells(), 12);
+	w.platform.x = c.platformWidth * 0.5;
+	sync(w);
+	physics.step(w, c.step);
+	assert.equal(ceiling.state().cargoCells(), 0);
+	assert.equal(w.sales, 1);
+	assert.ok(ceiling.state().funds() > 0);
 	balanced(w);
 });
 

@@ -14,7 +14,7 @@
 			drive: false, forceSetting: 0.6, direction: 0, target: NaN,
 			platform: { x: 12, vx: 0 },
 			ball: { x: 12.8, y: 5, vx: 1.2, vy: 0, state: 'flying' },
-			bounces: 0, pushes: 0, lastPush: 0, groundings: 0
+			bounces: 0, pushes: 0, lastPush: 0, groundings: 0, sales: 0, lastSale: 0
 		};
 		world.initialEnergy = totalEnergy(world);
 		return world;
@@ -25,12 +25,17 @@
 		return config.mass * (0.5 * (ball.vx * ball.vx + ball.vy * ball.vy) + config.gravity * (ball.y - config.radius));
 	}
 
+	function cargoMass() {
+		return root.SteamCeiling ? root.SteamCeiling.cargoMass() : 0;
+	}
+
 	function platformMass(world) {
-		return config.platformMass + (world.ball.state === 'held' ? config.mass : 0);
+		return config.platformMass + cargoMass() + (world.ball.state === 'held' ? config.mass : 0);
 	}
 
 	function totalEnergy(world) {
-		return world.battery + world.heat + world.fractureEnergy + ballEnergy(world.ball) + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
+		const ceilingEnergy = root.SteamCeiling ? root.SteamCeiling.energy() : 0;
+		return world.battery + world.heat + world.fractureEnergy + ceilingEnergy + ballEnergy(world.ball) + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
 	}
 
 	function spend(world, useful) {
@@ -44,8 +49,9 @@
 	function capture(world) {
 		const ball = world.ball;
 		const platform = world.platform;
-		const before = ballEnergy(ball) + 0.5 * config.platformMass * platform.vx * platform.vx;
-		platform.vx = (config.platformMass * platform.vx + config.mass * ball.vx) / (config.platformMass + config.mass);
+		const carriedMass = config.platformMass + cargoMass();
+		const before = ballEnergy(ball) + 0.5 * carriedMass * platform.vx * platform.vx;
+		platform.vx = (carriedMass * platform.vx + config.mass * ball.vx) / (carriedMass + config.mass);
 		ball.state = 'held';
 		ball.vx = 0;
 		ball.vy = 0;
@@ -103,6 +109,10 @@
 		platform.x = Math.max(half, Math.min(config.width - half, platform.x));
 		world.heat += 0.5 * mass * velocity * velocity;
 		platform.vx = 0;
+		if (root.SteamCeiling) {
+			world.lastSale = root.SteamCeiling.sellCargo(platform.vx);
+			if (world.lastSale > 0) world.sales++;
+		}
 	}
 
 	function downwardTime(ball, height) {
@@ -112,13 +122,16 @@
 		return time >= -1e-10 ? Math.max(0, time) : Infinity;
 	}
 
-	function passiveVertical(world, fracture) {
+	function passiveImpact(world, nx, ny, fracture) {
 		const ball = world.ball;
-		const energy = 0.5 * config.mass * ball.vy * ball.vy;
-		const lost = energy * (1 - config.retention);
-		world.fractureEnergy += fracture || 0;
-		world.heat += lost - (fracture || 0);
-		ball.vy = -ball.vy * Math.sqrt(config.retention);
+		const normalVelocity = ball.vx * nx + ball.vy * ny;
+		const lost = 0.5 * config.mass * normalVelocity * normalVelocity * (1 - config.retention);
+		const spentOnRock = Math.min(lost, fracture || 0);
+		const impulseVelocity = (1 + Math.sqrt(config.retention)) * normalVelocity;
+		world.fractureEnergy += spentOnRock;
+		world.heat += lost - spentOnRock;
+		ball.vx -= impulseVelocity * nx;
+		ball.vy -= impulseVelocity * ny;
 	}
 
 	function advanceBall(world, dt, oldPlatformX) {
@@ -136,6 +149,8 @@
 		for (let event = 0; event < 12 && remaining > 1e-10; event++) {
 			let time = remaining;
 			let type = 0;
+			let rockNx = 0;
+			let rockNy = 0;
 			const wall = ball.vx > 0 ? config.width - config.radius : config.radius;
 			const wallTime = ball.vx ? (wall - ball.x) / ball.vx : Infinity;
 			if (wallTime >= 0 && wallTime <= time) { time = wallTime; type = 1; }
@@ -144,6 +159,15 @@
 			const topDiscriminant = ball.vy * ball.vy - 2 * config.gravity * (config.ceiling - config.radius - ball.y);
 			const topTime = ball.vy > 0 && topDiscriminant >= 0 ? (ball.vy - Math.sqrt(topDiscriminant)) / config.gravity : Infinity;
 			if (topTime >= 0 && topTime <= time) { time = topTime; type = 3; }
+			if (root.SteamCeiling) {
+				const rockHit = root.SteamCeiling.trace(ball.x, ball.y, ball.vx, ball.vy, remaining, config.radius);
+				if (rockHit.time <= time) {
+					time = rockHit.time;
+					type = 5;
+					rockNx = rockHit.nx;
+					rockNy = rockHit.ny;
+				}
+			}
 			const deckTime = ball.y >= config.deck + config.radius - 1e-10 ? downwardTime(ball, config.deck + config.radius) : Infinity;
 			const platformX = oldPlatformX + (world.platform.x - oldPlatformX) * (elapsed + deckTime) / dt;
 			const impactX = ball.x + ball.vx * deckTime;
@@ -165,22 +189,30 @@
 				return;
 			}
 			if (type === 3) {
-				const incoming = 0.5 * config.mass * ball.vy * ball.vy;
-				const fracture = root.SteamCeiling ? root.SteamCeiling.damage(ball.x, incoming * (1 - config.retention)) : 0;
-				passiveVertical(world, fracture);
+				passiveImpact(world, 0, -1, 0);
+				continue;
+			}
+			if (type === 5) {
+				const normalVelocity = ball.vx * rockNx + ball.vy * rockNy;
+				const damageBudget = 0.5 * config.mass * normalVelocity * normalVelocity * (1 - config.retention);
+				const contactX = ball.x - rockNx * config.radius;
+				const contactY = ball.y - rockNy * config.radius;
+				const fracture = root.SteamCeiling.damage(contactX, contactY, damageBudget);
+				passiveImpact(world, rockNx, rockNy, fracture);
 				continue;
 			}
 			const collectorEdge = platformX - config.platformWidth * 0.5 + config.platformWidth * config.collectorFraction;
 			if (ball.x < collectorEdge) { capture(world); return; }
+			const carriedMass = platformMass(world);
 			const relativeVx = ball.vx - (world.platform.x - oldPlatformX) / dt;
 			const normalImpulse = config.mass * Math.abs(ball.vy) * (1 + Math.sqrt(config.retention));
-			const frictionImpulse = Math.max(-normalImpulse * 0.35, Math.min(normalImpulse * 0.35, -relativeVx / (1 / config.mass + 1 / config.platformMass)));
-			const beforeTangential = 0.5 * config.mass * ball.vx * ball.vx + 0.5 * config.platformMass * world.platform.vx * world.platform.vx;
+			const frictionImpulse = Math.max(-normalImpulse * 0.35, Math.min(normalImpulse * 0.35, -relativeVx / (1 / config.mass + 1 / carriedMass)));
+			const beforeTangential = 0.5 * config.mass * ball.vx * ball.vx + 0.5 * carriedMass * world.platform.vx * world.platform.vx;
 			ball.vx += frictionImpulse / config.mass;
-			world.platform.vx -= frictionImpulse / config.platformMass;
-			const afterTangential = 0.5 * config.mass * ball.vx * ball.vx + 0.5 * config.platformMass * world.platform.vx * world.platform.vx;
+			world.platform.vx -= frictionImpulse / carriedMass;
+			const afterTangential = 0.5 * config.mass * ball.vx * ball.vx + 0.5 * carriedMass * world.platform.vx * world.platform.vx;
 			world.heat += Math.max(0, beforeTangential - afterTangential);
-			passiveVertical(world);
+			passiveImpact(world, 0, 1, 0);
 			world.bounces++;
 			world.lastPush = 0;
 			if (world.drive) {
@@ -196,7 +228,15 @@
 		const oldX = world.platform.x;
 		movePlatform(world, dt);
 		advanceBall(world, dt, oldX);
-		if (root.SteamCeiling) root.SteamCeiling.step(world, dt);
+		if (root.SteamCeiling) {
+			const heldMass = world.ball.state === 'held' ? config.mass : 0;
+			root.SteamCeiling.step(world, dt, config.platformMass + heldMass);
+			const half = config.platformWidth * 0.5;
+			if (world.platform.x <= half + 1e-9 || world.platform.x >= config.width - half - 1e-9) {
+				const sale = root.SteamCeiling.sellCargo(world.platform.vx);
+				if (sale > 0) { world.lastSale = sale; world.sales++; }
+			}
+		}
 		world.time += dt;
 	}
 

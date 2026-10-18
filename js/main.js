@@ -4,7 +4,7 @@
 	const config = physics.config;
 	const canvas = document.getElementById('c');
 	const context = canvas.getContext('2d');
-	const ids = ['clock', 'drive', 'launch', 'status', 'force', 'force-value', 'battery', 'ball-energy', 'heat', 'error', 'motion', 'pause', 'speed'];
+	const ids = ['clock', 'drive', 'launch', 'status', 'force', 'force-value', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'error', 'motion', 'pause', 'speed', 'view'];
 	const ui = {};
 	for (const id of ids) ui[id] = document.getElementById(id);
 	let world = physics.createWorld();
@@ -47,7 +47,7 @@
 		context.fillStyle = '#29383d';
 		context.fillRect(0, config.ceiling, config.width, 0.35);
 		context.fillRect(0, -0.35, config.width, 0.35);
-		if (window.SteamCeiling) window.SteamCeiling.draw(context, scale);
+		if (window.SteamCeiling) window.SteamCeiling.draw(context, ui.view.value);
 		context.strokeStyle = '#657578';
 		context.beginPath(); context.moveTo(0, 0); context.lineTo(config.width, 0); context.stroke();
 		if (Number.isFinite(world.target)) {
@@ -72,11 +72,29 @@
 		context.strokeStyle = '#a9c7bc';
 		context.beginPath(); context.arc(ball.x, ballY, config.radius + 0.13, 0, Math.PI * 2); context.stroke();
 		context.restore();
+		drawSellLabel(offsetX + 8, floorY - scale * 1.1, -Math.PI * 0.5);
+		drawSellLabel(offsetX + config.width * scale - 8, floorY - scale * 1.1, Math.PI * 0.5);
+	}
+
+	function drawSellLabel(x, y, rotation) {
+		context.save();
+		context.translate(x, y);
+		context.rotate(rotation);
+		context.fillStyle = '#e6b66e';
+		context.font = '700 9px ui-monospace, monospace';
+		context.textAlign = 'center';
+		context.fillText('SELL', 0, 0);
+		context.restore();
 	}
 
 	function readout() {
 		ui.clock.textContent = world.time.toFixed(1) + ' s';
 		ui.battery.textContent = (world.battery / 1000).toFixed(2) + ' kJ';
+		const ceiling = window.SteamCeiling.state();
+		const heldMass = world.ball.state === 'held' ? config.mass : 0;
+		ui.cargo.textContent = ceiling.cargoCells() + ' / ' + ceiling.storageLimit;
+		ui['platform-mass'].textContent = (config.platformMass + ceiling.cargoMass() + heldMass).toFixed(1) + ' kg';
+		ui.funds.textContent = ceiling.funds().toFixed(1) + ' cr';
 		ui['ball-energy'].textContent = physics.ballEnergy(world.ball).toFixed(1) + ' J';
 		ui.heat.textContent = world.heat.toFixed(1) + ' J';
 		ui.error.textContent = (physics.totalEnergy(world) - world.initialEnergy).toFixed(6) + ' J';
