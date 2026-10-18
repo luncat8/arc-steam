@@ -13,9 +13,9 @@ function balanced(world) { near(physics.totalEnergy(world), world.initialEnergy,
 function sync(world) { world.initialEnergy = physics.totalEnergy(world); }
 
 function earnFunds(world, cells) {
-	const target = ceiling.state().extractedCells() + cells;
-	for (let x = 1; x < 23 && ceiling.state().extractedCells() < target; x += 2) ceiling.damage(x, 8.2, 20);
-	const state = ceiling.state();
+	const target = ceiling.state.extractedCells + cells;
+	for (let x = 1; x < 23 && ceiling.state.extractedCells < target; x += 2) ceiling.damage(x, 8.2, 20);
+	const state = ceiling.state;
 	let prepared = 0;
 	for (let i = 0; i < state.active.length && prepared < cells; i++) {
 		if (!state.active[i]) continue;
@@ -31,9 +31,9 @@ function earnFunds(world, cells) {
 	// measurements run with empty storage and no falling debris.
 	for (let i = 0; i < 240 * 3; i++) physics.step(world, c.step);
 	ceiling.sellCargo(0, world.time);
-	assert.equal(ceiling.state().airborneCells(), 0, 'debris settled');
-	assert.equal(ceiling.state().cargoCells(), 0, 'storage empty');
-	return ceiling.state().funds();
+	assert.equal(ceiling.state.airborneCells, 0, 'debris settled');
+	assert.equal(ceiling.state.cargoCells, 0, 'storage empty');
+	return ceiling.state.funds;
 }
 
 test('purchase requires funds, debits once, and appends a frozen ledger entry', () => {
@@ -42,11 +42,11 @@ test('purchase requires funds, debits once, and appends a frozen ledger entry', 
 	const earned = earnFunds(w, 60);
 	assert.ok(earned > 250);
 	assert.equal(equipment.install('pad', w), true);
-	near(ceiling.state().funds(), earned - 250);
+	near(ceiling.state.funds, earned - 250);
 	assert.ok(equipment.isInstalled('pad'));
 	assert.equal(equipment.install('pad', w), false, 'no duplicate charge');
-	near(ceiling.state().funds(), earned - 250);
-	const ledger = ceiling.state().ledger;
+	near(ceiling.state.funds, earned - 250);
+	const ledger = ceiling.state.ledger;
 	const buy = ledger[ledger.length - 1];
 	assert.equal(buy.type, 'buy');
 	assert.equal(buy.label, 'Rebound pad');
@@ -60,7 +60,7 @@ test('installed equipment changes retention, pulse and dry mass in the simulatio
 	const w = physics.createWorld();
 	earnFunds(w, 100);
 	earnFunds(w, 100);
-	assert.ok(ceiling.state().funds() >= 1000, 'two full loads fund the first tier');
+	assert.ok(ceiling.state.funds >= 1000, 'two full loads fund the first tier');
 	// Pad: passive bounce keeps 93% instead of 90% of normal kinetic energy.
 	const beforePad = physics.dryMass();
 	assert.equal(equipment.install('pad', w), true);
@@ -69,7 +69,7 @@ test('installed equipment changes retention, pulse and dry mass in the simulatio
 	w.ball.x = 12.8; w.ball.vx = 0; w.ball.y = c.deck + c.radius; w.ball.vy = -5;
 	sync(w);
 	physics.step(w, c.step);
-	near(w.ball.vy + c.gravity * c.step, 5 * Math.sqrt(0.93), 1e-6);
+	near(w.ball.vy + c.ballGravity * c.step, 5 * Math.sqrt(0.93), 1e-6);
 	balanced(w);
 	// Coil: launch delivers the larger pulse from the reserve.
 	const beforeCoil = physics.dryMass();
@@ -90,11 +90,31 @@ test('installed equipment changes retention, pulse and dry mass in the simulatio
 	w.direction = 1;
 	sync(w);
 	for (let i = 0; i < Math.round(0.25 / c.step); i++) physics.step(w, c.step);
-	near(w.platform.vx, c.force * w.forceSetting / (physics.dryMass() + c.mass) * 0.25, 1e-6);
+	near(w.platform.vx, c.force * w.forceSetting / (physics.dryMass() + c.ballMass) * 0.25, 1e-6);
 	balanced(w);
 	physics.createWorld();
 	near(physics.dryMass(), c.platformMass, 1e-9);
 	assert.equal(equipment.isInstalled('pad'), false, 'world reset clears equipment');
+});
+
+test('radiator installation increases real convective and radiative cooling', () => {
+	const w = physics.createWorld();
+	earnFunds(w, 100);
+	earnFunds(w, 100);
+	assert.ok(ceiling.state.funds >= 650);
+	w.heat = c.heatCapacity * 100;
+	sync(w);
+	const baseCooling = physics.coolingPower(w);
+	const baseMass = physics.dryMass();
+	assert.equal(equipment.install('radiator', w), true);
+	near(equipment.state.radiatorArea, 0.35);
+	near(physics.dryMass(), baseMass + 8);
+	sync(w);
+	assert.ok(physics.coolingPower(w) > baseCooling);
+	physics.step(w, c.step);
+	assert.ok(w.cooledEnergy > 0);
+	balanced(w);
+	physics.createWorld();
 });
 
 test('mass changes are booked so the energy ledger stays exact', () => {

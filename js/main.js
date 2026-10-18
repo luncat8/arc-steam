@@ -4,7 +4,7 @@
 	const config = physics.config;
 	const canvas = document.getElementById('c');
 	const context = canvas.getContext('2d');
-	const ids = ['clock', 'drive', 'launch', 'status', 'force', 'force-value', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'error', 'motion', 'pause', 'speed', 'shape', 'view',
+	const ids = ['clock', 'drive', 'launch', 'status', 'force', 'force-value', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'view',
 		'mineral-column', 'column-label', 'mineral-layer', 'layer-label', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
 		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger', 'equipment-rows', 'equipment-status'];
@@ -15,7 +15,7 @@
 	let renderedSales = -1;
 	const inventoryCells = [];
 	(function buildInventory() {
-		const ceiling = window.SteamCeiling.state();
+		const ceiling = window.SteamCeiling.state;
 		for (let i = 0; i < ceiling.mineralNames.length; i++) {
 			const row = document.createElement('tr');
 			const name = document.createElement('th');
@@ -37,7 +37,7 @@
 	let world = physics.createWorld();
 	const equipmentRows = [];
 	(function buildEquipment() {
-		for (const item of SteamEquipment.list()) {
+		for (const item of SteamEquipment.items) {
 			const row = document.createElement('div');
 			row.className = 'equipment-row';
 			const name = document.createElement('b');
@@ -65,7 +65,7 @@
 		readout();
 	}
 	function refreshEquipment() {
-		const funds = window.SteamCeiling.state().funds();
+		const funds = window.SteamCeiling.state.funds;
 		for (const row of equipmentRows) {
 			const installed = SteamEquipment.isInstalled(row.item.id);
 			row.button.disabled = installed || funds < row.item.cost;
@@ -122,7 +122,7 @@
 		context.fillRect(-pocketDepth, 0, pocketDepth, pocketTop);
 		if (window.SteamCeiling) window.SteamCeiling.draw(context, ui.view.value);
 		if (window.SteamCeiling) {
-			const ceiling = window.SteamCeiling.state();
+			const ceiling = window.SteamCeiling.state;
 			context.strokeStyle = '#edf6f1';
 			context.lineWidth = 1.5 / scale;
 			context.strokeRect(selectedColumn * ceiling.cell, ceiling.bottom + selectedLayer * ceiling.cell, ceiling.cell, ceiling.cell);
@@ -168,7 +168,7 @@
 	}
 
 	function miningReadout() {
-		const ceiling = window.SteamCeiling.state();
+		const ceiling = window.SteamCeiling.state;
 		const index = selectedLayer * ceiling.columns + selectedColumn;
 		const offset = index * 3;
 		const remaining = ceiling.strength[index];
@@ -179,16 +179,16 @@
 		ui['strength-meter'].value = initial > 0 ? remaining / initial : 0;
 		ui['mineral-composition'].textContent = 'Fe ' + (ceiling.minerals[offset] * 100).toFixed(1) + '% · Cu ' + (ceiling.minerals[offset + 1] * 100).toFixed(1) + '% · Cr ' + (ceiling.minerals[offset + 2] * 100).toFixed(1) + '%';
 		ui['mineral-price'].textContent = 'Value ' + ceiling.prices[index].toFixed(2) + ' cr/cell · R ' + (ceiling.elements[offset] * 100).toFixed(0) + '% G ' + (ceiling.elements[offset + 1] * 100).toFixed(0) + '% B ' + (ceiling.elements[offset + 2] * 100).toFixed(0) + '%';
-		ui.extracted.textContent = ceiling.extractedCells() + ' cells';
-		ui.falling.textContent = ceiling.airborneCells() + ' cells';
-		ui.caught.textContent = ceiling.caughtCells() + ' cells';
-		ui.lost.textContent = ceiling.lostCells() + ' cells';
-		ui['cargo-mass'].textContent = ceiling.cargoMass().toFixed(1) + ' kg';
-		ui['cargo-value'].textContent = ceiling.cargoValue().toFixed(1) + ' cr · ' + ceiling.cargoCells() + ' cells';
-		ui['sold-mass'].textContent = (ceiling.soldCells() * ceiling.cellMass).toFixed(1) + ' kg';
-		ui['sold-value'].textContent = ceiling.soldValue().toFixed(1) + ' cr · ' + ceiling.soldCells() + ' cells';
+		ui.extracted.textContent = ceiling.extractedCells + ' cells';
+		ui.falling.textContent = ceiling.airborneCells + ' cells';
+		ui.caught.textContent = ceiling.caughtCells + ' cells';
+		ui.lost.textContent = ceiling.lostCells + ' cells';
+		ui['cargo-mass'].textContent = ceiling.cargoMass.toFixed(1) + ' kg';
+		ui['cargo-value'].textContent = ceiling.cargoValue.toFixed(1) + ' cr · ' + ceiling.cargoCells + ' cells';
+		ui['sold-mass'].textContent = (ceiling.soldCells * ceiling.cellMass).toFixed(1) + ' kg';
+		ui['sold-value'].textContent = ceiling.soldValue.toFixed(1) + ' cr · ' + ceiling.soldCells + ' cells';
 		ui['sale-count'].textContent = ceiling.ledger.length + ' sales';
-		ui.credits.textContent = ceiling.funds().toFixed(1) + ' cr';
+		ui.credits.textContent = ceiling.funds.toFixed(1) + ' cr';
 		for (let i = 0; i < 3; i++) {
 			inventoryCells[i * 2].textContent = ceiling.cargoMinerals[i].toFixed(3);
 			inventoryCells[i * 2 + 1].textContent = ceiling.soldMinerals[i].toFixed(3);
@@ -221,21 +221,31 @@
 		refreshEquipment();
 		ui.clock.textContent = world.time.toFixed(1) + ' s';
 		ui.battery.textContent = (world.battery / 1000).toFixed(2) + ' kJ';
-		const ceiling = window.SteamCeiling.state();
-		const heldMass = world.ball.state === 'held' ? config.mass : 0;
-		ui.cargo.textContent = ceiling.cargoCells() + ' / ' + ceiling.storageLimit;
-		ui['platform-mass'].textContent = (physics.dryMass() + ceiling.cargoMass() + heldMass).toFixed(1) + ' kg';
-		ui.funds.textContent = ceiling.funds().toFixed(1) + ' cr';
+		const ceiling = window.SteamCeiling.state;
+		const heldMass = world.ball.state === 'held' ? config.ballMass : 0;
+		ui.cargo.textContent = ceiling.cargoCells + ' / ' + ceiling.storageLimit;
+		ui['platform-mass'].textContent = (physics.dryMass() + ceiling.cargoMass + heldMass).toFixed(1) + ' kg';
+		ui.funds.textContent = ceiling.funds.toFixed(1) + ' cr';
 		ui['ball-energy'].textContent = physics.ballEnergy(world.ball).toFixed(1) + ' J';
 		ui.heat.textContent = world.heat.toFixed(1) + ' J';
+		const temperature = physics.temperature(world);
+		const thermalFactor = physics.thermalFactor(world);
+		ui.temperature.textContent = temperature.toFixed(1) + ' °C';
+		ui['thermal-status'].textContent = thermalFactor >= 1 ? 'Drive output 100% · cooling normally'
+			: thermalFactor > 0 ? 'Drive output ' + Math.round(thermalFactor * 100) + '% · cooling'
+			: 'Thermal cutoff · cool before powering';
+		ui.cooled.textContent = world.cooledEnergy.toFixed(1) + ' J';
 		ui.error.textContent = (physics.totalEnergy(world) - world.initialEnergy).toFixed(6) + ' J';
 		ui.motion.textContent = world.platform.vx.toFixed(2) + ' m/s';
 		ui.drive.setAttribute('aria-pressed', String(world.drive));
 		ui.drive.firstChild.textContent = world.drive ? 'Drive on ' : 'Drive off ';
-		ui.launch.disabled = world.ball.state !== 'held' || !world.drive || world.battery * config.efficiency <= config.mass * config.gravity * config.deck;
-		if (world.ball.state === 'held') ui.status.textContent = world.drive ? 'Ball held · press E to release' : 'Ball held · enable drive to release';
-		else if (world.ball.state === 'grounded') ui.status.textContent = 'Ball grounded · move over it to collect';
-		else ui.status.textContent = 'Ball in flight · ' + world.pushes + ' powered pushes';
+		ui.launch.disabled = !physics.canLaunch(world);
+		if (world.ball.state === 'held') {
+			if (!world.drive) ui.status.textContent = 'Ball held · enable drive to release';
+			else if (!physics.canLaunch(world)) ui.status.textContent = thermalFactor === 0 ? 'Overheated · wait for cooling' : 'Insufficient energy to lift ball';
+			else ui.status.textContent = 'Ball held · press E to release' + (thermalFactor < 1 ? ' · drive derated' : '');
+		} else if (world.ball.state === 'grounded') ui.status.textContent = 'Ball grounded · move over it to collect';
+		else ui.status.textContent = 'Ball in flight · ' + world.pushes + ' powered pushes' + (thermalFactor < 1 ? ' · drive derated' : '');
 	}
 
 	function updateDirection() {
@@ -323,7 +333,7 @@
 		const bounds = canvas.getBoundingClientRect();
 		const worldX = (event.clientX - bounds.left - offsetX) / scale;
 		const worldY = (floorY - (event.clientY - bounds.top)) / scale;
-		const ceiling = window.SteamCeiling.state();
+		const ceiling = window.SteamCeiling.state;
 		if (worldY >= ceiling.bottom && worldX >= 0 && worldX <= config.width) {
 			selectedColumn = Math.max(0, Math.min(ceiling.columns - 1, Math.floor(worldX / ceiling.cell)));
 			selectedLayer = Math.max(0, Math.min(ceiling.rows - 1, Math.floor((worldY - ceiling.bottom) / ceiling.cell)));

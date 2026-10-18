@@ -1,10 +1,17 @@
 (function (root) {
 	'use strict';
+	const gravity = 9.81;
+	const ballSpeedScale = 1 / 1.5;
 	const config = Object.freeze({
-		width: 24, ceiling: 10, gravity: 9.81, radius: 0.18, mass: 1,
+		width: 24, ceiling: 10, gravity, ballGravity: gravity * ballSpeedScale * ballSpeedScale,
+		ballMass: 1 / (ballSpeedScale * ballSpeedScale), ballSpeedScale, radius: 0.18,
 		platformWidth: 3.6, deck: 0.7, collectorFraction: 0.35,
-		platformMass: 60, force: 180, maxSpeed: 7,
+		platformMass: 60, force: 180 * 1.5, maxSpeed: 7,
 		retention: 0.9, pulse: 36, efficiency: 0.8, battery: 12000, step: 1 / 240,
+		ambientTemperature: 20, heatCapacity: 300,
+		convectiveConductance: 1.1, radiatorConvectionCoefficient: 8,
+		radiatingArea: 0.08, emissivity: 0.85,
+		thermalDerateStart: 85, thermalCutoff: 135,
 		// Left-wall pocket lets the asymmetric collector slide into the wall so
 		// the reflector can cover the wall all the way to x = 0.
 		pocketDepth: 3.6 * 0.35
@@ -16,25 +23,25 @@
 	// Installed equipment contributes explicit deltas on top of base tuning.
 	function retentionNow() {
 		const eq = root.SteamEquipment;
-		return config.retention + (eq ? eq.retentionBonus() : 0);
+		return config.retention + (eq ? eq.state.retentionBonus : 0);
 	}
 	function pulseNow() {
 		const eq = root.SteamEquipment;
-		return config.pulse + (eq ? eq.pulseBonus() : 0);
+		return config.pulse + (eq ? eq.state.pulseBonus : 0);
 	}
 	function dryMass() {
 		const eq = root.SteamEquipment;
-		return config.platformMass + (eq ? eq.massDelta() : 0);
+		return config.platformMass + (eq ? eq.state.massDelta : 0);
 	}
 
 	function createWorld() {
 		if (root.SteamCeiling) root.SteamCeiling.reset(1);
 		if (root.SteamEquipment) root.SteamEquipment.reset();
 		const world = {
-			time: 0, battery: config.battery, heat: 0, fractureEnergy: 0, initialEnergy: 0,
+			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, initialEnergy: 0,
 			drive: false, forceSetting: 0.6, direction: 0, target: NaN,
 			platform: { x: 12, vx: 0 },
-			ball: { x: 12.8, y: 5, vx: 1.2, vy: 0, state: 'flying' },
+			ball: { x: 12.8, y: 5, vx: 1.2 * config.ballSpeedScale, vy: 0, state: 'flying' },
 			bounces: 0, pushes: 0, lastPush: 0, groundings: 0, sales: 0, lastSale: 0
 		};
 		world.initialEnergy = totalEnergy(world);
@@ -43,20 +50,52 @@
 
 	function ballEnergy(ball) {
 		if (ball.state === 'held') return 0;
-		return config.mass * (0.5 * (ball.vx * ball.vx + ball.vy * ball.vy) + config.gravity * (ball.y - config.radius));
+		return config.ballMass * (0.5 * (ball.vx * ball.vx + ball.vy * ball.vy) + config.ballGravity * (ball.y - config.radius));
 	}
 
 	function cargoMass() {
-		return root.SteamCeiling ? root.SteamCeiling.cargoMass() : 0;
+		return root.SteamCeiling ? root.SteamCeiling.state.cargoMass : 0;
 	}
 
 	function platformMass(world) {
-		return dryMass() + cargoMass() + (world.ball.state === 'held' ? config.mass : 0);
+		return dryMass() + cargoMass() + (world.ball.state === 'held' ? config.ballMass : 0);
 	}
 
 	function totalEnergy(world) {
-		const ceilingEnergy = root.SteamCeiling ? root.SteamCeiling.energy() : 0;
-		return world.battery + world.heat + world.fractureEnergy + ceilingEnergy + ballEnergy(world.ball) + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
+		const ceilingEnergy = root.SteamCeiling ? root.SteamCeiling.state.energy : 0;
+		return world.battery + world.heat + world.cooledEnergy + world.fractureEnergy + ceilingEnergy + ballEnergy(world.ball) + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
+	}
+
+	function temperature(world) {
+		return config.ambientTemperature + world.heat / config.heatCapacity;
+	}
+
+	function thermalFactor(world) {
+		const range = config.thermalCutoff - config.thermalDerateStart;
+		return Math.max(0, Math.min(1, (config.thermalCutoff - temperature(world)) / range));
+	}
+
+	function coolingPower(world) {
+		const temperatureC = temperature(world);
+		const delta = temperatureC - config.ambientTemperature;
+		if (delta <= 0 || world.heat <= 0) return 0;
+		const equipment = root.SteamEquipment;
+		const radiatorArea = equipment ? equipment.state.radiatorArea : 0;
+		const area = config.radiatingArea + radiatorArea;
+		const surfaceKelvin = temperatureC + 273.15;
+		const ambientKelvin = config.ambientTemperature + 273.15;
+		const surfaceSquared = surfaceKelvin * surfaceKelvin;
+		const ambientSquared = ambientKelvin * ambientKelvin;
+		const convection = (config.convectiveConductance + config.radiatorConvectionCoefficient * radiatorArea) * delta;
+		const radiation = config.emissivity * 5.670374419e-8 * area * (surfaceSquared * surfaceSquared - ambientSquared * ambientSquared);
+		return convection + radiation;
+	}
+
+	function cool(world, dt) {
+		if (world.heat <= 0) return;
+		const removed = Math.min(world.heat, coolingPower(world) * dt);
+		world.heat -= removed;
+		world.cooledEnergy += removed;
 	}
 
 	function spend(world, useful) {
@@ -70,9 +109,9 @@
 	function capture(world) {
 		const ball = world.ball;
 		const platform = world.platform;
-		const carriedMass = config.platformMass + cargoMass();
+		const carriedMass = dryMass() + cargoMass();
 		const before = ballEnergy(ball) + 0.5 * carriedMass * platform.vx * platform.vx;
-		platform.vx = (carriedMass * platform.vx + config.mass * ball.vx) / (carriedMass + config.mass);
+		platform.vx = (carriedMass * platform.vx + config.ballMass * ball.vx) / (carriedMass + config.ballMass);
 		ball.state = 'held';
 		ball.vx = 0;
 		ball.vy = 0;
@@ -80,16 +119,23 @@
 		world.heat += before - 0.5 * platformMass(world) * platform.vx * platform.vx;
 	}
 
+	function launchCapacity(world) {
+		return Math.min(pulseNow() * thermalFactor(world), world.battery * config.efficiency);
+	}
+
+	function canLaunch(world) {
+		if (world.ball.state !== 'held' || !world.drive) return false;
+		return launchCapacity(world) > config.ballMass * config.ballGravity * config.deck;
+	}
+
 	function launch(world) {
+		if (!canLaunch(world)) return false;
 		const ball = world.ball;
-		if (ball.state !== 'held' || !world.drive) return false;
-		const lift = config.mass * config.gravity * config.deck;
-		if (world.battery * config.efficiency <= lift) return false;
-		const energy = spend(world, pulseNow());
+		const energy = spend(world, pulseNow() * thermalFactor(world));
 		ball.x = world.platform.x + config.platformWidth * 0.25;
 		ball.y = config.deck + config.radius;
 		ball.vx = world.platform.vx;
-		ball.vy = Math.sqrt(2 * (energy - lift) / config.mass);
+		ball.vy = Math.sqrt(2 * (energy - config.ballMass * config.ballGravity * config.deck) / config.ballMass);
 		ball.state = 'flying';
 		world.lastPush = energy;
 		world.pushes++;
@@ -113,7 +159,15 @@
 			}
 		}
 		const oldVelocity = platform.vx;
-		let velocity = oldVelocity + direction * config.force * world.forceSetting / mass * dt;
+		const acceleration = config.force * world.forceSetting / mass;
+		let velocity = oldVelocity;
+		let remaining = dt;
+		if (direction && oldVelocity * direction < 0) {
+			const brakingTime = Math.min(remaining, Math.abs(oldVelocity) / acceleration);
+			velocity += direction * acceleration * brakingTime;
+			remaining -= brakingTime;
+		}
+		if (remaining > 0) velocity += direction * acceleration * thermalFactor(world) * remaining;
 		velocity = Math.max(-config.maxSpeed, Math.min(config.maxSpeed, velocity));
 		const before = 0.5 * mass * oldVelocity * oldVelocity;
 		const after = 0.5 * mass * velocity * velocity;
@@ -138,9 +192,9 @@
 	}
 
 	function downwardTime(ball, height) {
-		const discriminant = ball.vy * ball.vy + 2 * config.gravity * (ball.y - height);
+		const discriminant = ball.vy * ball.vy + 2 * config.ballGravity * (ball.y - height);
 		if (discriminant < 0) return Infinity;
-		const time = (ball.vy + Math.sqrt(discriminant)) / config.gravity;
+		const time = (ball.vy + Math.sqrt(discriminant)) / config.ballGravity;
 		return time >= -1e-10 ? Math.max(0, time) : Infinity;
 	}
 
@@ -149,7 +203,7 @@
 		const normalVelocity = ball.vx * nx + ball.vy * ny;
 		if (normalVelocity >= 0) return;
 		const retention = retentionNow();
-		const lost = 0.5 * config.mass * normalVelocity * normalVelocity * (1 - retention);
+		const lost = 0.5 * config.ballMass * normalVelocity * normalVelocity * (1 - retention);
 		const spentOnRock = Math.min(lost, fracture || 0);
 		const impulseVelocity = (1 + Math.sqrt(retention)) * normalVelocity;
 		world.fractureEnergy += spentOnRock;
@@ -183,11 +237,11 @@
 			if (wallTime >= 0 && wallTime <= time) { time = wallTime; type = 1; }
 			const groundTime = downwardTime(ball, config.radius);
 			if (groundTime <= time) { time = groundTime; type = 2; }
-			const topDiscriminant = ball.vy * ball.vy - 2 * config.gravity * (config.ceiling - config.radius - ball.y);
-			const topTime = ball.vy > 0 && topDiscriminant >= 0 ? (ball.vy - Math.sqrt(topDiscriminant)) / config.gravity : Infinity;
+			const topDiscriminant = ball.vy * ball.vy - 2 * config.ballGravity * (config.ceiling - config.radius - ball.y);
+			const topTime = ball.vy > 0 && topDiscriminant >= 0 ? (ball.vy - Math.sqrt(topDiscriminant)) / config.ballGravity : Infinity;
 			if (topTime >= 0 && topTime <= time) { time = topTime; type = 3; }
 			if (root.SteamCeiling) {
-				const rockHit = root.SteamCeiling.trace(ball.x, ball.y, ball.vx, ball.vy, remaining, config.radius);
+				const rockHit = root.SteamCeiling.trace(ball.x, ball.y, ball.vx, ball.vy, remaining, config.radius, config.ballGravity);
 				if (rockHit.time <= time) {
 					time = rockHit.time;
 					type = 5;
@@ -202,8 +256,8 @@
 			const impactX = ball.x + ball.vx * deckTime;
 			if (deckTime <= time && Math.abs(impactX - platformX) <= config.platformWidth * 0.5) { time = deckTime; type = 4; }
 			ball.x += ball.vx * time;
-			ball.y += ball.vy * time - 0.5 * config.gravity * time * time;
-			ball.vy -= config.gravity * time;
+			ball.y += ball.vy * time - 0.5 * config.ballGravity * time * time;
+			ball.vy -= config.ballGravity * time;
 			remaining -= time;
 			elapsed += time;
 			if (!type) return;
@@ -225,14 +279,14 @@
 				// Contact position is exact (separated to radius), so the ball
 				// cannot sit inside the surface between events. The snap's
 				// potential change is booked so the energy ledger stays exact.
-				world.heat += config.mass * config.gravity * (ball.y - rockY);
+				world.heat += config.ballMass * config.ballGravity * (ball.y - rockY);
 				ball.x = rockX;
 				ball.y = rockY;
 				const normalVelocity = ball.vx * rockNx + ball.vy * rockNy;
 				// One impulse per step: later zero-time contacts only separate,
 				// keeping the ball's contact impulse instead of stacking flips.
 				if (normalVelocity < 0 && !rockImpulse) {
-					const damageBudget = 0.5 * config.mass * normalVelocity * normalVelocity * (1 - config.retention);
+					const damageBudget = 0.5 * config.ballMass * normalVelocity * normalVelocity * (1 - config.retention);
 					const contactX = ball.x - rockNx * config.radius;
 					const contactY = ball.y - rockNy * config.radius;
 					const fracture = root.SteamCeiling.damage(contactX, contactY, damageBudget);
@@ -245,20 +299,22 @@
 			if (ball.x < collectorEdge) { capture(world); return; }
 			const carriedMass = platformMass(world);
 			const relativeVx = ball.vx - (world.platform.x - oldPlatformX) / dt;
-			const normalImpulse = config.mass * Math.abs(ball.vy) * (1 + Math.sqrt(retentionNow()));
-			const frictionImpulse = Math.max(-normalImpulse * 0.35, Math.min(normalImpulse * 0.35, -relativeVx / (1 / config.mass + 1 / carriedMass)));
-			const beforeTangential = 0.5 * config.mass * ball.vx * ball.vx + 0.5 * carriedMass * world.platform.vx * world.platform.vx;
-			ball.vx += frictionImpulse / config.mass;
+			const normalImpulse = config.ballMass * Math.abs(ball.vy) * (1 + Math.sqrt(retentionNow()));
+			const frictionImpulse = Math.max(-normalImpulse * 0.35, Math.min(normalImpulse * 0.35, -relativeVx / (1 / config.ballMass + 1 / carriedMass)));
+			const beforeTangential = 0.5 * config.ballMass * ball.vx * ball.vx + 0.5 * carriedMass * world.platform.vx * world.platform.vx;
+			ball.vx += frictionImpulse / config.ballMass;
 			world.platform.vx -= frictionImpulse / carriedMass;
-			const afterTangential = 0.5 * config.mass * ball.vx * ball.vx + 0.5 * carriedMass * world.platform.vx * world.platform.vx;
+			const afterTangential = 0.5 * config.ballMass * ball.vx * ball.vx + 0.5 * carriedMass * world.platform.vx * world.platform.vx;
 			world.heat += Math.max(0, beforeTangential - afterTangential);
 			passiveImpact(world, 0, 1, 0);
 			world.bounces++;
 			world.lastPush = 0;
 			if (world.drive) {
-				world.lastPush = spend(world, pulseNow());
-				ball.vy = Math.sqrt(ball.vy * ball.vy + 2 * world.lastPush / config.mass);
-				world.pushes++;
+				world.lastPush = spend(world, pulseNow() * thermalFactor(world));
+				if (world.lastPush > 0) {
+					ball.vy = Math.sqrt(ball.vy * ball.vy + 2 * world.lastPush / config.ballMass);
+					world.pushes++;
+				}
 			}
 			if (ball.vy < 0.08) { capture(world); return; }
 		}
@@ -269,7 +325,7 @@
 		movePlatform(world, dt);
 		advanceBall(world, dt, oldX);
 		if (root.SteamCeiling) {
-			const heldMass = world.ball.state === 'held' ? config.mass : 0;
+			const heldMass = world.ball.state === 'held' ? config.ballMass : 0;
 			root.SteamCeiling.step(world, dt, dryMass() + heldMass);
 			const minX = platformMin();
 			const maxX = platformMax();
@@ -278,10 +334,14 @@
 				if (sale > 0) { world.lastSale = sale; world.sales++; }
 			}
 		}
+		cool(world, dt);
 		world.time += dt;
 	}
 
-	const api = { config, createWorld, step, launch, ballEnergy, totalEnergy, platformMin, platformMax, dryMass };
+	const api = {
+		config, createWorld, step, launch, canLaunch, ballEnergy, totalEnergy, temperature,
+		thermalFactor, coolingPower, platformMass, platformMin, platformMax, dryMass
+	};
 	root.SteamPhysics = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

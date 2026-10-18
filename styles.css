@@ -52,7 +52,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 13px 0; 
 .equipment-row button { padding: 7px 12px; font-size: 10px; letter-spacing: 0.8px; }
 .equipment-row .installed { padding: 7px 12px; font-size: 10px; letter-spacing: 0.8px; color: var(--accent); border: 1px dashed var(--accent); border-radius: 4px; }
 .equipment .hint { margin-bottom: 10px; }
-.telemetry { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--line); margin-top: 18px; border-radius: 6px; overflow: hidden; background: var(--line); }
+.telemetry { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--line); margin-top: 18px; border-radius: 6px; overflow: hidden; background: var(--line); }
 .telemetry article { padding: 16px; background: #0c1215; }
 .telemetry span { font: 9px ui-monospace, monospace; color: #94a8ac; letter-spacing: 1px; }
 .telemetry strong { display: block; font: 25px ui-monospace, monospace; margin: 13px 0 8px; }

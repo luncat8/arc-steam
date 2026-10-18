@@ -32,7 +32,7 @@ function speed(ball) { return Math.hypot(ball.vx, ball.vy); }
 						for (const v0 of [3, 8, 15, 25]) {
 							const vx = Math.cos(rad) * v0;
 							const vy = Math.sin(rad) * v0;
-							const hit = ceiling.trace(x, y, vx, vy, 1 / 240, 0.18);
+							const hit = ceiling.trace(x, y, vx, vy, 1 / 240, 0.18, c.ballGravity);
 							if (!Number.isFinite(hit.time)) continue;
 							checked++;
 							const nlen = Math.hypot(hit.nx, hit.ny);
@@ -87,7 +87,7 @@ function speed(ball) { return Math.hypot(ball.vx, ball.vy); }
 			physics.step(w, c.step);
 			const spAfter = speed(w.ball);
 			// gravity, plus the deck pulse bound where a bounce can occur
-			const allowed = spBefore + c.gravity * c.step + 8.5;
+			const allowed = spBefore + c.ballGravity * c.step + 8.5;
 			if (spAfter > allowed + 1e-9) worstStepGain = Math.max(worstStepGain, spAfter - allowed);
 			if (stepImpulses > 1) multiImpulseSteps++;
 			rockImpulses += stepImpulses;
@@ -107,7 +107,7 @@ function speed(ball) { return Math.hypot(ball.vx, ball.vy); }
 			ceiling.setShape(from);
 			ceiling.damage(10.06, 8.06, 40);
 			ceiling.damage(10.56, 8.06, 25);
-			const st = ceiling.state();
+			const st = ceiling.state;
 			const v = Math.floor(10.0 / st.cell);
 			const w = physics.createWorld();
 			ceiling.reset(seed);
@@ -127,7 +127,7 @@ function speed(ball) { return Math.hypot(ball.vx, ball.vy); }
 			for (let i = 0; i < 240 * 2 && w.ball.state === 'flying'; i++) {
 				physics.step(w, c.step);
 				maxS = Math.max(maxS, speed(w.ball));
-				const st2 = ceiling.state();
+				const st2 = ceiling.state;
 				const vf = Math.max(0, Math.min(st2.columns - 1, Math.floor(w.ball.x / st2.cell)));
 				if (to === 'smooth') {
 					const vt = Math.max(0, Math.min(1, (w.ball.x - vf * st2.cell) / st2.cell));
@@ -137,7 +137,7 @@ function speed(ball) { return Math.hypot(ball.vx, ball.vy); }
 					assert.ok(w.ball.y <= st2.bottom + st2.firstRow[vf] * st2.cell + 1e-9, `ball inside square rock: seed=${seed}`);
 				}
 			}
-			assert.ok(maxS <= v0 + c.gravity * 2 + 1e-6, `speed gain on switch ${from}->${to} seed=${seed}: ${v0} -> ${maxS}`);
+			assert.ok(maxS <= v0 + c.ballGravity * 2 + 1e-6, `speed gain on switch ${from}->${to} seed=${seed}: ${v0} -> ${maxS}`);
 		}
 	}
 	console.log('shape-switch check: ball never tunnels and keeps its impulse');

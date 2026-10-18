@@ -1,0 +1,28 @@
+smooth seed  1  t 240s  extracted  301  caught  127  lost  174  sold   27  credits   181.0  sales 5  battery 6.68 kJ  maxSpeed 13.6  maxTemp 82.5 C  minPower 100%
+smooth seed  2  t 89s  extracted  381  caught  151  lost  230  sold  150  credits  1038.2  sales 7  battery 11.96 kJ  maxSpeed 13.6  maxTemp 95.8 C  minPower 78%
+smooth seed  3  t 77s  extracted  360  caught  138  lost  222  sold  138  credits   931.9  sales 9  battery 11.96 kJ  maxSpeed 13.6  maxTemp 98.4 C  minPower 73%
+smooth seed  4  t 85s  extracted  382  caught  149  lost  233  sold  149  credits  1132.4  sales 9  battery 11.96 kJ  maxSpeed 13.6  maxTemp 98.0 C  minPower 74%
+smooth seed  5  t 200s  extracted  416  caught  125  lost  291  sold  125  credits   811.0  sales 6  battery 11.99 kJ  maxSpeed 14.3  maxTemp 101.1 C  minPower 68%
+smooth seed  6  t 240s  extracted  298  caught  126  lost  172  sold   26  credits   209.3  sales 4  battery 6.68 kJ  maxSpeed 13.6  maxTemp 82.1 C  minPower 100%
+smooth seed  7  t 78s  extracted  308  caught   78  lost  228  sold   78  credits   519.5  sales 6  battery 11.96 kJ  maxSpeed 12.7  maxTemp 92.5 C  minPower 85%
+smooth seed  8  t 95s  extracted  434  caught   32  lost  395  sold   32  credits   240.7  sales 6  battery 11.96 kJ  maxSpeed 13.7  maxTemp 99.4 C  minPower 71%
+square seed  1  t 141s  extracted  629  caught   67  lost  562  sold   67  credits   523.4  sales 8  battery 11.96 kJ  maxSpeed 13.1  maxTemp 124.5 C  minPower 21%
+square seed  2  t 149s  extracted  650  caught   75  lost  568  sold   75  credits   510.0  sales 10  battery 11.96 kJ  maxSpeed 13.1  maxTemp 125.3 C  minPower 19%
+square seed  3  t 232s  extracted  493  caught  130  lost  363  sold   30  credits   209.0  sales 6  battery 11.99 kJ  maxSpeed 14.3  maxTemp 114.5 C  minPower 41%
+square seed  4  t 130s  extracted  572  caught   52  lost  520  sold   52  credits   331.4  sales 8  battery 11.96 kJ  maxSpeed 12.9  maxTemp 122.4 C  minPower 25%
+square seed  5  t 97s  extracted  408  caught   96  lost  312  sold   96  credits   579.2  sales 15  battery 11.96 kJ  maxSpeed 13.3  maxTemp 101.3 C  minPower 67%
+square seed  6  t 76s  extracted  318  caught   99  lost  197  sold   52  credits   392.1  sales 6  battery 11.96 kJ  maxSpeed 13.1  maxTemp 89.9 C  minPower 90%
+square seed  7  t 142s  extracted  664  caught   89  lost  575  sold   81  credits   534.6  sales 8  battery 11.96 kJ  maxSpeed 13.3  maxTemp 126.3 C  minPower 17%
+square seed  8  t 225s  extracted  679  caught   55  lost  624  sold   55  credits   435.3  sales 6  battery 11.99 kJ  maxSpeed 14.3  maxTemp 125.2 C  minPower 20%
+
+smooth averages over 8 seeds (240 s cap):
+  extraction rate 156.6 cells/min, catch rate 32.2%
+  sale value 275.3 cr/min, 6.5 wall sales, 97 cr/sale
+  energy 77.1 W average draw, maxSpeed 13.6 m/s
+  maxTemperature 93.7 °C average, minimum drive output 81%
+
+square averages over 8 seeds (240 s cap):
+  extraction rate 222.3 cells/min, catch rate 15.0%
+  sale value 177.0 cr/min, 8.4 wall sales, 52 cr/sale
+  energy 80.3 W average draw, maxSpeed 13.4 m/s
+  maxTemperature 116.2 °C average, minimum drive output 38%

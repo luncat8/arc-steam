@@ -24,6 +24,13 @@
 
 - no legacy support, no old versions, no outdated browsers, no leftovers and no over protecting from unreal edge cases. we need clean architecture.
 
+good:
+obj.action(obj.data)
+obj.data.action()
+
+not good:
+getObj().data().action()
+
 ## runtime
 
 - file:// friendly, classic <script> tags, no modules, no build.
@@ -47,11 +54,16 @@ experiments/logs/ - keep useful;
 git push returns "Invalid username or token" is ok, no need to investigate or report - i will apply manually
 
 ## Workflow
-- **Worklog**: record development steps and its validation in `archive/*-worklog.md`, end job with a next step suggestion.
-example:
-0.1.x-draft.md
+
+start work with review previous task: it was done by another agent and you can find really better way to improve it or find some issues. dont need to run tests again because already done in previous stage.
+
+then continue with next: review next step plan, if found good ideas - improve plan, implement.
+
+record development steps and its validation in `archive/*-worklog.md`, end job with a next step suggestion.
+
+example of file structure:
+0.1.x-draft.md - human write thoughts about goals and design
 archive/0.1.0-plan.md
 archive/0.1.0-worklog.md
 0.1.1-plan.md
-0.1.3-draft.md - you may also write user prompts as draft files to store reference of global task
-0.1.2-plan.md
+gui.1-plan.md

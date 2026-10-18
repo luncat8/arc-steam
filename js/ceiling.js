@@ -268,7 +268,7 @@
 		extractedCells++;
 	}
 
-	function traceSmooth(x, y, vx, vy, duration, radius) {
+	function traceSmooth(x, y, vx, vy, duration, radius, traceGravity) {
 		updateHeightmap();
 		// A centre above the heightmap is inside the solid (reachable on shape
 		// switches). Resolve at once: drop it onto the surface so the contact
@@ -286,7 +286,7 @@
 			return hit;
 		}
 		const dx = vx * duration;
-		const dy = vy * duration - 0.5 * gravity * duration * duration;
+		const dy = vy * duration - 0.5 * traceGravity * duration * duration;
 		const minColumn = Math.max(0, Math.floor((Math.min(x, x + dx) - radius) / cell));
 		const maxColumn = Math.min(columns - 1, Math.floor((Math.max(x, x + dx) + radius) / cell));
 		if (minColumn > maxColumn) return hit;
@@ -419,7 +419,7 @@
 		return s;
 	}
 
-	function traceSquare(x, y, vx, vy, duration, radius) {
+	function traceSquare(x, y, vx, vy, duration, radius, traceGravity) {
 		updateHeightmap();
 		// A centre inside an intact cell is inside the solid (reachable on shape
 		// switches). Resolve at once: drop it below the column surface so the
@@ -437,7 +437,7 @@
 			return hit;
 		}
 		const dx = vx * duration;
-		const dy = vy * duration - 0.5 * gravity * duration * duration;
+		const dy = vy * duration - 0.5 * traceGravity * duration * duration;
 		const minColumn = Math.max(0, Math.floor((Math.min(x, x + dx) - radius) / cell));
 		const maxColumn = Math.min(columns - 1, Math.floor((Math.max(x, x + dx) + radius) / cell));
 		const minRow = Math.max(0, Math.floor((Math.min(y, y + dy) - radius - bottom) / cell));
@@ -502,14 +502,17 @@
 		return hit;
 	}
 
-	function trace(x, y, vx, vy, duration, radius) {
+	function trace(x, y, vx, vy, duration, radius, traceGravity) {
+		if (!Number.isFinite(traceGravity)) traceGravity = gravity;
 		hit.time = Infinity;
 		hit.x = x;
 		hit.y = y;
 		hit.nx = 0;
 		hit.ny = 0;
 		hit.index = -1;
-		return rockShape === 'square' ? traceSquare(x, y, vx, vy, duration, radius) : traceSmooth(x, y, vx, vy, duration, radius);
+		return rockShape === 'square'
+			? traceSquare(x, y, vx, vy, duration, radius, traceGravity)
+			: traceSmooth(x, y, vx, vy, duration, radius, traceGravity);
 	}
 
 	function catchFragment(world, i, carriedMass) {
@@ -708,26 +711,34 @@
 		}
 	}
 
-	function state() {
-		return {
-			columns, rows, cell, bottom, top, defaultPixelSize, storageLimit, cellMass,
-			damageRadius, damageMultiplier,
-			shape: rockShape, heightmap, firstRow,
-			mineralNames, mineralPrices,
-			strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
-			cargoMinerals, soldMinerals, ledger,
-			extractedCells: () => extractedCells, caughtCells: () => caughtCells, lostCells: () => lostCells,
-			lostValue: () => lostValue, airborneCells, airborneValue,
-			caughtValue: () => cargoValue + soldValue,
-			cargoCells: () => cargoCells, cargoMass: () => cargoCells * cellMass, cargoValue: () => cargoValue,
-			soldCells: () => soldCells, soldValue: () => soldValue, funds: () => funds
-		};
-	}
+	// Stable live view: reading simulation state allocates nothing and invokes no command.
+	const state = Object.freeze({
+		columns, rows, cell, bottom, top, defaultPixelSize, storageLimit, cellMass,
+		damageRadius, damageMultiplier,
+		get shape() { return rockShape; }, heightmap, firstRow,
+		mineralNames, mineralPrices,
+		strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
+		cargoMinerals, soldMinerals,
+		get ledger() { return ledger; },
+		get extractedCells() { return extractedCells; },
+		get caughtCells() { return caughtCells; },
+		get lostCells() { return lostCells; },
+		get lostValue() { return lostValue; },
+		get airborneCells() { return airborneCells(); },
+		get airborneValue() { return airborneValue(); },
+		get caughtValue() { return cargoValue + soldValue; },
+		get cargoCells() { return cargoCells; },
+		get cargoMass() { return cargoCells * cellMass; },
+		get cargoValue() { return cargoValue; },
+		get soldCells() { return soldCells; },
+		get soldValue() { return soldValue; },
+		get funds() { return funds; },
+		get energy() { return energy(); }
+	});
 
 	reset(1);
-	function currentCargoMass() { return cargoCells * cellMass; }
 
-	const api = { reset, damage, trace, step, sellCargo, purchase, energy, draw, state, setShape, cargoMass: currentCargoMass };
+	const api = { reset, damage, trace, step, sellCargo, purchase, draw, state, setShape };
 	root.SteamCeiling = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

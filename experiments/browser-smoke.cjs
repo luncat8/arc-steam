@@ -20,6 +20,14 @@ async function main() {
 		page.on('pageerror', error => errors.push(error.message));
 		await page.goto(process.env.TEST_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href);
 		await page.waitForFunction(() => document.getElementById('clock').textContent !== '0.0 s');
+		assert.match(await page.locator('#temperature').textContent(), /°C/);
+		assert.match(await page.locator('#heat').textContent(), /J/);
+		assert.match(await page.locator('#cooled').textContent(), /J/);
+		assert.deepEqual(await page.evaluate(() => [
+			typeof window.SteamCeiling.state,
+			typeof window.SteamCeiling.state.funds,
+			typeof window.SteamCeiling.funds
+		]), ['object', 'number', 'undefined']);
 		await page.locator('#drive').click();
 		assert.equal(await page.locator('#drive').getAttribute('aria-pressed'), 'true');
 		await page.keyboard.press('Space');

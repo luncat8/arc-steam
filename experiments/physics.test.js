@@ -14,8 +14,8 @@ function run(world, seconds) {
 	for (let i = 0; i < Math.round(seconds / c.step); i++) physics.step(world, c.step);
 }
 function prepareCargo(world, count, fragmentVx = 0) {
-	for (let x = 1; x < 23 && ceiling.state().extractedCells() < count; x += 2) ceiling.damage(x, 8.2, 20);
-	const state = ceiling.state();
+	for (let x = 1; x < 23 && ceiling.state.extractedCells < count; x += 2) ceiling.damage(x, 8.2, 20);
+	const state = ceiling.state;
 	let prepared = 0;
 	for (let i = 0; i < state.active.length && prepared < count; i++) {
 		if (!state.active[i]) continue;
@@ -28,11 +28,28 @@ function prepareCargo(world, count, fragmentVx = 0) {
 	return prepared;
 }
 
+test('ball response is 1.5x slower while the platform engine gets 1.5x more force', () => {
+	const w = physics.createWorld();
+	near(c.ballSpeedScale, 1 / 1.5);
+	near(c.ballMass * c.ballGravity, c.gravity);
+	near(w.ball.vx, 1.2 / 1.5);
+	const oldInitialEnergy = 0.5 * 1.2 ** 2 + c.gravity * (w.ball.y - c.radius);
+	near(physics.ballEnergy(w.ball), oldInitialEnergy);
+	const oldLaunchSpeed = Math.sqrt(2 * (c.pulse - c.gravity * c.deck));
+	const newLaunchSpeed = Math.sqrt(2 * (c.pulse - c.ballMass * c.ballGravity * c.deck) / c.ballMass);
+	near(newLaunchSpeed, oldLaunchSpeed / 1.5);
+	const oldFallTime = Math.sqrt(2 / c.gravity);
+	const newFallTime = Math.sqrt(2 / c.ballGravity);
+	near(newFallTime, oldFallTime * 1.5);
+	near(c.force, 180 * 1.5);
+	assert.equal(c.maxSpeed, 7);
+});
+
 test('analytic free fall is exact across fixed steps', () => {
 	const w = physics.createWorld();
 	run(w, 0.25);
-	near(w.ball.y, 5 - 0.5 * c.gravity * 0.25 ** 2);
-	near(w.ball.vy, -c.gravity * 0.25);
+	near(w.ball.y, 5 - 0.5 * c.ballGravity * 0.25 ** 2);
+	near(w.ball.vy, -c.ballGravity * 0.25);
 	balanced(w);
 });
 
@@ -41,7 +58,7 @@ test('passive deck bounce retains 90% normal energy', () => {
 	w.ball.x = 12.8; w.ball.vx = 0; w.ball.y = c.deck + c.radius; w.ball.vy = -5;
 	sync(w);
 	physics.step(w, c.step);
-	near(w.ball.vy + c.gravity * c.step, 5 * Math.sqrt(0.9));
+	near(w.ball.vy + c.ballGravity * c.step, 5 * Math.sqrt(0.9));
 	assert.equal(w.bounces, 1);
 	balanced(w);
 });
@@ -73,7 +90,7 @@ test('limited drive takes repeated pushes to reach ceiling height', () => {
 	w.ball.state = 'held'; w.ball.vx = 0; w.ball.vy = 0; w.drive = true;
 	sync(w);
 	assert.ok(physics.launch(w));
-	assert.ok(w.ball.y + w.ball.vy ** 2 / (2 * c.gravity) < c.ceiling - c.radius);
+	assert.ok(w.ball.y + w.ball.vy ** 2 / (2 * c.ballGravity) < c.ceiling - c.radius);
 	let maxBeforeThird = 0;
 	for (let i = 0; i < 240 * 10 && w.pushes < 3; i++) {
 		physics.step(w, c.step);
@@ -81,7 +98,7 @@ test('limited drive takes repeated pushes to reach ceiling height', () => {
 	}
 	assert.equal(w.pushes, 3);
 	assert.ok(maxBeforeThird < c.ceiling - c.radius);
-	assert.ok(w.ball.y + w.ball.vy ** 2 / (2 * c.gravity) > c.ceiling - c.radius);
+	assert.ok(w.ball.y + w.ball.vy ** 2 / (2 * c.ballGravity) > c.ceiling - c.radius);
 	run(w, 20);
 	balanced(w);
 });
@@ -96,11 +113,58 @@ test('drive cannot create energy with an empty reserve', () => {
 	assert.equal(physics.launch(w), false);
 });
 
+test('convection and radiation cool the machinery without hiding exported energy', () => {
+	const w = physics.createWorld();
+	w.heat = c.heatCapacity * 100;
+	sync(w);
+	const initialHeat = w.heat;
+	assert.ok(physics.coolingPower(w) > 0);
+	run(w, 1);
+	assert.ok(w.heat < initialHeat);
+	assert.ok(w.cooledEnergy > 0);
+	near(w.heat + w.cooledEnergy, initialHeat, 1e-7);
+	near(physics.temperature(w), c.ambientTemperature + w.heat / c.heatCapacity);
+	balanced(w);
+});
+
+test('overheating linearly derates engine and bounce power, then cuts off', () => {
+	const warm = physics.createWorld();
+	warm.ball.state = 'held'; warm.ball.vx = 0; warm.ball.vy = 0;
+	warm.drive = true; warm.direction = 1;
+	warm.heat = c.heatCapacity * ((c.thermalDerateStart + c.thermalCutoff) * 0.5 - c.ambientTemperature);
+	sync(warm);
+	near(physics.temperature(warm), (c.thermalDerateStart + c.thermalCutoff) * 0.5);
+	near(physics.thermalFactor(warm), 0.5);
+	physics.step(warm, c.step);
+	near(warm.platform.vx, c.force * warm.forceSetting * 0.5 / (c.platformMass + c.ballMass) * c.step, 1e-9);
+	balanced(warm);
+
+	const launch = physics.createWorld();
+	launch.ball.state = 'held'; launch.ball.vx = 0; launch.ball.vy = 0;
+	launch.drive = true;
+	launch.heat = c.heatCapacity * ((c.thermalDerateStart + c.thermalCutoff) * 0.5 - c.ambientTemperature);
+	sync(launch);
+	assert.ok(physics.canLaunch(launch));
+	assert.ok(physics.launch(launch));
+	near(launch.lastPush, c.pulse * 0.5);
+	balanced(launch);
+
+	const cutoff = physics.createWorld();
+	cutoff.ball.state = 'held'; cutoff.ball.vx = 0; cutoff.ball.vy = 0;
+	cutoff.drive = true;
+	cutoff.heat = c.heatCapacity * (c.thermalCutoff - c.ambientTemperature);
+	sync(cutoff);
+	assert.equal(physics.thermalFactor(cutoff), 0);
+	assert.equal(physics.canLaunch(cutoff), false);
+	assert.equal(physics.launch(cutoff), false);
+	balanced(cutoff);
+});
+
 test('force limits, braking, and wall stops preserve total accounting', () => {
 	const w = physics.createWorld();
 	w.ball.state = 'held'; w.direction = 1;
 	sync(w); run(w, 0.25);
-	near(w.platform.vx, c.force * w.forceSetting / (c.platformMass + c.mass) * 0.25);
+	near(w.platform.vx, c.force * w.forceSetting / (c.platformMass + c.ballMass) * 0.25);
 	w.direction = -1; run(w, 0.25);
 	near(w.platform.vx, 0); balanced(w);
 	w.direction = 1; run(w, 60);
@@ -124,10 +188,10 @@ test('swept collisions prevent ceiling, wall and deck tunneling', () => {
 test('release inherits platform momentum and preserves horizontal kinetic energy', () => {
 	const w = physics.createWorld();
 	w.ball.state = 'held'; w.platform.vx = 3; w.drive = true; sync(w);
-	const beforeHorizontal = 0.5 * (c.platformMass + c.mass) * w.platform.vx ** 2;
+	const beforeHorizontal = 0.5 * (c.platformMass + c.ballMass) * w.platform.vx ** 2;
 	assert.ok(physics.launch(w));
 	near(w.ball.vx, 3);
-	near(0.5 * c.platformMass * w.platform.vx ** 2 + 0.5 * c.mass * w.ball.vx ** 2, beforeHorizontal);
+	near(0.5 * c.platformMass * w.platform.vx ** 2 + 0.5 * c.ballMass * w.ball.vx ** 2, beforeHorizontal);
 	balanced(w);
 });
 
@@ -146,8 +210,8 @@ test('caught cargo transfers momentum, doubles full-load mass, and remains energ
 	assert.equal(prepareCargo(w, 100, 2), 100);
 	sync(w);
 	physics.step(w, c.step);
-	assert.equal(ceiling.state().cargoCells(), 100);
-	near(ceiling.state().cargoMass(), c.platformMass);
+	assert.equal(ceiling.state.cargoCells, 100);
+	near(ceiling.state.cargoMass, c.platformMass);
 	assert.ok(w.platform.vx > 0);
 	balanced(w);
 	w.platform.vx = 0;
@@ -162,18 +226,18 @@ test('touching either sell wall empties cargo without losing mass-energy account
 	const w = physics.createWorld();
 	assert.equal(prepareCargo(w, 12), 12);
 	physics.step(w, c.step);
-	assert.equal(ceiling.state().cargoCells(), 12);
+	assert.equal(ceiling.state.cargoCells, 12);
 	w.platform.x = physics.platformMin();
 	sync(w);
 	physics.step(w, c.step);
-	assert.equal(ceiling.state().cargoCells(), 0);
+	assert.equal(ceiling.state.cargoCells, 0);
 	assert.equal(w.sales, 1);
-	assert.ok(ceiling.state().funds() > 0);
-	assert.equal(ceiling.state().ledger.length, 1);
+	assert.ok(ceiling.state.funds > 0);
+	assert.equal(ceiling.state.ledger.length, 1);
 	balanced(w);
 	const v = physics.createWorld();
-	const state = ceiling.state();
-	for (let x = 1; x < 23 && state.extractedCells() < 8; x += 2) ceiling.damage(x, 8.2, 20);
+	const state = ceiling.state;
+	for (let x = 1; x < 23 && state.extractedCells < 8; x += 2) ceiling.damage(x, 8.2, 20);
 	let prepared = 0;
 	for (let i = 0; i < state.active.length && prepared < 8; i++) {
 		if (!state.active[i]) continue;
@@ -184,11 +248,11 @@ test('touching either sell wall empties cargo without losing mass-energy account
 		prepared++;
 	}
 	physics.step(v, c.step);
-	assert.equal(ceiling.state().cargoCells(), 8);
+	assert.equal(ceiling.state.cargoCells, 8);
 	v.platform.x = physics.platformMax();
 	sync(v);
 	physics.step(v, c.step);
-	assert.equal(ceiling.state().cargoCells(), 0);
+	assert.equal(ceiling.state.cargoCells, 0);
 	assert.equal(v.sales, 1);
 	balanced(v);
 });
@@ -204,7 +268,7 @@ test('left pocket lets the reflector cover the wall without a wedge obstruction'
 	w.ball.x = 0.3; w.ball.vx = 0; w.ball.y = 2.0; w.ball.vy = 0;
 	w.ball.state = 'flying';
 	sync(w);
-	run(w, 0.7);
+	run(w, 0.8);
 	assert.equal(w.bounces, 1);
 	assert.equal(w.ball.state, 'flying');
 	near(w.ball.x, 0.3);
@@ -265,7 +329,7 @@ test('rock reflection keeps the ball impulse: speed never grows beyond gravity',
 			physics.step(w, c.step);
 			travelled += Math.hypot(w.ball.x - px, w.ball.y - py);
 			const after = Math.hypot(w.ball.vx, w.ball.vy);
-			assert.ok(after <= before + c.gravity * c.step + 1e-9, `${shape}: ${before} -> ${after}`);
+			assert.ok(after <= before + c.ballGravity * c.step + 1e-9, `${shape}: ${before} -> ${after}`);
 		}
 		assert.ok(travelled > 2, `${shape}: ball frozen, travelled ${travelled}`);
 		balanced(w);
@@ -287,7 +351,7 @@ test('rock shape switch cannot tunnel the ball through the rock', () => {
 	ceiling.reset(1);
 	ceiling.setShape('smooth');
 	carve();
-	const state = ceiling.state();
+	const state = ceiling.state;
 	let bestCol = 0;
 	let bestMis = 0;
 	for (let col = 0; col < state.columns; col++) {
@@ -310,7 +374,7 @@ test('rock shape switch cannot tunnel the ball through the rock', () => {
 	sync(w);
 	for (let i = 0; i < 240; i++) {
 		physics.step(w, c.step);
-		assert.ok(Math.hypot(w.ball.vx, w.ball.vy) <= v0 + c.gravity + 1e-6);
+		assert.ok(Math.hypot(w.ball.vx, w.ball.vy) <= v0 + c.ballGravity + 1e-6);
 		const col = Math.floor(w.ball.x / state.cell);
 		assert.ok(w.ball.y <= state.bottom + state.firstRow[col] * state.cell + 1e-9, 'ball inside square rock');
 	}
@@ -341,7 +405,7 @@ test('rock shape switch cannot tunnel the ball through the rock', () => {
 	sync(sq);
 	for (let i = 0; i < 240; i++) {
 		physics.step(sq, c.step);
-		assert.ok(Math.hypot(sq.ball.vx, sq.ball.vy) <= sqV0 + c.gravity + 1e-6);
+		assert.ok(Math.hypot(sq.ball.vx, sq.ball.vy) <= sqV0 + c.ballGravity + 1e-6);
 		assert.ok(sq.ball.y <= smoothSurface(state, sq.ball.x) + 1e-9, 'ball inside smooth rock');
 	}
 	assert.ok(sq.ball.y < sqStartY - 0.2, 'ball frozen after switch');
