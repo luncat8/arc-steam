@@ -13,6 +13,7 @@ test('seeded 2D element and mineral fields repeat and normalize', () => {
 	assert.equal(state.columns, 192);
 	assert.equal(state.rows, 16);
 	assert.equal(state.defaultPixelSize, 4);
+	assert.equal(state.shape, 'smooth');
 	const first = Array.from(state.strength);
 	for (let i = 0; i < state.columns * state.rows; i++) {
 		const offset = i * 3;
@@ -26,18 +27,21 @@ test('seeded 2D element and mineral fields repeat and normalize', () => {
 test('radial 2D damage weakens nearby cells and emits each failed cell once', () => {
 	ceiling.reset(9);
 	const before = Array.from(ceiling.state().strength);
-	const removed = ceiling.damage(6.25, 8.06, 300);
+	const removed = ceiling.damage(6.25, 8.06, 3);
 	const state = ceiling.state();
 	assert.ok(removed > 0);
 	assert.ok(state.strength.some((value, index) => value < before[index]));
 	const extracted = state.extractedCells();
 	assert.ok(extracted > 0);
-	ceiling.damage(6.25, 8.06, 300);
+	assert.equal(state.lostCells(), 0);
+	assert.equal(state.airborneCells(), extracted);
+	ceiling.damage(6.25, 8.06, 3);
 	assert.ok(state.extractedCells() >= extracted);
 });
 
 test('swept circle contacts the exposed rock face with its outward normal', () => {
 	ceiling.reset(3);
+	ceiling.setShape('smooth');
 	const hit = ceiling.trace(5, 7, 0, 20, 0.1, 0.18);
 	assert.ok(Number.isFinite(hit.time));
 	near(hit.y, ceiling.state().bottom - 0.18, 0.003);
@@ -45,10 +49,34 @@ test('swept circle contacts the exposed rock face with its outward normal', () =
 	assert.equal(hit.ny, -1);
 });
 
+test('smooth heightmap and optional square shape reflect at angled slopes', () => {
+	ceiling.reset(3);
+	ceiling.setShape('smooth');
+	// Excavate a symmetric crater around x = 10 m
+	ceiling.damage(10.06, 8.06, 5);
+	const leftHit = ceiling.trace(9.75, 7.8, 0, 12, 0.05, 0.18);
+	assert.ok(Number.isFinite(leftHit.time));
+	assert.ok(leftHit.nx > 0.1);
+	assert.ok(leftHit.ny < -0.5);
+	const rightHit = ceiling.trace(10.35, 7.8, 0, 12, 0.05, 0.18);
+	assert.ok(Number.isFinite(rightHit.time));
+	assert.ok(rightHit.nx < -0.1);
+	assert.ok(rightHit.ny < -0.5);
+	// Optional square mode uses rounded cell corners instead of blocking with flat side walls
+	ceiling.setShape('square');
+	assert.equal(ceiling.state().shape, 'square');
+	const cornerHit = ceiling.trace(10.35, 7.8, 0, 12, 0.05, 0.18);
+	assert.ok(Number.isFinite(cornerHit.time));
+	assert.ok(cornerHit.ny < 0);
+	ceiling.setShape('smooth');
+});
+
 test('storage stops at 100 cells, adds one dry-platform mass, and sells at once', () => {
 	ceiling.reset(5);
-	for (let x = 1; x < 23; x += 2) ceiling.damage(x, 8.2, 10000);
+	for (let x = 1; x < 23; x += 2) ceiling.damage(x, 8.2, 20);
 	const state = ceiling.state();
+	assert.equal(state.lostCells(), 0);
+	assert.equal(state.airborneCells(), state.extractedCells());
 	for (let i = 0; i < state.active.length; i++) if (state.active[i]) {
 		state.debrisX[i] = 11;
 		state.debrisY[i] = 0.701;
@@ -69,42 +97,58 @@ test('storage stops at 100 cells, adds one dry-platform mass, and sells at once'
 	assert.equal(state.ledger[0].time, 1.5);
 });
 
-test('damage removes double strength over a 4.5-cell radius falling to zero', () => {
+test('damage applies 2x hit-point strength falling linearly to zero at 4.5-cell radius', () => {
 	ceiling.reset(9);
 	const state = ceiling.state();
 	assert.equal(state.damageRadius, 4.5);
 	assert.equal(state.damageMultiplier, 2);
 	const before = Array.from(state.strength);
-	const removed = ceiling.damage(6.25, 8.5, 10);
+	const impactJ = 1.2;
+	const removed = ceiling.damage(6.25, 8.06, impactJ);
 	assert.ok(removed > 0);
-	assert.ok(removed <= 10 + 1e-9);
-	let strengthLost = 0;
-	for (let i = 0; i < before.length; i++) strengthLost += before[i] - state.strength[i];
-	near(strengthLost, removed * 2, 1e-3);
+	assert.ok(removed <= impactJ + 1e-9);
 	const centerColumn = Math.floor(6.25 / state.cell);
-	const centerRow = Math.floor((8.5 - state.bottom) / state.cell);
+	const centerRow = Math.floor((8.06 - state.bottom) / state.cell);
 	const center = centerRow * state.columns + centerColumn;
+	const mid = centerRow * state.columns + centerColumn + 2;
 	const edge = centerRow * state.columns + centerColumn + 4;
-	const outside = centerRow * state.columns + centerColumn + 6;
-	assert.ok(before[center] - state.strength[center] > before[edge] - state.strength[edge]);
-	assert.ok(before[edge] - state.strength[edge] > 0);
+	const outside = centerRow * state.columns + centerColumn + 5;
+	near(before[center] - state.strength[center], impactJ * 2, 1e-5);
+	near(before[mid] - state.strength[mid], impactJ * 2 * (1 - 2 / 4.5), 1e-5);
+	near(before[edge] - state.strength[edge], impactJ * 2 * (1 - 4 / 4.5), 1e-5);
 	near(state.strength[outside], before[outside]);
 });
 
-test('pool exhaustion still records extraction before the loss', () => {
+test('multiple broken cells are never lost on fracture and all broken mass falls', () => {
 	ceiling.reset(11);
 	const state = ceiling.state();
-	state.active.fill(1);
-	ceiling.damage(12.25, 8.5, 1000);
+	const initialEnergy = ceiling.energy();
+	for (let x = 1; x < 23; x += 1.5) ceiling.damage(x, 8.5, 25);
+	const extracted = state.extractedCells();
+	assert.ok(extracted > 400);
+	assert.equal(state.lostCells(), 0);
+	assert.equal(state.airborneCells(), extracted);
+	near(ceiling.energy(), initialEnergy, 1e-5);
+	// Even if all pool slots were marked active, newly broken cells aggregate and fall.
+	ceiling.reset(11);
+	for (let i = 0; i < state.active.length; i++) {
+		state.active[i] = 1;
+		state.debrisCell[i] = 0;
+		state.debrisX[i] = 12;
+		state.debrisY[i] = 4;
+	}
+	const energyBefore = ceiling.energy();
+	ceiling.damage(12.25, 8.06, 10);
 	assert.ok(state.extractedCells() > 0);
-	assert.equal(state.extractedCells(), state.lostCells());
-	near(state.cargoMass(), 0);
+	assert.equal(state.lostCells(), 0);
+	assert.equal(state.airborneCells(), state.active.length + state.extractedCells());
+	near(ceiling.energy(), energyBefore, 1e-5);
 	ceiling.reset(1);
 });
 
 test('cargo tracks per-mineral mass and each wall sale appends a frozen ledger entry', () => {
 	ceiling.reset(7);
-	for (let x = 1; x < 23; x += 2) ceiling.damage(x, 8.2, 10000);
+	for (let x = 1; x < 23; x += 2) ceiling.damage(x, 8.2, 20);
 	const state = ceiling.state();
 	const world = { platform: { x: 12, vx: 0 }, heat: 0 };
 	for (let i = 0; i < state.active.length; i++) if (state.active[i]) {
@@ -134,8 +178,8 @@ test('cargo tracks per-mineral mass and each wall sale appends a frozen ledger e
 
 test('extracted, airborne, caught and lost cells stay conserved', () => {
 	ceiling.reset(13);
-	ceiling.damage(6.25, 8.5, 100);
-	ceiling.damage(18.25, 8.5, 100);
+	ceiling.damage(6.25, 8.5, 10);
+	ceiling.damage(18.25, 8.5, 10);
 	const state = ceiling.state();
 	const world = { platform: { x: 12, vx: 0 }, heat: 0 };
 	for (let step = 0; step < 2400 && state.airborneCells() > 0; step++) {
@@ -145,20 +189,4 @@ test('extracted, airborne, caught and lost cells stay conserved', () => {
 	assert.equal(state.airborneCells(), 0);
 	assert.equal(state.extractedCells(), state.caughtCells() + state.lostCells());
 	near(state.caughtValue(), state.cargoValue() + state.soldValue());
-});
-
-test('fragments bounce off the unbreakable wedge instead of passing through', () => {
-	ceiling.reset(17);
-	const state = ceiling.state();
-	state.active[0] = 1;
-	state.debrisCell[0] = 0;
-	state.debrisX[0] = 0.3;
-	state.debrisY[0] = 2.2;
-	state.debrisVx[0] = 0;
-	state.debrisVy[0] = 0;
-	const world = { platform: { x: 12, vx: 0 }, heat: 0 };
-	for (let i = 0; i < 240; i++) ceiling.step(world, 1 / 240, 60);
-	assert.ok(state.debrisVx[0] > 0.5);
-	assert.ok(state.debrisX[0] > 0.45);
-	assert.ok(world.heat > 0);
 });

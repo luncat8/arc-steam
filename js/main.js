@@ -4,7 +4,7 @@
 	const config = physics.config;
 	const canvas = document.getElementById('c');
 	const context = canvas.getContext('2d');
-	const ids = ['clock', 'drive', 'launch', 'status', 'force', 'force-value', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'error', 'motion', 'pause', 'speed', 'view',
+	const ids = ['clock', 'drive', 'launch', 'status', 'force', 'force-value', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'error', 'motion', 'pause', 'speed', 'shape', 'view',
 		'mineral-column', 'column-label', 'mineral-layer', 'layer-label', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
 		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger'];
@@ -86,22 +86,11 @@
 		if (window.SteamCeiling) window.SteamCeiling.draw(context, ui.view.value);
 		if (window.SteamCeiling) {
 			const ceiling = window.SteamCeiling.state();
-			const index = selectedLayer * ceiling.columns + selectedColumn;
 			context.strokeStyle = '#edf6f1';
 			context.lineWidth = 1.5 / scale;
 			context.strokeRect(selectedColumn * ceiling.cell, ceiling.bottom + selectedLayer * ceiling.cell, ceiling.cell, ceiling.cell);
 			context.lineWidth = 1 / scale;
 		}
-		// Unbreakable left-wall deflector above the pocket.
-		context.fillStyle = '#4a5a60';
-		context.strokeStyle = '#7d9094';
-		context.beginPath();
-		context.moveTo(config.wedgeX0, config.wedgeY0);
-		context.lineTo(config.wedgeX0, config.wedgeY1);
-		context.lineTo(config.wedgeX1, config.wedgeY1);
-		context.closePath();
-		context.fill();
-		context.stroke();
 		context.strokeStyle = '#657578';
 		context.beginPath(); context.moveTo(-pocketDepth, 0); context.lineTo(config.width, 0); context.stroke();
 		if (Number.isFinite(world.target)) {
@@ -126,8 +115,8 @@
 		context.strokeStyle = '#a9c7bc';
 		context.beginPath(); context.arc(ball.x, ballY, config.radius + 0.13, 0, Math.PI * 2); context.stroke();
 		context.restore();
-		drawSellLabel(offsetX + 8, floorY - scale * 2.0, -Math.PI * 0.5);
-		drawSellLabel(offsetX + config.width * scale - 8, floorY - scale * 2.0, Math.PI * 0.5);
+		drawSellLabel(offsetX + 8, floorY - scale * 1.4, -Math.PI * 0.5);
+		drawSellLabel(offsetX + config.width * scale - 8, floorY - scale * 1.4, Math.PI * 0.5);
 	}
 
 	function drawSellLabel(x, y, rotation) {
@@ -222,25 +211,34 @@
 		ui['force-value'].textContent = ui.force.value + '%';
 	}
 
+	function isGameKey(code) {
+		return code === 'Space' || code === 'KeyQ' || code === 'KeyA' || code === 'KeyD' || code === 'KeyW' || code === 'KeyS' || code === 'KeyE';
+	}
+
 	function keydown(event) {
-		if (event.target.closest('input, select, textarea') || event.ctrlKey || event.metaKey || event.altKey) return;
+		if (event.ctrlKey || event.metaKey || event.altKey) return;
+		if (event.target.closest('textarea, [contenteditable]')) return;
 		const key = event.code;
-		if (key === 'Space' && event.target.closest('button')) return;
-		if (key !== 'Space' && key !== 'KeyA' && key !== 'KeyD' && key !== 'KeyW' && key !== 'KeyS' && key !== 'KeyE') return;
+		if (!isGameKey(key)) return;
 		event.preventDefault();
+		if (document.activeElement && document.activeElement !== canvas && document.activeElement !== document.body) {
+			document.activeElement.blur();
+		}
 		if (key === 'KeyA') leftHeld = true;
 		if (key === 'KeyD') rightHeld = true;
 		updateDirection();
 		if (key === 'KeyW') setForce(world.forceSetting + 0.1);
 		if (key === 'KeyS') setForce(world.forceSetting - 0.1);
 		if (event.repeat) return;
-		if (key === 'Space') toggleDrive();
+		if (key === 'Space' || key === 'KeyQ') toggleDrive();
 		if (key === 'KeyE') releaseBall();
 	}
 
 	function keyup(event) {
-		if (event.code === 'KeyA') leftHeld = false;
-		if (event.code === 'KeyD') rightHeld = false;
+		const key = event.code;
+		if (key === 'Space' || key === 'KeyQ') event.preventDefault();
+		if (key === 'KeyA') leftHeld = false;
+		if (key === 'KeyD') rightHeld = false;
 		updateDirection();
 	}
 
@@ -268,11 +266,12 @@
 	}
 
 	document.getElementById('reset').addEventListener('click', function () {
-		world = physics.createWorld(); renderedSales = -1; clearInput(); setForce(world.forceSetting); accumulator = 0; readout();
+		world = physics.createWorld(); window.SteamCeiling.setShape(ui.shape.value); renderedSales = -1; clearInput(); setForce(world.forceSetting); accumulator = 0; readout();
 	});
 	ui.drive.addEventListener('click', toggleDrive);
 	ui.launch.addEventListener('click', releaseBall);
 	ui.pause.addEventListener('click', togglePause);
+	ui.shape.addEventListener('change', function () { window.SteamCeiling.setShape(ui.shape.value); });
 	ui.force.addEventListener('input', function () { setForce(Number(ui.force.value) / 100); });
 	ui['mineral-column'].addEventListener('input', function () { selectedColumn = Number(ui['mineral-column'].value) - 1; readout(); });
 	ui['mineral-layer'].addEventListener('input', function () { selectedLayer = Number(ui['mineral-layer'].value) - 1; readout(); });

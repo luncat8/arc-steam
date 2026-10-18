@@ -22,9 +22,10 @@ async function main() {
 		await page.waitForFunction(() => document.getElementById('clock').textContent !== '0.0 s');
 		await page.locator('#drive').click();
 		assert.equal(await page.locator('#drive').getAttribute('aria-pressed'), 'true');
-		await page.locator('#c').focus();
 		await page.keyboard.press('Space');
 		assert.equal(await page.locator('#drive').getAttribute('aria-pressed'), 'false');
+		await page.keyboard.press('KeyQ');
+		assert.equal(await page.locator('#drive').getAttribute('aria-pressed'), 'true');
 		await page.keyboard.press('KeyW');
 		assert.equal(await page.locator('#force').inputValue(), '70');
 		await page.locator('#pause').click();
@@ -32,9 +33,17 @@ async function main() {
 		const time = await page.locator('#clock').textContent();
 		await page.waitForTimeout(200);
 		assert.equal(await page.locator('#clock').textContent(), time);
+		// Pressing Space while Pause was the last clicked GUI button toggles drive, not Pause.
+		await page.keyboard.press('Space');
+		assert.equal(await page.locator('#drive').getAttribute('aria-pressed'), 'false');
+		assert.equal(await page.locator('#pause').textContent(), 'Resume');
 		await page.locator('#reset').click();
 		assert.equal(await page.locator('#force').inputValue(), '60');
 		await page.locator('#pause').click();
+		assert.equal(await page.locator('#shape').inputValue(), 'smooth');
+		await page.locator('#shape').selectOption('square');
+		assert.equal(await page.locator('#shape').inputValue(), 'square');
+		await page.locator('#shape').selectOption('smooth');
 		await page.locator('#mineral-column').fill('10');
 		assert.equal(await page.locator('#column-label').textContent(), '10 / 192');
 		await page.locator('#mineral-layer').fill('2');
@@ -53,7 +62,7 @@ async function main() {
 		await page.waitForTimeout(100);
 		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
 		assert.deepEqual(errors, []);
-		console.log('PASS: startup, rendering, drive toggle, keyboard force, pause/reset, inspector select, target travel, ledger, narrow layout; no page errors.');
+		console.log('PASS: startup, rendering, drive toggle (Space/Q without pressing GUI controls), keyboard force, pause/reset, shape selector, inspector select, target travel, ledger, narrow layout; no page errors.');
 	} finally {
 		await browser.close();
 	}

@@ -50,6 +50,10 @@ Storage limit is 100 cells; full storage add similar mass as dry platform mass. 
 platform movement energy exchange on ball capture and bounce and friction while this. we need Newtonian physics and kinetic-thermal energy conversion.
 
 
+improve ball reflection from shape of rock. make optional shape not square but smooth by default . like heightmap.
+
+All Broken Cells and Mass Fall Without Loss
+
 
 ## note this is not arcanoid and you should not hallucinate features from it.
 ## make good clean interactive gui to show what installed and available, tech tree, etc.

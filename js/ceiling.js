@@ -8,37 +8,23 @@
 	const columns = Math.round(width / cell);
 	const rows = Math.round((top - bottom) / cell);
 	const count = columns * rows;
-	const maxDebris = 384;
+	const maxDebris = count;
 	const storageLimit = 100;
 	const cellMass = 0.6;
 	const gravity = 9.81;
 	const cargoHeight = 0.7;
-	// Impact tuning: each joule of impact loss removes 2 J of rock strength, spread
-	// over a 4.5-cell radius with linear falloff to zero at the edge. Energy cost
-	// booked to the ledger is strength removed divided by the multiplier, so the
-	// energy balance stays exact while rock breaks faster and wider.
+	// Impact tuning: hit point receives 2x impact energy in strength removal,
+	// falling linearly to zero across a 4.5-cell radius (1.5x of the base 3-cell radius).
 	const damageRadius = 4.5;
 	const damageMultiplier = 2;
 	const damageRange = 5;
-	// Unbreakable left-wall deflector. Keep in sync with js/physics.js: the wedge
-	// sits on the pocket top (deck height) and funnels falling bodies away from
-	// the wall toward the reflector. Triangle (0,1.5) (0,0.7) (0.7,0.7).
-	const wedgeX0 = 0;
-	const wedgeY0 = 1.5;
-	const wedgeX1 = 0.7;
-	const wedgeY1 = 0.7;
-	const wedgeDx = wedgeX1 - wedgeX0;
-	const wedgeDy = wedgeY1 - wedgeY0;
-	const wedgeLen = Math.sqrt(wedgeDx * wedgeDx + wedgeDy * wedgeDy);
-	const wedgeNx = -wedgeDy / wedgeLen;
-	const wedgeNy = wedgeDx / wedgeLen;
-	const wedgeC = wedgeNx * wedgeX0 + wedgeNy * wedgeY0;
-	const debrisRestitution = 0.4;
 	const initialStrength = new Float32Array(count);
 	const strength = new Float32Array(count);
 	const elements = new Float32Array(count * 3);
 	const minerals = new Float32Array(count * 3);
 	const prices = new Float32Array(count);
+	const firstRow = new Uint8Array(columns);
+	const heightmap = new Float64Array(columns + 1);
 	const elementColors = new Array(count);
 	const mineralStyles = new Array(count);
 	const priceColors = new Array(count);
@@ -49,6 +35,9 @@
 	const debrisVx = new Float64Array(maxDebris);
 	const debrisVy = new Float64Array(maxDebris);
 	const debrisCell = new Uint16Array(maxDebris);
+	const debrisCells = new Uint16Array(maxDebris);
+	const debrisValue = new Float64Array(maxDebris);
+	const debrisMinerals = new Float64Array(maxDebris * 3);
 	const hit = { time: Infinity, x: 0, y: 0, nx: 0, ny: 0, index: -1 };
 	const mineralColors = [[184, 91, 64], [65, 174, 133], [133, 153, 202]];
 	const mineralPrices = [3, 7, 11];
@@ -60,6 +49,7 @@
 		strengthPalette[i] = 'rgb(' + Math.round(75 + remaining * 130) + ' ' + Math.round(45 + remaining * 125) + ' ' + Math.round(38 + remaining * 82) + ')';
 	}
 	let seed = 1;
+	let rockShape = 'smooth';
 	let extractedCells = 0;
 	let caughtCells = 0;
 	let lostCells = 0;
@@ -89,6 +79,26 @@
 		return a + (b - a) * fy;
 	}
 
+	function updateHeightmap() {
+		for (let c = 0; c < columns; c++) {
+			let r = 0;
+			while (r < rows && strength[r * columns + c] <= 0) r++;
+			firstRow[c] = r;
+		}
+		for (let v = 0; v <= columns; v++) {
+			const c0 = Math.max(0, Math.min(columns - 1, v - 2));
+			const c1 = Math.max(0, Math.min(columns - 1, v - 1));
+			const c2 = Math.max(0, Math.min(columns - 1, v));
+			const c3 = Math.max(0, Math.min(columns - 1, v + 1));
+			heightmap[v] = bottom + (firstRow[c0] + 3 * firstRow[c1] + 3 * firstRow[c2] + firstRow[c3]) * 0.125 * cell;
+		}
+	}
+
+	function setShape(mode) {
+		rockShape = mode === 'square' ? 'square' : 'smooth';
+		return rockShape;
+	}
+
 	function reset(newSeed) {
 		seed = newSeed || 1;
 		extractedCells = 0;
@@ -105,6 +115,9 @@
 		cargoMinerals[0] = cargoMinerals[1] = cargoMinerals[2] = 0;
 		soldMinerals[0] = soldMinerals[1] = soldMinerals[2] = 0;
 		active.fill(0);
+		debrisCells.fill(0);
+		debrisValue.fill(0);
+		debrisMinerals.fill(0);
 		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
 			const index = row * columns + column;
 			const x = column * 0.075;
@@ -135,6 +148,7 @@
 			const mineralBlue = minerals[offset] * mineralColors[0][2] + minerals[offset + 1] * mineralColors[1][2] + minerals[offset + 2] * mineralColors[2][2];
 			mineralStyles[index] = 'rgb(' + Math.round(mineralRed) + ' ' + Math.round(mineralGreen) + ' ' + Math.round(mineralBlue) + ')';
 		}
+		updateHeightmap();
 	}
 
 	function damageWeight(distance) {
@@ -143,12 +157,10 @@
 
 	function damage(x, y, impactJ) {
 		const centerColumn = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
-		const centerRow = Math.max(0, Math.min(rows - 1, Math.floor((y - bottom) / cell)));
-		let weightTotal = 0;
-		for (let rowOffset = -damageRange; rowOffset <= damageRange; rowOffset++) for (let columnOffset = -damageRange; columnOffset <= damageRange; columnOffset++) {
-			const distance = Math.sqrt(columnOffset * columnOffset + rowOffset * rowOffset);
-			if (distance <= damageRadius) weightTotal += damageWeight(distance);
-		}
+		let firstIntact = 0;
+		while (firstIntact < rows && strength[firstIntact * columns + centerColumn] <= 0) firstIntact++;
+		const rawRow = Math.max(0, Math.min(rows - 1, Math.floor((y - bottom) / cell)));
+		const centerRow = firstIntact < rows ? Math.max(firstIntact, rawRow) : rawRow;
 		const budget = impactJ * damageMultiplier;
 		let removed = 0;
 		for (let rowOffset = -damageRange; rowOffset <= damageRange; rowOffset++) for (let columnOffset = -damageRange; columnOffset <= damageRange; columnOffset++) {
@@ -158,74 +170,228 @@
 			if (row < 0 || row >= rows || column < 0 || column >= columns || distance > damageRadius) continue;
 			const index = row * columns + column;
 			if (strength[index] <= 0) continue;
-			const amount = Math.min(strength[index], budget * damageWeight(distance) / weightTotal);
+			const amount = Math.min(strength[index], budget * damageWeight(distance));
 			strength[index] -= amount;
 			removed += amount / damageMultiplier;
 			if (strength[index] > 0.0001) continue;
+			removed += strength[index] / damageMultiplier;
 			strength[index] = 0;
 			spawn(index);
 		}
-		return removed;
+		const minCol = Math.max(0, centerColumn - damageRange);
+		const maxCol = Math.min(columns - 1, centerColumn + damageRange);
+		for (let column = minCol; column <= maxCol; column++) {
+			let highestBroken = -1;
+			for (let row = rows - 1; row >= 0; row--) {
+				if (strength[row * columns + column] <= 0) { highestBroken = row; break; }
+			}
+			for (let row = 0; row < highestBroken; row++) {
+				const index = row * columns + column;
+				if (strength[index] <= 0) continue;
+				removed += strength[index] / damageMultiplier;
+				strength[index] = 0;
+				spawn(index);
+			}
+		}
+		updateHeightmap();
+		return Math.min(impactJ, removed);
+	}
+
+	function fragmentCells(i) {
+		return debrisCells[i] || 1;
+	}
+
+	function fragmentValue(i) {
+		return debrisCells[i] ? debrisValue[i] : prices[debrisCell[i]];
+	}
+
+	function fragmentMechanical(i) {
+		const mass = fragmentCells(i) * cellMass;
+		return mass * (0.5 * (debrisVx[i] * debrisVx[i] + debrisVy[i] * debrisVy[i]) + gravity * Math.max(0, debrisY[i]));
 	}
 
 	function spawn(index) {
+		const offset = index * 3;
+		const x = (index % columns + 0.5) * cell;
+		const y = bottom + (Math.floor(index / columns) + 0.5) * cell;
 		for (let i = 0; i < maxDebris; i++) {
 			if (active[i]) continue;
 			active[i] = 1;
 			debrisCell[i] = index;
-			debrisX[i] = (index % columns + 0.5) * cell;
-			debrisY[i] = bottom + (Math.floor(index / columns) + 0.5) * cell;
+			debrisCells[i] = 1;
+			debrisValue[i] = prices[index];
+			const mOffset = i * 3;
+			debrisMinerals[mOffset] = cellMass * minerals[offset];
+			debrisMinerals[mOffset + 1] = cellMass * minerals[offset + 1];
+			debrisMinerals[mOffset + 2] = cellMass * minerals[offset + 2];
+			debrisX[i] = x;
+			debrisY[i] = y;
 			debrisVx[i] = 0;
 			debrisVy[i] = 0;
 			extractedCells++;
 			return;
 		}
-		// A failed cell is extracted even when the fragment pool is full; its
-		// mass is immediately lost and its potential exported for accounting.
+		// If every slot was externally marked active, aggregate into the closest
+		// active fragment so broken cells are never lost and all broken mass falls.
+		let target = 0;
+		let bestDist = Infinity;
+		for (let i = 0; i < maxDebris; i++) {
+			const dx = debrisX[i] - x;
+			const dy = debrisY[i] - y;
+			const d = dx * dx + dy * dy;
+			if (d < bestDist) { bestDist = d; target = i; }
+		}
+		const prevCells = fragmentCells(target);
+		if (!debrisCells[target]) {
+			const baseIndex = debrisCell[target];
+			const baseOffset = baseIndex * 3;
+			const mOffset = target * 3;
+			debrisCells[target] = 1;
+			debrisValue[target] = prices[baseIndex];
+			debrisMinerals[mOffset] = cellMass * minerals[baseOffset];
+			debrisMinerals[mOffset + 1] = cellMass * minerals[baseOffset + 1];
+			debrisMinerals[mOffset + 2] = cellMass * minerals[baseOffset + 2];
+		}
+		const beforeE = fragmentMechanical(target) + cellMass * gravity * y;
+		const nextCells = prevCells + 1;
+		debrisVx[target] = debrisVx[target] * (prevCells / nextCells);
+		debrisVy[target] = debrisVy[target] * (prevCells / nextCells);
+		debrisX[target] = (debrisX[target] * prevCells + x) / nextCells;
+		debrisY[target] = (debrisY[target] * prevCells + y) / nextCells;
+		debrisCells[target] = nextCells;
+		debrisValue[target] += prices[index];
+		const mOffset = target * 3;
+		debrisMinerals[mOffset] += cellMass * minerals[offset];
+		debrisMinerals[mOffset + 1] += cellMass * minerals[offset + 1];
+		debrisMinerals[mOffset + 2] += cellMass * minerals[offset + 2];
+		exportedEnergy += beforeE - fragmentMechanical(target);
 		extractedCells++;
-		lostCells++;
-		lostValue += prices[index];
-		exportedEnergy += cellMass * gravity * (bottom + (Math.floor(index / columns) + 0.5) * cell);
 	}
 
-	function rayBox(x, y, dx, dy, minX, minY, maxX, maxY, result) {
-		let enter = 0;
-		let exit = 1;
-		let nx = 0;
-		let ny = 0;
-		if (Math.abs(dx) < 1e-12) {
-			if (x <= minX || x >= maxX) return false;
-		} else {
-			let near = (minX - x) / dx;
-			let far = (maxX - x) / dx;
-			let normal = -1;
-			if (near > far) { const swap = near; near = far; far = swap; normal = 1; }
-			if (near > enter) { enter = near; nx = normal; ny = 0; }
-			exit = Math.min(exit, far);
-			if (enter > exit) return false;
+	function traceSmooth(x, y, vx, vy, duration, radius) {
+		updateHeightmap();
+		const dx = vx * duration;
+		const dy = vy * duration - 0.5 * gravity * duration * duration;
+		const minColumn = Math.max(0, Math.floor((Math.min(x, x + dx) - radius) / cell));
+		const maxColumn = Math.min(columns - 1, Math.floor((Math.max(x, x + dx) + radius) / cell));
+		if (minColumn > maxColumn) return hit;
+		let minH = top + 1;
+		for (let c = minColumn; c <= maxColumn; c++) {
+			const h = Math.min(heightmap[c], heightmap[c + 1]);
+			if (h < minH) minH = h;
 		}
-		if (Math.abs(dy) < 1e-12) {
-			if (y <= minY || y >= maxY) return false;
-		} else {
-			let near = (minY - y) / dy;
-			let far = (maxY - y) / dy;
-			let normal = -1;
-			if (near > far) { const swap = near; near = far; far = swap; normal = 1; }
-			if (near > enter) { enter = near; nx = 0; ny = normal; }
-			exit = Math.min(exit, far);
-			if (enter > exit) return false;
+		if (Math.max(y, y + dy) + radius < minH - 1e-4) return hit;
+		let best = 2;
+		for (let c = minColumn; c <= maxColumn; c++) {
+			if (heightmap[c] >= top - 1e-9 && heightmap[c + 1] >= top - 1e-9) continue;
+			const x0 = c * cell;
+			const y0 = heightmap[c];
+			const y1 = heightmap[c + 1];
+			const sx = cell;
+			const sy = y1 - y0;
+			const len = Math.hypot(sx, sy);
+			const nx = sy / len;
+			const ny = -sx / len;
+			const vn = dx * nx + dy * ny;
+			if (vn >= -1e-12) continue;
+			const dist0 = (x - x0) * nx + (y - y0) * ny;
+			let s = -1;
+			if (dist0 >= radius) {
+				s = (radius - dist0) / vn;
+			} else if (dist0 >= radius - 1e-4) {
+				const cx0 = x - nx * dist0;
+				const cy0 = y - ny * dist0;
+				const proj0 = ((cx0 - x0) * sx + (cy0 - y0) * sy) / (len * len);
+				if (proj0 >= -1e-6 && proj0 <= 1 + 1e-6) s = 0;
+			}
+			if (s < 0 || s > 1 || s >= best) continue;
+			const hx = x + dx * s;
+			const hy = y + dy * s;
+			const cx = hx - nx * radius;
+			const cy = hy - ny * radius;
+			const proj = ((cx - x0) * sx + (cy - y0) * sy) / (len * len);
+			if (proj < -1e-6 || proj > 1 + 1e-6) continue;
+			best = s;
+			hit.time = duration * s;
+			hit.x = hx;
+			hit.y = hy;
+			hit.nx = nx;
+			hit.ny = ny;
+			const row = Math.min(rows - 1, firstRow[c]);
+			hit.index = row * columns + c;
 		}
-		if (enter < 1e-8 || enter > 1 || dx * nx + dy * ny >= 0) return false;
-		result.enter = enter;
-		result.nx = nx;
-		result.ny = ny;
-		return true;
+		const a = dx * dx + dy * dy;
+		if (a <= 1e-18) return hit;
+		for (let v = minColumn; v <= maxColumn + 1; v++) {
+			const leftCol = Math.max(0, v - 1);
+			const rightCol = Math.min(columns - 1, v);
+			if (firstRow[leftCol] >= rows && firstRow[rightCol] >= rows) continue;
+			const vx0 = v * cell;
+			const vy0 = heightmap[v];
+			const ox = x - vx0;
+			const oy = y - vy0;
+			const b = 2 * (ox * dx + oy * dy);
+			if (b >= -1e-12) continue;
+			const cQuad = ox * ox + oy * oy - radius * radius;
+			let s = -1;
+			if (cQuad >= 0) {
+				const disc = b * b - 4 * a * cQuad;
+				if (disc >= 0) s = (-b - Math.sqrt(disc)) / (2 * a);
+			} else if (cQuad >= -2 * radius * 1e-4) {
+				s = 0;
+			}
+			if (s < 0 || s > 1 || s >= best) continue;
+			const hx = x + dx * s;
+			const hy = y + dy * s;
+			const rx = hx - vx0;
+			const ry = hy - vy0;
+			const rlen = Math.hypot(rx, ry);
+			if (rlen <= 1e-9 || ry > 1e-6) continue;
+			best = s;
+			hit.time = duration * s;
+			hit.x = hx;
+			hit.y = hy;
+			hit.nx = rx / rlen;
+			hit.ny = Math.min(0, ry / rlen);
+			const nlen = Math.hypot(hit.nx, hit.ny);
+			hit.nx /= nlen;
+			hit.ny /= nlen;
+			const col = firstRow[rightCol] < rows ? rightCol : leftCol;
+			hit.index = Math.min(rows - 1, firstRow[col]) * columns + col;
+		}
+		return hit;
 	}
 
-	const rayResult = { enter: 0, nx: 0, ny: 0 };
-	function trace(x, y, vx, vy, duration, radius) {
-		hit.time = Infinity;
-		hit.index = -1;
+	function testCorner(x, y, dx, dy, a, cx0, cy0, radius, index, best) {
+		const ox = x - cx0;
+		const oy = y - cy0;
+		const b = 2 * (ox * dx + oy * dy);
+		if (b >= -1e-12) return best;
+		const cQuad = ox * ox + oy * oy - radius * radius;
+		let s = -1;
+		if (cQuad >= 0) {
+			const disc = b * b - 4 * a * cQuad;
+			if (disc >= 0) s = (-b - Math.sqrt(disc)) / (2 * a);
+		} else if (cQuad >= -2 * radius * 1e-4) {
+			s = 0;
+		}
+		if (s < 0 || s > 1 || s >= best) return best;
+		const hx = x + dx * s;
+		const hy = y + dy * s;
+		const rx = hx - cx0;
+		const ry = hy - cy0;
+		const rlen = Math.hypot(rx, ry);
+		if (rlen <= 1e-9) return best;
+		hit.time = s;
+		hit.x = hx;
+		hit.y = hy;
+		hit.nx = rx / rlen;
+		hit.ny = ry / rlen;
+		hit.index = index;
+		return s;
+	}
+
+	function traceSquare(x, y, vx, vy, duration, radius) {
 		const dx = vx * duration;
 		const dy = vy * duration - 0.5 * gravity * duration * duration;
 		const minColumn = Math.max(0, Math.floor((Math.min(x, x + dx) - radius) / cell));
@@ -234,41 +400,96 @@
 		const maxRow = Math.min(rows - 1, Math.floor((Math.max(y, y + dy) + radius - bottom) / cell));
 		if (minColumn > maxColumn || minRow > maxRow) return hit;
 		let best = 2;
+		const a = dx * dx + dy * dy;
 		for (let row = minRow; row <= maxRow; row++) for (let column = minColumn; column <= maxColumn; column++) {
 			const index = row * columns + column;
 			if (strength[index] <= 0) continue;
-			const minX = column * cell - radius;
-			const minY = bottom + row * cell - radius;
-			if (!rayBox(x, y, dx, dy, minX, minY, minX + cell + radius * 2, minY + cell + radius * 2, rayResult)) continue;
-			if (rayResult.enter >= best) continue;
-			best = rayResult.enter;
-			hit.index = index;
-			hit.time = duration * best;
-			hit.x = x + dx * best;
-			hit.y = y + dy * best;
-			hit.nx = rayResult.nx;
-			hit.ny = rayResult.ny;
+			const x0 = column * cell;
+			const x1 = x0 + cell;
+			const y0 = bottom + row * cell;
+			const y1 = y0 + cell;
+			const expBottom = row === 0 || strength[index - columns] <= 0;
+			const expTop = row < rows - 1 && strength[index + columns] <= 0;
+			const expLeft = column > 0 && strength[index - 1] <= 0;
+			const expRight = column < columns - 1 && strength[index + 1] <= 0;
+			if (expBottom && dy > 1e-12) {
+				const dist0 = y0 - y;
+				const s = dist0 >= radius ? (dist0 - radius) / dy : (dist0 >= radius - 1e-4 && x >= x0 && x <= x1 ? 0 : -1);
+				const hx = x + dx * s;
+				if (s >= 0 && s <= 1 && s < best && hx >= x0 - 1e-7 && hx <= x1 + 1e-7) {
+					best = s; hit.time = s; hit.x = hx; hit.y = y + dy * s; hit.nx = 0; hit.ny = -1; hit.index = index;
+				}
+			}
+			if (expTop && dy < -1e-12) {
+				const dist0 = y - y1;
+				const s = dist0 >= radius ? (dist0 - radius) / -dy : (dist0 >= radius - 1e-4 && x >= x0 && x <= x1 ? 0 : -1);
+				const hx = x + dx * s;
+				if (s >= 0 && s <= 1 && s < best && hx >= x0 - 1e-7 && hx <= x1 + 1e-7) {
+					best = s; hit.time = s; hit.x = hx; hit.y = y + dy * s; hit.nx = 0; hit.ny = 1; hit.index = index;
+				}
+			}
+			if (expLeft && dx > 1e-12) {
+				const dist0 = x0 - x;
+				const s = dist0 >= radius ? (dist0 - radius) / dx : (dist0 >= radius - 1e-4 && y >= y0 && y <= y1 ? 0 : -1);
+				const hy = y + dy * s;
+				if (s >= 0 && s <= 1 && s < best && hy >= y0 - 1e-7 && hy <= y1 + 1e-7) {
+					best = s; hit.time = s; hit.x = x + dx * s; hit.y = hy; hit.nx = -1; hit.ny = 0; hit.index = index;
+				}
+			}
+			if (expRight && dx < -1e-12) {
+				const dist0 = x - x1;
+				const s = dist0 >= radius ? (dist0 - radius) / -dx : (dist0 >= radius - 1e-4 && y >= y0 && y <= y1 ? 0 : -1);
+				const hy = y + dy * s;
+				if (s >= 0 && s <= 1 && s < best && hy >= y0 - 1e-7 && hy <= y1 + 1e-7) {
+					best = s; hit.time = s; hit.x = x + dx * s; hit.y = hy; hit.nx = 1; hit.ny = 0; hit.index = index;
+				}
+			}
+			if (a <= 1e-18) continue;
+			if (expBottom || expLeft) best = testCorner(x, y, dx, dy, a, x0, y0, radius, index, best);
+			if (expBottom || expRight) best = testCorner(x, y, dx, dy, a, x1, y0, radius, index, best);
+			if (expTop || expLeft) best = testCorner(x, y, dx, dy, a, x0, y1, radius, index, best);
+			if (expTop || expRight) best = testCorner(x, y, dx, dy, a, x1, y1, radius, index, best);
 		}
+		if (best <= 1) hit.time = duration * best;
 		return hit;
 	}
 
-	function fragmentMechanical(i) {
-		return cellMass * (0.5 * (debrisVx[i] * debrisVx[i] + debrisVy[i] * debrisVy[i]) + gravity * Math.max(0, debrisY[i]));
+	function trace(x, y, vx, vy, duration, radius) {
+		hit.time = Infinity;
+		hit.index = -1;
+		return rockShape === 'square' ? traceSquare(x, y, vx, vy, duration, radius) : traceSmooth(x, y, vx, vy, duration, radius);
 	}
 
 	function catchFragment(world, i, carriedMass) {
 		if (cargoCells >= storageLimit) return false;
-		const before = 0.5 * carriedMass * world.platform.vx * world.platform.vx + 0.5 * cellMass * (debrisVx[i] * debrisVx[i] + debrisVy[i] * debrisVy[i]);
-		world.platform.vx = (carriedMass * world.platform.vx + cellMass * debrisVx[i]) / (carriedMass + cellMass);
-		const after = 0.5 * (carriedMass + cellMass) * world.platform.vx * world.platform.vx;
+		const totalCells = fragmentCells(i);
+		const take = Math.min(totalCells, storageLimit - cargoCells);
+		const ratio = take / totalCells;
+		const caughtMass = take * cellMass;
+		const before = 0.5 * carriedMass * world.platform.vx * world.platform.vx + 0.5 * caughtMass * (debrisVx[i] * debrisVx[i] + debrisVy[i] * debrisVy[i]);
+		world.platform.vx = (carriedMass * world.platform.vx + caughtMass * debrisVx[i]) / (carriedMass + caughtMass);
+		const after = 0.5 * (carriedMass + caughtMass) * world.platform.vx * world.platform.vx;
 		world.heat += Math.max(0, before - after);
 		const index = debrisCell[i];
 		const offset = index * 3;
+		const mOffset = i * 3;
+		cargoCells += take;
+		caughtCells += take;
+		const val = fragmentValue(i) * ratio;
+		cargoValue += val;
+		for (let m = 0; m < 3; m++) {
+			const minMass = (debrisCells[i] ? debrisMinerals[mOffset + m] : cellMass * minerals[offset + m]) * ratio;
+			cargoMinerals[m] += minMass;
+			if (debrisCells[i]) debrisMinerals[mOffset + m] -= minMass;
+		}
+		if (take < totalCells) {
+			debrisCells[i] = totalCells - take;
+			debrisValue[i] -= val;
+			return false;
+		}
 		active[i] = 0;
-		cargoCells++;
-		caughtCells++;
-		cargoValue += prices[index];
-		for (let m = 0; m < 3; m++) cargoMinerals[m] += cellMass * minerals[offset + m];
+		debrisCells[i] = 0;
+		debrisValue[i] = 0;
 		return true;
 	}
 
@@ -279,93 +500,48 @@
 		return time >= 0 ? time : Infinity;
 	}
 
-	function wedgeDistance(x, y) {
-		return wedgeNx * x + wedgeNy * y - wedgeC;
-	}
-
-	function reflectDebris(world, i, x, y, vx, vy) {
-		const normalVelocity = vx * wedgeNx + vy * wedgeNy;
-		if (normalVelocity >= 0) return { vx, vy };
-		const before = 0.5 * cellMass * (vx * vx + vy * vy) + cellMass * gravity * Math.max(0, y);
-		const impulse = (1 + debrisRestitution) * normalVelocity;
-		vx -= impulse * wedgeNx;
-		vy -= impulse * wedgeNy;
-		const after = 0.5 * cellMass * (vx * vx + vy * vy) + cellMass * gravity * Math.max(0, y);
-		world.heat += Math.max(0, before - after);
-		return { vx, vy };
-	}
-
 	function step(world, dt, carriedMass) {
 		for (let i = 0; i < maxDebris; i++) {
 			if (!active[i]) continue;
-			let oldX = debrisX[i];
-			let oldY = debrisY[i];
-			let oldVx = debrisVx[i];
-			let oldVy = debrisVy[i];
-			let timeLeft = dt;
-			// Unbreakable wedge: fragments above the pocket top bounce off the
-			// slope instead of falling through it. Debris is treated as a point.
-			if (oldY >= wedgeY1 - 0.05 && oldX >= -0.05 && oldX <= wedgeX1 + 0.5) {
-				const oldDistance = wedgeDistance(oldX, oldY);
-				if (oldDistance < 0 && oldY >= wedgeY1 && oldX >= wedgeX0 && oldX <= wedgeX1) {
-					// Penetrating after a fast step: project out to the slope.
-					oldX += wedgeNx * -oldDistance;
-					oldY += wedgeNy * -oldDistance;
-					const reflected = reflectDebris(world, i, oldX, oldY, oldVx, oldVy);
-					oldVx = reflected.vx;
-					oldVy = reflected.vy;
-				} else if (oldDistance >= 0) {
-					const endX = oldX + oldVx * timeLeft;
-					const endY = oldY + oldVy * timeLeft - 0.5 * gravity * timeLeft * timeLeft;
-					const endDistance = wedgeDistance(endX, endY);
-					if (endDistance < 0 && endY >= wedgeY1 - 0.02) {
-						const hitTime = oldDistance / (oldDistance - endDistance) * timeLeft;
-						const hitX = oldX + oldVx * hitTime;
-						const hitY = oldY + oldVy * hitTime - 0.5 * gravity * hitTime * hitTime;
-						if (hitX >= wedgeX0 - 1e-9 && hitX <= wedgeX1 + 1e-9 && hitY >= wedgeY1 - 1e-9) {
-							const hitVy = oldVy - gravity * hitTime;
-							const reflected = reflectDebris(world, i, hitX, hitY, oldVx, hitVy);
-							oldX = hitX;
-							oldY = hitY;
-							oldVx = reflected.vx;
-							oldVy = reflected.vy;
-							timeLeft -= hitTime;
-						}
-					}
-				}
-			}
+			const oldX = debrisX[i];
+			const oldY = debrisY[i];
+			const oldVx = debrisVx[i];
+			const oldVy = debrisVy[i];
 			const deckTime = oldY >= cargoHeight ? fallTime(oldY, oldVy, cargoHeight) : Infinity;
 			const deckX = oldX + oldVx * deckTime;
 			const platformLeft = world.platform.x - 1.8;
-			if (deckTime <= timeLeft && deckX >= platformLeft && deckX <= platformLeft + 1.26 && cargoCells < storageLimit) {
+			if (deckTime <= dt && deckX >= platformLeft && deckX <= platformLeft + 1.26 && cargoCells < storageLimit) {
 				debrisX[i] = deckX;
 				debrisY[i] = cargoHeight;
 				debrisVx[i] = oldVx;
 				debrisVy[i] = oldVy - gravity * deckTime;
-				catchFragment(world, i, carriedMass + cargoCells * cellMass);
-				continue;
+				if (catchFragment(world, i, carriedMass + cargoCells * cellMass)) continue;
 			}
 			const floorTime = oldY >= 0 ? fallTime(oldY, oldVy, 0) : 0;
-			if (floorTime <= timeLeft) {
+			if (floorTime <= dt) {
 				debrisX[i] = oldX + oldVx * floorTime;
 				debrisY[i] = 0;
 				debrisVx[i] = oldVx;
 				debrisVy[i] = oldVy - gravity * floorTime;
 				world.heat += fragmentMechanical(i);
+				lostCells += fragmentCells(i);
+				lostValue += fragmentValue(i);
 				active[i] = 0;
-				lostCells++;
-				lostValue += prices[debrisCell[i]];
+				debrisCells[i] = 0;
+				debrisValue[i] = 0;
 				continue;
 			}
-			debrisX[i] = oldX + oldVx * timeLeft;
-			debrisY[i] = oldY + oldVy * timeLeft - 0.5 * gravity * timeLeft * timeLeft;
+			debrisX[i] = oldX + oldVx * dt;
+			debrisY[i] = oldY + oldVy * dt - 0.5 * gravity * dt * dt;
 			debrisVx[i] = oldVx;
-			debrisVy[i] = oldVy - gravity * timeLeft;
+			debrisVy[i] = oldVy - gravity * dt;
 			if (debrisX[i] >= 0 && debrisX[i] <= width) continue;
 			world.heat += fragmentMechanical(i);
+			lostCells += fragmentCells(i);
+			lostValue += fragmentValue(i);
 			active[i] = 0;
-			lostCells++;
-			lostValue += prices[debrisCell[i]];
+			debrisCells[i] = 0;
+			debrisValue[i] = 0;
 		}
 	}
 
@@ -404,13 +580,13 @@
 
 	function airborneCells() {
 		let total = 0;
-		for (let i = 0; i < maxDebris; i++) if (active[i]) total++;
+		for (let i = 0; i < maxDebris; i++) if (active[i]) total += fragmentCells(i);
 		return total;
 	}
 
 	function airborneValue() {
 		let total = 0;
-		for (let i = 0; i < maxDebris; i++) if (active[i]) total += prices[debrisCell[i]];
+		for (let i = 0; i < maxDebris; i++) if (active[i]) total += fragmentValue(i);
 		return total;
 	}
 
@@ -422,10 +598,43 @@
 	}
 
 	function draw(context, mode) {
-		for (let index = 0; index < count; index++) {
-			if (strength[index] <= 0) continue;
-			context.fillStyle = colorFor(index, mode);
-			context.fillRect(index % columns * cell, bottom + Math.floor(index / columns) * cell, cell + 0.002, cell + 0.002);
+		if (rockShape === 'square') {
+			for (let index = 0; index < count; index++) {
+				if (strength[index] <= 0) continue;
+				context.fillStyle = colorFor(index, mode);
+				context.fillRect(index % columns * cell, bottom + Math.floor(index / columns) * cell, cell + 0.002, cell + 0.002);
+			}
+		} else {
+			updateHeightmap();
+			for (let c = 0; c < columns; c++) {
+				const startRow = firstRow[c];
+				if (startRow >= rows) continue;
+				const x0 = c * cell;
+				const x1 = x0 + cell + 0.002;
+				const yL = heightmap[c];
+				const yR = heightmap[c + 1];
+				for (let row = startRow; row < rows; row++) {
+					const index = row * columns + c;
+					if (strength[index] <= 0) continue;
+					const cellBottom = bottom + row * cell;
+					const cellTop = cellBottom + cell + 0.002;
+					const bL = row === startRow ? yL : Math.max(cellBottom, yL);
+					const bR = row === startRow ? yR : Math.max(cellBottom, yR);
+					if (bL >= cellTop && bR >= cellTop) continue;
+					context.fillStyle = colorFor(index, mode);
+					if (bL === cellBottom && bR === cellBottom) {
+						context.fillRect(x0, cellBottom, cell + 0.002, cell + 0.002);
+					} else {
+						context.beginPath();
+						context.moveTo(x0, bL);
+						context.lineTo(x1, bR);
+						context.lineTo(x1, Math.max(bR, cellTop));
+						context.lineTo(x0, Math.max(bL, cellTop));
+						context.closePath();
+						context.fill();
+					}
+				}
+			}
 		}
 		for (let i = 0; i < maxDebris; i++) if (active[i]) {
 			context.fillStyle = colorFor(debrisCell[i], mode);
@@ -437,9 +646,9 @@
 		return {
 			columns, rows, cell, bottom, top, defaultPixelSize, storageLimit, cellMass,
 			damageRadius, damageMultiplier,
-			wedgeX0, wedgeY0, wedgeX1, wedgeY1, wedgeNx, wedgeNy,
+			shape: rockShape, heightmap, firstRow,
 			mineralNames, mineralPrices,
-			strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell,
+			strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
 			cargoMinerals, soldMinerals, ledger,
 			extractedCells: () => extractedCells, caughtCells: () => caughtCells, lostCells: () => lostCells,
 			lostValue: () => lostValue, airborneCells, airborneValue,
@@ -452,7 +661,7 @@
 	reset(1);
 	function currentCargoMass() { return cargoCells * cellMass; }
 
-	const api = { reset, damage, trace, step, sellCargo, energy, draw, state, cargoMass: currentCargoMass };
+	const api = { reset, damage, trace, step, sellCargo, energy, draw, state, setShape, cargoMass: currentCargoMass };
 	root.SteamCeiling = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

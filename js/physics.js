@@ -5,19 +5,10 @@
 		platformWidth: 3.6, deck: 0.7, collectorFraction: 0.35,
 		platformMass: 60, force: 180, maxSpeed: 7,
 		retention: 0.9, pulse: 36, efficiency: 0.8, battery: 12000, step: 1 / 240,
-		// Left-wall pocket and deflector. The pocket lets the asymmetric
-		// collector slide into the wall so the reflector can cover the wall;
-		// the unbreakable wedge above the pocket funnels the ball away from
-		// the dead zone toward the reflector. Keep wedge in sync with ceiling.
-		pocketDepth: 3.6 * 0.35,
-		wedgeX0: 0, wedgeY0: 1.5, wedgeX1: 0.7, wedgeY1: 0.7
+		// Left-wall pocket lets the asymmetric collector slide into the wall so
+		// the reflector can cover the wall all the way to x = 0.
+		pocketDepth: 3.6 * 0.35
 	});
-	const wedgeDx = config.wedgeX1 - config.wedgeX0;
-	const wedgeDy = config.wedgeY1 - config.wedgeY0;
-	const wedgeLen = Math.sqrt(wedgeDx * wedgeDx + wedgeDy * wedgeDy);
-	const wedgeNx = -wedgeDy / wedgeLen;
-	const wedgeNy = wedgeDx / wedgeLen;
-	const wedgeC = wedgeNx * config.wedgeX0 + wedgeNy * config.wedgeY0;
 
 	function platformMin() { return config.platformWidth * 0.5 - config.pocketDepth; }
 	function platformMax() { return config.width - config.platformWidth * 0.5; }
@@ -138,32 +129,10 @@
 		return time >= -1e-10 ? Math.max(0, time) : Infinity;
 	}
 
-	function upwardTime(y, vy, target) {
-		const a = -0.5 * config.gravity;
-		const b = vy;
-		const c = y - target;
-		const discriminant = b * b - 4 * a * c;
-		if (discriminant < 0) return Infinity;
-		const root = Math.sqrt(discriminant);
-		const t1 = (-b - root) / (2 * a);
-		const t2 = (-b + root) / (2 * a);
-		let best = Infinity;
-		if (t1 >= -1e-10) best = Math.min(best, Math.max(0, t1));
-		if (t2 >= -1e-10) best = Math.min(best, Math.max(0, t2));
-		return best;
-	}
-
-	function wedgeProjection(x, y) {
-		return ((x - config.wedgeX0) * wedgeDx + (y - config.wedgeY0) * wedgeDy) / wedgeLen;
-	}
-
-	function wedgeDistance(x, y) {
-		return wedgeNx * x + wedgeNy * y - wedgeC;
-	}
-
 	function passiveImpact(world, nx, ny, fracture) {
 		const ball = world.ball;
 		const normalVelocity = ball.vx * nx + ball.vy * ny;
+		if (normalVelocity >= 0) return;
 		const lost = 0.5 * config.mass * normalVelocity * normalVelocity * (1 - config.retention);
 		const spentOnRock = Math.min(lost, fracture || 0);
 		const impulseVelocity = (1 + Math.sqrt(config.retention)) * normalVelocity;
@@ -176,9 +145,7 @@
 	function advanceBall(world, dt, oldPlatformX) {
 		const ball = world.ball;
 		if (ball.state === 'held') {
-			// Stored on the collector, but kept clear of the left-wall wedge
-			// when the collector is docked inside the pocket.
-			ball.x = Math.max(world.platform.x - config.platformWidth * 0.32, config.wedgeX1 + config.radius);
+			ball.x = world.platform.x - config.platformWidth * 0.32;
 			return;
 		}
 		if (ball.state === 'grounded') {
@@ -188,22 +155,6 @@
 		let remaining = dt;
 		let elapsed = 0;
 		for (let event = 0; event < 12 && remaining > 1e-10; event++) {
-			// Resolve wedge penetration before searching for the next contact.
-			if (ball.y >= config.wedgeY1) {
-				const distance = wedgeDistance(ball.x, ball.y);
-				const projection = wedgeProjection(ball.x, ball.y);
-				if (projection >= 0 && projection <= wedgeLen && distance < config.radius) {
-					const push = config.radius - distance;
-					ball.x += wedgeNx * push;
-					ball.y += wedgeNy * push;
-					if (ball.vx * wedgeNx + ball.vy * wedgeNy < 0) passiveImpact(world, wedgeNx, wedgeNy, 0);
-					continue;
-				}
-			} else if (ball.y > config.wedgeY1 - config.radius && ball.x >= config.wedgeX0 && ball.x <= config.wedgeX1) {
-				ball.y = config.wedgeY1 - config.radius;
-				if (ball.vy > 0) passiveImpact(world, 0, -1, 0);
-				continue;
-			}
 			let time = remaining;
 			let type = 0;
 			let rockNx = 0;
@@ -223,34 +174,6 @@
 					type = 5;
 					rockNx = rockHit.nx;
 					rockNy = rockHit.ny;
-				}
-			}
-			// Unbreakable wedge slope (from above) and base (from below).
-			const wedgeGap = wedgeDistance(ball.x, ball.y) - config.radius;
-			if (ball.y >= config.wedgeY1 && wedgeGap >= 0 && ball.vx * wedgeNx + ball.vy * wedgeNy < 0) {
-				const a = -0.5 * wedgeNy * config.gravity;
-				const b = ball.vx * wedgeNx + ball.vy * wedgeNy;
-				const discriminant = b * b - 4 * a * wedgeGap;
-				if (discriminant >= 0) {
-					const root = Math.sqrt(discriminant);
-					const candidates = [(-b - root) / (2 * a), (-b + root) / (2 * a)];
-					for (const candidate of candidates) {
-						if (!(candidate >= -1e-10 && candidate <= time)) continue;
-						const hitT = Math.max(0, candidate);
-						const hitX = ball.x + ball.vx * hitT;
-						const hitY = ball.y + ball.vy * hitT - 0.5 * config.gravity * hitT * hitT;
-						const projection = wedgeProjection(hitX, hitY);
-						if (projection < 0 || projection > wedgeLen || hitY < config.wedgeY1 - 1e-9) continue;
-						time = hitT;
-						type = 6;
-						break;
-					}
-				}
-			} else if (ball.y < config.wedgeY1 && ball.vy > 0) {
-				const baseTime = upwardTime(ball.y, ball.vy, config.wedgeY1 - config.radius);
-				if (baseTime <= time) {
-					const hitX = ball.x + ball.vx * baseTime;
-					if (hitX >= config.wedgeX0 && hitX <= config.wedgeX1) { time = baseTime; type = 7; }
 				}
 			}
 			const deckTime = ball.y >= config.deck + config.radius - 1e-10 ? downwardTime(ball, config.deck + config.radius) : Infinity;
@@ -279,19 +202,13 @@
 			}
 			if (type === 5) {
 				const normalVelocity = ball.vx * rockNx + ball.vy * rockNy;
-				const damageBudget = 0.5 * config.mass * normalVelocity * normalVelocity * (1 - config.retention);
-				const contactX = ball.x - rockNx * config.radius;
-				const contactY = ball.y - rockNy * config.radius;
-				const fracture = root.SteamCeiling.damage(contactX, contactY, damageBudget);
-				passiveImpact(world, rockNx, rockNy, fracture);
-				continue;
-			}
-			if (type === 6) {
-				passiveImpact(world, wedgeNx, wedgeNy, 0);
-				continue;
-			}
-			if (type === 7) {
-				passiveImpact(world, 0, -1, 0);
+				if (normalVelocity < 0) {
+					const damageBudget = 0.5 * config.mass * normalVelocity * normalVelocity * (1 - config.retention);
+					const contactX = ball.x - rockNx * config.radius;
+					const contactY = ball.y - rockNy * config.radius;
+					const fracture = root.SteamCeiling.damage(contactX, contactY, damageBudget);
+					passiveImpact(world, rockNx, rockNy, fracture);
+				}
 				continue;
 			}
 			const collectorEdge = platformX - config.platformWidth * 0.5 + config.platformWidth * config.collectorFraction;

@@ -14,7 +14,7 @@ function run(world, seconds) {
 	for (let i = 0; i < Math.round(seconds / c.step); i++) physics.step(world, c.step);
 }
 function prepareCargo(world, count, fragmentVx = 0) {
-	for (let x = 1; x < 23 && ceiling.state().extractedCells() < count; x += 2) ceiling.damage(x, 8.2, 10000);
+	for (let x = 1; x < 23 && ceiling.state().extractedCells() < count; x += 2) ceiling.damage(x, 8.2, 20);
 	const state = ceiling.state();
 	let prepared = 0;
 	for (let i = 0; i < state.active.length && prepared < count; i++) {
@@ -173,7 +173,7 @@ test('touching either sell wall empties cargo without losing mass-energy account
 	balanced(w);
 	const v = physics.createWorld();
 	const state = ceiling.state();
-	for (let x = 1; x < 23 && state.extractedCells() < 8; x += 2) ceiling.damage(x, 8.2, 10000);
+	for (let x = 1; x < 23 && state.extractedCells() < 8; x += 2) ceiling.damage(x, 8.2, 20);
 	let prepared = 0;
 	for (let i = 0; i < state.active.length && prepared < 8; i++) {
 		if (!state.active[i]) continue;
@@ -193,19 +193,21 @@ test('touching either sell wall empties cargo without losing mass-energy account
 	balanced(v);
 });
 
-test('left pocket lets the reflector cover the wall and the wedge defends it', () => {
+test('left pocket lets the reflector cover the wall without a wedge obstruction', () => {
 	const w = physics.createWorld();
+	assert.equal(c.wedgeX0, undefined);
 	near(physics.platformMin(), c.platformWidth * 0.5 - c.pocketDepth);
 	w.platform.x = physics.platformMin();
 	const collectorEdge = w.platform.x - c.platformWidth * 0.5 + c.platformWidth * c.collectorFraction;
 	near(collectorEdge, 0, 1e-9);
-	// A ball above the docked reflector bounces instead of being captured.
-	w.ball.x = 1.5; w.ball.vx = 0; w.ball.y = c.deck + c.radius; w.ball.vy = -5;
+	// A ball falling straight near the left wall reaches the docked reflector unimpeded.
+	w.ball.x = 0.3; w.ball.vx = 0; w.ball.y = 2.0; w.ball.vy = 0;
 	w.ball.state = 'flying';
 	sync(w);
-	physics.step(w, c.step);
+	run(w, 0.7);
 	assert.equal(w.bounces, 1);
 	assert.equal(w.ball.state, 'flying');
+	near(w.ball.x, 0.3);
 	balanced(w);
 	// Driving left docks into the pocket rather than stopping at the old limit.
 	const docked = physics.createWorld();
@@ -217,45 +219,28 @@ test('left pocket lets the reflector cover the wall and the wedge defends it', (
 	balanced(docked);
 });
 
-test('wedge slope deflects a wall-side fall toward the reflector', () => {
+test('ball reflects at an angle off a smooth heightmap crater and conserves energy', () => {
 	const w = physics.createWorld();
-	w.platform.x = 12;
-	w.ball.x = 0.3; w.ball.vx = 0; w.ball.y = 3; w.ball.vy = 0;
+	ceiling.setShape('smooth');
+	ceiling.damage(10.06, 8.06, 6);
+	w.ball.x = 9.75; w.ball.y = 7.75; w.ball.vx = 0; w.ball.vy = 8;
 	w.ball.state = 'flying';
 	sync(w);
-	let deflected = false;
-	for (let i = 0; i < Math.round(3 / c.step); i++) {
-		physics.step(w, c.step);
-		if (w.ball.vx > 1 && w.ball.x > 0.5) { deflected = true; break; }
-		if (w.ball.state !== 'flying') break;
-	}
-	assert.ok(deflected);
-	balanced(w);
-});
-
-test('wedge base blocks entry from below without trapping deck bounces', () => {
-	const w = physics.createWorld();
-	w.platform.x = 12;
-	w.ball.x = 0.3; w.ball.vx = 0; w.ball.y = 0.4; w.ball.vy = 5;
-	w.ball.state = 'flying';
-	sync(w);
-	physics.step(w, c.step);
-	for (let i = 0; i < Math.round(0.5 / c.step) && w.ball.vy > 0; i++) physics.step(w, c.step);
+	run(w, 0.05);
+	assert.ok(w.ball.vx > 0.5);
 	assert.ok(w.ball.vy < 0);
-	assert.ok(w.ball.y < c.wedgeY1);
 	balanced(w);
-	// A powered bounce right of the wedge clears it instead of sticking.
-	const v = physics.createWorld();
-	v.platform.x = physics.platformMin();
-	v.ball.x = 1.5; v.ball.vx = 0; v.ball.y = c.deck + c.radius; v.ball.vy = -5;
-	v.ball.state = 'flying';
-	v.drive = true;
-	sync(v);
-	physics.step(v, c.step);
-	assert.ok(v.ball.vy > 5);
-	run(v, 1);
-	assert.equal(v.ball.state, 'flying');
-	balanced(v);
+	// Optional square mode also reflects and conserves energy
+	const sq = physics.createWorld();
+	ceiling.setShape('square');
+	ceiling.damage(10.06, 8.06, 6);
+	sq.ball.x = 9.75; sq.ball.y = 7.75; sq.ball.vx = 0; sq.ball.vy = 8;
+	sq.ball.state = 'flying';
+	sync(sq);
+	run(sq, 0.05);
+	assert.ok(sq.ball.vy < 0);
+	balanced(sq);
+	ceiling.setShape('smooth');
 });
 
 test('replay is deterministic with identical fixed-step commands', () => {
