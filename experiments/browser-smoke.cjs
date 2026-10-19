@@ -8,9 +8,10 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
 // Mirror the renderer's chamber transform to point at a known world point.
 async function chamberTransform(page) {
 	const box = await page.locator('#c').boundingBox();
-	const scale = Math.min((box.width - 32) / 25.5, (box.height - 80) / 10);
+	const chamberHeight = await page.evaluate(() => SteamPhysics.config.ceiling);
+	const scale = Math.min((box.width - 32) / 25.5, (box.height - 80) / chamberHeight);
 	const offsetX = (box.width - 25.5 * scale) / 2 + 1.5 * scale;
-	const floorY = (box.height + 10 * scale) / 2 + 9;
+	const floorY = (box.height + chamberHeight * scale) / 2 + 9;
 	return { x: box.x + offsetX, y: box.y + floorY, scale };
 }
 
@@ -154,7 +155,7 @@ async function main() {
 		await page.locator('#equipment-rows .upgrade-row').first().locator('button').click({ force: true });
 		assert.match(await page.locator('#equipment-status').textContent(), /needs the .* research first/);
 		const inspected = await page.locator('#mineral-cell').textContent();
-		await chamberClick(page, 12, 9.5);
+		await chamberClick(page, 12, 14.5);
 		assert.notEqual(await page.locator('#mineral-cell').textContent(), inspected, 'a rock click moves the inspector');
 		await page.waitForTimeout(300);
 		assert.equal(await page.locator('#motion').textContent(), '0.00 m/s', 'a rock click does not command travel');
@@ -165,7 +166,7 @@ async function main() {
 		assert.match(await page.locator('#mineral-cell').textContent(), /^Column \d+ \/ 192 · Layer \d+ \/ 16$/, 'travel does not change the selected cell');
 		assert.ok(Math.abs(parseFloat(await page.locator('#error').textContent())) < 0.00001);
 		// Autopilot: one checkbox per duty, the same duty on a shortcut, and each one
-		// yields to the manual command that does the same job.
+		// temporarily yields to the manual command that does the same job.
 		assert.equal(await page.locator('#autopilot input[type="checkbox"]').count(), 4);
 		assert.equal(await page.locator('#autopilot-status').isHidden(), true, 'a disengaged autopilot says nothing');
 		await page.locator('#autopilot label', { hasText: 'Chase the predicted landing' }).click();
@@ -188,13 +189,19 @@ async function main() {
 		}), [false, true, true, true, true]);
 		assert.match(await page.locator('#autopilot-status').textContent(), /Drive keeper · (pulse armed|pulse held) · Level bounce · tilt to -?\d+\.\d°/);
 		await page.keyboard.press('KeyA');
-		assert.equal(await page.locator('#auto-smart').isChecked(), false, 'a manual drive takes the intercept back');
+		assert.equal(await page.locator('#auto-smart').isChecked(), true, 'manual travel keeps the preference enabled');
+		assert.equal(await page.evaluate(() => SteamAutopilot.suspended('smart')), true);
 		assert.equal(await page.locator('#auto-drive').isChecked(), true, 'and leaves the other duties alone');
 		await page.locator('#piston-angle').evaluate(input => { input.value = '2'; input.dispatchEvent(new Event('input', { bubbles: true })); });
-		assert.equal(await page.locator('#auto-angle').isChecked(), false, 'the slider takes the tilt back');
+		assert.equal(await page.locator('#auto-angle').isChecked(), true, 'manual tilt keeps the preference enabled');
+		assert.equal(await page.evaluate(() => SteamAutopilot.suspended('angle')), true);
 		await page.locator('#drive').click();
-		assert.equal(await page.locator('#auto-drive').isChecked(), false, 'the drive button takes the pulse back');
-		assert.equal(await page.locator('#autopilot-status').isHidden(), true, 'nothing engaged, nothing reported');
+		assert.equal(await page.locator('#auto-drive').isChecked(), true, 'manual drive keeps the preference enabled');
+		assert.equal(await page.evaluate(() => SteamAutopilot.suspended('drive')), true);
+		await page.waitForTimeout(150);
+		assert.match(await page.locator('#autopilot-status').textContent(), /manual override/);
+		await page.waitForFunction(() => !SteamAutopilot.suspended('smart') && !SteamAutopilot.suspended('drive') && !SteamAutopilot.suspended('angle'));
+		for (const id of ['auto-smart', 'auto-drive', 'auto-angle']) assert.equal(await page.locator('#' + id).isChecked(), true);
 		await page.keyboard.press('KeyZ');
 		await page.keyboard.press('Space');
 		assert.equal(await page.locator('#auto-drive').isChecked(), false, 'the drive shortcut keeps the duty manual');

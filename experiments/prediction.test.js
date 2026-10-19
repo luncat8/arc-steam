@@ -35,7 +35,7 @@ test('the ballistic computer predicts the ground landing the simulation then pro
 
 test('the prediction follows wall and ceiling reflections with the simulation', () => {
 	const w = physics.createWorld();
-	w.platform.x = 3;
+	w.platform.x = 12;
 	w.ball.x = 20; w.ball.y = 3; w.ball.vx = 8; w.ball.vy = 4; w.ball.state = 'flying';
 	sync(w);
 	const path = prediction.predict(w);
@@ -79,7 +79,7 @@ test('a landing on the deck is reported as a reachable intercept with the ghost 
 test('the path stops at rock and is flagged uncertain instead of promising a rebound', () => {
 	const w = physics.createWorld();
 	w.platform.x = 3;
-	w.ball.x = 12; w.ball.y = 7.4; w.ball.vx = 0; w.ball.vy = 3; w.ball.state = 'flying';
+	w.ball.x = 12; w.ball.y = ceiling.state.bottom - 0.6; w.ball.vx = 0; w.ball.vy = 3; w.ball.state = 'flying';
 	const path = prediction.predict(w);
 	assert.equal(path.kind, prediction.kinds.ROCK);
 	assert.equal(path.uncertain, true);
@@ -172,4 +172,24 @@ test('a deck landing names the surface that meets it and the speed it arrives at
 	assert.equal(path.surface, prediction.surfaces.NONE);
 	near(path.endVy, -Math.sqrt(2 * c.ballGravity * (3 - c.radius)), 1e-9);
 	physics.createWorld();
+});
+
+test('the prediction horizon covers the taller chamber at the slower ball speed', () => {
+	const w = physics.createWorld();
+	w.platform.x = 12;
+	w.ball.x = 3; w.ball.y = c.deck + c.radius;
+	w.ball.vx = 0;
+	w.ball.vy = Math.sqrt(2 * c.ballGravity * (ceiling.state.bottom - 0.5 - w.ball.y));
+	w.ball.state = 'flying';
+	sync(w);
+	const path = prediction.predict(w);
+	assert.equal(path.kind, prediction.kinds.GROUND);
+	assert.ok(path.time > 3, 'this round trip exceeded the old horizon');
+	assert.ok(path.time < prediction.horizon);
+	let steps = 0;
+	while (w.ball.state === 'flying' && steps++ < Math.ceil(prediction.horizon / c.step)) physics.step(w, c.step);
+	assert.equal(w.ball.state, 'grounded');
+	near(w.ball.x, path.endX, 1e-6);
+	assert.ok(w.time >= path.time && w.time < path.time + c.step);
+	balanced(w);
 });

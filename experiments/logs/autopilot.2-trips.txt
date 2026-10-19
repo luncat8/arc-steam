@@ -1,0 +1,11 @@
+apex target (ceiling - radius) = 14.82 m · pulse apex gain = 3.67 m · rock underside = 13 m
+tilt actuator = 45 °/s · range = 10 °
+manual chase (scripted)    base     t= 120.0 bnc=  38 psh=  40 grd=2 held=  0s draw=  9869J J/bnc= 259.7 waste= 39742J travel=   82m apex= 24.88 ballv= 12.07 drive=100% |vx|= 0.72 vxmax= 2.35 tilt= 0.0° slew=  0°/s T=124.5 cargo=   0 bal=1.2e-9
+autopilot x chase          base     t= 120.0 bnc=  35 psh=  36 grd=1 held=  0s draw=  5783J J/bnc= 165.2 waste= 29807J travel=   29m apex= 23.03 ballv= 11.58 drive=100% |vx|= 0.05 vxmax= 0.70 tilt= 0.0° slew=  0°/s T=104.8 cargo=  12 bal=-6.4e-10
+autopilot X timed          base     t= 120.0 bnc=  34 psh=  36 grd=2 held=  0s draw=  3331J J/bnc=  98.0 waste= 34485J travel=   67m apex= 24.40 ballv= 11.94 drive=100% |vx|= 0.37 vxmax= 1.48 tilt= 0.0° slew=  0°/s T=113.8 cargo=   0 bal=0.0e+0
+autopilot z drive          base     t= 120.0 bnc=  31 psh=  23 grd=1 held=  0s draw= 12985J J/bnc= 418.9 waste= 28587J travel=   78m apex= 18.44 ballv= 10.35 drive= 74% |vx|= 0.24 vxmax= 2.46 tilt= 0.0° slew=  0°/s T= 94.2 cargo=  20 bal=-9.3e-10
+autopilot c tilt           base     t= 120.0 bnc=  31 psh=  33 grd=0 held=  0s draw=  8338J J/bnc= 269.0 waste= 31813J travel=   50m apex= 22.14 ballv= 11.34 drive=100% |vx|= 0.01 vxmax= 0.27 tilt=10.0° slew= 45°/s T=109.4 cargo=  21 bal=-8.1e-10
+autopilot x z c            base     t= 120.0 bnc=  31 psh=  23 grd=0 held=  0s draw=  9493J J/bnc= 306.2 waste= 27097J travel=   56m apex= 18.45 ballv= 10.31 drive= 73% |vx|= 0.02 vxmax= 0.41 tilt=10.0° slew= 45°/s T= 91.2 cargo=   5 bal=-9.9e-10
+autopilot X z c            base     t= 120.0 bnc=  31 psh=  25 grd=0 held=  0s draw=  5001J J/bnc= 161.3 waste= 21630J travel=   68m apex= 18.26 ballv= 10.25 drive= 77% |vx|= 0.12 vxmax= 1.26 tilt=10.0° slew= 45°/s T= 76.2 cargo=  26 bal=-7.6e-10
+autopilot x z c            flywheel t= 120.0 bnc=  25 psh=  22 grd=2 held=  0s draw=  5673J J/bnc= 226.9 waste= 18270J travel=   51m apex= 18.21 ballv= 10.23 drive= 82% |vx|= 0.01 vxmax= 0.13 tilt=10.0° slew= 45°/s T= 65.4 cargo= 317 bal=1.8e-9
+autopilot X z c            flywheel t= 120.0 bnc=  26 psh=  18 grd=1 held=  0s draw=  2553J J/bnc=  98.2 waste= 12842J travel=   55m apex= 18.37 ballv= 10.30 drive= 69% |vx|= 0.01 vxmax= 0.01 tilt=10.0° slew= 45°/s T= 54.2 cargo= 313 bal=9.9e-10

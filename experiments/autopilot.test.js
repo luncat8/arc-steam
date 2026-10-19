@@ -261,3 +261,56 @@ test('the keepers do nothing at all until a channel is engaged', () => {
 	assert.equal(world.ball.state, 'grounded', 'with nothing engaged the ball is nobody\'s business');
 	balanced(world);
 });
+
+test('manual overrides preserve switches, isolate duties, and resume after idle simulation time', () => {
+	const world = flight(physics.createWorld(), 11, 8, 8);
+	engage('smart', 'drive', 'angle');
+	autopilot.hold('move', true);
+	world.direction = -1;
+	for (let i = 0; i < 240 * 3; i++) autopilot.update(world, c.step);
+	assert.equal(world.direction, -1, 'held travel is never overwritten');
+	assert.equal(autopilot.state.smart, true);
+	assert.equal(autopilot.suspended('smart'), true, 'both intercept names share the override');
+	assert.equal(autopilot.suspended('drive'), false);
+	assert.equal(autopilot.suspended('angle'), false);
+	autopilot.hold('move', false);
+	autopilot.override('drive');
+	autopilot.override('angle');
+	world.drive = false;
+	world.pistonAngle = 0.1;
+	world.target = 4;
+	for (let i = 0; i < 240; i++) autopilot.update(world, c.step);
+	assert.equal(world.drive, false);
+	assert.equal(world.pistonAngle, 0.1);
+	assert.equal(world.target, 4);
+	autopilot.override('angle');
+	for (let i = 0; i < 241; i++) autopilot.update(world, c.step);
+	assert.equal(autopilot.suspended('move'), false);
+	assert.equal(autopilot.suspended('drive'), false);
+	assert.equal(autopilot.suspended('angle'), true, 'new input renews only its own grace period');
+	assert.ok(Number.isNaN(world.target), 'smart control resumes');
+	assert.equal(world.pistonAngle, 0.1);
+	for (let i = 0; i < 241; i++) autopilot.update(world, c.step);
+	assert.equal(autopilot.suspended('angle'), false);
+	assert.notEqual(world.pistonAngle, 0.1, 'automatic tilt resumes');
+});
+
+test('switching off during an override stays off and reset clears held overrides', () => {
+	const world = flight(physics.createWorld(), 11, 8, 8);
+	engage('move', 'drive', 'angle');
+	autopilot.override('drive');
+	autopilot.set('drive', false);
+	world.drive = false;
+	for (let i = 0; i < 240 * 3; i++) autopilot.update(world, c.step);
+	assert.equal(autopilot.state.drive, false);
+	assert.equal(world.drive, false);
+	autopilot.hold('angle', true);
+	autopilot.reset();
+	assert.equal(autopilot.suspended('angle'), false);
+	assert.equal(autopilot.state.angle, true, 'reset preserves the enabled preference');
+	autopilot.update(world, c.step);
+	assert.equal(autopilot.suspended('angle'), false, 'reset also clears held state');
+	engage();
+	autopilot.override('move');
+	assert.equal(autopilot.suspended('move'), false, 'manual play alone never engages assistance');
+});

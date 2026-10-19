@@ -14,7 +14,7 @@ function run(world, seconds) {
 	for (let i = 0; i < Math.round(seconds / c.step); i++) physics.step(world, c.step);
 }
 function prepareCargo(world, count, fragmentVx = 0) {
-	for (let x = 1; x < 23 && ceiling.state.extractedCells < count; x += 2) ceiling.damage(x, 8.2, 20);
+	for (let x = 1; x < 23 && ceiling.state.extractedCells < count; x += 2) ceiling.damage(x, ceiling.state.bottom + 0.2, 20);
 	const state = ceiling.state;
 	let prepared = 0;
 	for (let i = 0; i < state.active.length && prepared < count; i++) {
@@ -28,19 +28,22 @@ function prepareCargo(world, count, fragmentVx = 0) {
 	return prepared;
 }
 
-test('ball response is 1.5x slower while platform force and top speed step up', () => {
+test('ball response is another 1.2x slower while platform force and top speed step up', () => {
 	const w = physics.createWorld();
-	near(c.ballSpeedScale, 1 / 1.5);
+	near(c.ceiling, 15);
+	near(ceiling.state.top, c.ceiling);
+	near(ceiling.state.bottom, c.ceiling - 2);
+	near(c.ballSpeedScale, 1 / (1.5 * 1.2));
 	near(c.ballMass * c.ballGravity, c.gravity);
-	near(w.ball.vx, 1.2 / 1.5);
+	near(w.ball.vx, 1.2 / (1.5 * 1.2));
 	const oldInitialEnergy = 0.5 * 1.2 ** 2 + c.gravity * (w.ball.y - c.radius);
 	near(physics.ballEnergy(w.ball), oldInitialEnergy);
 	const oldLaunchSpeed = Math.sqrt(2 * (c.pulse - c.gravity * c.deck));
 	const newLaunchSpeed = Math.sqrt(2 * (c.pulse - c.ballMass * c.ballGravity * c.deck) / c.ballMass);
-	near(newLaunchSpeed, oldLaunchSpeed / 1.5);
+	near(newLaunchSpeed, oldLaunchSpeed / (1.5 * 1.2));
 	const oldFallTime = Math.sqrt(2 / c.gravity);
 	const newFallTime = Math.sqrt(2 / c.ballGravity);
-	near(newFallTime, oldFallTime * 1.5);
+	near(newFallTime, oldFallTime * (1.5 * 1.2));
 	// Second 1.5x drive-response step: 270 N -> 400 N and 7 m/s -> 10 m/s,
 	// each rounded to a whole number instead of keeping 405 N / 10.5 m/s.
 	near(c.force, 400);
@@ -190,13 +193,14 @@ test('limited drive takes repeated pushes to reach ceiling height', () => {
 	sync(w);
 	assert.ok(physics.launch(w));
 	assert.ok(w.ball.y + w.ball.vy ** 2 / (2 * c.ballGravity) < c.ceiling - c.radius);
-	let maxBeforeThird = 0;
-	for (let i = 0; i < 240 * 10 && w.pushes < 3; i++) {
+	const pushesToCeiling = 6;
+	let maxBeforeLast = 0;
+	for (let i = 0; i < 240 * 40 && w.pushes < pushesToCeiling; i++) {
 		physics.step(w, c.step);
-		maxBeforeThird = Math.max(maxBeforeThird, w.ball.y);
+		maxBeforeLast = Math.max(maxBeforeLast, w.ball.y);
 	}
-	assert.equal(w.pushes, 3);
-	assert.ok(maxBeforeThird < c.ceiling - c.radius);
+	assert.equal(w.pushes, pushesToCeiling);
+	assert.ok(maxBeforeLast < c.ceiling - c.radius);
 	assert.ok(w.ball.y + w.ball.vy ** 2 / (2 * c.ballGravity) > c.ceiling - c.radius);
 	run(w, 20);
 	balanced(w);
@@ -382,7 +386,7 @@ test('touching either sell wall empties cargo without losing mass-energy account
 	balanced(w);
 	const v = physics.createWorld();
 	const state = ceiling.state;
-	for (let x = 1; x < 23 && state.extractedCells < 8; x += 2) ceiling.damage(x, 8.2, 20);
+	for (let x = 1; x < 23 && state.extractedCells < 8; x += 2) ceiling.damage(x, ceiling.state.bottom + 0.2, 20);
 	let prepared = 0;
 	for (let i = 0; i < state.active.length && prepared < 8; i++) {
 		if (!state.active[i]) continue;
@@ -413,7 +417,7 @@ test('left pocket lets the reflector cover the wall without a wedge obstruction'
 	w.ball.x = 0.3; w.ball.vx = 0; w.ball.y = 2.0; w.ball.vy = 0;
 	w.ball.state = 'flying';
 	sync(w);
-	run(w, 0.8);
+	run(w, 1);
 	assert.equal(w.bounces, 1);
 	assert.equal(w.ball.state, 'flying');
 	near(w.ball.x, 0.3);
@@ -431,8 +435,8 @@ test('left pocket lets the reflector cover the wall without a wedge obstruction'
 test('ball reflects at an angle off a smooth heightmap crater and conserves energy', () => {
 	const w = physics.createWorld();
 	ceiling.setShape('smooth');
-	ceiling.damage(10.06, 8.06, 6);
-	w.ball.x = 9.75; w.ball.y = 7.75; w.ball.vx = 0; w.ball.vy = 8;
+	ceiling.damage(10.06, ceiling.state.bottom + 0.06, 6);
+	w.ball.x = 9.75; w.ball.y = ceiling.state.bottom - 0.25; w.ball.vx = 0; w.ball.vy = 8;
 	w.ball.state = 'flying';
 	sync(w);
 	run(w, 0.05);
@@ -442,8 +446,8 @@ test('ball reflects at an angle off a smooth heightmap crater and conserves ener
 	// Optional square mode also reflects and conserves energy
 	const sq = physics.createWorld();
 	ceiling.setShape('square');
-	ceiling.damage(10.06, 8.06, 6);
-	sq.ball.x = 9.75; sq.ball.y = 7.75; sq.ball.vx = 0; sq.ball.vy = 8;
+	ceiling.damage(10.06, ceiling.state.bottom + 0.06, 6);
+	sq.ball.x = 9.75; sq.ball.y = ceiling.state.bottom - 0.25; sq.ball.vx = 0; sq.ball.vy = 8;
 	sq.ball.state = 'flying';
 	sync(sq);
 	run(sq, 0.05);
@@ -457,12 +461,12 @@ test('rock reflection keeps the ball impulse: speed never grows beyond gravity',
 		ceiling.reset(11);
 		ceiling.setShape(shape);
 		// Jagged surface: strong hits leave spikes and steep slopes.
-		for (let x = 2; x < 22; x += 2.5) ceiling.damage(x + 0.06, 8.06, 35);
+		for (let x = 2; x < 22; x += 2.5) ceiling.damage(x + 0.06, ceiling.state.bottom + 0.06, 35);
 		const w = physics.createWorld();
 		ceiling.reset(11);
 		ceiling.setShape(shape);
-		for (let x = 2; x < 22; x += 2.5) ceiling.damage(x + 0.06, 8.06, 35);
-		w.ball.x = 10.2; w.ball.y = 7.2; w.ball.vx = 5; w.ball.vy = 9;
+		for (let x = 2; x < 22; x += 2.5) ceiling.damage(x + 0.06, ceiling.state.bottom + 0.06, 35);
+		w.ball.x = 10.2; w.ball.y = ceiling.state.bottom - 0.8; w.ball.vx = 5; w.ball.vy = 9;
 		w.ball.state = 'flying';
 		w.drive = false;
 		sync(w);
@@ -489,7 +493,7 @@ test('rock shape switch cannot tunnel the ball through the rock', () => {
 		return state.heightmap[v] + (state.heightmap[v + 1] - state.heightmap[v]) * t;
 	}
 	function carve() {
-		for (let x = 10; x < 12; x += 0.25) ceiling.damage(x + 0.06, 8.06, 60);
+		for (let x = 10; x < 12; x += 0.25) ceiling.damage(x + 0.06, ceiling.state.bottom + 0.06, 60);
 	}
 	// smooth -> square: the smooth surface cuts into square cells at crater
 	// edges, so a ball resting on it is inside the square solid after a switch.

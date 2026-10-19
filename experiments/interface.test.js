@@ -262,7 +262,7 @@ test('the market panel recharges the reserve from measured funds', () => {
 function fillCargo(count) {
 	const state = ceiling.state;
 	const target = state.extractedCells + count;
-	for (let x = 1; x < 23 && state.extractedCells < target; x += 2) ceiling.damage(x, 8.2, 20);
+	for (let x = 1; x < 23 && state.extractedCells < target; x += 2) ceiling.damage(x, ceiling.state.bottom + 0.2, 20);
 	let prepared = 0;
 	for (let i = 0; i < state.active.length && prepared < count; i++) {
 		if (!state.active[i]) continue;
@@ -277,8 +277,8 @@ function fillCargo(count) {
 
 // The shim canvas is 1000 × 420, matching the page's own view and margins.
 function chamberPoint(worldX, worldY) {
-	const scale = Math.min((1000 - 32) / 25.5, (420 - 80) / 10);
-	return { clientX: (1000 - 25.5 * scale) / 2 + 1.5 * scale + worldX * scale, clientY: (420 + 10 * scale) / 2 + 9 - worldY * scale };
+	const scale = Math.min((1000 - 32) / 25.5, (420 - 80) / physics.config.ceiling);
+	return { clientX: (1000 - 25.5 * scale) / 2 + 1.5 * scale + worldX * scale, clientY: (420 + physics.config.ceiling * scale) / 2 + 9 - worldY * scale };
 }
 
 test('clicking rock inspects a cell and clicking low commands travel, without inspector sliders', () => {
@@ -390,23 +390,55 @@ test('the autopilot switches, shortcuts and manual overrides share one writer', 
 	advance(4);
 	assert.equal(world.ball.state, 'flying', 'a held ball goes back up');
 	assert.equal(dom.element('drive').getAttribute('aria-pressed'), 'true');
-	// Every manual command takes its own duty back, and the panel follows.
+	// Manual controls suspend only their duty and leave the switches checked.
 	dom.key('KeyA');
-	assert.equal(autopilot.enabled('smart'), false, 'a manual drive command takes the intercept back');
-	assert.equal(dom.element(boxes.smart).checked, false);
+	assert.equal(autopilot.enabled('smart'), true);
+	assert.equal(dom.element(boxes.smart).checked, true);
+	advance(180);
+	assert.equal(autopilot.suspended('move'), true, 'holding A outlasts the grace period');
+	assert.equal(world.direction, -1, 'the autopilot does not fight held movement');
 	dom.keyUp('KeyA');
 	dom.key('Space');
-	assert.equal(autopilot.enabled('drive'), false, 'a manual drive toggle takes the keeper back');
-	assert.equal(dom.element(boxes.drive).checked, false);
-	dom.key('Space');
+	const manualDrive = world.drive;
+	dom.element('piston-angle').value = 6;
 	dom.element('piston-angle').dispatch('input');
-	assert.equal(autopilot.enabled('angle'), false, 'a manual tilt takes the level bounce back');
-	assert.equal(dom.element(boxes.angle).checked, false);
 	dom.element('c').dispatch('pointerdown', chamberPoint(5, 0.5));
-	assert.equal(autopilot.enabled('move'), false, 'a travel click takes the intercept back');
 	advance(8);
-	assert.equal(status.hidden, true, 'with nothing engaged the status line goes away');
+	assert.equal(world.drive, manualDrive);
+	assert.ok(Math.abs(world.target - 5) < 1e-9);
+	assert.equal(world.pistonAngle, 6 * Math.PI / 180);
+	for (const channel of ['smart', 'drive', 'angle']) {
+		assert.equal(autopilot.enabled(channel), true);
+		assert.equal(autopilot.suspended(channel), true);
+		assert.equal(dom.element(boxes[channel]).checked, true);
+	}
+	assert.match(status.textContent, /manual override/);
+	advance(130);
+	for (const channel of ['smart', 'drive', 'angle']) assert.equal(autopilot.suspended(channel), false);
+	assert.doesNotMatch(status.textContent, /manual override/);
+	for (const channel of ['smart', 'drive', 'angle']) check(channel, false);
+	advance(8);
+	assert.equal(status.hidden, true, 'explicit switch-off stays off');
 	world.target = NaN; world.direction = 0;
+});
+
+test('held tilt survives the grace period and pause freezes override time', () => {
+	autopilot.set('angle', true);
+	const slider = dom.element('piston-angle');
+	slider.dispatch('pointerdown', { pointerId: 1 });
+	slider.value = 7;
+	slider.dispatch('input');
+	advance(180);
+	assert.equal(autopilot.suspended('angle'), true);
+	assert.equal(world.pistonAngle, 7 * Math.PI / 180);
+	slider.dispatch('pointercancel');
+	dom.element('pause').dispatch('click');
+	advance(180);
+	assert.equal(autopilot.suspended('angle'), true, 'paused simulation never consumes the grace period');
+	dom.element('pause').dispatch('click');
+	advance(130);
+	assert.equal(autopilot.suspended('angle'), false, 'cancel releases the held override');
+	autopilot.set('angle', false);
 });
 
 test('telemetry highlights an empty reserve, a full cargo and overheating', () => {

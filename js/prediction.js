@@ -5,7 +5,8 @@
 	// preallocated buffers. Prediction never mutates the world and allocates
 	// nothing per call, so the render loop can draw the cached path every frame
 	// while it is recomputed at the slower readout cadence.
-	const horizon = 3;
+	// Cover a full deck-to-ceiling-to-deck flight at the tuned ball gravity.
+	const horizon = 2 * Math.sqrt(2 * root.SteamPhysics.config.ceiling / root.SteamPhysics.config.ballGravity) + 1;
 	const march = 1 / 100;
 	const capacity = Math.ceil(horizon / march) + 2;
 	const pathX = new Float64Array(capacity);

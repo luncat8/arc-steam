@@ -210,9 +210,9 @@
 
 	function autopilotText(plan) {
 		let text = '';
-		if (plan.move || plan.smart) text = travelClause(plan);
-		if (plan.drive) text += (text ? ' · ' : '') + 'Drive keeper · ' + (plan.wantedDrive ? 'pulse armed' : 'pulse held');
-		if (plan.angle) text += (text ? ' · ' : '') + 'Level bounce · tilt to ' + (plan.wantedAngle * 180 / Math.PI).toFixed(1) + '°';
+		if (plan.move || plan.smart) text = autopilot.suspended('move') ? 'Intercept · manual override' : travelClause(plan);
+		if (plan.drive) text += (text ? ' · ' : '') + 'Drive keeper · ' + (autopilot.suspended('drive') ? 'manual override' : plan.wantedDrive ? 'pulse armed' : 'pulse held');
+		if (plan.angle) text += (text ? ' · ' : '') + 'Level bounce · ' + (autopilot.suspended('angle') ? 'manual override' : 'tilt to ' + (plan.wantedAngle * 180 / Math.PI).toFixed(1) + '°');
 		return text;
 	}
 
@@ -536,10 +536,10 @@
 		if (Number(ui['piston-angle'].value) !== snapped) ui['piston-angle'].value = snapped;
 	}
 	// Manual tilt is the one writer the tilt keeper yields to, so taking the slider,
-	// the wheel or a drag hands the duty back and the checkbox shows it.
+	// the wheel or a drag temporarily pauses that duty, not its enabled switch.
 	function setPistonAngle(degrees) {
 		if (!Number.isFinite(degrees)) return;
-		disengage('angle');
+		autopilot.override('angle');
 		const before = world.pistonAngle;
 		physics.setPistonAngle(world, Math.max(-10, Math.min(10, degrees)) * Math.PI / 180);
 		if (world.pistonAngle !== before) sceneDirty = true;
@@ -566,10 +566,6 @@
 	}
 
 	function toggleChannel(channel) { setChannel(channel, !autopilot.enabled(channel)); }
-
-	function disengage(channel) {
-		if (autopilot.disengage(channel)) syncAutopilot();
-	}
 
 	function channelForKey(code, shift) {
 		if (code === 'KeyX') return shift ? 'smart' : 'move';
@@ -636,12 +632,13 @@
 
 	function updateDirection() {
 		world.direction = Number(rightHeld) - Number(leftHeld);
-		if (world.direction) { world.target = NaN; disengage('move'); }
+		autopilot.hold('move', leftHeld || rightHeld);
+		if (leftHeld || rightHeld) world.target = NaN;
 		sceneDirty = true;
 	}
 
 	function clearInput() { leftHeld = false; rightHeld = false; updateDirection(); }
-	function toggleDrive() { world.drive = !world.drive; disengage('drive'); refresh(); }
+	function toggleDrive() { world.drive = !world.drive; autopilot.override('drive'); refresh(); }
 	function releaseBall() { physics.launch(world); refresh(); }
 	function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }
 	function setForce(value) {
@@ -667,7 +664,7 @@
 		}
 		if (key === 'KeyA') leftHeld = true;
 		if (key === 'KeyD') rightHeld = true;
-		updateDirection();
+		if (key === 'KeyA' || key === 'KeyD') updateDirection();
 		if (key === 'KeyW') setForce(world.forceSetting + 0.1);
 		if (key === 'KeyS') setForce(world.forceSetting - 0.1);
 		if (event.repeat) return;
@@ -682,7 +679,7 @@
 		if (key === 'Space' || key === 'KeyQ') event.preventDefault();
 		if (key === 'KeyA') leftHeld = false;
 		if (key === 'KeyD') rightHeld = false;
-		updateDirection();
+		if (key === 'KeyA' || key === 'KeyD') updateDirection();
 	}
 
 	function bindDirection(id, direction) {
@@ -709,7 +706,7 @@
 	}
 
 	document.getElementById('reset').addEventListener('click', function () {
-		world = physics.createWorld(); window.SteamCeiling.setShape(ui.shape.value); renderedSales = -1; clearInput(); setForce(world.forceSetting); autopilot.reset(); accumulator = 0;
+		world = physics.createWorld(); window.SteamCeiling.setShape(ui.shape.value); renderedSales = -1; clearInput(); endPistonDrag(); setForce(world.forceSetting); autopilot.reset(); accumulator = 0;
 		ui['equipment-status'].textContent = 'Sell cargo at a wall to earn credits.';
 		ui['research-status'].textContent = 'Sell cargo at a wall to fund research.';
 		refresh();
@@ -745,12 +742,14 @@
 			return;
 		}
 		if (worldY <= moveClickHeight && worldX >= 0 && worldX <= config.width) {
+			world.direction = 0;
 			world.target = Math.max(physics.platformMin(), Math.min(physics.platformMax(), worldX));
-			disengage('move');
+			autopilot.override('move');
 			sceneDirty = true;
 		} else if (worldX >= 0 && worldX <= config.width && worldY <= config.ceiling) {
 			// Open air starts a piston drag; dragging left or up raises the angle.
 			pistonDragActive = true;
+			autopilot.hold('angle', true);
 			pistonDragX = event.clientX;
 			pistonDragY = event.clientY;
 			pistonDragAngle = pistonDegrees();
@@ -764,13 +763,21 @@
 		// so dragging left (or up) raises it and the bounce follows the pointer.
 		setPistonAngle(pistonDragAngle - ((event.clientX - pistonDragX) + (event.clientY - pistonDragY)) * 0.05);
 	});
-	function endPistonDrag() { pistonDragActive = false; }
+	function endPistonDrag() { pistonDragActive = false; autopilot.hold('angle', false); }
 	canvas.addEventListener('pointerup', endPistonDrag);
 	canvas.addEventListener('pointercancel', endPistonDrag);
+	canvas.addEventListener('lostpointercapture', endPistonDrag);
+	ui['piston-angle'].addEventListener('pointerdown', function (event) {
+		ui['piston-angle'].setPointerCapture(event.pointerId);
+		autopilot.hold('angle', true);
+	});
+	ui['piston-angle'].addEventListener('pointerup', endPistonDrag);
+	ui['piston-angle'].addEventListener('pointercancel', endPistonDrag);
+	ui['piston-angle'].addEventListener('lostpointercapture', endPistonDrag);
 	window.addEventListener('keydown', keydown);
 	window.addEventListener('keyup', keyup);
-	window.addEventListener('blur', clearInput);
-	document.addEventListener('visibilitychange', function () { accumulator = 0; previous = 0; sceneDirty = true; clearInput(); });
+	window.addEventListener('blur', function () { clearInput(); endPistonDrag(); });
+	document.addEventListener('visibilitychange', function () { accumulator = 0; previous = 0; sceneDirty = true; clearInput(); endPistonDrag(); });
 	bindDirection('left', -1); bindDirection('right', 1);
 	new ResizeObserver(resize).observe(canvas);
 	resize(); refresh(); requestAnimationFrame(frame);

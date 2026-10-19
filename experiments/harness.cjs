@@ -23,7 +23,7 @@ function run(world, seconds) {
 // chamber settle so later measurements start with empty storage.
 function earnFunds(world, cells) {
 	const target = ceiling.state.extractedCells + cells;
-	for (let x = 1; x < 23 && ceiling.state.extractedCells < target; x += 2) ceiling.damage(x, 8.2, 20);
+	for (let x = 1; x < 23 && ceiling.state.extractedCells < target; x += 2) ceiling.damage(x, ceiling.state.bottom + 0.2, 20);
 	const state = ceiling.state;
 	let prepared = 0;
 	for (let i = 0; i < state.active.length && prepared < cells; i++) {

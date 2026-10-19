@@ -1,8 +1,8 @@
 (function (root) {
 	'use strict';
 	const width = 24;
-	const bottom = 8;
-	const top = 10;
+	const bottom = 13;
+	const top = 15;
 	const cell = 0.125;
 	const defaultPixelSize = 4;
 	const columns = Math.round(width / cell);

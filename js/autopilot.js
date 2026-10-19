@@ -3,8 +3,8 @@
 	// Autopilot. Four switches over three duties: intercept the ball (a plain
 	// chase, or a timed run that spends less energy), keep the bounce drive at the
 	// energy the ball actually needs, and tilt the reflector so the next bounce
-	// leaves straight up. Each duty yields to its matching manual command, which
-	// the interface switches off again, so the autopilot never fights the player.
+	// leaves straight up. Each duty temporarily yields to its matching manual command
+	// without changing the enabled switches.
 	//
 	// The plan comes from the ballistic computer and is rebuilt 20 times a second
 	// or whenever the ball's situation changes; the commands derived from it are
@@ -15,6 +15,27 @@
 	const DRIVE = 'drive';
 	const ANGLE = 'angle';
 	const planInterval = 1 / 20;
+	const overrideSeconds = 2;
+	const overrides = { move: 0, drive: 0, angle: 0 };
+	const held = { move: false, drive: false, angle: false };
+
+	function duty(channel) { return channel === SMART ? MOVE : channel; }
+	function suspended(channel) { return overrides[duty(channel)] > 0; }
+	function override(channel) {
+		const key = duty(channel);
+		if (key === MOVE ? moveOn || smartOn : enabled(key)) overrides[key] = overrideSeconds;
+	}
+	function hold(channel, on) {
+		const key = duty(channel);
+		if (on || held[key]) override(key);
+		held[key] = on;
+	}
+	function advanceOverride(channel, dt) {
+		if (held[channel]) { override(channel); return; }
+		if (overrides[channel] <= 0) return;
+		overrides[channel] = Math.max(0, overrides[channel] - dt);
+		if (overrides[channel] === 0) planAge = planInterval;
+	}
 	// The reflector face is 2.34 m wide, so an offset under a third of it does not
 	// change the outcome; correcting it would cost more than it saves.
 	const interceptTolerance = 0.4;
@@ -86,24 +107,16 @@
 		else if (channel === DRIVE) driveOn = value;
 		else angleOn = value;
 		// A channel switched on acts on the next step, not on the next refresh.
+		overrides[duty(channel)] = 0;
 		if (value) planAge = planInterval;
 		return value;
 	}
 
 	function toggle(channel) { set(channel, !enabled(channel)); }
 
-	// Returns whether anything was engaged, so the interface only re-syncs its
-	// checkboxes when a manual command really took a duty back.
-	function disengage(channel) {
-		if (channel === DRIVE) { const was = driveOn; driveOn = false; return was; }
-		if (channel === ANGLE) { const was = angleOn; angleOn = false; return was; }
-		const was = moveOn || smartOn;
-		moveOn = false;
-		smartOn = false;
-		return was;
-	}
-
 	function reset() {
+		overrides.move = overrides.drive = overrides.angle = 0;
+		held.move = held.drive = held.angle = false;
 		planAge = planInterval;
 		interceptX = NaN;
 		contactIn = 0;
@@ -231,7 +244,7 @@
 		if (world.ball.state !== 'flying') return true;
 		if (!contactOnPiston) return wantedDrive;
 		const config = root.SteamPhysics.config;
-		const bounce = solve(world, angleOn ? wantedAngle : world.pistonAngle, 0);
+		const bounce = solve(world, angleOn && !suspended(ANGLE) ? wantedAngle : world.pistonAngle, 0);
 		const rise = Math.max(0, bounce.vy);
 		const apex = config.deck + config.radius + rise * rise / (2 * config.ballGravity);
 		const target = config.ceiling - config.radius;
@@ -257,7 +270,7 @@
 	// range limit is the best the actuator can do.
 	function verticalTilt(world) {
 		const physics = root.SteamPhysics;
-		const push = wantedDrive ? physics.launchCapacity(world) : 0;
+		const push = world.drive ? physics.launchCapacity(world) : 0;
 		const max = physics.config.pistonMaxAngle;
 		let low = -max;
 		let lowVx = solve(world, low, push).vx;
@@ -284,18 +297,21 @@
 	}
 
 	function update(world, dt) {
+		advanceOverride(MOVE, dt);
+		advanceOverride(DRIVE, dt);
+		advanceOverride(ANGLE, dt);
 		if (!(moveOn || smartOn || driveOn || angleOn)) return;
 		planAge += dt;
 		if (contactIn > 0) contactIn = Math.max(0, contactIn - dt);
 		if (stale(world)) replan(world);
-		if (moveOn || smartOn) commandTravel(world);
+		if ((moveOn || smartOn) && !suspended(MOVE)) commandTravel(world);
 		// The drive decision is priced with the tilt the angle keeper is holding,
 		// and the tilt is solved with the drive state just decided.
-		if (driveOn) commandDrive(world);
-		if (angleOn) commandTilt(world, dt);
+		if (driveOn && !suspended(DRIVE)) commandDrive(world);
+		if (angleOn && !suspended(ANGLE)) commandTilt(world, dt);
 	}
 
-	const api = { state, enabled, set, toggle, disengage, reset, update, channels: Object.freeze({ MOVE, SMART, DRIVE, ANGLE }) };
+	const api = { state, enabled, set, toggle, override, hold, suspended, overrideSeconds, reset, update, channels: Object.freeze({ MOVE, SMART, DRIVE, ANGLE }) };
 	root.SteamAutopilot = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

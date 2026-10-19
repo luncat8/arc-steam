@@ -120,6 +120,8 @@ test('brake flywheel returns part of the braking energy to the reserve', () => {
 	near(physics.recoveryNow(), 0.55);
 	near(physics.dryMass(), c.platformMass - 4 + 14);
 	w.ball.state = 'held';
+	w.platform.x = physics.platformMin();
+	w.target = NaN;
 	w.platform.vx = c.maxSpeed;
 	w.direction = -1;
 	w.forceSetting = 1;
@@ -130,7 +132,11 @@ test('brake flywheel returns part of the braking energy to the reserve', () => {
 	const mass = physics.platformMass(w);
 	const before = 0.5 * mass * w.platform.vx * w.platform.vx;
 	let steps = 0;
-	while (w.platform.vx > 0 && steps < 240 * 10) { physics.step(w, c.step); steps++; }
+	while (w.platform.vx > 1e-9 && steps < 240 * 10) {
+		const stopTime = w.platform.vx * mass / c.force;
+		physics.step(w, Math.min(c.step, stopTime));
+		steps++;
+	}
 	const after = 0.5 * mass * w.platform.vx * w.platform.vx;
 	assert.ok(steps < 240 * 10, 'the platform braked to a stop');
 	near(w.battery - battery, (before - after) * 0.55 * c.recoveryEfficiency);

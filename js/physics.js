@@ -1,11 +1,11 @@
 (function (root) {
 	'use strict';
 	const gravity = 9.81;
-	const ballSpeedScale = 1 / 1.5;
+	const ballSpeedScale = 1 / (1.5 * 1.2);
 	const reserveCapacity = 12000;
 	const chargeSeconds = 4;
 	const config = Object.freeze({
-		width: 24, ceiling: 10, gravity, ballGravity: gravity * ballSpeedScale * ballSpeedScale,
+		width: 24, ceiling: 15, gravity, ballGravity: gravity * ballSpeedScale * ballSpeedScale,
 		ballMass: 1 / (ballSpeedScale * ballSpeedScale), ballSpeedScale, radius: 0.18,
 		platformWidth: 3.6, deck: 0.7, collectorFraction: 0.35,
 		// The reflector is a sprung piston: its face tilts to steer reflections

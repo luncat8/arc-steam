@@ -20,13 +20,13 @@ function speed(ball) { return Math.hypot(ball.vx, ball.vy); }
 		for (let seed = 1; seed <= 6; seed++) {
 			ceiling.reset(seed);
 			ceiling.setShape(shape);
-			ceiling.damage(4.06, 8.06, 30);
-			ceiling.damage(12.06, 8.06, 60);
-			ceiling.damage(20.06, 8.06, 15);
+			ceiling.damage(4.06, ceiling.state.bottom + 0.06, 30);
+			ceiling.damage(12.06, ceiling.state.bottom + 0.06, 60);
+			ceiling.damage(20.06, ceiling.state.bottom + 0.06, 15);
 			for (let gx = 0; gx < 240; gx++) {
 				const x = gx * 0.1;
 				for (let gy = 0; gy < 44; gy++) {
-					const y = 6.6 + gy * 0.075;
+					const y = ceiling.state.bottom - 1.4 + gy * 0.075;
 					for (let a = 0; a < 360; a += 15) {
 						const rad = a * Math.PI / 180;
 						for (const v0 of [3, 8, 15, 25]) {
@@ -74,9 +74,9 @@ function speed(ball) { return Math.hypot(ball.vx, ball.vy); }
 		ceiling.reset(seed);
 		ceiling.setShape(shape);
 		w.drive = trial % 3 !== 0;
-		for (let k = 0; k < 3; k++) ceiling.damage(3 + ((trial * 5 + k * 7) % 18), 8.06, 30 + (trial % 40));
+		for (let k = 0; k < 3; k++) ceiling.damage(3 + ((trial * 5 + k * 7) % 18), ceiling.state.bottom + 0.06, 30 + (trial % 40));
 		w.ball.x = 3 + (trial * 1.3) % 18;
-		w.ball.y = 6.5 + (trial % 15) * 0.1;
+		w.ball.y = ceiling.state.bottom - 1.5 + (trial % 15) * 0.1;
 		w.ball.vx = ((trial * 2.9) % 12) - 6;
 		w.ball.vy = 4 + (trial % 12);
 		w.ball.state = 'flying';
@@ -105,15 +105,15 @@ function speed(ball) { return Math.hypot(ball.vx, ball.vy); }
 		for (let seed = 1; seed <= 10; seed++) {
 			ceiling.reset(seed);
 			ceiling.setShape(from);
-			ceiling.damage(10.06, 8.06, 40);
-			ceiling.damage(10.56, 8.06, 25);
+			ceiling.damage(10.06, ceiling.state.bottom + 0.06, 40);
+			ceiling.damage(10.56, ceiling.state.bottom + 0.06, 25);
 			const st = ceiling.state;
 			const v = Math.floor(10.0 / st.cell);
 			const w = physics.createWorld();
 			ceiling.reset(seed);
 			ceiling.setShape(from);
-			ceiling.damage(10.06, 8.06, 40);
-			ceiling.damage(10.56, 8.06, 25);
+			ceiling.damage(10.06, ceiling.state.bottom + 0.06, 40);
+			ceiling.damage(10.56, ceiling.state.bottom + 0.06, 25);
 			const h = st.heightmap[v];
 			w.ball.x = 10.0;
 			w.ball.y = h - 0.18 - 1e-4;
