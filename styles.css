@@ -1,102 +1,139 @@
-:root { color-scheme: dark; font-family: system-ui, sans-serif; color: #dce6e4; background: #0c1215; --line: #29363a; --muted: #82959a; --accent: #b9ed91; }
+:root { color-scheme: dark; font-family: system-ui, sans-serif; color: #dce6e4; background: #0c1215; --line: #29363a; --muted: #82959a; --accent: #b9ed91; --amber: #e6b66e; --control-line: #3a4c50; }
 * { box-sizing: border-box; }
 body { margin: 0; }
-header { height: 88px; padding: 0 5vw; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
-.brand { display: flex; align-items: center; gap: 13px; font-weight: 750; letter-spacing: 2px; font-size: 15px; }
-.mark { border: 1px solid var(--accent); color: var(--accent); padding: 11px 9px; letter-spacing: -1px; }
 small { display: block; }
-.brand small { color: var(--muted); font-size: 9px; margin-top: 5px; letter-spacing: 1.8px; }
-.badge, .eyebrow, .panel-title, .mine-footer, .canvas-label { font: 10px ui-monospace, monospace; letter-spacing: 1.3px; }
-.badge { color: var(--muted); border: 1px solid var(--line); padding: 9px 12px; }
-main { max-width: 1500px; margin: auto; padding: 34px 5vw; }
-.heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 26px; }
-.eyebrow { color: var(--accent); }
-h1 { font-size: clamp(26px, 3vw, 40px); margin: 9px 0; font-weight: 550; letter-spacing: -1.5px; }
 p { color: var(--muted); line-height: 1.65; font-size: 13px; }
-.heading p { margin-bottom: 0; }
-button, select { font: inherit; color: inherit; background: #1b282c; border: 1px solid #3a4c50; padding: 12px 15px; border-radius: 4px; cursor: pointer; }
-button:hover:not(:disabled) { border-color: var(--accent); }
+label { font-size: 11px; color: #a7b8ba; }
+output { float: right; }
+button, select { font: inherit; color: inherit; background: #1b282c; border: 1px solid var(--control-line); padding: 12px 15px; border-radius: 4px; cursor: pointer; }
+select { padding: 6px; margin-left: 8px; font-size: 11px; }
+button:hover:not(:disabled, [aria-disabled="true"]) { border-color: var(--accent); }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-button:disabled { opacity: 0.4; cursor: not-allowed; }
+button:disabled, button[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 13px 0; }
 .quiet { background: transparent; color: #9faeaf; font-size: 12px; }
-.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 292px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #101a1e; }
-.panel-title { min-height: 44px; padding: 16px; border-bottom: 1px solid var(--line); color: #a7b8ba; display: flex; justify-content: space-between; }
+.eyebrow, .panel-title, .system-bar, .mine-footer { font: 10px ui-monospace, monospace; letter-spacing: 1.3px; }
+.eyebrow { color: var(--accent); }
+.hint { font-size: 11px; line-height: 1.6; }
+
+/* Four rows: system bar, telemetry, play area (research | chamber | controls | inspector), economy (equipment | cargo | market). */
+main { max-width: 1920px; margin: auto; padding: 16px 2vw 24px; display: grid; gap: 12px; }
+.panel { min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: #101a1e; }
+.panel-title { min-height: 44px; padding: 15px 16px; border-bottom: 1px solid var(--line); color: #a7b8ba; display: flex; justify-content: space-between; gap: 10px; background: #101a1e; }
+.panel-body { padding: 16px; }
+
+.system-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; padding: 7px 16px; color: #a7b8ba; }
+.system-bar label { font: inherit; }
+.system-bar button { padding: 8px 13px; }
 .live { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 8px; }
-.canvas-wrap { position: relative; height: 420px; background: #10191d; }
+.time-controls { display: flex; align-items: center; gap: 12px; }
+#clock { min-width: 60px; color: var(--accent); }
+.system-options { margin-left: auto; }
+
+.telemetry { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 1px; overflow: hidden; background: var(--line); }
+.telemetry article { min-width: 0; padding: 10px 14px 11px; background: #0c1215; }
+.telemetry span { font: 9px ui-monospace, monospace; color: #94a8ac; letter-spacing: 1px; }
+.telemetry strong { display: block; font: 17px ui-monospace, monospace; margin: 6px 0 4px; }
+.telemetry small { font-size: 10px; color: #71868a; }
+
+.workspace { display: grid; gap: 12px; grid-template-columns: 260px minmax(0, 1fr) 250px 210px; grid-template-areas: "tech mine controls inspector"; }
+.tech-panel { grid-area: tech; }
+.mine-panel { grid-area: mine; display: flex; flex-direction: column; }
+.controls-panel { grid-area: controls; }
+.mineral-panel { grid-area: inspector; }
+/* Ratio matches the chamber's 25.5 × 10 m view plus the renderer's margins, so the canvas wastes little height. */
+.canvas-wrap { position: relative; flex: 1 0 auto; aspect-ratio: 2.25; min-height: 420px; max-height: 74vh; background: #10191d; border-radius: 6px 6px 0 0; overflow: hidden; }
 canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
-.canvas-label { position: absolute; top: 23px; left: 22px; color: #6b7a7e; pointer-events: none; font-size: 9px; }
-.mine-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; padding: 12px 17px; border-top: 1px solid var(--line); color: #94a8ac; font-size: 9px; }
-.mine-footer label { font: 9px ui-monospace, monospace; letter-spacing: 1px; }
-.mine-footer label:first-of-type { margin-left: auto; }
-.mine-footer select { margin-left: 6px; }
+
+.mine-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; padding: 9px 14px; border-top: 1px solid var(--line); color: #94a8ac; font-size: 9px; }
 .key-color { display: inline-block; height: 7px; width: 12px; margin-right: 7px; }
-.collector { background: #e6b66e; }.reflector { background: var(--accent); }
-aside { border-left: 1px solid var(--line); }
-.controls { padding: 14px 19px; }
+.collector { background: var(--amber); }
+.reflector { background: var(--accent); }
+.view-switch { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.view-modes { display: flex; flex-wrap: wrap; border: 1px solid var(--control-line); border-radius: 4px; overflow: hidden; }
+.view-modes label { position: relative; padding: 6px 10px; font: 9px ui-monospace, monospace; letter-spacing: 1px; color: #94a8ac; cursor: pointer; user-select: none; }
+.view-modes label + label { border-left: 1px solid var(--control-line); }
+.view-modes label:hover { color: #dce6e4; }
+.view-modes label:has(:checked) { color: var(--accent); background: #25392a; }
+.view-modes label:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* The radio stays focusable for arrow keys; its label is the visible control. */
+.view-modes input { position: absolute; inset: 0; margin: 0; opacity: 0; pointer-events: none; }
+
+.controls { padding: 14px 16px; }
 .controls button { width: 100%; text-align: left; font-size: 12px; }
 .controls button span { float: right; color: #7d9094; font-size: 10px; }
 .drive[aria-pressed="true"] { color: var(--accent); background: #25392a; border-color: #6a9757; }
-.hint { font-size: 11px; line-height: 1.6; }
-#status { color: #e6b66e; font-size: 11px; min-height: 18px; }
-label { font-size: 11px; color: #a7b8ba; }
-output { float: right; }
-input[type="range"] { width: 100%; accent-color: var(--accent); margin: 13px 0; }
+#status { color: var(--amber); font-size: 11px; min-height: 18px; }
+#motion { color: var(--accent); white-space: nowrap; }
+#prediction-status { color: #9fd3b0; }
+#prediction-status[hidden] { display: none; }
 .control-row { display: flex; gap: 8px; touch-action: none; }
 .control-row button { text-align: center; user-select: none; }
-.experiment { border-top: 1px solid var(--line); padding: 16px 19px; }
+.experiment { border-top: 1px solid var(--line); padding: 14px 16px; }
 .experiment p { font-size: 11px; margin-bottom: 0; }
+
+#mineral-strength { display: block; font: 14px ui-monospace, monospace; line-height: 1.6; }
+progress { width: 100%; height: 8px; accent-color: var(--amber); margin-top: 12px; }
+#mineral-composition, #mineral-price { font-size: 12px; }
+
 /* Equipment and research rows share one upgrade-row layout. */
 .upgrade-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
 .upgrade-row:last-of-type { border-bottom: 0; }
 .upgrade-row b { font-size: 11px; letter-spacing: 0.6px; }
 .upgrade-row small { grid-column: 1 / -1; font-size: 10px; line-height: 1.55; color: #9fb0b2; }
 .upgrade-row .requirement { color: #7d9094; font: 9px ui-monospace, monospace; letter-spacing: 0.7px; line-height: 1.5; }
-.upgrade-row button { padding: 7px 12px; font-size: 10px; letter-spacing: 0.8px; }
+.upgrade-row button { align-self: start; padding: 7px 12px; font-size: 10px; letter-spacing: 0.8px; }
 .upgrade-row[data-state="locked"] { opacity: 0.55; }
 .upgrade-row[data-state="installed"] b, .upgrade-row[data-state="researched"] b { color: var(--accent); }
-.equipment .hint, .tech-panel .hint { margin-bottom: 10px; }
-.spec { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; margin: 0 0 12px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 4px; background: #0c1215; }
+.tech-panel .hint, .equipment-panel .hint { margin-top: 0; margin-bottom: 10px; }
+#research-progress, #credits { color: var(--accent); }
+#research-status, #equipment-status { font-size: 11px; }
+
+.economy { display: grid; gap: 12px; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+#equipment-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); column-gap: 20px; }
+#equipment-rows .upgrade-row { border-bottom: 1px solid var(--line); }
+.spec { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr) auto); gap: 3px 12px; margin: 0 0 6px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 4px; background: #0c1215; }
 .spec dt { font-size: 10px; color: var(--muted); }
 .spec dd { margin: 0; text-align: right; font: 11px ui-monospace, monospace; color: #cfe0da; }
-#research-progress { color: var(--accent); }
-#prediction-status { color: #9fd3b0; }
-#prediction-status[hidden] { display: none; }
-/* Telemetry is a strip inside the chamber panel, so it spans exactly the canvas width. */
-.telemetry { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; border-bottom: 1px solid var(--line); background: var(--line); }
-.telemetry article { min-width: 0; padding: 11px 16px 12px; background: #0c1215; }
-.telemetry span { font: 9px ui-monospace, monospace; color: #94a8ac; letter-spacing: 1px; }
-.telemetry strong { display: block; font: 17px ui-monospace, monospace; margin: 7px 0 5px; }
-.telemetry small { font-size: 10px; color: #71868a; }
-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 18px; color: #71868a; font-size: 10px; gap: 12px; }
-footer > div { display: flex; gap: 16px; align-items: center; }
-select { padding: 6px; margin-left: 8px; font-size: 11px; }
-@media (max-width: 950px) { main { padding: 25px 20px; } header { padding: 0 20px; }.workspace { grid-template-columns: minmax(0, 1fr) 250px; }.canvas-wrap { height: 480px; }.telemetry article { padding: 10px 12px; }.telemetry strong { font-size: 13px; } }
-@media (max-width: 700px) { header { height: 70px; }.badge { display: none; }.heading { align-items: start; gap: 16px; }.workspace { grid-template-columns: 1fr; }.canvas-wrap { height: 340px; }aside { border-left: 0; border-top: 1px solid var(--line); }.telemetry { grid-template-columns: 1fr 1fr; }footer { flex-wrap: wrap; }.mine-footer { gap: 12px; }.mine-footer label, .mine-footer label:first-of-type { width: 100%; margin-left: 0; }.canvas-label { font-size: 8px; } }
-.mining { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.35fr); gap: 18px; margin-top: 18px; }
-.mining article { min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: #101a1e; }
-.mining-body { padding: 18px; }
-#mineral-strength { display: block; font: 14px ui-monospace, monospace; line-height: 1.6; }
-progress { width: 100%; height: 8px; accent-color: #e6b66e; margin-top: 12px; }
-#mineral-composition, #mineral-price { font-size: 12px; }
-.mass-readouts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 0; }
-.mass-readouts dt, .cargo-summary span, .refuel span { font-size: 11px; color: var(--muted); }
+
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+.summary span, .refuel span, .mass-readouts dt { font-size: 11px; color: var(--muted); }
+.summary strong, .refuel strong { display: block; font: 20px ui-monospace, monospace; margin: 8px 0; }
+.summary small, .refuel small { font-size: 10px; color: var(--muted); }
+.mass-readouts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
 .mass-readouts dd { margin: 5px 0 0; font: 15px ui-monospace, monospace; }
-.cargo-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-.cargo-summary strong, .refuel strong { display: block; font: 20px ui-monospace, monospace; margin: 8px 0; }
-.cargo-summary small, .refuel small { font-size: 10px; color: var(--muted); }
 .refuel { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
 .refuel button { flex: none; font-size: 11px; }
-#refuel-cost { color: #e6b66e; }
-.table-wrap { overflow-x: auto; margin: 18px 0; }
+#refuel-cost { color: var(--amber); }
+.table-wrap { overflow-x: auto; margin: 16px 0; }
 table { border-collapse: collapse; width: 100%; font: 11px ui-monospace, monospace; white-space: nowrap; }
 caption { text-align: left; color: var(--muted); font-size: 10px; padding-bottom: 10px; white-space: normal; }
 th, td { text-align: right; padding: 9px 5px; border-bottom: 1px solid var(--line); }
 th:first-child { text-align: left; }
 thead { color: var(--muted); }
-#credits { color: var(--accent); }
-#transaction-status { font-size: 11px; color: #e6b66e; }
+#transaction-status { font-size: 11px; color: var(--amber); }
 details { font-size: 11px; color: var(--muted); line-height: 1.8; }
 summary { cursor: pointer; }
-#ledger { padding-left: 25px; }
-@media (max-width: 1150px) { .mining { grid-template-columns: 1fr; } }
-@media (max-width: 400px) { .cargo-summary strong, .refuel strong { font-size: 16px; }.refuel { flex-wrap: wrap; }.mining-body { padding: 12px; } }
+#ledger { padding-left: 25px; margin: 6px 0 0; }
+
+/* Side columns next to the chamber take its height instead of setting it, and scroll inside. */
+@media (min-width: 761px) { .controls-panel { contain: size; overflow-y: auto; } .controls-panel .panel-title { position: sticky; top: 0; z-index: 1; } }
+@media (min-width: 1280px) { .tech-panel, .mineral-panel { contain: size; overflow-y: auto; } .tech-panel .panel-title, .mineral-panel .panel-title { position: sticky; top: 0; z-index: 1; } }
+/* Below the four-column width the chamber keeps the row; research and the inspector move under it. */
+@media (max-width: 1279px) {
+	.telemetry { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+	.workspace { grid-template-columns: minmax(0, 1fr) 260px; grid-template-areas: "mine controls" "tech inspector"; }
+	.economy { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+	.equipment-panel { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+	main { padding: 12px; }
+	.system-options { margin-left: 0; }
+	.telemetry { grid-template-columns: 1fr 1fr; }
+	.telemetry strong { font-size: 13px; }
+	.workspace { grid-template-columns: minmax(0, 1fr); grid-template-areas: "mine" "controls" "inspector" "tech"; }
+	.canvas-wrap { aspect-ratio: auto; height: 320px; min-height: 0; }
+	.view-switch { margin-left: 0; }
+	.economy { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 400px) { .mass-readouts { grid-template-columns: 1fr 1fr; } .spec { grid-template-columns: minmax(0, 1fr) auto; } .summary strong, .refuel strong { font-size: 16px; } .refuel { flex-wrap: wrap; } .panel-body { padding: 12px; } }

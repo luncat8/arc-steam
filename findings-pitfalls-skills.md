@@ -4,7 +4,7 @@ Notes for agents working in this repository. Keep entries short and about *why*.
 
 ## Testing a `file://` page without a browser
 
-No Playwright or browser binary is available in these sandboxes, so `experiments/browser-smoke.cjs` never runs here. `experiments/dom.cjs` covers the gap:
+`experiments/dom.cjs` is the fast, always-available interface test:
 
 - Build fake elements by scanning the real `index.html` for `id="..."`, so a renamed or removed id fails the test instead of silently passing.
 - Set `globalThis.window = globalThis` after installing the shim; the page scripts then resolve both `window.SteamCeiling` and bare `SteamCeiling`.
@@ -12,6 +12,29 @@ No Playwright or browser binary is available in these sandboxes, so `experiments
 - A recording 2D context (push command names into an array) is enough to assert that an overlay was drawn: `setLineDash` present means the dotted path ran.
 - Capture the page's private `world` by wrapping `physics.step` before requiring `js/main.js`; the page looks the method up at call time. That seam lets a test fund the page from real cargo sales instead of poking balances.
 - Form controls stringify: a shim `value` setter must do `String(next)` or assertions against `'70'` fail against `70`.
+
+- The shim cannot see real browser behaviour. It let a test "click" disabled buttons for two milestones; in a real browser a disabled `<button>` swallows the click, so refusal messages never showed. Keep `browser-smoke.cjs` running when a browser is available.
+
+## Running a real Chromium in the sandbox
+
+No system browser exists and the Playwright CDN is blocked, but npm is reachable. Install outside the repository:
+
+```sh
+mkdir -p /tmp/pw && cd /tmp/pw && npm init -y && npm i playwright-core@1 @sparticuz/chromium
+# the binary needs NSS/NSPR; the package ships them in al2023.tar.br
+mkdir -p /tmp/al && cd /tmp/al && node -e "const z=require('zlib'),fs=require('fs');fs.writeFileSync('a.tar',z.brotliDecompressSync(fs.readFileSync('/tmp/pw/node_modules/@sparticuz/chromium/bin/al2023.tar.br')))" && tar xf a.tar
+cd /home/user/arc-steam && LD_LIBRARY_PATH=/tmp/al/lib PLAYWRIGHT_PATH=/tmp/pw/node_modules/playwright-core \
+	CHROMIUM_PACKAGE=/tmp/pw/node_modules/@sparticuz/chromium/build/index.js node experiments/browser-smoke.cjs
+```
+
+- Its launch args force `(hover: hover) and (pointer: fine)`; a page opened with `{ hasTouch: true, isMobile: true }` reports touch instead, which is how the smoke test checks hover gating.
+- Playwright counts `aria-disabled="true"` as not enabled; `click({ force: true })` still delivers a real click.
+- `page.screenshot({ fullPage: true })` at 1920, 1440, 1100 and 390 px widths is the quickest layout review.
+
+## Layout pitfalls
+
+- A side column that must take the chamber's height instead of stretching the row uses `contain: size` plus `overflow-y: auto` in a grid. Turn it on in `min-width` queries, not as a base rule overridden later: a `.workspace > .panel:not(.mine-panel)` base selector outranks a single-class override and collapses the stacked panels to zero height.
+- Hover-to-switch is safe only for display state (rock view). The rock shape changes collision physics, so it stays a click-only select: a passing mouse must not change the game.
 
 ## Simulation pitfalls
 

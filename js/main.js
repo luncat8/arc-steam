@@ -4,7 +4,7 @@
 	const config = physics.config;
 	const canvas = document.getElementById('c');
 	const context = canvas.getContext('2d');
-	const ids = ['clock', 'drive', 'launch', 'status', 'prediction-status', 'force', 'force-value', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'view',
+	const ids = ['clock', 'drive', 'launch', 'status', 'prediction-status', 'force', 'force-value', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'view-modes',
 		'platform-spec', 'research-rows', 'research-status', 'research-progress',
 		'mineral-column', 'column-label', 'mineral-layer', 'layer-label', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
@@ -45,7 +45,7 @@
 
 	// Equipment and research rows share one layout: a title with cost and mass, an
 	// action button, the measured effect, and a prerequisite/unlock note. Built
-	// once at startup; only text and the disabled flag change afterwards.
+	// once at startup; only text and the blocked flag change afterwards.
 	function buildRow(container, title, action, effect, note, activate) {
 		const row = document.createElement('div');
 		row.className = 'upgrade-row';
@@ -115,7 +115,7 @@
 		else if (SteamEquipment.isInstalled(id)) ui['equipment-status'].textContent = item.name + ' is already installed.';
 		else if (!SteamEquipment.isUnlocked(id)) ui['equipment-status'].textContent = item.name + ' needs the ' + SteamResearch.find(item.requires).name + ' research first.';
 		else ui['equipment-status'].textContent = 'Not enough funds for ' + item.name + ' (' + item.cost + ' cr needed).';
-		readout();
+		refresh();
 	}
 
 	function buyResearch(id) {
@@ -124,8 +124,12 @@
 		else if (SteamResearch.isResearched(id)) ui['research-status'].textContent = node.name + ' is already researched.';
 		else if (SteamResearch.status(id) === SteamResearch.constants.LOCKED) ui['research-status'].textContent = node.name + ' stays locked until ' + prerequisiteNames(node) + ' is researched.';
 		else ui['research-status'].textContent = 'Not enough funds for ' + node.name + ' (' + node.cost + ' cr needed).';
-		readout();
+		refresh();
 	}
+
+	// Blocked upgrade buttons stay clickable (aria-disabled, not disabled): a real
+	// disabled button swallows the click, and the refusal must say why.
+	function setBlocked(button, blocked) { button.setAttribute('aria-disabled', blocked ? 'true' : 'false'); }
 
 	// Locked, available and researched states drive both the button and the row
 	// styling, so the panel shows progression without relying on colour alone.
@@ -134,7 +138,7 @@
 		for (const row of equipmentRows) {
 			const installed = SteamEquipment.isInstalled(row.item.id);
 			const unlocked = SteamEquipment.isUnlocked(row.item.id);
-			row.button.disabled = installed || !unlocked || funds < row.item.cost;
+			setBlocked(row.button, installed || !unlocked || funds < row.item.cost);
 			row.button.textContent = installed ? 'Installed' : unlocked ? 'Buy' : 'Locked';
 			row.row.dataset.state = installed ? 'installed' : unlocked ? 'available' : 'locked';
 		}
@@ -142,9 +146,9 @@
 		for (const row of researchRows) {
 			const status = SteamResearch.status(row.node.id);
 			if (status === SteamResearch.constants.RESEARCHED) completed++;
-			row.button.disabled = status !== SteamResearch.constants.AVAILABLE || funds < row.node.cost;
+			setBlocked(row.button, status !== SteamResearch.constants.AVAILABLE || funds < row.node.cost);
 			// 'Locked' means a missing prerequisite; an unaffordable but available
-			// node still reads 'Research' and is simply disabled.
+			// node still reads 'Research' and is simply blocked.
 			row.button.textContent = status === SteamResearch.constants.RESEARCHED ? 'Done' : status === SteamResearch.constants.AVAILABLE ? 'Research' : 'Locked';
 			row.row.dataset.state = status;
 		}
@@ -190,6 +194,13 @@
 	let floorY = 0;
 	let leftHeld = false;
 	let rightHeld = false;
+	// The canvas is redrawn after simulation steps or when something it shows
+	// changed while time stands still (pause, resize, selection, view mode).
+	let sceneDirty = true;
+	const viewGroup = 'rock-view';
+	let viewMode = 'minerals';
+	// Hover switching is for precise hovering pointers only; touch and stylus stay click-only.
+	const hoverPointer = window.matchMedia('(hover: hover) and (pointer: fine)');
 	const viewMinX = -1.5;
 	const viewWidth = 25.5;
 
@@ -204,6 +215,7 @@
 		scale = Math.min((width - 32) / viewWidth, (height - 80) / config.ceiling);
 		offsetX = (width - viewWidth * scale) / 2 - viewMinX * scale;
 		floorY = (height + config.ceiling * scale) / 2 + 9;
+		sceneDirty = true;
 	}
 
 	function draw() {
@@ -227,7 +239,7 @@
 		context.fillRect(config.width, 0, 0.3, config.ceiling);
 		context.fillStyle = '#0a0f11';
 		context.fillRect(-pocketDepth, 0, pocketDepth, pocketTop);
-		if (window.SteamCeiling) window.SteamCeiling.draw(context, ui.view.value);
+		if (window.SteamCeiling) window.SteamCeiling.draw(context, viewMode);
 		if (window.SteamCeiling) {
 			const ceiling = window.SteamCeiling.state;
 			context.strokeStyle = '#edf6f1';
@@ -397,14 +409,42 @@
 		else ui.status.textContent = 'Ball in flight · ' + world.pushes + ' powered pushes' + (thermalFactor < 1 ? ' · drive derated' : '');
 	}
 
+	// Event-driven readouts also mark the scene, so a paused chamber reflects the change.
+	function refresh() { readout(); sceneDirty = true; }
+
+	// Single writer of the rock view mode; click, keyboard and hover all go through it.
+	function setViewMode(mode) {
+		if (mode === viewMode) return;
+		viewMode = mode;
+		sceneDirty = true;
+	}
+
+	function viewModeChanged(event) {
+		const input = event.target;
+		if (input.name === viewGroup) setViewMode(input.value);
+	}
+
+	// Runs on every pointer move across the menu, so it walks parents without allocating.
+	function viewModeHovered(event) {
+		if (!hoverPointer.matches) return;
+		let node = event.target;
+		while (node && node !== ui['view-modes'] && node.tagName !== 'LABEL') node = node.parentElement;
+		if (!node || node === ui['view-modes']) return;
+		const input = node.control;
+		if (!input || input.name !== viewGroup) return;
+		input.checked = true;
+		setViewMode(input.value);
+	}
+
 	function updateDirection() {
 		world.direction = Number(rightHeld) - Number(leftHeld);
 		if (world.direction) world.target = NaN;
+		sceneDirty = true;
 	}
 
 	function clearInput() { leftHeld = false; rightHeld = false; updateDirection(); }
-	function toggleDrive() { world.drive = !world.drive; readout(); }
-	function releaseBall() { physics.launch(world); readout(); }
+	function toggleDrive() { world.drive = !world.drive; refresh(); }
+	function releaseBall() { physics.launch(world); refresh(); }
 	function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }
 	function setForce(value) {
 		world.forceSetting = Math.max(0.1, Math.min(1, value));
@@ -460,8 +500,8 @@
 		const elapsed = previous ? Math.min((now - previous) / 1000, 0.1) : 0;
 		previous = now;
 		if (!paused && !document.hidden) accumulator += elapsed * Number(ui.speed.value);
-		while (accumulator >= config.step) { physics.step(world, config.step); accumulator -= config.step; }
-		draw();
+		while (accumulator >= config.step) { physics.step(world, config.step); accumulator -= config.step; sceneDirty = true; }
+		if (sceneDirty) { draw(); sceneDirty = false; }
 		if (now - lastReadout > 100) { readout(); lastReadout = now; }
 		requestAnimationFrame(frame);
 	}
@@ -470,20 +510,22 @@
 		world = physics.createWorld(); window.SteamCeiling.setShape(ui.shape.value); renderedSales = -1; clearInput(); setForce(world.forceSetting); accumulator = 0;
 		ui['equipment-status'].textContent = 'Sell cargo at a wall to earn credits.';
 		ui['research-status'].textContent = 'Sell cargo at a wall to fund research.';
-		readout();
+		refresh();
 	});
 	ui.drive.addEventListener('click', toggleDrive);
 	ui.refuel.addEventListener('click', function () {
 		const imported = window.SteamCeiling.recharge(world, world.time);
-		readout();
+		refresh();
 		if (!imported) ui['transaction-status'].textContent = 'Not enough funds to recharge · ' + window.SteamCeiling.rechargeCost(world).toFixed(1) + ' cr fills the reserve.';
 	});
 	ui.launch.addEventListener('click', releaseBall);
 	ui.pause.addEventListener('click', togglePause);
-	ui.shape.addEventListener('change', function () { window.SteamCeiling.setShape(ui.shape.value); });
+	ui.shape.addEventListener('change', function () { window.SteamCeiling.setShape(ui.shape.value); sceneDirty = true; });
+	ui['view-modes'].addEventListener('change', viewModeChanged);
+	ui['view-modes'].addEventListener('pointerover', viewModeHovered);
 	ui.force.addEventListener('input', function () { setForce(Number(ui.force.value) / 100); });
-	ui['mineral-column'].addEventListener('input', function () { selectedColumn = Number(ui['mineral-column'].value) - 1; readout(); });
-	ui['mineral-layer'].addEventListener('input', function () { selectedLayer = Number(ui['mineral-layer'].value) - 1; readout(); });
+	ui['mineral-column'].addEventListener('input', function () { selectedColumn = Number(ui['mineral-column'].value) - 1; refresh(); });
+	ui['mineral-layer'].addEventListener('input', function () { selectedLayer = Number(ui['mineral-layer'].value) - 1; refresh(); });
 	canvas.addEventListener('pointerdown', function (event) {
 		const bounds = canvas.getBoundingClientRect();
 		const worldX = (event.clientX - bounds.left - offsetX) / scale;
@@ -494,18 +536,19 @@
 			selectedLayer = Math.max(0, Math.min(ceiling.rows - 1, Math.floor((worldY - ceiling.bottom) / ceiling.cell)));
 			ui['mineral-column'].value = selectedColumn + 1;
 			ui['mineral-layer'].value = selectedLayer + 1;
-			readout();
+			refresh();
 			canvas.focus();
 			return;
 		}
 		world.target = Math.max(physics.platformMin(), Math.min(physics.platformMax(), worldX));
+		sceneDirty = true;
 		canvas.focus();
 	});
 	window.addEventListener('keydown', keydown);
 	window.addEventListener('keyup', keyup);
 	window.addEventListener('blur', clearInput);
-	document.addEventListener('visibilitychange', function () { accumulator = 0; previous = 0; clearInput(); });
+	document.addEventListener('visibilitychange', function () { accumulator = 0; previous = 0; sceneDirty = true; clearInput(); });
 	bindDirection('left', -1); bindDirection('right', 1);
 	new ResizeObserver(resize).observe(canvas);
-	resize(); readout(); requestAnimationFrame(frame);
+	resize(); refresh(); requestAnimationFrame(frame);
 })();

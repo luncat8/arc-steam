@@ -1,8 +1,8 @@
 'use strict';
-// Minimal DOM shim. No browser or Playwright install is available here, so the
-// interface wiring (ids, handlers, canvas calls, panel states) is smoke-tested
-// against this instead. It implements only what js/main.js touches and records
-// canvas commands rather than rasterising them.
+// Minimal DOM shim for the always-available interface test: the interface
+// wiring (ids, handlers, canvas calls, panel states) runs without a browser.
+// It implements only what js/main.js touches and records canvas commands
+// rather than rasterising them; real browser behaviour belongs in browser-smoke.cjs.
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -22,12 +22,16 @@ class Element {
 		this.type = '';
 		this.raw = initialValue(id);
 		this.textNode = { textContent: '' };
+		this.parentElement = null;
+		this.name = '';
+		this.checked = false;
+		this.control = null;
 	}
 	// Form controls stringify assignments, exactly like the DOM does.
 	get value() { return this.raw; }
 	set value(next) { this.raw = next === null || next === undefined ? '' : String(next); }
 	get firstChild() { return this.textNode; }
-	appendChild(child) { this.children.push(child); return child; }
+	appendChild(child) { this.children.push(child); child.parentElement = this; return child; }
 	append(...children) { for (const child of children) this.appendChild(child); }
 	replaceChildren(...children) { this.children = children; }
 	setAttribute(name, value) { this.attributes[name] = String(value); }
@@ -79,6 +83,8 @@ for (const match of html.matchAll(/<([a-z]+)[^>]*\bid="([^"]+)"/g)) {
 	elements.set(match[2], element);
 }
 
+// One shared media query result, so tests can switch between a hovering mouse and touch.
+const pointerMedia = { matches: true };
 const listeners = {};
 const document = {
 	body: new Element('body'),
@@ -110,6 +116,7 @@ function install() {
 	globalThis.innerWidth = 1440;
 	globalThis.innerHeight = 1000;
 	globalThis.addEventListener = document.addEventListener;
+	globalThis.matchMedia = function () { return pointerMedia; };
 	globalThis.requestAnimationFrame = function (callback) { frameCallback = callback; return 1; };
 	globalThis.ResizeObserver = class {
 		constructor(callback) { resizeCallback = callback; }
@@ -123,6 +130,7 @@ const api = {
 	document,
 	elements,
 	contextCalls,
+	pointerMedia,
 	install,
 	element(id) {
 		const element = elements.get(id);

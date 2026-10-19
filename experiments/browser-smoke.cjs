@@ -20,17 +20,45 @@ async function main() {
 		page.on('pageerror', error => errors.push(error.message));
 		await page.goto(process.env.TEST_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href);
 		await page.waitForFunction(() => document.getElementById('clock').textContent !== '0.0 s');
-		// Telemetry is a strip inside the chamber panel, spanning the canvas width.
+		// Four rows: system bar, full-width telemetry, research | chamber | controls | inspector, equipment | cargo | market.
 		assert.deepEqual(await page.evaluate(() => {
-			const telemetry = document.querySelector('.telemetry');
-			const canvas = document.getElementById('c');
+			const rows = Array.from(document.querySelector('main').children, node => node.className);
+			const centres = ['.tech-panel', '.mine-panel', '.controls-panel', '.mineral-panel', '.equipment-panel', '.cargo-panel', '.market-panel']
+				.map(selector => document.querySelector(selector).getBoundingClientRect());
+			const telemetry = document.querySelector('.telemetry').getBoundingClientRect();
+			const workspace = document.querySelector('.workspace').getBoundingClientRect();
 			return [
-				telemetry.parentElement === document.querySelector('.mine-panel'),
-				Boolean(telemetry.compareDocumentPosition(canvas) & Node.DOCUMENT_POSITION_FOLLOWING),
-				Math.abs(telemetry.getBoundingClientRect().width - canvas.getBoundingClientRect().width) < 1,
+				rows,
+				centres.slice(0, 4).every((box, i) => i === 0 || (box.left > centres[i - 1].left && Math.abs(box.top - centres[0].top) < 1)),
+				centres.slice(4).every((box, i) => i === 0 || (box.left > centres[i + 3].left && Math.abs(box.top - centres[4].top) < 1)),
+				centres[4].top > centres[1].bottom,
+				Math.abs(telemetry.width - workspace.width) < 1,
 				getComputedStyle(document.querySelector('.telemetry strong')).fontSize
 			];
-		}), [true, true, true, '17px']);
+		}), [['system-bar panel', 'telemetry panel', 'workspace', 'economy'], true, true, true, true, '17px']);
+		// Side columns take the chamber's height and scroll instead of stretching the row.
+		assert.equal(await page.evaluate(() => {
+			const chamber = document.querySelector('.mine-panel').getBoundingClientRect().height;
+			return ['.tech-panel', '.controls-panel', '.mineral-panel'].every(selector => Math.abs(document.querySelector(selector).getBoundingClientRect().height - chamber) < 1);
+		}), true);
+		// View mode: hover with a fine pointer or click; a paused chamber still redraws on change.
+		await page.locator('#pause').click();
+		const pausedImage = await page.locator('#c').evaluate(canvas => canvas.toDataURL());
+		await page.waitForTimeout(100);
+		assert.equal(await page.locator('#c').evaluate(canvas => canvas.toDataURL()), pausedImage, 'a paused chamber is stable');
+		await page.locator('#view-modes label', { hasText: 'Price' }).hover();
+		assert.equal(await page.locator('#view-modes input[value="price"]').isChecked(), true);
+		await page.waitForTimeout(50);
+		const priceImage = await page.locator('#c').evaluate(canvas => canvas.toDataURL());
+		assert.notEqual(priceImage, pausedImage, 'hovering redraws the paused chamber');
+		await page.locator('#view-modes label', { hasText: 'Remain strength' }).click();
+		assert.equal(await page.locator('#view-modes input[value="strength"]').isChecked(), true);
+		await page.waitForTimeout(50);
+		assert.notEqual(await page.locator('#c').evaluate(canvas => canvas.toDataURL()), priceImage);
+		await page.locator('#view-modes input[value="strength"]').focus();
+		await page.keyboard.press('ArrowRight');
+		assert.equal(await page.locator('#view-modes input[value="minerals"]').isChecked(), true, 'arrow keys cycle the radios');
+		await page.locator('#pause').click();
 		assert.equal(await page.locator('#research-rows .upgrade-row').count(), 6);
 		assert.equal(await page.locator('#equipment-rows .upgrade-row').count(), 5);
 		assert.equal(await page.locator('#research-progress').textContent(), '0 / 6');
@@ -75,7 +103,8 @@ async function main() {
 		assert.equal(await page.locator('#layer-label').textContent(), '2 / 16');
 		assert.match(await page.locator('#mineral-strength').textContent(), /J/);
 		assert.equal(await page.locator('#transaction-count').textContent(), '(0)');
-		// Locked upgrades explain themselves instead of failing silently.
+		// Locked upgrades explain themselves instead of failing silently: blocked buttons are
+		// aria-disabled, so the click reaches the handler (force skips Playwright's enabled check).
 		await page.locator('#research-rows .upgrade-row').last().locator('button').click({ force: true });
 		assert.match(await page.locator('#research-status').textContent(), /stays locked until/);
 		await page.locator('#equipment-rows .upgrade-row').first().locator('button').click({ force: true });
@@ -91,8 +120,17 @@ async function main() {
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.waitForTimeout(100);
 		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+		assert.equal(await page.evaluate(() => ['.tech-panel', '.controls-panel', '.mineral-panel'].every(selector => document.querySelector(selector).getBoundingClientRect().height > 200)), true, 'stacked panels keep their content height');
 		assert.deepEqual(errors, []);
-		console.log('PASS: startup, rendering, telemetry strip above the canvas, drive toggle (Space/Q without pressing GUI controls), keyboard force, pause/reset, shape selector, inspector select, target travel, research/equipment gating, ledger, narrow layout; no page errors.');
+		// Touch-only devices keep the view menu click-only.
+		const touch = await browser.newPage({ viewport: { width: 1440, height: 1000 }, hasTouch: true, isMobile: true });
+		await touch.goto(process.env.TEST_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href);
+		assert.equal(await touch.evaluate(() => matchMedia('(hover: hover) and (pointer: fine)').matches), false);
+		await touch.locator('#view-modes label', { hasText: 'Price' }).hover();
+		assert.equal(await touch.locator('#view-modes input[value="minerals"]').isChecked(), true, 'hover does not switch on touch');
+		await touch.locator('#view-modes label', { hasText: 'Price' }).tap();
+		assert.equal(await touch.locator('#view-modes input[value="price"]').isChecked(), true, 'tap switches on touch');
+		console.log('PASS: startup, four-row layout, view-mode hover/click/arrow keys with paused redraw and touch gating, drive toggle (Space/Q without pressing GUI controls), keyboard force, pause/reset, shape selector, inspector select, target travel, research/equipment gating, ledger, narrow layout; no page errors.');
 	} finally {
 		await browser.close();
 	}

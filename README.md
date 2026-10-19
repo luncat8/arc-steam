@@ -12,6 +12,10 @@ Optional local HTTP preview:
 python3 -m http.server 8000 --bind 0.0.0.0
 ```
 
+## Layout
+
+On wide screens the page is four rows: a system bar (clock, pause, speed, New game, rock shape), the telemetry strip, the play row (technology research | chamber | platform controls | mineral inspector), and the economy row (equipment | cargo | market). The chamber sets the play row's height and the side columns scroll inside it. Below 1280 px research and the inspector move under the chamber; below 760 px every panel stacks.
+
 ## Controls
 
 | Input | Action |
@@ -21,12 +25,12 @@ python3 -m http.server 8000 --bind 0.0.0.0
 | Space / Q, or drive button | Toggle bounce drive without activating focused GUI controls |
 | Click chamber | Set horizontal travel target; manual movement overrides |
 | E, or release button | Release a held ball when drive is enabled |
-| Rock shape selector | Choose smooth heightmap (default) or square cells |
-| Rock view selector | Show minerals, elemental R/G/B, price, or remaining strength |
+| Rock shape selector (system bar) | Choose smooth heightmap (default) or square cells |
+| Rock view switch (under the chamber) | Show minerals, elemental R/G/B, price, or remaining strength; click, arrow keys, or hover with a mouse |
 | Inspector sliders, or click rock | Select a rock cell by column and layer; read strength, minerals, price |
 | Technology panel | Research a node once its prerequisites are complete and funds cover it |
 | Recharge button | Buy reserve energy back at 25 cr/kJ up to the full 12 kJ |
-| Pause / speed / reset | Inspect or restart the experiment |
+| Pause / speed / New game | Inspect or restart the experiment from a fresh world, research and equipment |
 
 Ground impact loses all ball energy. Move the platform over a grounded ball to recover it. The amber collector catches and holds balls and mineral debris; the green reflector bounces balls. Release transfers a stored ball onto the reflector and pays for lifting it. A 36 J pulse at 80% efficiency debits up to 45 J from the shared reserve.
 
@@ -34,7 +38,7 @@ The ball now follows a 1.5× slower flight cycle while preserving the same energ
 
 The rock layer is a seeded 192 × 16 two-dimensional field. Its 0.125 m cells project to approximately 4 × 4 px at the reference scale. By default, the exposed rock boundary is rendered and collided as a smooth heightmap polyline so the ball reflects at continuous slope angles; an optional square-cell mode collides against exposed faces and rounded corners. Rock reflection keeps the ball's impulse: each contact applies at most one reflection impulse per step (never amplifying speed), and a ball that overlaps solid rock — for example right after switching rock shape — is separated back to contact distance instead of flying through at full speed. Impact loss applies 2× hit-point strength removal falling linearly to zero over a 4.5-cell (1.5×) radius. All failed and detached cells become falling 0.6 kg fragments with no pool-exhaustion losses.
 
-Storage holds 100 cells. A full 60 kg load equals the dry platform mass, reducing acceleration and participating in capture momentum, braking, and kinetic-energy accounting. Touch either wall marked **SELL** to sell the entire load automatically. The market panel breaks cargo and lifetime sales down by mineral (Fe/Cu/Cr) and records each wall sale in a ledger with time, mass, mix, and credits. Purchases, research and recharges debit the same funds ledger. The market panel also sells energy back into the reserve at 25 cr/kJ up to the 12 kJ capacity, buying only what the current funds cover; imported energy is tracked as `importedEnergy` and subtracted from the balance, mirroring the exported terms, so trading in either direction keeps the ledger exact. The telemetry strip sits directly above the chamber view and spans exactly the canvas width, reporting the reserve, cargo, total moving platform mass, funds, ball energy, stored thermal energy and temperature, and an energy balance that includes attached rock, debris, cargo, exported material, and imported fuel.
+Storage holds 100 cells. A full 60 kg load equals the dry platform mass, reducing acceleration and participating in capture momentum, braking, and kinetic-energy accounting. Touch either wall marked **SELL** to sell the entire load automatically. The market panel breaks cargo and lifetime sales down by mineral (Fe/Cu/Cr) and records each wall sale in a ledger with time, mass, mix, and credits. Purchases, research and recharges debit the same funds ledger. The market panel also sells energy back into the reserve at 25 cr/kJ up to the 12 kJ capacity, buying only what the current funds cover; imported energy is tracked as `importedEnergy` and subtracted from the balance, mirroring the exported terms, so trading in either direction keeps the ledger exact. The telemetry strip is a full-width row under the system bar, reporting the reserve, cargo, total moving platform mass, funds, ball energy, stored thermal energy and temperature, and an energy balance that includes attached rock, debris, cargo, exported material, and imported fuel.
 
 The equipment panel sells five upgrades against measured trip income: a rebound pad (+3% normal-energy retention), a drive coil (+12 J bounce pulse), a lightweight chassis (−12 kg dry mass), a radiator array (+0.35 m² exposed cooling area, +8 kg), and a brake flywheel (returns 55% of braking energy to the reserve at 90% round-trip efficiency, +14 kg). Every item names the research node that unlocks it, so purchases are refused without funds, without the prerequisite research, or when already installed. Installed items add explicit deltas on top of base tuning, and installation mass changes preserve the energy ledger. An installed-specification table shows the live dry mass, engine force, top speed, bounce pulse, retention, convective cooling, and brake recovery that all research and equipment deltas currently produce, which is what each row's stated effect compares against.
 
@@ -57,11 +61,13 @@ node --check js/main.js
 
 The suite covers the rock field, physics accounting, equipment, research, prediction, the recharge economy, and an interface run that boots the real `index.html` wiring against the small DOM shim in `experiments/dom.cjs`, so panels, gating, shortcuts, and the overlay are exercised without a browser.
 
-Optional browser smoke test (requires externally installed Playwright and its browser):
+Optional browser smoke test (requires an externally installed Playwright and a Chromium; nothing is added to the repository):
 
 ```sh
 node experiments/browser-smoke.cjs
 ```
+
+Without a system browser, `playwright-core` plus `@sparticuz/chromium` from npm work; see `findings-pitfalls-skills.md` for the exact recipe.
 
 Set `PLAYWRIGHT_PATH` to an installed Playwright package if it is not resolvable normally. Set `TEST_URL` to test an HTTP URL instead of the default `file://` page. `CHROMIUM_PACKAGE` optionally identifies a serverless Chromium module providing `executablePath()` and `args`.
 

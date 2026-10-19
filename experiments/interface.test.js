@@ -86,13 +86,13 @@ test('locked and unaffordable upgrades say why instead of failing silently', () 
 	const pad = gearRow('pad');
 	assert.equal(pad.dataset.state, 'locked');
 	assert.equal(buttonOf(pad).textContent, 'Locked');
-	assert.equal(buttonOf(pad).disabled, true);
+	assert.equal(buttonOf(pad).getAttribute('aria-disabled'), 'true', 'blocked but still clickable, so the refusal is explained');
 	buttonOf(pad).dispatch('click');
 	assert.match(dom.element('equipment-status').textContent, /needs the Rebound materials research first/);
 	const materials = techRow('materials');
 	assert.equal(materials.dataset.state, 'available');
 	assert.equal(buttonOf(materials).textContent, 'Research');
-	assert.equal(buttonOf(materials).disabled, true, 'available but not funded yet');
+	assert.equal(buttonOf(materials).getAttribute('aria-disabled'), 'true', 'available but not funded yet');
 	buttonOf(materials).dispatch('click');
 	assert.match(dom.element('research-status').textContent, /Not enough funds for Rebound materials \(180 cr needed\)/);
 	const ballistics = techRow('ballistics');
@@ -228,4 +228,64 @@ test('reset clears research, equipment and the overlay together', () => {
 	assert.equal(dom.element('research-status').textContent, 'Sell cargo at a wall to fund research.');
 	assert.equal(dom.element('transaction-count').textContent, '(0)');
 	assert.ok(Math.abs(parseFloat(dom.element('error').textContent)) < 1e-5);
+});
+
+// The shim parses only elements with ids, so the menu labels are built here
+// exactly as the markup nests them: label > radio + text span.
+function viewLabel(value) {
+	const label = dom.document.createElement('label');
+	const input = dom.document.createElement('input');
+	const text = dom.document.createElement('span');
+	input.type = 'radio';
+	input.name = 'rock-view';
+	input.value = value;
+	label.control = input;
+	label.append(input, text);
+	dom.element('view-modes').appendChild(label);
+	return { label, input, text };
+}
+
+test('the rock view switches by click or mouse hover through one writer, redrawing only when dirty', () => {
+	const modes = dom.element('view-modes');
+	const price = viewLabel('price');
+	const strength = viewLabel('strength');
+	const elements = viewLabel('elements');
+	let drawnMode = null;
+	const drawRock = ceiling.draw;
+	ceiling.draw = function (context, mode) { drawnMode = mode; return drawRock(context, mode); };
+	dom.element('pause').dispatch('click');
+	advance(2);
+	dom.contextCalls.length = 0;
+	advance(3);
+	assert.equal(dom.contextCalls.length, 0, 'a paused, unchanged chamber is not redrawn');
+
+	price.input.checked = true;
+	modes.dispatch('change', { target: price.input });
+	advance(1);
+	assert.equal(drawnMode, 'price', 'a click redraws the paused chamber in the new mode');
+
+	modes.dispatch('pointerover', { target: strength.text });
+	assert.equal(strength.input.checked, true, 'hover checks the radio it selects');
+	advance(1);
+	assert.equal(drawnMode, 'strength');
+	dom.contextCalls.length = 0;
+	modes.dispatch('pointerover', { target: strength.label });
+	advance(1);
+	assert.equal(dom.contextCalls.length, 0, 'hovering the active mode changes nothing');
+	modes.dispatch('pointerover', { target: modes });
+	advance(1);
+	assert.equal(dom.contextCalls.length, 0, 'the gaps between labels are ignored');
+
+	dom.pointerMedia.matches = false;
+	modes.dispatch('pointerover', { target: elements.text });
+	advance(1);
+	assert.equal(elements.input.checked, false, 'touch and stylus devices stay click-only');
+	assert.equal(drawnMode, 'strength');
+	modes.dispatch('change', { target: elements.input });
+	advance(1);
+	assert.equal(drawnMode, 'elements', 'click still works without hover');
+
+	dom.pointerMedia.matches = true;
+	ceiling.draw = drawRock;
+	dom.element('pause').dispatch('click');
 });
