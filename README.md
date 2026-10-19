@@ -1,6 +1,6 @@
 # Arc Steam
 
-A side-view energy-driven mining simulation. The current prototype combines a passive ball, a force-limited platform, collector/reflector regions, a tilting sprung reflector piston, limited bounce pulses (the bounce drive is on by default), explicit energy accounting, a two-dimensional mineral rock field with a smooth heightmap surface (or optional square cells), falling debris, mass-bearing cargo, wall markets, thermal management, a prerequisite technology tree, purchasable equipment gated by research, a researched ballistic computer overlay, a centre ground charge pad with an emergency credit resupply, and telemetry warnings that highlight an empty reserve, a full cargo or overheating. Together they close the mine–collect–sell–upgrade loop. Wear, crew experience, and later energy eras remain open milestones.
+A side-view energy-driven mining simulation. The current prototype combines a passive ball, a force-limited platform, collector/reflector regions, a tilting sprung reflector piston, limited bounce pulses (the bounce drive is on by default), explicit energy accounting, a two-dimensional mineral rock field with a smooth heightmap surface (or optional square cells), falling debris, mass-bearing cargo, wall markets, thermal management, a prerequisite technology tree, purchasable equipment gated by research, a researched ballistic computer overlay, a centre ground charge pad with an emergency credit resupply, a four-duty autopilot that intercepts, keeps the drive and levels the bounce, and telemetry warnings that highlight an empty reserve, a full cargo or overheating. Together they close the mine–collect–sell–upgrade loop. Wear, crew experience, and later energy eras remain open milestones.
 
 ## Run
 
@@ -23,7 +23,10 @@ On wide screens the page is four rows: a system bar (clock, pause, speed, New ga
 | A / D, or hold arrow buttons | Apply engine/brake force left/right; releasing coasts |
 | W / S, or force slider | Adjust movement force |
 | Space / Q, or drive button | Toggle bounce drive (on by default) without activating focused GUI controls |
-| Mouse wheel over the chamber, drag in open air, or piston slider | Tilt the reflector piston from −10° to +10° to steer the bounce: positive raises the right edge and sends a falling ball left, negative sends it right |
+| Mouse wheel over the chamber (about 4° a notch), drag in open air, or piston slider | Tilt the reflector piston from −10° to +10° to steer the bounce: positive raises the right edge and sends a falling ball left, negative sends it right. Drag towards where the ball should go — left or up raises the angle |
+| X / shift+X checkboxes or keys | Autopilot intercept: chase the predicted landing and stop there, or spend the whole flight time arriving (rolling through the mark when that is the slower run); one at a time |
+| Z checkbox or key | Autopilot drive keeper: pulse only when the passive bounce would no longer reach the ceiling, and release a caught ball |
+| C checkbox or key | Autopilot level bounce: slew the tilt at 45°/s inside ±10° so the next reflection leaves straight up |
 | Click rock | Inspect the clicked cell by column and layer |
 | Click low near the ground | Set horizontal travel target; manual movement overrides |
 | E, or release button | Release a held ball when drive is enabled |
@@ -38,6 +41,8 @@ On wide screens the page is four rows: a system bar (clock, pause, speed, New ga
 Ground impact loses all ball energy. Move the platform over a grounded ball to recover it. The amber collector catches and holds balls and mineral debris; the green reflector bounces balls. Release transfers a stored ball onto the reflector and pays for lifting it. A 36 J pulse at 80% efficiency debits up to 45 J from the shared reserve.
 
 The reflector is a sprung piston. Its face tilts ±10° around its centre, so reflections and powered pushes leave along the tilted face normal instead of always going straight up; the ballistic computer predicts deck contacts against the same tilted plane. Each contact compresses the piston along its normal in proportion to the normal impact speed (0.024 m per m/s, capped at 0.16 m), and a damped spring (650 N/m, damping 18) extends it again as the visible push, overshooting slightly before it settles in about half a second. Compression is a rendered state only — the collision plane stays at the rest position, so animation never feeds back into the physics.
+
+The autopilot is four checkboxes in the controls panel, each also on a key: `X` chases the predicted landing, `shift`+`X` takes the timed intercept that arrives with the ball instead of rushing and braking, `Z` keeps the drive armed only while the passive bounce would fall short of the ceiling and releases a caught ball, and `C` slews the tilt at 45°/s so the next reflection leaves straight up. A green status line reports one clause per engaged duty, naming the intercept mark and time, the pulse state and the wanted tilt. Every duty yields to the manual command that does the same thing — `A`/`D` or a travel click takes the intercept back, `Space` takes the drive back, and the slider, wheel or drag takes the tilt back — and the checkbox unticks to show it. The chase centres the reflector face on the landing, the timed intercept brakes recuperatively when the flywheel is installed, and the level bounce respects the piston's slew rate and range. Measured shifts in `experiments/logs/autopilot.1-trips.txt`: the timed intercept costs about half the chase's energy for the same travel, and the keeper holds the ball's apex within one pulse of the ceiling line instead of the 24 m a manual shift reaches.
 
 The ball now follows a 1.5× slower flight cycle while preserving the same energy budget and bounce heights: its effective inertia is 2.25 kg and its ball-specific gravity is 9.81 / 2.25 m/s², so free-flight speed at a given height is two-thirds of the earlier tuning and flight time is 1.5× longer. Debris still falls at 9.81 m/s². Platform drive response has taken a second 1.5× step: force is 400 N (270 N before, 180 N originally) and the top speed is 10 m/s (7 m/s before), each rounded to a whole number. The stronger drive roughly tripled the scripted policy's average draw to about 219 W, so a 12 kJ reserve now lasts about a minute of aggressive travel and recharging it is part of normal play.
 
@@ -70,7 +75,7 @@ node --test experiments/*.test.js
 node --check js/main.js
 ```
 
-The suite covers the rock field, physics accounting, equipment, research, prediction, the recharge economy, and an interface run that boots the real `index.html` wiring against the small DOM shim in `experiments/dom.cjs`, so panels, gating, shortcuts, and the overlay are exercised without a browser.
+The suite covers the rock field, physics accounting, equipment, research, prediction, the recharge economy, the autopilot policy (intercept accuracy, timed-versus-chase cost, drive-keeper band, level-bounce verticality and slew limits), and an interface run that boots the real `index.html` wiring against the small DOM shim in `experiments/dom.cjs`, so panels, gating, shortcuts, and the overlay are exercised without a browser.
 
 Optional browser smoke test (requires an externally installed Playwright and a Chromium; nothing is added to the repository):
 

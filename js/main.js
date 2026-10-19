@@ -1,10 +1,12 @@
 (function () {
 	'use strict';
 	const physics = SteamPhysics;
+	const autopilot = SteamAutopilot;
 	const config = physics.config;
 	const canvas = document.getElementById('c');
 	const context = canvas.getContext('2d');
-	const ids = ['clock', 'drive', 'launch', 'status', 'prediction-status', 'force', 'force-value', 'piston-angle', 'piston-value', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'view-modes',
+	const ids = ['clock', 'drive', 'launch', 'status', 'prediction-status', 'force', 'force-value', 'piston-angle', 'piston-value',
+		'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'view-modes',
 		'platform-spec', 'research-rows', 'research-status', 'research-progress',
 		'mineral-cell', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
@@ -21,6 +23,7 @@
 	function setText(node, text) { if (node.textContent !== text) node.textContent = text; }
 	function setDisabled(node, disabled) { if (node.disabled !== disabled) node.disabled = disabled; }
 	function setHidden(node, hidden) { if (node.hidden !== hidden) node.hidden = hidden; }
+	function setChecked(node, checked) { if (node.checked !== checked) node.checked = checked; }
 	let selectedColumn = 95;
 	let selectedLayer = 0;
 	let renderedSales = -1;
@@ -196,6 +199,29 @@
 			+ (path.reachable ? 'intercept reachable at full thrust' : 'intercept short by ' + path.gap.toFixed(1) + ' m at full thrust'));
 		return true;
 	}
+
+	// One clause per engaged duty, so the panel says what the autopilot is doing
+	// and not only which of its switches are on.
+	function travelClause(plan) {
+		if (!Number.isFinite(plan.interceptX)) return 'Intercept · ball held, no flight to meet';
+		if (plan.contactIn <= 0) return 'Intercept · collecting at ' + plan.interceptX.toFixed(1) + ' m';
+		return (plan.smart ? 'Timed intercept · ' : 'Intercept · ') + plan.interceptX.toFixed(1) + ' m in ' + plan.contactIn.toFixed(2) + ' s';
+	}
+
+	function autopilotText(plan) {
+		let text = '';
+		if (plan.move || plan.smart) text = travelClause(plan);
+		if (plan.drive) text += (text ? ' · ' : '') + 'Drive keeper · ' + (plan.wantedDrive ? 'pulse armed' : 'pulse held');
+		if (plan.angle) text += (text ? ' · ' : '') + 'Level bounce · tilt to ' + (plan.wantedAngle * 180 / Math.PI).toFixed(1) + '°';
+		return text;
+	}
+
+	function autopilotReadout() {
+		const plan = autopilot.state;
+		setHidden(ui['autopilot-status'], !plan.active);
+		if (plan.active) setText(ui['autopilot-status'], autopilotText(plan));
+	}
+
 	let paused = false;
 	let accumulator = 0;
 	let previous = 0;
@@ -447,6 +473,10 @@
 		miningReadout();
 		refreshUpgrades();
 		specReadout();
+		// The tilt keeper moves the piston by itself, so the slider and its readout
+		// follow the world angle on the readout cadence instead of only on input.
+		syncPistonControl();
+		autopilotReadout();
 		showPrediction = predictionReadout();
 		ui.clock.textContent = world.time.toFixed(1) + ' s';
 		ui.battery.textContent = (world.battery / 1000).toFixed(2) + ' kJ';
@@ -505,12 +535,56 @@
 		const snapped = Math.round(degrees * 2) / 2;
 		if (Number(ui['piston-angle'].value) !== snapped) ui['piston-angle'].value = snapped;
 	}
+	// Manual tilt is the one writer the tilt keeper yields to, so taking the slider,
+	// the wheel or a drag hands the duty back and the checkbox shows it.
 	function setPistonAngle(degrees) {
 		if (!Number.isFinite(degrees)) return;
+		disengage('angle');
 		const before = world.pistonAngle;
 		physics.setPistonAngle(world, Math.max(-10, Math.min(10, degrees)) * Math.PI / 180);
 		if (world.pistonAngle !== before) sceneDirty = true;
 		syncPistonControl();
+	}
+
+	// Autopilot switches. Checkboxes and shortcuts share one table and one writer,
+	// and each duty yields to the manual command that does the same thing.
+	const autopilotRows = [
+		{ id: 'auto-move', channel: 'move' },
+		{ id: 'auto-smart', channel: 'smart' },
+		{ id: 'auto-drive', channel: 'drive' },
+		{ id: 'auto-angle', channel: 'angle' }
+	];
+
+	function syncAutopilot() {
+		for (const row of autopilotRows) setChecked(ui[row.id], autopilot.enabled(row.channel));
+	}
+
+	function setChannel(channel, on) {
+		autopilot.set(channel, on);
+		syncAutopilot();
+		refresh();
+	}
+
+	function toggleChannel(channel) { setChannel(channel, !autopilot.enabled(channel)); }
+
+	function disengage(channel) {
+		if (autopilot.disengage(channel)) syncAutopilot();
+	}
+
+	function channelForKey(code, shift) {
+		if (code === 'KeyX') return shift ? 'smart' : 'move';
+		if (code === 'KeyZ') return 'drive';
+		if (code === 'KeyC') return 'angle';
+		return '';
+	}
+
+	function autopilotChanged(event) {
+		const input = event.target;
+		for (const row of autopilotRows) {
+			if (ui[row.id] !== input) continue;
+			setChannel(row.channel, input.checked);
+			return;
+		}
 	}
 
 	// Single writer of the rock view mode; click, keyboard and hover all go through it.
@@ -562,12 +636,12 @@
 
 	function updateDirection() {
 		world.direction = Number(rightHeld) - Number(leftHeld);
-		if (world.direction) world.target = NaN;
+		if (world.direction) { world.target = NaN; disengage('move'); }
 		sceneDirty = true;
 	}
 
 	function clearInput() { leftHeld = false; rightHeld = false; updateDirection(); }
-	function toggleDrive() { world.drive = !world.drive; refresh(); }
+	function toggleDrive() { world.drive = !world.drive; disengage('drive'); refresh(); }
 	function releaseBall() { physics.launch(world); refresh(); }
 	function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }
 	function setForce(value) {
@@ -578,7 +652,8 @@
 	}
 
 	function isGameKey(code) {
-		return code === 'Space' || code === 'KeyQ' || code === 'KeyA' || code === 'KeyD' || code === 'KeyW' || code === 'KeyS' || code === 'KeyE';
+		return code === 'Space' || code === 'KeyQ' || code === 'KeyA' || code === 'KeyD' || code === 'KeyW' || code === 'KeyS' || code === 'KeyE'
+			|| code === 'KeyX' || code === 'KeyZ' || code === 'KeyC';
 	}
 
 	function keydown(event) {
@@ -598,6 +673,8 @@
 		if (event.repeat) return;
 		if (key === 'Space' || key === 'KeyQ') toggleDrive();
 		if (key === 'KeyE') releaseBall();
+		const channel = channelForKey(key, event.shiftKey);
+		if (channel) toggleChannel(channel);
 	}
 
 	function keyup(event) {
@@ -625,14 +702,14 @@
 		const elapsed = previous ? Math.min((now - previous) / 1000, 0.1) : 0;
 		previous = now;
 		if (!paused && !document.hidden) accumulator += elapsed * Number(ui.speed.value);
-		while (accumulator >= config.step) { physics.step(world, config.step); accumulator -= config.step; sceneDirty = true; }
+		while (accumulator >= config.step) { autopilot.update(world, config.step); physics.step(world, config.step); accumulator -= config.step; sceneDirty = true; }
 		if (sceneDirty) { draw(); sceneDirty = false; }
 		if (now - lastReadout > 100) { readout(); lastReadout = now; }
 		requestAnimationFrame(frame);
 	}
 
 	document.getElementById('reset').addEventListener('click', function () {
-		world = physics.createWorld(); window.SteamCeiling.setShape(ui.shape.value); renderedSales = -1; clearInput(); setForce(world.forceSetting); accumulator = 0;
+		world = physics.createWorld(); window.SteamCeiling.setShape(ui.shape.value); renderedSales = -1; clearInput(); setForce(world.forceSetting); autopilot.reset(); accumulator = 0;
 		ui['equipment-status'].textContent = 'Sell cargo at a wall to earn credits.';
 		ui['research-status'].textContent = 'Sell cargo at a wall to fund research.';
 		refresh();
@@ -647,14 +724,15 @@
 	ui.pause.addEventListener('click', togglePause);
 	ui.shape.addEventListener('change', function () { window.SteamCeiling.setShape(ui.shape.value); sceneDirty = true; });
 	ui['view-modes'].addEventListener('change', viewModeChanged);
+	ui.autopilot.addEventListener('change', autopilotChanged);
 	ui['view-modes'].addEventListener('pointerover', viewModeHovered);
 	ui.force.addEventListener('input', function () { setForce(Number(ui.force.value) / 100); });
 	ui['piston-angle'].addEventListener('input', function () { setPistonAngle(Number(ui['piston-angle'].value)); });
 	// Wheel over the chamber tilts the piston instead of scrolling the page:
-	// up (negative delta) raises the angle, a standard notch steps about 2°.
+	// up (negative delta) raises the angle, a standard notch steps about 4°.
 	canvas.addEventListener('wheel', function (event) {
 		event.preventDefault();
-		setPistonAngle(pistonDegrees() - Math.max(-100, Math.min(100, event.deltaY)) * 0.02);
+		setPistonAngle(pistonDegrees() - Math.max(-100, Math.min(100, event.deltaY)) * 0.04);
 	}, { passive: false });
 	canvas.addEventListener('pointerdown', function (event) {
 		const bounds = canvas.getBoundingClientRect();
@@ -668,9 +746,10 @@
 		}
 		if (worldY <= moveClickHeight && worldX >= 0 && worldX <= config.width) {
 			world.target = Math.max(physics.platformMin(), Math.min(physics.platformMax(), worldX));
+			disengage('move');
 			sceneDirty = true;
 		} else if (worldX >= 0 && worldX <= config.width && worldY <= config.ceiling) {
-			// Open air starts a piston drag; dragging right or up raises the angle.
+			// Open air starts a piston drag; dragging left or up raises the angle.
 			pistonDragActive = true;
 			pistonDragX = event.clientX;
 			pistonDragY = event.clientY;
@@ -681,7 +760,9 @@
 	});
 	canvas.addEventListener('pointermove', function (event) {
 		if (!pistonDragActive) return;
-		setPistonAngle(pistonDragAngle + ((event.clientX - pistonDragX) - (event.clientY - pistonDragY)) * 0.05);
+		// The drag aims the reflection: a positive angle sends a falling ball left,
+		// so dragging left (or up) raises it and the bounce follows the pointer.
+		setPistonAngle(pistonDragAngle - ((event.clientX - pistonDragX) + (event.clientY - pistonDragY)) * 0.05);
 	});
 	function endPistonDrag() { pistonDragActive = false; }
 	canvas.addEventListener('pointerup', endPistonDrag);

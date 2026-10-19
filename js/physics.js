@@ -13,6 +13,10 @@
 		// compresses along its normal in proportion to the impact speed.
 		pistonCentre: 0.63, pistonHalf: 1.17, pistonMaxAngle: Math.PI / 18,
 		pistonTravel: 0.16, pistonCompression: 0.024, pistonSpring: 650, pistonDamping: 18,
+		// Actuator rate of the tilt, in rad/s (45°/s): the automatic keeper slews
+		// towards the angle it wants instead of snapping to it. Direct manual tilt
+		// stays immediate, because the player is the one aiming.
+		pistonSlewRate: Math.PI / 4,
 		// Drive response: two 1.5x increases over the original 180 N / 7 m/s
 		// tuning, each rounded down to a whole number.
 		platformMass: 60, force: 400, maxSpeed: 10,
@@ -75,6 +79,75 @@
 		const foot = (contactX - (centreX + centreVx * time)) * ny + (contactY - config.deck) * -nx;
 		return Math.abs(foot) <= config.pistonHalf + 1e-9 ? time : Infinity;
 	}
+
+	// Preallocated solver result. A contact is resolved once per bounce and the
+	// automatic tilt keeper trials dozens of angles per step, so neither may
+	// allocate: callers create their scratch once, with this factory, and reuse it.
+	function contactResult() {
+		return { impact: 0, vx: 0, vy: 0, platformVx: 0, heat: 0, push: 0, captured: false };
+	}
+
+	// Resolve a ball contact on the tilted piston face without touching the world:
+	// friction along the face, the restitution impulse with the platform's
+	// horizontal reaction, and the optional powered push along the normal. `push`
+	// is the pulse energy already limited by the reserve and the thermal derate
+	// (`launchCapacity`), so the automatic keepers can trial any tilt and either
+	// drive state against exactly the impulses the simulation will apply.
+	// `out.impact <= 0` means the ball is separating and nothing happens.
+	function solvePiston(world, ballVx, ballVy, angle, push, out) {
+		const nx = -Math.sin(angle);
+		const ny = Math.cos(angle);
+		const tx = ny;
+		const ty = -nx;
+		const ballMass = config.ballMass;
+		const carriedMass = platformMass(world);
+		const platformVx = world.platform.vx;
+		const restitution = Math.sqrt(retentionNow());
+		const relativeVx = ballVx - platformVx;
+		const impact = -(relativeVx * nx + ballVy * ny);
+		out.impact = impact;
+		out.vx = ballVx;
+		out.vy = ballVy;
+		out.platformVx = platformVx;
+		out.heat = 0;
+		out.push = 0;
+		out.captured = false;
+		if (impact <= 0) return out;
+		const before = 0.5 * ballMass * (ballVx * ballVx + ballVy * ballVy) + 0.5 * carriedMass * platformVx * platformVx;
+		let vx = ballVx;
+		let vy = ballVy;
+		let platform = platformVx;
+		const normalImpulse = ballMass * impact * (1 + restitution);
+		const tangentVelocity = relativeVx * tx + ballVy * ty;
+		const friction = Math.max(-normalImpulse * 0.35, Math.min(normalImpulse * 0.35, -tangentVelocity / (1 / ballMass + 1 / carriedMass)));
+		vx += friction * tx / ballMass;
+		vy += friction * ty / ballMass;
+		platform -= friction * tx / carriedMass;
+		const normalVelocity = (vx - platform) * nx + vy * ny;
+		if (normalVelocity < 0) {
+			const impulse = -(1 + restitution) * normalVelocity / (1 / ballMass + nx * nx / carriedMass);
+			vx += impulse * nx / ballMass;
+			vy += impulse * ny / ballMass;
+			platform -= impulse * nx / carriedMass;
+		}
+		// Only the passive part is lost: the pulse is paid for separately.
+		out.heat = Math.max(0, before - (0.5 * ballMass * (vx * vx + vy * vy) + 0.5 * carriedMass * platform * platform));
+		if (push > 0) {
+			const normalBallVelocity = vx * nx + vy * ny;
+			const boosted = Math.sqrt(normalBallVelocity * normalBallVelocity + 2 * push / ballMass);
+			vx += (boosted - normalBallVelocity) * nx;
+			vy += (boosted - normalBallVelocity) * ny;
+			out.push = push;
+		}
+		out.captured = (vx - platform) * nx + vy * ny < 0.08;
+		out.vx = vx;
+		out.vy = vy;
+		out.platformVx = platform;
+		return out;
+	}
+
+	// The simulation's own scratch for the contact it is resolving this step.
+	const contact = contactResult();
 
 	// The charge pad is a strip of ground at the chamber centre. Standing still
 	// on it hands the installed engine its fuel; a moving platform cannot
@@ -421,48 +494,25 @@
 			}
 			if (type === 6) {
 				const angle = world.pistonAngle;
-				const nx = -Math.sin(angle);
-				const ny = Math.cos(angle);
-				const tx = ny;
-				const ty = -nx;
-				const carriedMass = platformMass(world);
-				const relativeVx = ball.vx - world.platform.vx;
-				const impactSpeed = -(relativeVx * nx + ball.vy * ny);
-				if (impactSpeed <= 0) continue;
+				solvePiston(world, ball.vx, ball.vy, angle, 0, contact);
+				if (contact.impact <= 0) continue;
 				// Compression follows the normal impact speed; the spring in
 				// step() then extends the face back out as the visible push.
-				world.pistonImpact = impactSpeed;
-				world.pistonOffset = Math.min(config.pistonTravel, Math.max(world.pistonOffset, impactSpeed * config.pistonCompression));
+				world.pistonImpact = contact.impact;
+				world.pistonOffset = Math.min(config.pistonTravel, Math.max(world.pistonOffset, contact.impact * config.pistonCompression));
 				world.pistonVelocity = 0;
-				const beforeEnergy = 0.5 * config.ballMass * (ball.vx * ball.vx + ball.vy * ball.vy) + 0.5 * carriedMass * world.platform.vx * world.platform.vx;
-				const normalImpulse = config.ballMass * impactSpeed * (1 + Math.sqrt(retentionNow()));
-				const tangentVelocity = relativeVx * tx + ball.vy * ty;
-				const frictionImpulse = Math.max(-normalImpulse * 0.35, Math.min(normalImpulse * 0.35, -tangentVelocity / (1 / config.ballMass + 1 / carriedMass)));
-				ball.vx += frictionImpulse * tx / config.ballMass;
-				ball.vy += frictionImpulse * ty / config.ballMass;
-				world.platform.vx -= frictionImpulse * tx / carriedMass;
-				const normalVelocity = (ball.vx - world.platform.vx) * nx + ball.vy * ny;
-				if (normalVelocity < 0) {
-					const impulse = -(1 + Math.sqrt(retentionNow())) * normalVelocity / (1 / config.ballMass + nx * nx / carriedMass);
-					ball.vx += impulse * nx / config.ballMass;
-					ball.vy += impulse * ny / config.ballMass;
-					world.platform.vx -= impulse * nx / carriedMass;
-				}
-				const afterEnergy = 0.5 * config.ballMass * (ball.vx * ball.vx + ball.vy * ball.vy) + 0.5 * carriedMass * world.platform.vx * world.platform.vx;
-				world.heat += Math.max(0, beforeEnergy - afterEnergy);
+				// The impact heat lands before the pulse is priced, so the derate sees
+				// it; the boost is then re-solved with what the reserve really delivers.
+				world.heat += contact.heat;
+				const push = world.drive ? spend(world, pulseNow() * thermalFactor(world)) : 0;
+				if (push > 0) solvePiston(world, ball.vx, ball.vy, angle, push, contact);
+				ball.vx = contact.vx;
+				ball.vy = contact.vy;
+				world.platform.vx = contact.platformVx;
 				world.bounces++;
-				world.lastPush = 0;
-				if (world.drive) {
-					world.lastPush = spend(world, pulseNow() * thermalFactor(world));
-					if (world.lastPush > 0) {
-						const normalBallVelocity = ball.vx * nx + ball.vy * ny;
-						const boosted = Math.sqrt(normalBallVelocity * normalBallVelocity + 2 * world.lastPush / config.ballMass);
-						ball.vx += (boosted - normalBallVelocity) * nx;
-						ball.vy += (boosted - normalBallVelocity) * ny;
-						world.pushes++;
-					}
-				}
-				if ((ball.vx - world.platform.vx) * nx + ball.vy * ny < 0.08) { capture(world); return; }
+				world.lastPush = push;
+				if (push > 0) world.pushes++;
+				if (contact.captured) { capture(world); return; }
 				continue;
 			}
 			// Type 4 is the flat collector only: it catches and holds the ball.
@@ -492,11 +542,11 @@
 	}
 
 	const api = {
-		config, createWorld, step, launch, canLaunch, ballEnergy, totalEnergy, temperature,
+		config, createWorld, step, launch, canLaunch, launchCapacity, ballEnergy, totalEnergy, temperature,
 		thermalFactor, coolingPower, platformMass, platformMin, platformMax, dryMass,
 		chargePadMin, chargePadMax, onChargePad, charging,
 		retentionNow, pulseNow, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
-		setPistonAngle, pistonContactTime
+		setPistonAngle, pistonContactTime, solvePiston, contactResult
 	};
 	root.SteamPhysics = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;

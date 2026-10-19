@@ -567,3 +567,46 @@ test('replay is deterministic with identical fixed-step commands', () => {
 	}
 	assert.deepEqual(a, b); balanced(a);
 });
+
+test('the exported piston solver is the contact the simulation resolves, and reads only', () => {
+	// The keepers trial tilts and drive states with this solver, so it has to be
+	// the simulation's own impulse sequence: same friction, same restitution, same
+	// platform reaction, same powered push, and no writes to the world.
+	for (const drive of [false, true]) {
+		const w = physics.createWorld();
+		w.drive = drive;
+		w.direction = 0;
+		w.target = NaN;
+		w.platform.x = 12;
+		w.platform.vx = 1.5;
+		physics.setPistonAngle(w, 6 * Math.PI / 180);
+		// Rest the ball exactly on the tilted face, one radius out along its normal
+		// and 0.2 m along it, so the next step resolves this contact at once.
+		const centreX = w.platform.x + c.pistonCentre;
+		const nx = -Math.sin(w.pistonAngle);
+		const ny = Math.cos(w.pistonAngle);
+		w.ball.state = 'flying';
+		w.ball.x = centreX + nx * c.radius + 0.2 * ny;
+		w.ball.y = c.deck + ny * c.radius + 0.2 * -nx;
+		w.ball.vx = -0.8;
+		w.ball.vy = -6;
+		sync(w);
+		const out = physics.contactResult();
+		const frozen = JSON.stringify(w);
+		const push = drive ? physics.launchCapacity(w) : 0;
+		assert.ok(push > 0 || !drive, 'a cool, charged world can deliver the pulse it promises');
+		physics.solvePiston(w, w.ball.vx, w.ball.vy, w.pistonAngle, push, out);
+		assert.equal(JSON.stringify(w), frozen, 'the solver reads the world and writes only its result');
+		assert.ok(out.impact > 0, 'the ball is arriving, not separating');
+		physics.step(w, c.step);
+		assert.equal(w.bounces, 1, 'the step resolves that contact');
+		near(w.ball.vx, out.vx, 1e-12);
+		// The contact lands at the start of the step, so the ball flies the rest of
+		// it: only gravity separates the solver's answer from the stepped velocity.
+		near(w.ball.vy + c.ballGravity * c.step, out.vy, 1e-12);
+		near(w.platform.vx, out.platformVx, 1e-12);
+		assert.equal(w.pushes, drive ? 1 : 0, 'the pulse the solver was given is the pulse spent');
+		balanced(w);
+	}
+	physics.createWorld();
+});

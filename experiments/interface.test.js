@@ -13,6 +13,7 @@ const research = require('../js/research.js');
 const physics = require('../js/physics.js');
 const harness = require('./harness.cjs');
 require('../js/prediction.js');
+const autopilot = require('../js/autopilot.js');
 
 // Capture the world the page owns so measured cargo sales can fund it.
 let world = null;
@@ -307,21 +308,29 @@ test('the piston angle is set by the slider, the chamber wheel and an air drag',
 	slider.value = '0';
 	slider.dispatch('input');
 	assert.equal(world.pistonAngle, 0);
-	// Wheel up over the chamber raises the angle; wheel down lowers it.
+	// Wheel up over the chamber raises the angle; a notch steps about four degrees.
 	dom.element('c').dispatch('wheel', { deltaY: -100 });
-	assert.ok(Math.abs(world.pistonAngle - 2 * Math.PI / 180) < 1e-12, 'one wheel notch tilts about two degrees');
-	assert.equal(slider.value, '2');
+	assert.ok(Math.abs(world.pistonAngle - 4 * Math.PI / 180) < 1e-12, 'one wheel notch tilts about four degrees');
+	assert.equal(slider.value, '4');
 	dom.element('c').dispatch('wheel', { deltaY: 50 });
-	assert.ok(Math.abs(world.pistonAngle - Math.PI / 180) < 1e-12);
-	// A drag through open air (above the travel band, below the rock) tilts too.
+	assert.ok(Math.abs(world.pistonAngle - 2 * Math.PI / 180) < 1e-12);
+	// A drag through open air (above the travel band, below the rock) aims the
+	// reflection: dragging left raises the angle, and a positive angle is the tilt
+	// that sends a falling ball left, so the bounce follows the pointer.
 	world.target = NaN;
 	const start = chamberPoint(12, 5);
 	dom.element('c').dispatch('pointerdown', start);
+	dom.element('c').dispatch('pointermove', { clientX: start.clientX - 100, clientY: start.clientY });
+	dom.element('c').dispatch('pointerup', {});
+	assert.ok(Math.abs(world.pistonAngle - 7 * Math.PI / 180) < 1e-9, `dragging left tilts to seven degrees, got ${world.pistonAngle * 180 / Math.PI}`);
+	assert.equal(dom.element('piston-value').textContent, '7.0°');
+	assert.ok(Number.isNaN(world.target), 'an air drag does not command travel');
+	// Dragging right takes the same angle back off, and the diagonal reads as one
+	// aim: left-or-up raises it, right-or-down lowers it.
+	dom.element('c').dispatch('pointerdown', start);
 	dom.element('c').dispatch('pointermove', { clientX: start.clientX + 100, clientY: start.clientY });
 	dom.element('c').dispatch('pointerup', {});
-	assert.ok(Math.abs(world.pistonAngle - 6 * Math.PI / 180) < 1e-9, `drag tilts to six degrees, got ${world.pistonAngle * 180 / Math.PI}`);
-	assert.equal(dom.element('piston-value').textContent, '6.0°');
-	assert.ok(Number.isNaN(world.target), 'an air drag does not command travel');
+	assert.ok(Math.abs(world.pistonAngle - 2 * Math.PI / 180) < 1e-9, `dragging right tilts back to two degrees, got ${world.pistonAngle * 180 / Math.PI}`);
 	// The angle clamps at ten degrees however it is set.
 	slider.value = '10';
 	slider.dispatch('input');
@@ -330,6 +339,74 @@ test('the piston angle is set by the slider, the chamber wheel and an air drag',
 	slider.value = '0';
 	slider.dispatch('input');
 	assert.equal(world.pistonAngle, 0);
+});
+
+test('the autopilot switches, shortcuts and manual overrides share one writer', () => {
+	const panel = dom.element('autopilot');
+	const status = dom.element('autopilot-status');
+	const boxes = { move: 'auto-move', smart: 'auto-smart', drive: 'auto-drive', angle: 'auto-angle' };
+	assert.equal(status.hidden, true, 'a fresh page flies by hand');
+	function check(channel, value) {
+		const box = dom.element(boxes[channel]);
+		box.checked = value;
+		panel.dispatch('change', { target: box });
+	}
+	// A ball in flight, so the intercept has a mark to report.
+	world.platform.x = 8; world.platform.vx = 0; world.direction = 0; world.target = NaN;
+	world.ball.state = 'flying'; world.ball.x = 12; world.ball.y = 5; world.ball.vx = 0; world.ball.vy = 0;
+	world.drive = true;
+	harness.sync(world);
+	check('move', true);
+	assert.equal(autopilot.enabled('move'), true);
+	advance(8);
+	assert.equal(status.hidden, false);
+	assert.match(status.textContent, /^Intercept · 11\.4 m in /);
+	assert.ok(Number.isFinite(world.target), 'the chase commands travel instead of leaving the platform alone');
+	// The two intercept switches are one duty at two levels of care.
+	check('smart', true);
+	assert.equal(autopilot.enabled('smart'), true);
+	assert.equal(autopilot.enabled('move'), false);
+	assert.equal(dom.element(boxes.move).checked, false, 'the panel shows the exclusivity');
+	advance(8);
+	assert.match(status.textContent, /^Timed intercept/);
+	assert.ok(Number.isNaN(world.target), 'the timed intercept owns the direction, not a travel target');
+	// The shortcuts name the same channels: X, shift-X, Z and C.
+	dom.key('KeyX');
+	assert.equal(autopilot.enabled('move'), true);
+	assert.equal(autopilot.enabled('smart'), false);
+	dom.key('KeyX', { shiftKey: true });
+	assert.equal(autopilot.enabled('smart'), true);
+	dom.key('KeyZ');
+	dom.key('KeyC');
+	assert.equal(autopilot.enabled('drive'), true);
+	assert.equal(autopilot.enabled('angle'), true);
+	advance(8);
+	assert.match(status.textContent, /Drive keeper · pulse (armed|held)/);
+	assert.match(status.textContent, /Level bounce · tilt to -?\d+\.\d°/);
+	assert.ok(Math.abs(world.pistonAngle) <= physics.config.pistonMaxAngle + 1e-12, 'the tilt keeper stays inside its range');
+	// The drive keeper releases a caught ball instead of stalling the shift.
+	world.ball.state = 'held'; world.ball.vx = 0; world.ball.vy = 0; world.drive = false;
+	harness.sync(world);
+	advance(4);
+	assert.equal(world.ball.state, 'flying', 'a held ball goes back up');
+	assert.equal(dom.element('drive').getAttribute('aria-pressed'), 'true');
+	// Every manual command takes its own duty back, and the panel follows.
+	dom.key('KeyA');
+	assert.equal(autopilot.enabled('smart'), false, 'a manual drive command takes the intercept back');
+	assert.equal(dom.element(boxes.smart).checked, false);
+	dom.keyUp('KeyA');
+	dom.key('Space');
+	assert.equal(autopilot.enabled('drive'), false, 'a manual drive toggle takes the keeper back');
+	assert.equal(dom.element(boxes.drive).checked, false);
+	dom.key('Space');
+	dom.element('piston-angle').dispatch('input');
+	assert.equal(autopilot.enabled('angle'), false, 'a manual tilt takes the level bounce back');
+	assert.equal(dom.element(boxes.angle).checked, false);
+	dom.element('c').dispatch('pointerdown', chamberPoint(5, 0.5));
+	assert.equal(autopilot.enabled('move'), false, 'a travel click takes the intercept back');
+	advance(8);
+	assert.equal(status.hidden, true, 'with nothing engaged the status line goes away');
+	world.target = NaN; world.direction = 0;
 });
 
 test('telemetry highlights an empty reserve, a full cargo and overheating', () => {

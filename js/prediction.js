@@ -20,10 +20,19 @@
 	const PARKED = 5;
 	const WALL = 6;
 	const CEILING = 7;
+	// Which platform surface the terminal deck contact lands on. The collector
+	// catches and the reflector piston bounces, so an automatic keeper must know
+	// whether the predicted contact is one it can shape.
+	const NO_SURFACE = 0;
+	const COLLECTOR = 1;
+	const PISTON = 2;
 	let samples = 0;
 	let kind = NONE;
 	let endX = 0;
 	let endY = 0;
+	let endVx = 0;
+	let endVy = 0;
+	let surface = NO_SURFACE;
 	let endTime = 0;
 	let uncertain = false;
 	let ghostX = 0;
@@ -36,6 +45,10 @@
 		get kind() { return kind; },
 		get endX() { return endX; },
 		get endY() { return endY; },
+		// Ball velocity at the terminal contact, before the impact is resolved.
+		get endVx() { return endVx; },
+		get endVy() { return endVy; },
+		get surface() { return surface; },
 		get time() { return endTime; },
 		get uncertain() { return uncertain; },
 		get ghostX() { return ghostX; },
@@ -63,6 +76,9 @@
 		kind = NONE;
 		endX = ball.x;
 		endY = ball.y;
+		endVx = ball.vx;
+		endVy = ball.vy;
+		surface = NO_SURFACE;
 		endTime = 0;
 		uncertain = false;
 		ghostX = platform.x;
@@ -109,18 +125,20 @@
 					// flat collector is the simulation's capture zone.
 					const ghost = platform.x + platform.vx * (time + deckTime);
 					const relative = x + vx * deckTime - ghost;
-					if (relative >= -config.platformWidth * 0.5 && relative <= -config.platformWidth * 0.5 + config.platformWidth * config.collectorFraction) { step = deckTime; event = DECK; }
+					if (relative >= -config.platformWidth * 0.5 && relative <= -config.platformWidth * 0.5 + config.platformWidth * config.collectorFraction) { step = deckTime; event = DECK; surface = COLLECTOR; }
 				}
 			}
 			// The tilted piston face is met on its own plane, at the angle the
 			// player last set; physics exports the same contact solver it uses.
 			const pistonTime = physics.pistonContactTime(x, y, vx, vy, platform.x + platform.vx * time + config.pistonCentre, platform.vx, world.pistonAngle, step);
-			if (pistonTime < step) { step = pistonTime; event = DECK; }
+			if (pistonTime < step) { step = pistonTime; event = DECK; surface = PISTON; }
 			let contactX = 0;
 			let contactY = 0;
 			if (economy && y + Math.max(0, vy) * step + config.radius > rockReach) {
 				const hit = economy.trace(x, y, vx, vy, step, config.radius, gravity);
-				if (hit.time < step) { step = hit.time; event = ROCK; contactX = hit.x; contactY = hit.y; }
+				// Rock wins over a deck contact found in the same march step, so the
+				// surface it would have landed on is no longer the answer.
+				if (hit.time < step) { step = hit.time; event = ROCK; surface = NO_SURFACE; contactX = hit.x; contactY = hit.y; }
 			}
 			x += vx * step;
 			y += vy * step - 0.5 * gravity * step * step;
@@ -145,6 +163,8 @@
 		uncertain = kind === ROCK || kind === TIMEOUT;
 		endX = x;
 		endY = y;
+		endVx = vx;
+		endVy = vy;
 		endTime = time;
 		pathX[samples] = x;
 		pathY[samples] = y;
@@ -162,7 +182,11 @@
 		return state;
 	}
 
-	const api = { state, predict, horizon, march, kinds: Object.freeze({ NONE, DECK, GROUND, ROCK, TIMEOUT, PARKED }) };
+	const api = {
+		state, predict, horizon, march,
+		kinds: Object.freeze({ NONE, DECK, GROUND, ROCK, TIMEOUT, PARKED }),
+		surfaces: Object.freeze({ NONE: NO_SURFACE, COLLECTOR, PISTON })
+	};
 	root.SteamPrediction = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

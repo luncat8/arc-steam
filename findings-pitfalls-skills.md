@@ -48,7 +48,18 @@ cd /home/user/arc-steam && LD_LIBRARY_PATH=/tmp/al/lib PLAYWRIGHT_PATH=/tmp/pw/n
 - `harness.near(actual, expected, tolerance)` has no message parameter. Passing a string as the third argument makes the comparison `0 < NaN`, which fails with a confusing `0 != 0` message.
 - Helpers that prepare cargo teleport fragments (`earnFunds` moves debris onto the collector), which destroys potential energy from the page's point of view. Call `sync(world)` after them before asserting `balanced(world)`, otherwise the balance check reports the teleport, not a bug.
 - The centre charge pad refills the reserve while the platform stands on it, so a test that wants an empty reserve must move the platform off the pad first (`world.platform.x = 3`). Without that, `step()` immediately books imported energy and a zero-reserve assertion fails at the first step. Tests that mutate `world.battery` directly also need `harness.sync(world)` before checking that the balance error is zero, because the mutation itself is not booked.
+- A piston contact can resolve at the very start of a step, so the ball then flies the rest of that step: the post-step `ball.vy` is one `ballGravity · step` below the solver's post-impulse value. Compare `vy + ballGravity · step` against `solvePiston`'s output (the existing ceiling test does the same), or the assertion fails by exactly 0.018 m/s with no obvious cause.
 - Braking, wall stops and the speed limiter are three different energy paths. Only controlled braking is recoverable; a wall clamp books its kinetic energy as heat directly, and the limiter needs no separate term because the battery is charged for the clamped kinetic-energy gain only.
+
+## Autopilot pitfalls
+
+- Measurement scripts must not hand-launch the ball while the drive channel is engaged: `commandDrive` releases a held ball itself, and a script that launches for it hides a missing call as a mysteriously parked ball (`held=108s` in the trips log).
+- Re-arming a flight in a test without `autopilot.reset()` keeps the cached plan (plans live 1/20 s), so `state.contactIn` reads about zero and the intercept assertions fail on stale numbers rather than on the policy.
+- Assigning `world.platform.vx` directly in a test breaks the energy ledger unless `harness.sync(world)` follows; the same holds for any direct `world.battery` mutation.
+- Braking cost scales with peak speed (`0.5·m·v²` dumped as heat), not with distance travelled. Any policy comparison that measures only metres will rank rush-and-brake as cheap; compare joules.
+- The tilt bisection stops at `range / 2^12` (about 0.005°), so a brute-force scan of the range can beat it by about 3e-4 m/s. Assertions that claim optimality need a tolerance around 2e-3, not 1e-9.
+- Sloped rock rebounds throw the ball about 3 m in under a second, which the platform cannot reach at the 0.6 force setting: groundings in trip logs are physics, not a controller bug. Check the prediction status shortfall before debugging the intercept.
+- Playwright's `check()` can fail actionability on a checkbox inside a `contain: size` scroll column at narrow viewports; `scrollIntoViewIfNeeded()` first makes it deterministic.
 
 ## Architecture notes that held up
 

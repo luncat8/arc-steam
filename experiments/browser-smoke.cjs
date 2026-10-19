@@ -5,13 +5,23 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
 
-// Mirror the renderer's chamber transform to click a known world point.
-async function chamberClick(page, worldX, worldY) {
+// Mirror the renderer's chamber transform to point at a known world point.
+async function chamberTransform(page) {
 	const box = await page.locator('#c').boundingBox();
 	const scale = Math.min((box.width - 32) / 25.5, (box.height - 80) / 10);
 	const offsetX = (box.width - 25.5 * scale) / 2 + 1.5 * scale;
 	const floorY = (box.height + 10 * scale) / 2 + 9;
-	await page.locator('#c').click({ position: { x: offsetX + worldX * scale, y: floorY - worldY * scale } });
+	return { x: box.x + offsetX, y: box.y + floorY, scale };
+}
+
+async function chamberPoint(page, worldX, worldY) {
+	const view = await chamberTransform(page);
+	return { x: view.x + worldX * view.scale, y: view.y - worldY * view.scale };
+}
+
+async function chamberClick(page, worldX, worldY) {
+	const point = await chamberPoint(page, worldX, worldY);
+	await page.mouse.click(point.x, point.y);
 }
 
 async function main() {
@@ -89,13 +99,27 @@ async function main() {
 		assert.equal(await page.locator('#drive').getAttribute('aria-pressed'), 'true');
 		await page.keyboard.press('KeyQ');
 		assert.equal(await page.locator('#drive').getAttribute('aria-pressed'), 'false');
-		// Piston tilt: the slider and the chamber mouse wheel share one angle.
+		// Piston tilt: slider, chamber wheel (about 4° a notch) and an open-air drag share one angle.
 		await page.locator('#piston-angle').evaluate(input => { input.value = '5'; input.dispatchEvent(new Event('input', { bubbles: true })); });
 		assert.equal(await page.locator('#piston-value').textContent(), '5.0°');
 		await page.locator('#c').hover();
 		await page.mouse.wheel(0, -120);
-		assert.equal(await page.locator('#piston-angle').inputValue(), '7');
-		assert.equal(await page.locator('#piston-value').textContent(), '7.0°');
+		assert.equal(await page.locator('#piston-angle').inputValue(), '9');
+		assert.equal(await page.locator('#piston-value').textContent(), '9.0°');
+		// The drag aims the reflection, so it runs the way the ball should: left or up
+		// raises the angle (a positive angle sends a falling ball left), right lowers it.
+		const air = await chamberPoint(page, 5, 5);
+		await page.mouse.move(air.x, air.y);
+		await page.mouse.down();
+		await page.mouse.move(air.x - 40, air.y - 20, { steps: 4 });
+		await page.mouse.up();
+		assert.equal(await page.locator('#piston-angle').inputValue(), '10', 'dragging left and up raises the tilt to its limit');
+		await page.mouse.move(air.x, air.y);
+		await page.mouse.down();
+		await page.mouse.move(air.x + 100, air.y, { steps: 4 });
+		await page.mouse.up();
+		assert.equal(await page.locator('#piston-angle').inputValue(), '5', 'dragging right lowers it by the same rate');
+		assert.equal(await page.locator('#piston-value').textContent(), '5.0°');
 		await page.keyboard.press('KeyW');
 		assert.equal(await page.locator('#force').inputValue(), '70');
 		await page.locator('#pause').click();
@@ -140,6 +164,40 @@ async function main() {
 		assert.equal(await page.locator('#launch').isDisabled(), true);
 		assert.match(await page.locator('#mineral-cell').textContent(), /^Column \d+ \/ 192 · Layer \d+ \/ 16$/, 'travel does not change the selected cell');
 		assert.ok(Math.abs(parseFloat(await page.locator('#error').textContent())) < 0.00001);
+		// Autopilot: one checkbox per duty, the same duty on a shortcut, and each one
+		// yields to the manual command that does the same job.
+		assert.equal(await page.locator('#autopilot input[type="checkbox"]').count(), 4);
+		assert.equal(await page.locator('#autopilot-status').isHidden(), true, 'a disengaged autopilot says nothing');
+		await page.locator('#autopilot label', { hasText: 'Chase the predicted landing' }).click();
+		assert.equal(await page.locator('#auto-move').isChecked(), true);
+		assert.match(await page.locator('#autopilot-status').textContent(), /^Intercept · /);
+		await page.locator('#autopilot label', { hasText: 'Timed intercept' }).click();
+		assert.equal(await page.locator('#auto-smart').isChecked(), true);
+		assert.equal(await page.locator('#auto-move').isChecked(), false, 'one intercept duty at a time');
+		assert.match(await page.locator('#autopilot-status').textContent(), /^Timed intercept · /);
+		await page.keyboard.press('KeyX');
+		assert.equal(await page.locator('#auto-move').isChecked(), true, 'X chases');
+		assert.equal(await page.locator('#auto-smart').isChecked(), false);
+		await page.keyboard.press('Shift+KeyX');
+		assert.equal(await page.locator('#auto-smart').isChecked(), true, 'shift X takes the timed intercept');
+		await page.keyboard.press('KeyZ');
+		await page.keyboard.press('KeyC');
+		assert.deepEqual(await page.evaluate(() => {
+			const plan = window.SteamAutopilot.state;
+			return [plan.move, plan.smart, plan.drive, plan.angle, plan.active];
+		}), [false, true, true, true, true]);
+		assert.match(await page.locator('#autopilot-status').textContent(), /Drive keeper · (pulse armed|pulse held) · Level bounce · tilt to -?\d+\.\d°/);
+		await page.keyboard.press('KeyA');
+		assert.equal(await page.locator('#auto-smart').isChecked(), false, 'a manual drive takes the intercept back');
+		assert.equal(await page.locator('#auto-drive').isChecked(), true, 'and leaves the other duties alone');
+		await page.locator('#piston-angle').evaluate(input => { input.value = '2'; input.dispatchEvent(new Event('input', { bubbles: true })); });
+		assert.equal(await page.locator('#auto-angle').isChecked(), false, 'the slider takes the tilt back');
+		await page.locator('#drive').click();
+		assert.equal(await page.locator('#auto-drive').isChecked(), false, 'the drive button takes the pulse back');
+		assert.equal(await page.locator('#autopilot-status').isHidden(), true, 'nothing engaged, nothing reported');
+		await page.keyboard.press('KeyZ');
+		await page.keyboard.press('Space');
+		assert.equal(await page.locator('#auto-drive').isChecked(), false, 'the drive shortcut keeps the duty manual');
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.waitForTimeout(100);
 		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -153,7 +211,7 @@ async function main() {
 		assert.equal(await touch.locator('#view-modes input[value="minerals"]').isChecked(), true, 'hover does not switch on touch');
 		await touch.locator('#view-modes label', { hasText: 'Price' }).tap();
 		assert.equal(await touch.locator('#view-modes input[value="price"]').isChecked(), true, 'tap switches on touch');
-		console.log('PASS: startup, four-row layout, view-mode hover/click/arrow keys with paused redraw and touch gating, drive on by default and toggling (Space/Q without pressing GUI controls), piston tilt by slider and chamber wheel, keyboard force, pause/reset, shape selector, inspector click without sliders, rock-versus-low click zones, target travel, centre pad note, research/equipment gating, ledger, narrow layout; no page errors.');
+		console.log('PASS: startup, four-row layout, view-mode hover/click/arrow keys with paused redraw and touch gating, drive on by default and toggling (Space/Q without pressing GUI controls), piston tilt by slider, chamber wheel and an inverted open-air drag, keyboard force, pause/reset, shape selector, inspector click without sliders, rock-versus-low click zones, target travel, centre pad note, research/equipment gating, ledger, autopilot checkboxes with X/Z/C shortcuts and manual overrides, narrow layout; no page errors.');
 	} finally {
 		await browser.close();
 	}

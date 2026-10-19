@@ -147,3 +147,29 @@ test('prediction is deterministic and stays inside its preallocated buffers', ()
 	assert.deepEqual(Array.from(again.pathY.subarray(0, count)), ys);
 	physics.createWorld();
 });
+
+test('a deck landing names the surface that meets it and the speed it arrives at', () => {
+	const w = physics.createWorld();
+	w.platform.x = 12; w.platform.vx = 0;
+	// The collector is the left 35% of the platform, so its zone runs from −1.8 m
+	// to −0.54 m of the platform centre; the reflector face covers the rest.
+	w.ball.x = 12 - c.platformWidth * 0.5 + 0.3; w.ball.y = 3; w.ball.vx = 0; w.ball.vy = 0; w.ball.state = 'flying';
+	let path = prediction.predict(w);
+	assert.equal(path.kind, prediction.kinds.DECK);
+	assert.equal(path.surface, prediction.surfaces.COLLECTOR, 'a landing on the collector is a catch, not a bounce');
+	w.ball.x = 12 + c.pistonCentre;
+	path = prediction.predict(w);
+	assert.equal(path.kind, prediction.kinds.DECK);
+	assert.equal(path.surface, prediction.surfaces.PISTON, 'a landing on the reflector is a bounce the keepers can shape');
+	// The reported contact speed is the arrival, before any impulse is resolved.
+	near(path.endVx, 0, 1e-12);
+	near(path.endVy, -Math.sqrt(2 * c.ballGravity * (3 - c.deck - c.radius)), 1e-9);
+	near(path.endY, c.deck + c.radius, 1e-9);
+	// A landing nobody meets is no platform surface at all.
+	w.platform.x = 3;
+	path = prediction.predict(w);
+	assert.equal(path.kind, prediction.kinds.GROUND);
+	assert.equal(path.surface, prediction.surfaces.NONE);
+	near(path.endVy, -Math.sqrt(2 * c.ballGravity * (3 - c.radius)), 1e-9);
+	physics.createWorld();
+});
