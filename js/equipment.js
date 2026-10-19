@@ -6,7 +6,7 @@
 	const items = Object.freeze([
 		Object.freeze({
 			id: 'grader', name: 'Road grader', cost: 300, mass: 10,
-			effect: 'Digs fallen rubble off the floor at 0.15 m/s and grades the surface: piles are flattened and smoothed but never below the original ground, so no pits form. Adds 10 kg.'
+			effect: 'Grades a 1.5 m swath ahead at 0.15 m/s, shaving and smoothing the top without digging beneath the platform or below the original ground. Adds 10 kg.'
 		}),
 		Object.freeze({
 			id: 'pad', name: 'Rebound pad', cost: 250, mass: 6, requires: 'materials',
@@ -69,15 +69,15 @@
 		return !item.requires || Boolean(technology && technology.isResearched(item.requires));
 	}
 
-	function install(id, world) {
-		const item = find(id);
-		if (!item || installed.has(id) || !isUnlocked(id)) return false;
+	function apply(item, world, testGrant) {
 		const economy = root.SteamCeiling;
 		if (!economy) return false;
 		const physics = root.SteamPhysics;
 		const oldMass = world && physics ? physics.platformMass(world) : 0;
-		if (!economy.purchase(item.name, item.cost, world ? world.time : 0)) return false;
-		installed.add(id);
+		const time = world ? world.time : 0;
+		const booked = testGrant ? economy.grant(item.name, time, 'buy') : economy.purchase(item.name, item.cost, time);
+		if (!booked) return false;
+		installed.add(item.id);
 		installedMass += item.mass || 0;
 		installedRetention += item.retentionBonus || 0;
 		installedPulse += item.pulseBonus || 0;
@@ -85,6 +85,26 @@
 		installedRecovery += item.recoveryFraction || 0;
 		if (physics) physics.applyMassChange(world, item.mass || 0, oldMass);
 		return true;
+	}
+
+	function install(id, world) {
+		const item = find(id);
+		if (!item || installed.has(id) || !isUnlocked(id)) return false;
+		return apply(item, world, false);
+	}
+
+	// Test mode installs every item immediately, independently of progression
+	// and funds, while preserving normal installation effects.
+	function grant(id, world) {
+		const item = find(id);
+		if (!item || installed.has(id)) return false;
+		return apply(item, world, true);
+	}
+
+	function installAll(world) {
+		let granted = 0;
+		for (const item of items) if (grant(item.id, world)) granted++;
+		return granted;
 	}
 
 	function reset() {
@@ -96,7 +116,7 @@
 		installedRecovery = 0;
 	}
 
-	const api = { items, state, find, isInstalled, isUnlocked, install, reset };
+	const api = { items, state, find, isInstalled, isUnlocked, install, grant, installAll, reset };
 	root.SteamEquipment = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

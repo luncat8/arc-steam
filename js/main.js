@@ -6,7 +6,7 @@
 	const canvas = document.getElementById('c');
 	const context = canvas.getContext('2d');
 	const ids = ['clock', 'drive', 'launch', 'status', 'prediction-status', 'force', 'force-value', 'piston-angle', 'piston-value',
-		'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'commune', 'view-modes',
+		'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'commune', 'test-mode', 'view-modes',
 		'platform-spec', 'research-rows', 'research-status', 'research-progress', 'tech-hint',
 		'mineral-cell', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
@@ -49,6 +49,7 @@
 		}
 	})();
 	let world = physics.createWorld();
+	let testMode = false;
 	let showPrediction = false;
 	const equipmentRows = [];
 	const researchRows = [];
@@ -76,10 +77,9 @@
 		return { row, button, requirement, heading, name, cost, mass, note };
 	}
 
-	// The price in a row title follows the mode: a list price, or FREE while the
-	// commons owns the machinery.
+	// Row titles show list prices, FREE in Communism mode, or TEST for grants.
 	function priceLabel(cost) {
-		return window.SteamCeiling.state.commune ? 'FREE' : cost + ' CR';
+		return window.SteamCeiling.state.commune ? 'FREE' : testMode ? 'TEST' : cost + ' CR';
 	}
 
 	function rowTitle(row) {
@@ -155,9 +155,40 @@
 	function setCommune(enabled) {
 		window.SteamCeiling.setCommune(enabled);
 		setChecked(ui.commune, enabled);
-		ui['equipment-status'].textContent = enabled ? commonsNote('equipment') : 'Sell cargo at a wall to earn credits.';
-		ui['research-status'].textContent = enabled ? commonsNote('research') : 'Sell cargo at a wall to fund research.';
+		setModeStatus();
 		refresh();
+	}
+
+	// Test mode applies all normal research and equipment effects without funds
+	// or progression gates. Turning it off leaves grants intact until New game.
+	function grantTestState() {
+		SteamResearch.researchAll(world);
+		SteamEquipment.installAll(world);
+		const researched = SteamResearch.state.completed;
+		const installed = SteamEquipment.items.filter(function (item) { return SteamEquipment.isInstalled(item.id); }).length;
+		setText(ui['research-status'], 'Test mode · all ' + researched + ' technologies researched.');
+		setText(ui['equipment-status'], 'Test mode · all ' + installed + ' equipment items installed.');
+	}
+
+	function setTestMode(enabled) {
+		testMode = Boolean(enabled);
+		setChecked(ui['test-mode'], testMode);
+		if (testMode) grantTestState();
+		else {
+			setText(ui['equipment-status'], 'Test mode off · grants remain installed until New game.');
+			setText(ui['research-status'], 'Test mode off · research remains active until New game.');
+		}
+		refresh();
+	}
+
+	function setModeStatus() {
+		if (testMode) {
+			setText(ui['equipment-status'], 'Test mode · every equipment item is installed.');
+			setText(ui['research-status'], 'Test mode · every technology is researched.');
+		} else {
+			setText(ui['equipment-status'], window.SteamCeiling.state.commune ? commonsNote('equipment') : 'Sell cargo at a wall to earn credits.');
+			setText(ui['research-status'], window.SteamCeiling.state.commune ? commonsNote('research') : 'Sell cargo at a wall to fund research.');
+		}
 	}
 
 	function commonsNote(panel) {
@@ -186,7 +217,7 @@
 			setText(row.button, installed ? 'Installed' : unlocked ? 'Buy' : 'Locked');
 			setRowState(row.row, installed ? 'installed' : unlocked ? 'available' : 'locked');
 			setText(row.heading, rowTitle(row));
-			setText(row.requirement, ceiling.commune ? row.freeNote : row.note);
+			setText(row.requirement, testMode ? 'Granted by test mode · measured effects active' : ceiling.commune ? row.freeNote : row.note);
 		}
 		let completed = 0;
 		for (const row of researchRows) {
@@ -198,17 +229,21 @@
 			setText(row.button, status === SteamResearch.constants.RESEARCHED ? 'Done' : status === SteamResearch.constants.AVAILABLE ? 'Research' : 'Locked');
 			setRowState(row.row, status);
 			setText(row.heading, rowTitle(row));
-			setText(row.requirement, ceiling.commune ? row.freeNote : row.note);
+			setText(row.requirement, testMode ? 'Granted by test mode · measured effects active' : ceiling.commune ? row.freeNote : row.note);
 		}
 		setText(ui['research-progress'], completed + ' / ' + researchRows.length);
 		// The panel introductions follow the mode too: they would otherwise ask
 		// for funds and prerequisites that the commons no longer wants.
-		setText(ui['tech-hint'], ceiling.commune
-			? 'The commons shares every technology: research is free, applies its measured effect immediately, and no prerequisite gates it.'
-			: 'Research debits funds once, applies its measured effect immediately, and unlocks the equipment that needs it. A node stays locked until every prerequisite is researched.');
-		setText(ui['equipment-hint'], ceiling.commune
-			? 'The commons shares every machine: purchases are free and install at once. The installed specification is the live result of every upgrade and research delta.'
-			: 'Purchases debit funds and install at once. The installed specification is the live result of every upgrade and research delta; each row states what buying it changes.');
+		setText(ui['tech-hint'], testMode
+			? 'Test mode has researched every technology, including nodes normally gated by prerequisites; all measured effects apply immediately.'
+			: ceiling.commune
+				? 'The commons shares every technology: research is free, applies its measured effect immediately, and no prerequisite gates it.'
+				: 'Research debits funds once, applies its measured effect immediately, and unlocks the equipment that needs it. A node stays locked until every prerequisite is researched.');
+		setText(ui['equipment-hint'], testMode
+			? 'Test mode has installed every equipment item without cost or progression checks. The installed specification is the live result of every upgrade and research delta.'
+			: ceiling.commune
+				? 'The commons shares every machine: purchases are free and install at once. The installed specification is the live result of every upgrade and research delta.'
+				: 'Purchases debit funds and install at once. The installed specification is the live result of every upgrade and research delta; each row states what buying it changes.');
 	}
 
 	// Installed specification: the live result of base tuning plus every equipment
@@ -356,31 +391,33 @@
 		context.strokeStyle = '#657578';
 		context.beginPath(); context.moveTo(-pocketDepth, 0); context.lineTo(config.width, 0); context.stroke();
 		if (Number.isFinite(world.target)) {
+			const targetGround = window.SteamCeiling.floorAt(world.target);
 			context.strokeStyle = '#627765';
-			context.beginPath(); context.moveTo(world.target, 0); context.lineTo(world.target, 1.7); context.stroke();
+			context.beginPath(); context.moveTo(world.target, targetGround); context.lineTo(world.target, targetGround + 1.7); context.stroke();
 		}
 		if (showPrediction) drawPrediction();
 		const platform = world.platform;
-		const left = platform.x - config.platformWidth * 0.5;
+		const left = -config.platformWidth * 0.5;
 		const collectorWidth = config.platformWidth * config.collectorFraction;
+		context.save();
+		context.translate(platform.x, platform.y);
+		context.rotate(platform.angle);
 		context.fillStyle = '#35454b';
 		context.fillRect(left, 0.2, config.platformWidth, 0.4);
 		context.fillStyle = '#e6b66e';
 		context.fillRect(left, 0.55, collectorWidth, 0.15);
-		// Piston face: a plate on the piston centre, rotated by the tilt and
-		// pushed into the platform along its normal by the spring compression,
-		// with the rod that drives it visible underneath.
+		// The chassis pitch follows the land; piston tilt stays relative to it.
 		const pistonNx = -Math.sin(world.pistonAngle);
 		const pistonNy = Math.cos(world.pistonAngle);
 		const pistonTx = pistonNy;
 		const pistonTy = -pistonNx;
-		const pistonCentreX = platform.x + config.pistonCentre - pistonNx * world.pistonOffset;
+		const pistonCentreX = config.pistonCentre - pistonNx * world.pistonOffset;
 		const pistonCentreY = config.deck - pistonNy * world.pistonOffset;
 		context.strokeStyle = '#718d75';
 		context.lineWidth = 0.06;
 		context.beginPath();
 		context.moveTo(pistonCentreX - pistonNx * 0.15, pistonCentreY - pistonNy * 0.15);
-		context.lineTo(platform.x + config.pistonCentre, 0.22);
+		context.lineTo(config.pistonCentre, 0.22);
 		context.stroke();
 		context.lineWidth = 1 / scale;
 		context.fillStyle = world.drive ? '#b9ed91' : '#718d75';
@@ -392,13 +429,16 @@
 		context.closePath();
 		context.fill();
 		context.fillStyle = '#10191d';
-		context.beginPath(); context.arc(left + 0.5, 0.18, 0.18, 0, Math.PI * 2); context.arc(left + config.platformWidth - 0.5, 0.18, 0.18, 0, Math.PI * 2); context.fill();
+		context.beginPath();
+		context.arc(left + 0.5, config.platformWheelRadius, config.platformWheelRadius, 0, Math.PI * 2);
+		context.arc(left + config.platformWidth - 0.5, config.platformWheelRadius, config.platformWheelRadius, 0, Math.PI * 2);
+		context.fill();
+		context.restore();
 		const ball = world.ball;
-		const ballY = ball.state === 'held' ? config.deck + config.radius : ball.y;
 		context.fillStyle = ball.state === 'grounded' ? '#e6b66e' : '#edf6f1';
-		context.beginPath(); context.arc(ball.x, ballY, config.radius, 0, Math.PI * 2); context.fill();
+		context.beginPath(); context.arc(ball.x, ball.y, config.radius, 0, Math.PI * 2); context.fill();
 		context.strokeStyle = '#a9c7bc';
-		context.beginPath(); context.arc(ball.x, ballY, config.radius + 0.13, 0, Math.PI * 2); context.stroke();
+		context.beginPath(); context.arc(ball.x, ball.y, config.radius + 0.13, 0, Math.PI * 2); context.stroke();
 		context.restore();
 		drawSellLabel(offsetX + 8, floorY - scale * 1.4, -Math.PI * 0.5);
 		drawSellLabel(offsetX + config.width * scale - 8, floorY - scale * 1.4, Math.PI * 0.5);
@@ -423,7 +463,13 @@
 		context.setLineDash([]);
 		context.beginPath(); context.arc(path.endX, path.endY, 0.26, 0, Math.PI * 2); context.stroke();
 		context.strokeStyle = path.reachable ? '#b9ed91' : '#e6b66e';
-		context.strokeRect(path.ghostX - config.platformWidth * 0.5, config.deck - 0.06, config.platformWidth, 0.12);
+		const ghostAngle = path.ghostAngle;
+		const ghostY = path.ghostY;
+		context.save();
+		context.translate(path.ghostX, ghostY);
+		context.rotate(ghostAngle);
+		context.strokeRect(-config.platformWidth * 0.5, config.deck - 0.06, config.platformWidth, 0.12);
+		context.restore();
 		context.restore();
 	}
 
@@ -449,6 +495,7 @@
 	// wording so the money trail stays explicit.
 	function ledgerText(entry) {
 		const stamp = entry.time.toFixed(1) + ' s · ';
+		if (entry.source === 'test') return stamp + (entry.type === 'research' ? 'Test researched ' : 'Test installed ') + entry.label;
 		if (entry.type === 'fuel') return stamp + 'Recharged ' + (entry.energy / 1000).toFixed(2) + ' kJ · ' + spent(entry.credits, 1);
 		if (entry.type === 'research') return stamp + 'Researched ' + entry.label + ' · ' + spent(entry.credits, 0);
 		if (entry.type === 'buy') return stamp + 'Bought ' + entry.label + ' · ' + spent(entry.credits, 0);
@@ -456,6 +503,7 @@
 	}
 
 	function ledgerStatus(entry) {
+		if (entry.source === 'test') return (entry.type === 'research' ? 'Test mode researched ' : 'Test mode installed ') + entry.label + ' at ' + entry.time.toFixed(1) + ' s.';
 		if (entry.type === 'fuel') return 'Recharged ' + (entry.energy / 1000).toFixed(2) + ' kJ of reserve ' + (entry.credits > 0 ? 'for ' + entry.credits.toFixed(1) + ' cr' : 'for free') + ' at ' + entry.time.toFixed(1) + ' s.';
 		if (entry.type === 'research') return 'Researched ' + entry.label + ' ' + (entry.credits > 0 ? 'for ' + entry.credits.toFixed(0) + ' cr' : 'for free') + ' at ' + entry.time.toFixed(1) + ' s.';
 		if (entry.type === 'buy') return 'Bought ' + entry.label + ' ' + (entry.credits > 0 ? 'for ' + entry.credits.toFixed(0) + ' cr' : 'for free') + ' at ' + entry.time.toFixed(1) + ' s.';
@@ -759,12 +807,13 @@
 
 	document.getElementById('reset').addEventListener('click', function () {
 		world = physics.createWorld(); window.SteamCeiling.setShape(ui.shape.value); renderedSales = -1; clearInput(); endPistonDrag(); setForce(world.forceSetting); autopilot.reset(); accumulator = 0;
-		ui['equipment-status'].textContent = window.SteamCeiling.state.commune ? commonsNote('equipment') : 'Sell cargo at a wall to earn credits.';
-		ui['research-status'].textContent = window.SteamCeiling.state.commune ? commonsNote('research') : 'Sell cargo at a wall to fund research.';
+		if (testMode) grantTestState();
+		setModeStatus();
 		refresh();
 	});
 	ui.drive.addEventListener('click', toggleDrive);
 	ui.commune.addEventListener('change', function () { setCommune(ui.commune.checked); });
+	ui['test-mode'].addEventListener('change', function () { setTestMode(ui['test-mode'].checked); });
 	ui.refuel.addEventListener('click', function () {
 		const imported = window.SteamCeiling.recharge(world, world.time);
 		refresh();

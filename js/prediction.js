@@ -11,6 +11,9 @@
 	const capacity = Math.ceil(horizon / march) + 2;
 	const pathX = new Float64Array(capacity);
 	const pathY = new Float64Array(capacity);
+	const platformPose = { x: 0, y: 0, angle: 0 };
+	const nextPlatformPose = { x: 0, y: 0, angle: 0 };
+	const platformSurface = { x: 0, y: 0, angle: 0 };
 	// Terminal outcomes. WALL and CEILING reflect and keep the march going, so
 	// they never reach the caller as a kind.
 	const NONE = 0;
@@ -37,6 +40,8 @@
 	let endTime = 0;
 	let uncertain = false;
 	let ghostX = 0;
+	let ghostY = 0;
+	let ghostAngle = 0;
 	let reachable = false;
 	let gap = 0;
 
@@ -53,6 +58,8 @@
 		get time() { return endTime; },
 		get uncertain() { return uncertain; },
 		get ghostX() { return ghostX; },
+		get ghostY() { return ghostY; },
+		get ghostAngle() { return ghostAngle; },
 		get reachable() { return reachable; },
 		// Metres of platform travel still missing from the intercept; <= 0 when the
 		// landing can be met at full thrust.
@@ -65,6 +72,17 @@
 		if (discriminant < 0) return Infinity;
 		const time = (vy + Math.sqrt(discriminant)) / gravity;
 		return time >= 0 ? time : Infinity;
+	}
+
+	function projectedPlatformPose(physics, platform, time, out) {
+		const config = physics.config;
+		const rawX = platform.x + platform.vx * time;
+		out.x = Math.max(physics.platformMin(), Math.min(physics.platformMax(), rawX));
+		const desiredAngle = physics.platformPitchAt(out.x);
+		const turn = config.platformPitchRate * time;
+		out.angle = platform.angle + Math.max(-turn, Math.min(turn, desiredAngle - platform.angle));
+		const wantedY = physics.platformBaseAt(out.x, out.angle);
+		out.y = Math.max(wantedY, platform.y - config.platformDropRate * time);
 	}
 
 	function predict(world) {
@@ -83,6 +101,8 @@
 		endTime = 0;
 		uncertain = false;
 		ghostX = platform.x;
+		ghostY = platform.y;
+		ghostAngle = platform.angle;
 		reachable = false;
 		gap = 0;
 		if (ball.state !== 'flying') {
@@ -121,19 +141,26 @@
 			const ground = (economy ? economy.floorAt(x) : 0) + config.radius;
 			const groundTime = y < ground ? 0 : crossing(y, vy, ground, gravity);
 			if (groundTime < step) { step = groundTime; event = GROUND; }
-			if (y >= config.deck + config.radius - 1e-10) {
-				const deckTime = crossing(y, vy, config.deck + config.radius, gravity);
-				if (deckTime < step) {
-					// The ghost assumes the platform holds its current velocity; the
-					// flat collector is the simulation's capture zone.
-					const ghost = platform.x + platform.vx * (time + deckTime);
-					const relative = x + vx * deckTime - ghost;
-					if (relative >= -config.platformWidth * 0.5 && relative <= -config.platformWidth * 0.5 + config.platformWidth * config.collectorFraction) { step = deckTime; event = DECK; surface = COLLECTOR; }
-				}
-			}
-			// The tilted piston face is met on its own plane, at the angle the
-			// player last set; physics exports the same contact solver it uses.
-			const pistonTime = physics.pistonContactTime(x, y, vx, vy, platform.x + platform.vx * time + config.pistonCentre, platform.vx, world.pistonAngle, step);
+			// The coasting platform follows the terrain while its chassis pitch
+			// slews at the live rate. Surface velocities include that tilt.
+			projectedPlatformPose(physics, platform, time, platformPose);
+			projectedPlatformPose(physics, platform, time + step, nextPlatformPose);
+			const platformVx = step > 0 ? (nextPlatformPose.x - platformPose.x) / step : 0;
+			const platformVy = step > 0 ? (nextPlatformPose.y - platformPose.y) / step : 0;
+			const platformOmega = step > 0 ? (nextPlatformPose.angle - platformPose.angle) / step : 0;
+			const collectorWidth = config.platformWidth * config.collectorFraction;
+			const collectorCentre = -config.platformWidth * 0.5 + collectorWidth * 0.5;
+			physics.platformPointAt(platformPose.x, platformPose.y, platformPose.angle, collectorCentre, config.deck, 0, platformSurface);
+			let surfaceVx = platformVx - platformOmega * (platformSurface.y - platformPose.y);
+			let surfaceVy = platformVy + platformOmega * (platformSurface.x - platformPose.x);
+			const deckTime = physics.planeContactTime(x, y, vx, vy, platformSurface.x, platformSurface.y,
+				surfaceVx, surfaceVy, platformSurface.angle, step, collectorWidth * 0.5);
+			if (deckTime < step) { step = deckTime; event = DECK; surface = COLLECTOR; }
+			physics.platformPointAt(platformPose.x, platformPose.y, platformPose.angle, config.pistonCentre, config.deck, world.pistonAngle, platformSurface);
+			surfaceVx = platformVx - platformOmega * (platformSurface.y - platformPose.y);
+			surfaceVy = platformVy + platformOmega * (platformSurface.x - platformPose.x);
+			const pistonTime = physics.pistonContactTime(x, y, vx, vy, platformSurface.x, platformSurface.y,
+				surfaceVx, surfaceVy, platformSurface.angle, step);
 			if (pistonTime < step) { step = pistonTime; event = DECK; surface = PISTON; }
 			let contactX = 0;
 			let contactY = 0;
@@ -172,7 +199,10 @@
 		pathX[samples] = x;
 		pathY[samples] = y;
 		samples++;
-		ghostX = Math.max(physics.platformMin(), Math.min(physics.platformMax(), platform.x + platform.vx * time));
+		projectedPlatformPose(physics, platform, time, platformPose);
+		ghostX = platformPose.x;
+		ghostY = platformPose.y;
+		ghostAngle = platformPose.angle;
 		// Intercept feasibility is a thrust bound, not a solved manoeuvre: the
 		// platform accelerates at its current force setting to the speed limit and
 		// then cruises for the rest of the flight time. Braking is not budgeted, so

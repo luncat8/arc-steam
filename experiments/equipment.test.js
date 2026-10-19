@@ -178,13 +178,44 @@ test('mass changes are booked so the energy ledger stays exact', () => {
 	physics.createWorld();
 });
 
-test('the road grader digs, flattens and smooths rubble and never digs pits', () => {
+test('test-mode equipment grants install every item for free without research prerequisites', () => {
+	const w = physics.createWorld();
+	ceiling.setCommune(false);
+	const funds = ceiling.state.funds;
+	assert.equal(equipment.installAll(w), equipment.items.length);
+	assert.ok(equipment.items.every(item => equipment.isInstalled(item.id)));
+	assert.equal(equipment.install('coil', w), false, 'a test-granted item cannot be installed twice');
+	assert.equal(ceiling.state.funds, funds, 'grants do not spend credits');
+	assert.equal(ceiling.state.ledger.length, equipment.items.length);
+	for (const entry of ceiling.state.ledger) {
+		assert.equal(entry.source, 'test');
+		assert.equal(entry.type, 'buy');
+		assert.equal(entry.credits, 0);
+		assert.ok(Object.isFrozen(entry));
+	}
+	near(physics.dryMass(), c.platformMass + equipment.state.massDelta);
+	near(physics.recoveryNow(), 0.55);
+	balanced(w);
+	physics.createWorld();
+});
+
+test('the road grader smooths a local travel-side swath without digging under the platform or making pits', () => {
 	const w = physics.createWorld();
 	const state = ceiling.state;
-	// A rough floor: a tall spike beside shallower rubble and bare ground.
+	buy(w, 'grader');
+	assert.ok(equipment.isInstalled('grader'), 'the grader installs without research');
+	state.floorPiles.fill(0);
+	// The platform is at x = 2.5: column 20 is beneath its chassis, while
+	// columns 40–42 are in the grader's forward swath and column 100 is remote.
+	state.floorPiles[20] = 0.55;
 	state.floorPiles[40] = 0.7;
 	state.floorPiles[41] = 0.2;
 	state.floorPiles[42] = 0.45;
+	state.floorPiles[100] = 0.3;
+	w.platform.x = 2.5;
+	w.platform.vx = 0;
+	w.direction = 1;
+	w.target = NaN;
 	function spread() {
 		let high = 0;
 		let low = Infinity;
@@ -195,15 +226,16 @@ test('the road grader digs, flattens and smooths rubble and never digs pits', ()
 		return high - low;
 	}
 	const rough = spread();
-	buy(w, 'grader');
-	assert.ok(equipment.isInstalled('grader'), 'the grader installs without research');
-	run(w, 1);
-	assert.ok(state.floorPiles[40] < 0.7, 'the blade digs the spike down');
-	assert.ok(spread() < rough, 'the surface is flattened and smoothed toward its neighbours');
-	run(w, 10);
+	ceiling.step(w, 1, physics.dryMass());
+	assert.ok(state.floorPiles[40] < 0.7, 'the blade shaves the top of the forward spike');
+	assert.ok(spread() < rough, 'the forward surface is flattened and smoothed');
+	assert.equal(state.floorPiles[20], 0.55, 'the blade never cuts beneath the platform');
+	assert.equal(state.floorPiles[100], 0.3, 'the blade does not grade the entire floor');
+	for (let i = 0; i < 10; i++) ceiling.step(w, 1, physics.dryMass());
 	for (let column = 0; column < state.columns; column++) {
-		assert.equal(state.floorPiles[column], 0, 'the dig is clamped at the original floor, so no pit forms');
+		assert.ok(state.floorPiles[column] >= 0, 'the dig is clamped at the original floor, so no pit forms');
 	}
-	for (let vertex = 0; vertex <= state.columns; vertex++) assert.equal(state.floorHeight[vertex], 0);
+	assert.equal(state.floorPiles[20], 0.55, 'the under-platform rubble remains untouched');
+	assert.equal(state.floorPiles[100], 0.3, 'remote rubble remains untouched');
 	physics.createWorld();
 });

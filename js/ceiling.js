@@ -4,6 +4,7 @@
 	const bottom = 13;
 	const top = 15;
 	const cell = 0.125;
+	const floorCellHeight = cell / 4;
 	const defaultPixelSize = 4;
 	const columns = Math.round(width / cell);
 	const rows = Math.round((top - bottom) / cell);
@@ -14,16 +15,16 @@
 	const gravity = 9.81;
 	const cargoHeight = 0.7;
 	// Fallen rubble piles up on the floor heightmap, the mirror of the rock
-	// surface above. The pile never rises past the collector deck, so the
-	// running gear, the charge pad and the catch plane stay clear however much
-	// is lost — rubble buries nothing, it only roughens the ground.
+	// surface above. The cap bounds its height; the platform follows the terrain
+	// and its deck remains above the capped pile.
 	const pileLimit = cargoHeight;
-	// Road grader blade: every column loses graderCut metres per second and
-	// flows toward the mean of its neighbours at graderSmooth per second, so
-	// piles are dug down, flattened and smoothed but never below the original
-	// floor (the dig is clamped at zero, which is what prevents pits).
+	// The grader treats only the travel-side swath: neighbours flow toward their
+	// mean and the blade shaves the top, clamped at the original floor so it
+	// cannot dig pits beneath the chassis.
 	const graderCut = 0.15;
 	const graderSmooth = 2;
+	const graderClearance = 0.5;
+	const graderSwath = 1.5;
 	// Impact tuning: hit point receives 2x impact energy in strength removal,
 	// falling linearly to zero across a 4.5-cell radius (1.5x of the base 3-cell radius).
 	const damageRadius = 4.5;
@@ -38,6 +39,7 @@
 	const heightmap = new Float64Array(columns + 1);
 	const floorPiles = new Float64Array(columns);
 	const floorHeight = new Float64Array(columns + 1);
+	const floorScratch = new Float64Array(columns);
 	const elementColors = new Array(count);
 	const mineralStyles = new Array(count);
 	const priceColors = new Array(count);
@@ -606,28 +608,44 @@
 		return time >= 0 ? time : Infinity;
 	}
 
-	// A landed fragment adds its cells to the pile under its landing point. The
-	// column is capped at the deck line so packed rubble can never bury the
-	// platform or block the collector; lostCells still counts every cell.
+	// A landed fragment adds a thin soil layer under its landing point. The floor
+	// height quantum is one quarter of a rock cell, giving a 4:1 ground tile.
+	// The pile is capped below the deck line; excess rubble is still counted lost.
 	function deposit(i, x) {
 		const column = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
-		floorPiles[column] = Math.min(pileLimit, floorPiles[column] + fragmentCells(i) * cell);
+		floorPiles[column] = Math.min(pileLimit, floorPiles[column] + fragmentCells(i) * floorCellHeight);
 		updateFloor();
 	}
 
-	// The road grader blade smooths the profile toward the neighbouring heights
-	// (cut and fill, so volume is conserved) and digs every column down at a
-	// fixed rate. The dig is clamped at the original floor: flattening and
-	// smoothing never leave a pit behind.
-	function grade(dt) {
+	// The blade works a swath ahead of the platform, not beneath its wheels.
+	// Neighbouring columns flow toward one another while the blade shaves the top;
+	// clamping at zero protects the original floor from becoming a pit.
+	function grade(world, dt) {
+		const platform = world.platform;
+		const physics = root.SteamPhysics;
+		const halfWidth = physics ? physics.config.platformWidth * 0.5 : 1.8;
+		let direction = Math.sign(world.direction || platform.vx);
+		if (!direction && Number.isFinite(world.target)) direction = Math.sign(world.target - platform.x);
+		if (!direction) return;
+		const near = platform.x + direction * (halfWidth + graderClearance);
+		const far = near + direction * graderSwath;
+		const first = Math.max(1, Math.floor(Math.min(near, far) / cell));
+		const last = Math.min(columns - 2, Math.floor(Math.max(near, far) / cell));
+		if (first > last) return;
+		floorScratch.set(floorPiles);
 		const ease = Math.min(1, graderSmooth * dt);
-		for (let column = 0; column < columns; column++) {
-			const left = floorPiles[column > 0 ? column - 1 : 0];
-			const right = floorPiles[column < columns - 1 ? column + 1 : columns - 1];
-			floorPiles[column] += ((left + right) * 0.5 - floorPiles[column]) * ease;
-		}
 		const cut = graderCut * dt;
-		for (let column = 0; column < columns; column++) floorPiles[column] = Math.max(0, floorPiles[column] - cut);
+		let changed = false;
+		for (let column = first; column <= last; column++) {
+			const height = floorPiles[column];
+			const neighbours = (floorPiles[column - 1] + floorPiles[column + 1]) * 0.5;
+			const graded = Math.max(0, height + (neighbours - height) * ease - cut);
+			if (graded === height) continue;
+			floorScratch[column] = graded;
+			changed = true;
+		}
+		if (!changed) return;
+		for (let column = first; column <= last; column++) floorPiles[column] = floorScratch[column];
 		updateFloor();
 	}
 
@@ -681,7 +699,7 @@
 			debrisCells[i] = 0;
 			debrisValue[i] = 0;
 		}
-		if (root.SteamEquipment && root.SteamEquipment.isInstalled('grader')) grade(dt);
+		if (root.SteamEquipment && root.SteamEquipment.isInstalled('grader')) grade(world, dt);
 	}
 
 	// Purchases and research debit funds and append a ledger entry; false when
@@ -698,6 +716,20 @@
 			time: typeof time === 'number' ? time : 0,
 			label,
 			credits: cost
+		}));
+		return true;
+	}
+
+	// Test-mode grants share the ledger but do not debit funds or depend on a
+	// purchase mode. Effects and their mass changes are still applied normally.
+	function grant(label, time, type) {
+		ledger.push(Object.freeze({
+			id: ledger.length + 1,
+			type: type || 'grant',
+			time: typeof time === 'number' ? time : 0,
+			label,
+			credits: 0,
+			source: 'test'
 		}));
 		return true;
 	}
@@ -834,28 +866,29 @@
 		}
 	}
 
-	// Fallen rubble under the chamber floor line: a fill up to the smoothed
-	// surface with a lighter crest, drawn before the charge pad stays visible.
+	// Fallen rubble is drawn as shallow floor tiles. Each full cell is four
+	// times wider than it is tall; the smoothed crest keeps their heightmap gentle.
 	function drawFloor(context) {
 		updateFloor();
-		context.fillStyle = '#443a2d';
-		context.beginPath();
-		context.moveTo(0, 0);
-		for (let v = 0; v <= columns; v++) context.lineTo(v * cell, floorHeight[v]);
-		context.lineTo(width, 0);
-		context.closePath();
-		context.fill();
+		for (let column = 0; column < columns; column++) {
+			const height = Math.max(0, floorAt((column + 0.5) * cell));
+			for (let y = 0, layer = 0; y < height - 1e-9; y += floorCellHeight, layer++) {
+				const tileHeight = Math.min(floorCellHeight, height - y);
+				context.fillStyle = (column + layer) % 2 ? '#443a2d' : '#4a3e2f';
+				context.fillRect(column * cell, y, cell, tileHeight);
+			}
+		}
 		context.strokeStyle = '#8b7454';
 		context.beginPath();
 		context.moveTo(0, floorHeight[0]);
-		for (let v = 1; v <= columns; v++) context.lineTo(v * cell, floorHeight[v]);
+		for (let vertex = 1; vertex <= columns; vertex++) context.lineTo(vertex * cell, floorHeight[vertex]);
 		context.stroke();
 	}
 
 	// Stable live view: reading simulation state allocates nothing and invokes no command.
 	const state = Object.freeze({
-		columns, rows, cell, bottom, top, defaultPixelSize, storageLimit, cellMass,
-		damageRadius, damageMultiplier, pileLimit, graderCut, graderSmooth,
+		columns, rows, cell, floorCellHeight, bottom, top, defaultPixelSize, storageLimit, cellMass,
+		damageRadius, damageMultiplier, pileLimit, graderCut, graderSmooth, graderClearance, graderSwath,
 		get shape() { return rockShape; }, heightmap, firstRow, floorPiles, floorHeight,
 		mineralNames, mineralPrices, fuelPrice,
 		strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
@@ -880,7 +913,7 @@
 
 	reset(1);
 
-	const api = { reset, damage, trace, step, sellCargo, purchase, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape };
+	const api = { reset, damage, trace, step, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape };
 	root.SteamCeiling = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -76,6 +76,33 @@ test('a landing on the deck is reported as a reachable intercept with the ghost 
 	physics.createWorld();
 });
 
+test('predicted deck contacts and the coasting ghost follow the terrain height', () => {
+	const w = physics.createWorld();
+	ceiling.state.floorPiles.fill(0.35);
+	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} });
+	w.platform.y = 0.35;
+	w.platform.previousY = 0.35;
+	w.platform.vx = 0;
+	w.ball.x = w.platform.x + c.pistonCentre;
+	w.ball.y = 4;
+	w.ball.vx = 0;
+	w.ball.vy = 0;
+	w.ball.state = 'flying';
+	const path = prediction.predict(w);
+	assert.equal(path.kind, prediction.kinds.DECK);
+	assert.equal(path.surface, prediction.surfaces.PISTON);
+	near(path.endY, 0.35 + c.deck + c.radius, 1e-9);
+	near(path.ghostY, 0.35, 1e-9);
+	near(path.ghostAngle, 0, 1e-9);
+	sync(w);
+	let steps = 0;
+	while (w.bounces === 0 && steps++ < 240 * 3) physics.step(w, c.step);
+	assert.equal(w.bounces, 1, 'live physics uses the same raised deck surface');
+	near(w.ball.x, path.endX, 1e-6);
+	balanced(w);
+	physics.createWorld();
+});
+
 test('the path stops at rock and is flagged uncertain instead of promising a rebound', () => {
 	const w = physics.createWorld();
 	w.platform.x = 3;

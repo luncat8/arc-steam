@@ -54,6 +54,9 @@ improve ball reflection from shape of rock. make optional shape not square but s
 
 All Broken Cells and Mass Fall Without Loss
 
+- communism-mode: all free. test-mode: research and install all
+- test-mode: research and install all
+
 ## platform's piston
 - animate push according to ball speed
 - possible to rotate piston surface angle +-10 deg to control reflection direction
@@ -74,6 +77,9 @@ increase floor heightmap. similar array to top rock.
 equipment: road grader installed gradually recover floor, dig, flatten, smooth, but prevent pitfalls
 
 because debriss fall same G force as ball - not possible to create effective autopilot to cauch it, so do not implement.
+
+on the floor cells are bot square but 4x less height for more smooth heightmap. i.e. wh 4,1
+make platform actually drive on top of this land heightmap. and grader actually dig, smooth and flatten soil from top, but not cause pitfalls under platform - so keep angle smooth
 
 ## autopilot
 

@@ -563,3 +563,36 @@ test('the rock view switches by click or mouse hover through one writer, redrawi
 	ceiling.draw = drawRock;
 	dom.element('pause').dispatch('click');
 });
+
+test('test mode grants all upgrades, preserves credits, and reapplies them on New game', () => {
+	const toggle = dom.element('test-mode');
+	const funds = ceiling.state.funds;
+	toggle.checked = true;
+	toggle.dispatch('change');
+	assert.equal(research.state.completed, research.nodes.length);
+	assert.ok(equipment.items.every(item => equipment.isInstalled(item.id)));
+	assert.equal(ceiling.state.funds, funds, 'test grants do not use credits');
+	assert.equal(dom.element('research-progress').textContent, research.nodes.length + ' / ' + research.nodes.length);
+	assert.ok(research.nodes.every(node => techRow(node.id).dataset.state === 'researched'));
+	assert.ok(equipment.items.every(item => gearRow(item.id).dataset.state === 'installed'));
+	assert.match(dom.element('equipment-status').textContent, /all \d+ equipment items installed/);
+	assert.match(dom.element('research-status').textContent, /all \d+ technologies researched/);
+	assert.ok(ceiling.state.ledger.filter(entry => entry.source === 'test').length >= research.nodes.length + equipment.items.length);
+	assert.match(dom.element('ledger').children[0].textContent, /Test installed /);
+	assert.match(dom.element('transaction-status').textContent, /Test mode installed /);
+	assert.ok(Math.abs(parseFloat(dom.element('error').textContent)) < 1e-4, dom.element('error').textContent);
+
+	dom.element('reset').dispatch('click');
+	assert.equal(toggle.checked, true, 'test mode is a mode and survives New game');
+	assert.equal(research.state.completed, research.nodes.length);
+	assert.ok(equipment.items.every(item => equipment.isInstalled(item.id)));
+
+	toggle.checked = false;
+	toggle.dispatch('change');
+	assert.equal(research.state.completed, research.nodes.length, 'turning the mode off does not revoke grants');
+	assert.match(dom.element('research-status').textContent, /remains active until New game/);
+	dom.element('reset').dispatch('click');
+	assert.equal(research.state.completed, 0, 'a fresh non-test game clears research');
+	assert.ok(equipment.items.every(item => !equipment.isInstalled(item.id)));
+	assert.equal(dom.element('test-mode').checked, false);
+});

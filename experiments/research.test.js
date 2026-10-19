@@ -117,3 +117,24 @@ test('every node and item stays fundable inside a measured working shift', () =>
 	assert.ok(ceiling.state.funds >= total, `${ceiling.state.funds.toFixed(0)} cr earned against ${total} cr of upgrades`);
 	physics.createWorld();
 });
+
+test('test-mode research grants every technology without funds or prerequisite checks', () => {
+	const w = physics.createWorld();
+	ceiling.setCommune(false);
+	const funds = ceiling.state.funds;
+	assert.equal(research.researchAll(w), research.nodes.length);
+	assert.equal(research.state.completed, research.nodes.length);
+	assert.equal(research.state.prediction, true);
+	assert.equal(research.status('ballistics'), research.constants.RESEARCHED);
+	assert.equal(research.grant('materials', w), false, 'granted nodes cannot be duplicated');
+	assert.equal(ceiling.state.funds, funds, 'grants do not spend credits');
+	assert.equal(ceiling.state.ledger.length, research.nodes.length);
+	for (const entry of ceiling.state.ledger) {
+		assert.equal(entry.source, 'test');
+		assert.equal(entry.type, 'research');
+		assert.equal(entry.credits, 0);
+		assert.ok(Object.isFrozen(entry));
+	}
+	balanced(w);
+	physics.createWorld();
+});

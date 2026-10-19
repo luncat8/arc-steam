@@ -181,9 +181,22 @@ async function main() {
 		assert.equal(await page.evaluate(() => SteamCeiling.state.funds), 0, 'the commons charges nothing');
 		await page.keyboard.press('KeyM');
 		assert.equal(await page.evaluate(() => SteamCeiling.state.commune), false);
-		assert.match(await page.locator('#equipment-rows .upgrade-row').first().locator('b').textContent(), /ROAD GRADER · 300 CR/);
-		assert.equal(await page.locator('#credits').textContent(), '0.0 cr');
-		// Autopilot: one checkbox per duty, the same duty on a shortcut, and each one
+			assert.match(await page.locator('#equipment-rows .upgrade-row').first().locator('b').textContent(), /ROAD GRADER · 300 CR/);
+			assert.equal(await page.locator('#credits').textContent(), '0.0 cr');
+			// Test mode grants the whole tree and shop for free, persists as a mode
+			// across New game, and leaves those grants in place when turned off.
+			await page.locator('#test-mode').click();
+			assert.equal(await page.locator('#research-progress').textContent(), '6 / 6');
+			assert.equal(await page.locator('#equipment-rows .upgrade-row[data-state="installed"]').count(), 6);
+			assert.match(await page.locator('#ledger li').first().textContent(), /Test installed /);
+			await page.locator('#reset').click();
+			assert.equal(await page.locator('#test-mode').isChecked(), true);
+			assert.equal(await page.locator('#research-progress').textContent(), '6 / 6');
+			await page.locator('#test-mode').click();
+			assert.equal(await page.locator('#research-progress').textContent(), '6 / 6', 'test grants are not revoked by switching the mode off');
+			await page.locator('#reset').click();
+			assert.equal(await page.locator('#research-progress').textContent(), '0 / 6');
+			// Autopilot: one checkbox per duty, the same duty on a shortcut, and each one
 		// temporarily yields to the manual command that does the same job.
 		assert.equal(await page.locator('#autopilot input[type="checkbox"]').count(), 4);
 		assert.equal(await page.locator('#autopilot-status').isHidden(), true, 'a disengaged autopilot says nothing');

@@ -40,6 +40,26 @@ test('seeded 2D element and mineral fields repeat and normalize', () => {
 	assert.deepEqual(Array.from(ceiling.state.strength), first);
 });
 
+test('fallen-soil tiles keep a 4:1 width-to-height ratio and a smooth interpolated crest', () => {
+	ceiling.reset(31);
+	const state = ceiling.state;
+	assert.equal(state.floorCellHeight, state.cell / 4);
+	state.floorPiles.fill(0.2);
+	const tiles = [];
+	const context = {
+		fillRect(x, y, width, height) { tiles.push({ x, y, width, height }); },
+		beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}
+	};
+	ceiling.drawFloor(context);
+	assert.ok(tiles.length > 0, 'the rubble is rendered as individual tiles');
+	const fullTile = tiles.find(tile => Math.abs(tile.height - state.floorCellHeight) < 1e-12);
+	assert.ok(fullTile, 'full-height soil rows are present');
+	near(fullTile.width, state.cell);
+	near(fullTile.height, state.cell / 4);
+	near(fullTile.width / fullTile.height, 4);
+	for (const height of state.floorHeight) near(height, 0.2, 1e-12);
+});
+
 test('radial 2D damage weakens nearby cells and emits each failed cell once', () => {
 	ceiling.reset(9);
 	const before = Array.from(ceiling.state.strength);

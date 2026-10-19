@@ -72,6 +72,7 @@
 	let contactIn = 0;
 	let contactVx = 0;
 	let contactVy = 0;
+	let contactY = 0;
 	let contactOnPiston = false;
 	let wantedDrive = true;
 	let wantedAngle = 0;
@@ -120,6 +121,7 @@
 		planAge = planInterval;
 		interceptX = NaN;
 		contactIn = 0;
+		contactY = 0;
 		contactOnPiston = false;
 		seenState = '';
 		seenBounces = -1;
@@ -144,6 +146,20 @@
 		return Math.max(physics.platformMin(), Math.min(physics.platformMax(), x));
 	}
 
+	// Invert the terrain-following piston-centre offset to keep the target mark
+	// under the face even when the chassis is pitched on a slope.
+	function platformCentreForPiston(surfaceX) {
+		const physics = root.SteamPhysics;
+		const config = physics.config;
+		let centreX = clampTravel(surfaceX - config.pistonCentre);
+		for (let iteration = 0; iteration < 3; iteration++) {
+			const angle = physics.platformPitchAt(centreX);
+			const offsetX = Math.cos(angle) * config.pistonCentre - Math.sin(angle) * config.deck;
+			centreX = clampTravel(centreX + surfaceX - (centreX + offsetX));
+		}
+		return centreX;
+	}
+
 	function replan(world) {
 		planAge = 0;
 		seenState = world.ball.state;
@@ -151,6 +167,7 @@
 		seenPushes = world.pushes;
 		contactOnPiston = false;
 		contactIn = 0;
+		contactY = 0;
 		const ball = world.ball;
 		// A grounded ball is a recovery, not an intercept: go and stand over it.
 		if (ball.state === 'grounded') { interceptX = clampTravel(ball.x); return; }
@@ -171,19 +188,23 @@
 		}
 		// The reflector, not the collector, is what keeps the ball in play, so the
 		// platform is commanded to put its face centre under the mark.
-		interceptX = clampTravel(path.endX - config.pistonCentre);
+		interceptX = platformCentreForPiston(path.endX);
 		contactVx = path.endVx;
 		contactVy = path.endVy;
+		contactY = path.endY;
 		contactOnPiston = path.surface === computer.surfaces.PISTON;
 		contactIn = path.time;
 		if (path.kind !== kinds.GROUND) return;
-		// A ground mark means nothing is under the ball yet; the save happens one
-		// deck height earlier, so time and speed are backed out to the deck plane
-		// from the rubble surface the ball would die on.
+		// A ground mark means nothing is under the ball yet; the save happens at
+		// the platform's terrain-following deck height above the rubble surface.
 		const pile = root.SteamCeiling ? root.SteamCeiling.floorAt(path.endX) : 0;
-		const deckSpeed = -Math.sqrt(Math.max(0, contactVy * contactVy - 2 * config.ballGravity * (config.deck - pile)));
+		const deckAngle = physics.platformPitchAt(interceptX);
+		const deckBase = physics.platformBaseAt(interceptX, deckAngle);
+		const deckHeight = deckBase + Math.sin(deckAngle) * config.pistonCentre + Math.cos(deckAngle) * config.deck;
+		const deckSpeed = -Math.sqrt(Math.max(0, contactVy * contactVy - 2 * config.ballGravity * (deckHeight - pile)));
 		contactIn = path.time - (deckSpeed - contactVy) / config.ballGravity;
 		contactVy = deckSpeed;
+		contactY = deckHeight + config.radius;
 	}
 
 	function commandTravel(world) {
@@ -248,7 +269,7 @@
 		const config = root.SteamPhysics.config;
 		const bounce = solve(world, angleOn && !suspended(ANGLE) ? wantedAngle : world.pistonAngle, 0);
 		const rise = Math.max(0, bounce.vy);
-		const apex = config.deck + config.radius + rise * rise / (2 * config.ballGravity);
+		const apex = contactY + rise * rise / (2 * config.ballGravity);
 		const target = config.ceiling - config.radius;
 		if (apex < target - apexMargin) return true;
 		if (apex > target) return false;

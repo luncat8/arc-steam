@@ -8,6 +8,8 @@
 		width: 24, ceiling: 15, gravity, ballGravity: gravity * ballSpeedScale * ballSpeedScale,
 		ballMass: 1 / (ballSpeedScale * ballSpeedScale), ballSpeedScale, radius: 0.18,
 		platformWidth: 3.6, deck: 0.7, collectorFraction: 0.35,
+		platformWheelHalfSpan: 1.3, platformWheelRadius: 0.18, platformBodyBottom: 0.2,
+		platformMaxPitch: Math.PI / 6, platformPitchRate: Math.PI / 2, platformDropRate: 3,
 		// The reflector is a sprung piston: its face tilts to steer reflections
 		// (centre and half-width follow from the collector/reflector split) and
 		// compresses along its normal in proportion to the impact speed.
@@ -42,6 +44,104 @@
 	function platformMin() { return config.platformWidth * 0.5 - config.pocketDepth; }
 	function platformMax() { return config.width - config.platformWidth * 0.5; }
 
+	function terrainHeight(x) {
+		return root.SteamCeiling ? root.SteamCeiling.floorAt(x) : 0;
+	}
+
+	function platformPitchAt(x) {
+		const span = config.platformWheelHalfSpan;
+		const rise = terrainHeight(x + span) - terrainHeight(x - span);
+		return Math.max(-config.platformMaxPitch, Math.min(config.platformMaxPitch, Math.atan2(rise, span * 2)));
+	}
+
+	// The chassis origin follows the highest surface under its wheels and belly.
+	// Sampling the full footprint lets a mound lift the platform instead of
+	// letting the body tunnel through it.
+	function platformBaseAt(x, angle) {
+		const cosine = Math.cos(angle);
+		const sine = Math.sin(angle);
+		const halfWidth = config.platformWidth * 0.5;
+		const bodyBottom = config.platformBodyBottom;
+		let height = 0;
+		const cell = root.SteamCeiling ? root.SteamCeiling.state.cell : config.platformWheelRadius * 2;
+		const sampleStep = Math.min(config.platformWheelRadius, cell * 0.5);
+		for (let localX = -halfWidth; localX < halfWidth; localX += sampleStep) {
+			const groundX = x + localX * cosine - bodyBottom * sine;
+			const required = terrainHeight(groundX) - localX * sine - bodyBottom * cosine;
+			height = Math.max(height, required);
+		}
+		const groundX = x + halfWidth * cosine - bodyBottom * sine;
+		height = Math.max(height, terrainHeight(groundX) - halfWidth * sine - bodyBottom * cosine);
+		const radius = config.platformWheelRadius;
+		const span = config.platformWheelHalfSpan;
+		for (let sign = -1; sign <= 1; sign += 2) {
+			const localX = sign * span;
+			const groundX = x + localX * cosine - radius * sine;
+			const required = terrainHeight(groundX) - localX * sine + radius - radius * cosine;
+			height = Math.max(height, required);
+		}
+		return Math.max(0, height);
+	}
+
+	function updatePlatformTerrain(world, dt) {
+		const platform = world.platform;
+		const wantedAngle = platformPitchAt(platform.x);
+		const turn = config.platformPitchRate * dt;
+		platform.angle += Math.max(-turn, Math.min(turn, wantedAngle - platform.angle));
+		const wantedHeight = platformBaseAt(platform.x, platform.angle);
+		platform.y = Math.max(wantedHeight, platform.previousY - config.platformDropRate * dt);
+		platform.stepVx = (platform.x - platform.previousX) / dt;
+		platform.stepVy = (platform.y - platform.previousY) / dt;
+		platform.stepOmega = (platform.angle - platform.previousAngle) / dt;
+		platform.vy = platform.stepVy;
+		platform.omega = platform.stepOmega;
+	}
+
+	function platformPointAt(x, y, baseAngle, localX, localY, relativeAngle, out) {
+		const cosine = Math.cos(baseAngle);
+		const sine = Math.sin(baseAngle);
+		out.x = x + cosine * localX - sine * localY;
+		out.y = y + sine * localX + cosine * localY;
+		out.angle = baseAngle + relativeAngle;
+	}
+
+	function platformSurfaceAt(world, elapsed, dt, localX, localY, relativeAngle, out) {
+		const platform = world.platform;
+		const fraction = Math.max(0, Math.min(1, elapsed / dt));
+		const x = platform.previousX + (platform.x - platform.previousX) * fraction;
+		const y = platform.previousY + (platform.y - platform.previousY) * fraction;
+		const angle = platform.previousAngle + (platform.angle - platform.previousAngle) * fraction;
+		const cosine = Math.cos(angle);
+		const sine = Math.sin(angle);
+		const offsetX = cosine * localX - sine * localY;
+		const offsetY = sine * localX + cosine * localY;
+		out.x = x + offsetX;
+		out.y = y + offsetY;
+		out.vx = platform.stepVx - platform.stepOmega * offsetY;
+		out.vy = platform.stepVy + platform.stepOmega * offsetX;
+		out.angle = angle + relativeAngle;
+	}
+
+	function planeContactTime(x, y, vx, vy, centerX, centerY, centerVx, centerVy, angle, limit, halfExtent) {
+		const nx = -Math.sin(angle);
+		const ny = Math.cos(angle);
+		const signed = nx * (x - centerX) + ny * (y - centerY) - config.radius;
+		if (signed < -1e-9) return Infinity;
+		const a = -0.5 * config.ballGravity * ny;
+		const b = nx * (vx - centerVx) + ny * (vy - centerVy);
+		const discriminant = b * b - 4 * a * signed;
+		if (discriminant < 0) return Infinity;
+		const root = Math.sqrt(discriminant);
+		let time = (-b - root) / (2 * a);
+		if (!(time >= -1e-10) || time > limit || b + 2 * a * time >= 0) time = (-b + root) / (2 * a);
+		if (!(time >= -1e-10) || time > limit || b + 2 * a * time >= 0) return Infinity;
+		time = Math.max(0, time);
+		const contactX = x + vx * time;
+		const contactY = y + vy * time - 0.5 * config.ballGravity * time * time;
+		const foot = (contactX - (centerX + centerVx * time)) * Math.cos(angle) + (contactY - (centerY + centerVy * time)) * Math.sin(angle);
+		return Math.abs(foot) <= halfExtent + 1e-9 ? time : Infinity;
+	}
+
 	function setPistonAngle(world, angle) {
 		world.pistonAngle = Math.max(-config.pistonMaxAngle, Math.min(config.pistonMaxAngle, angle));
 		return world.pistonAngle;
@@ -61,81 +161,77 @@
 		}
 	}
 
-	// Earliest time the ball centre reaches one radius from the tilted piston
-	// face, or Infinity. The centre travels with the platform, so its velocity
-	// is part of the approach; a contact only counts on the face segment.
-	function pistonContactTime(x, y, vx, vy, centreX, centreVx, angle, limit) {
-		const nx = -Math.sin(angle);
-		const ny = Math.cos(angle);
-		const signed = nx * (x - centreX) + ny * (y - config.deck) - config.radius;
-		if (signed < -1e-9) return Infinity;
-		const a = -0.5 * config.ballGravity * ny;
-		const b = nx * (vx - centreVx) + ny * vy;
-		const discriminant = b * b - 4 * a * signed;
-		if (discriminant < 0) return Infinity;
-		const root = Math.sqrt(discriminant);
-		let time = (-b - root) / (2 * a);
-		if (!(time >= -1e-10) || time > limit || b + 2 * a * time >= 0) time = (-b + root) / (2 * a);
-		if (!(time >= -1e-10) || time > limit || b + 2 * a * time >= 0) return Infinity;
-		time = Math.max(0, time);
-		const contactX = x + vx * time;
-		const contactY = y + vy * time - 0.5 * config.ballGravity * time * time;
-		const foot = (contactX - (centreX + centreVx * time)) * ny + (contactY - config.deck) * -nx;
-		return Math.abs(foot) <= config.pistonHalf + 1e-9 ? time : Infinity;
+	// Earliest time the ball centre reaches one radius from a moving piston face.
+	// The face centre and its local velocity are supplied at the start of the
+	// remaining step; the angle stays fixed over this short collision solve.
+	function pistonContactTime(x, y, vx, vy, centerX, centerY, centerVx, centerVy, angle, limit) {
+		return planeContactTime(x, y, vx, vy, centerX, centerY, centerVx, centerVy, angle, limit, config.pistonHalf);
 	}
 
 	// Preallocated solver result. A contact is resolved once per bounce and the
 	// automatic tilt keeper trials dozens of angles per step, so neither may
 	// allocate: callers create their scratch once, with this factory, and reuse it.
 	function contactResult() {
-		return { impact: 0, vx: 0, vy: 0, platformVx: 0, heat: 0, push: 0, captured: false };
+		return { impact: 0, vx: 0, vy: 0, platformVx: 0, heat: 0, surfaceWork: 0, push: 0, captured: false };
 	}
 
-	// Resolve a ball contact on the tilted piston face without touching the world:
-	// friction along the face, the restitution impulse with the platform's
-	// horizontal reaction, and the optional powered push along the normal. `push`
-	// is the pulse energy already limited by the reserve and the thermal derate
-	// (`launchCapacity`), so the automatic keepers can trial any tilt and either
-	// drive state against exactly the impulses the simulation will apply.
-	// `out.impact <= 0` means the ball is separating and nothing happens.
-	function solvePiston(world, ballVx, ballVy, angle, push, out) {
-		const nx = -Math.sin(angle);
-		const ny = Math.cos(angle);
+	// Resolve contact against the moving piston plane. The platform can recoil in
+	// x; terrain-following vertical/rotational motion is prescribed, so its work
+	// is tracked separately from collision heat.
+	function solvePiston(world, ballVx, ballVy, angle, push, out, surfaceVx, surfaceVy) {
+		const platform = world.platform;
+		const baseAngle = platform.angle;
+		const faceAngle = baseAngle + angle;
+		const nx = -Math.sin(faceAngle);
+		const ny = Math.cos(faceAngle);
 		const tx = ny;
 		const ty = -nx;
 		const ballMass = config.ballMass;
 		const carriedMass = platformMass(world);
-		const platformVx = world.platform.vx;
+		const platformVx = platform.vx;
+		const localX = Math.cos(baseAngle) * config.pistonCentre - Math.sin(baseAngle) * config.deck;
+		const localY = Math.sin(baseAngle) * config.pistonCentre + Math.cos(baseAngle) * config.deck;
+		if (!Number.isFinite(surfaceVx)) surfaceVx = platformVx - platform.omega * localY;
+		if (!Number.isFinite(surfaceVy)) surfaceVy = platform.vy + platform.omega * localX;
+		const surfaceOffsetX = surfaceVx - platformVx;
 		const restitution = Math.sqrt(retentionNow());
-		const relativeVx = ballVx - platformVx;
-		const impact = -(relativeVx * nx + ballVy * ny);
+		const relativeVx = ballVx - surfaceVx;
+		const relativeVy = ballVy - surfaceVy;
+		const impact = -(relativeVx * nx + relativeVy * ny);
 		out.impact = impact;
 		out.vx = ballVx;
 		out.vy = ballVy;
 		out.platformVx = platformVx;
 		out.heat = 0;
+		out.surfaceWork = 0;
 		out.push = 0;
 		out.captured = false;
 		if (impact <= 0) return out;
 		const before = 0.5 * ballMass * (ballVx * ballVx + ballVy * ballVy) + 0.5 * carriedMass * platformVx * platformVx;
 		let vx = ballVx;
 		let vy = ballVy;
-		let platform = platformVx;
-		const normalImpulse = ballMass * impact * (1 + restitution);
-		const tangentVelocity = relativeVx * tx + ballVy * ty;
-		const friction = Math.max(-normalImpulse * 0.35, Math.min(normalImpulse * 0.35, -tangentVelocity / (1 / ballMass + 1 / carriedMass)));
+		let platformVxAfter = platformVx;
+		const normalLimit = ballMass * impact * (1 + restitution);
+		const tangentVelocity = relativeVx * tx + relativeVy * ty;
+		const friction = Math.max(-normalLimit * 0.35, Math.min(normalLimit * 0.35, -tangentVelocity / (1 / ballMass + 1 / carriedMass)));
 		vx += friction * tx / ballMass;
 		vy += friction * ty / ballMass;
-		platform -= friction * tx / carriedMass;
-		const normalVelocity = (vx - platform) * nx + vy * ny;
+		platformVxAfter -= friction * tx / carriedMass;
+		const surfaceXAfterFriction = platformVxAfter + surfaceOffsetX;
+		const normalVelocity = (vx - surfaceXAfterFriction) * nx + (vy - surfaceVy) * ny;
+		let normalImpulse = 0;
 		if (normalVelocity < 0) {
-			const impulse = -(1 + restitution) * normalVelocity / (1 / ballMass + nx * nx / carriedMass);
-			vx += impulse * nx / ballMass;
-			vy += impulse * ny / ballMass;
-			platform -= impulse * nx / carriedMass;
+			normalImpulse = -(1 + restitution) * normalVelocity / (1 / ballMass + nx * nx / carriedMass);
+			vx += normalImpulse * nx / ballMass;
+			vy += normalImpulse * ny / ballMass;
+			platformVxAfter -= normalImpulse * nx / carriedMass;
 		}
-		// Only the passive part is lost: the pulse is paid for separately.
-		out.heat = Math.max(0, before - (0.5 * ballMass * (vx * vx + vy * vy) + 0.5 * carriedMass * platform * platform));
+		const impulseX = friction * tx + normalImpulse * nx;
+		const impulseY = friction * ty + normalImpulse * ny;
+		const surfaceWork = impulseX * surfaceOffsetX + impulseY * surfaceVy;
+		const after = 0.5 * ballMass * (vx * vx + vy * vy) + 0.5 * carriedMass * platformVxAfter * platformVxAfter;
+		out.surfaceWork = surfaceWork;
+		out.heat = Math.max(0, surfaceWork + before - after);
 		if (push > 0) {
 			const normalBallVelocity = vx * nx + vy * ny;
 			const boosted = Math.sqrt(normalBallVelocity * normalBallVelocity + 2 * push / ballMass);
@@ -143,15 +239,17 @@
 			vy += (boosted - normalBallVelocity) * ny;
 			out.push = push;
 		}
-		out.captured = (vx - platform) * nx + vy * ny < 0.08;
+		out.captured = (vx - (platformVxAfter + surfaceOffsetX)) * nx + (vy - surfaceVy) * ny < 0.08;
 		out.vx = vx;
 		out.vy = vy;
-		out.platformVx = platform;
+		out.platformVx = platformVxAfter;
 		return out;
 	}
 
 	// The simulation's own scratch for the contact it is resolving this step.
 	const contact = contactResult();
+	const pistonSurfaceScratch = { x: 0, y: 0, vx: 0, vy: 0, angle: 0 };
+	const collectorSurfaceScratch = { x: 0, y: 0, vx: 0, vy: 0, angle: 0 };
 
 	// The charge pad is a strip of ground at the chamber centre. Standing still
 	// on it hands the installed engine its fuel; a moving platform cannot
@@ -220,11 +318,11 @@
 		if (root.SteamEquipment) root.SteamEquipment.reset();
 		if (root.SteamResearch) root.SteamResearch.reset();
 		const world = {
-			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, chargedEnergy: 0,
+			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, chargedEnergy: 0, terrainWork: 0,
 			initialEnergy: 0,
 			drive: true, forceSetting: 0.6, direction: 0, target: NaN,
 			pistonAngle: 0, pistonOffset: 0, pistonVelocity: 0, pistonImpact: 0,
-			platform: { x: 12, vx: 0 },
+			platform: { x: 12, y: 0, vx: 0, vy: 0, angle: 0, omega: 0, previousX: 12, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0 },
 			ball: { x: 12.8, y: 5, vx: 1.2 * config.ballSpeedScale, vy: 0, state: 'flying' },
 			bounces: 0, pushes: 0, lastPush: 0, groundings: 0, sales: 0, lastSale: 0
 		};
@@ -249,7 +347,7 @@
 	// added, so the balance stays exact across both directions of trade.
 	function totalEnergy(world) {
 		const ceilingEnergy = root.SteamCeiling ? root.SteamCeiling.state.energy : 0;
-		return world.battery + world.heat + world.cooledEnergy + world.fractureEnergy - world.importedEnergy + ceilingEnergy + ballEnergy(world.ball) + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
+		return world.battery + world.heat + world.cooledEnergy + world.fractureEnergy - world.importedEnergy - world.terrainWork + ceilingEnergy + ballEnergy(world.ball) + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
 	}
 
 	function temperature(world) {
@@ -291,6 +389,16 @@
 		return delivered;
 	}
 
+	function setHeldBallPose(world) {
+		const platform = world.platform;
+		const localX = -config.platformWidth * 0.32;
+		const localY = config.deck + config.radius;
+		const cosine = Math.cos(platform.angle);
+		const sine = Math.sin(platform.angle);
+		world.ball.x = platform.x + cosine * localX - sine * localY;
+		world.ball.y = platform.y + sine * localX + cosine * localY;
+	}
+
 	function capture(world) {
 		const ball = world.ball;
 		const platform = world.platform;
@@ -300,7 +408,7 @@
 		ball.state = 'held';
 		ball.vx = 0;
 		ball.vy = 0;
-		ball.y = config.radius;
+		setHeldBallPose(world);
 		world.heat += before - 0.5 * platformMass(world) * platform.vx * platform.vx;
 	}
 
@@ -309,10 +417,14 @@
 	}
 
 	// The released ball rests on the tilted piston face, a little right of its
-	// centre, so its resting height follows the tilt.
+	// centre. Both the terrain-following chassis and piston tilt set the height.
 	function launchHeight(world) {
+		const platform = world.platform;
+		const baseAngle = platform.angle;
+		const faceAngle = baseAngle + world.pistonAngle;
 		const along = config.platformWidth * 0.25 - config.pistonCentre;
-		return config.deck + along * Math.sin(world.pistonAngle) + config.radius * Math.cos(world.pistonAngle) - config.radius;
+		const centreY = platform.y + Math.sin(baseAngle) * config.pistonCentre + Math.cos(baseAngle) * config.deck;
+		return centreY + Math.sin(faceAngle) * along + Math.cos(faceAngle) * config.radius - config.radius;
 	}
 
 	function canLaunch(world) {
@@ -325,10 +437,15 @@
 		const ball = world.ball;
 		const energy = spend(world, pulseNow() * thermalFactor(world));
 		const height = launchHeight(world);
-		const nx = -Math.sin(world.pistonAngle);
-		ball.x = world.platform.x + config.pistonCentre + Math.cos(world.pistonAngle) * (config.platformWidth * 0.25 - config.pistonCentre) + nx * config.radius;
-		ball.y = height + config.radius;
-		ball.vx = world.platform.vx;
+		const platform = world.platform;
+		const baseAngle = platform.angle;
+		const faceAngle = baseAngle + world.pistonAngle;
+		const along = config.platformWidth * 0.25 - config.pistonCentre;
+		const centreX = platform.x + Math.cos(baseAngle) * config.pistonCentre - Math.sin(baseAngle) * config.deck;
+		const centreY = platform.y + Math.sin(baseAngle) * config.pistonCentre + Math.cos(baseAngle) * config.deck;
+		ball.x = centreX + Math.cos(faceAngle) * along - Math.sin(faceAngle) * config.radius;
+		ball.y = centreY + Math.sin(faceAngle) * along + Math.cos(faceAngle) * config.radius;
+		ball.vx = platform.vx;
 		ball.vy = Math.sqrt(2 * (energy - config.ballMass * config.ballGravity * height) / config.ballMass);
 		ball.state = 'flying';
 		// The piston visibly shoves the ball away, then springs back.
@@ -341,6 +458,9 @@
 
 	function movePlatform(world, dt) {
 		const platform = world.platform;
+		platform.previousX = platform.x;
+		platform.previousY = platform.y;
+		platform.previousAngle = platform.angle;
 		const mass = platformMass(world);
 		let direction = world.direction;
 		if (!direction && Number.isFinite(world.target)) {
@@ -378,13 +498,14 @@
 		platform.x += (oldVelocity + velocity) * 0.5 * dt;
 		const minX = platformMin();
 		const maxX = platformMax();
-		if (platform.x >= minX && platform.x <= maxX) return;
-		// A wall stop is a crash, not braking: all of it becomes heat. The sale
-		// itself is handled once per step by step(), which also covers fragments
-		// caught during the same step.
-		platform.x = Math.max(minX, Math.min(maxX, platform.x));
-		world.heat += 0.5 * mass * velocity * velocity;
-		platform.vx = 0;
+		if (platform.x < minX || platform.x > maxX) {
+			// A wall stop is a crash, not braking: all of it becomes heat. The sale
+			// itself is handled once per step by step(), which also covers fragments.
+			platform.x = Math.max(minX, Math.min(maxX, platform.x));
+			world.heat += 0.5 * mass * velocity * velocity;
+			platform.vx = 0;
+		}
+		updatePlatformTerrain(world, dt);
 	}
 
 	function downwardTime(ball, height) {
@@ -408,10 +529,10 @@
 		ball.vy -= impulseVelocity * ny;
 	}
 
-	function advanceBall(world, dt, oldPlatformX) {
+	function advanceBall(world, dt) {
 		const ball = world.ball;
 		if (ball.state === 'held') {
-			ball.x = world.platform.x - config.platformWidth * 0.32;
+			setHeldBallPose(world);
 			return;
 		}
 		if (ball.state === 'grounded') {
@@ -451,15 +572,25 @@
 					rockY = rockHit.y;
 				}
 			}
-			const deckTime = ball.y >= config.deck + config.radius - 1e-10 ? downwardTime(ball, config.deck + config.radius) : Infinity;
-			const platformX = oldPlatformX + (world.platform.x - oldPlatformX) * (elapsed + deckTime) / dt;
-			const impactX = ball.x + ball.vx * deckTime;
-			const collectorEdgeX = platformX - config.platformWidth * 0.5 + config.platformWidth * config.collectorFraction;
-			if (deckTime <= time && impactX >= platformX - config.platformWidth * 0.5 && impactX <= collectorEdgeX) { time = deckTime; type = 4; }
-			const platformVelocity = (world.platform.x - oldPlatformX) / dt;
-			const pistonCentreX = oldPlatformX + platformVelocity * elapsed + config.pistonCentre;
-			const pistonTime = pistonContactTime(ball.x, ball.y, ball.vx, ball.vy, pistonCentreX, platformVelocity, world.pistonAngle, remaining);
-			if (pistonTime <= time) { time = pistonTime; type = 6; }
+			const collectorWidth = config.platformWidth * config.collectorFraction;
+			const collectorCentre = -config.platformWidth * 0.5 + collectorWidth * 0.5;
+			platformSurfaceAt(world, elapsed, dt, collectorCentre, config.deck, 0, collectorSurfaceScratch);
+			const deckTime = planeContactTime(ball.x, ball.y, ball.vx, ball.vy, collectorSurfaceScratch.x, collectorSurfaceScratch.y,
+				collectorSurfaceScratch.vx, collectorSurfaceScratch.vy, collectorSurfaceScratch.angle, remaining, collectorWidth * 0.5);
+			if (deckTime <= time) { time = deckTime; type = 4; }
+			platformSurfaceAt(world, elapsed, dt, config.pistonCentre, config.deck, world.pistonAngle, pistonSurfaceScratch);
+			const pistonTime = pistonContactTime(ball.x, ball.y, ball.vx, ball.vy, pistonSurfaceScratch.x, pistonSurfaceScratch.y,
+				pistonSurfaceScratch.vx, pistonSurfaceScratch.vy, pistonSurfaceScratch.angle, remaining);
+			let pistonAngleAtContact = 0;
+			let pistonVxAtContact = 0;
+			let pistonVyAtContact = 0;
+			if (pistonTime <= time) {
+				time = pistonTime;
+				type = 6;
+				pistonAngleAtContact = pistonSurfaceScratch.angle - world.platform.angle;
+				pistonVxAtContact = pistonSurfaceScratch.vx;
+				pistonVyAtContact = pistonSurfaceScratch.vy;
+			}
 			ball.x += ball.vx * time;
 			ball.y += ball.vy * time - 0.5 * config.ballGravity * time * time;
 			ball.vy -= config.ballGravity * time;
@@ -504,8 +635,8 @@
 				continue;
 			}
 			if (type === 6) {
-				const angle = world.pistonAngle;
-				solvePiston(world, ball.vx, ball.vy, angle, 0, contact);
+				const angle = pistonAngleAtContact;
+				solvePiston(world, ball.vx, ball.vy, angle, 0, contact, pistonVxAtContact, pistonVyAtContact);
 				if (contact.impact <= 0) continue;
 				// Compression follows the normal impact speed; the spring in
 				// step() then extends the face back out as the visible push.
@@ -515,8 +646,9 @@
 				// The impact heat lands before the pulse is priced, so the derate sees
 				// it; the boost is then re-solved with what the reserve really delivers.
 				world.heat += contact.heat;
+				world.terrainWork += contact.surfaceWork;
 				const push = world.drive ? spend(world, pulseNow() * thermalFactor(world)) : 0;
-				if (push > 0) solvePiston(world, ball.vx, ball.vy, angle, push, contact);
+				if (push > 0) solvePiston(world, ball.vx, ball.vy, angle, push, contact, pistonVxAtContact, pistonVyAtContact);
 				ball.vx = contact.vx;
 				ball.vy = contact.vy;
 				world.platform.vx = contact.platformVx;
@@ -533,9 +665,8 @@
 	}
 
 	function step(world, dt) {
-		const oldX = world.platform.x;
 		movePlatform(world, dt);
-		advanceBall(world, dt, oldX);
+		advanceBall(world, dt);
 		advancePiston(world, dt);
 		charge(world, dt);
 		if (root.SteamCeiling) {
@@ -555,6 +686,7 @@
 	const api = {
 		config, createWorld, step, launch, canLaunch, launchCapacity, ballEnergy, totalEnergy, temperature,
 		thermalFactor, coolingPower, platformMass, platformMin, platformMax, dryMass,
+		platformPitchAt, platformBaseAt, platformPointAt, platformSurfaceAt, planeContactTime,
 		chargePadMin, chargePadMax, onChargePad, charging,
 		retentionNow, pulseNow, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
 		setPistonAngle, pistonContactTime, solvePiston, contactResult

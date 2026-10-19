@@ -187,6 +187,79 @@ test('ground stops the ball; moving over it recovers it', () => {
 	balanced(w);
 });
 
+test('the platform rides over a smooth rubble ramp without clipping the chassis or wheels', () => {
+	const w = physics.createWorld();
+	const state = ceiling.state;
+	state.floorPiles.fill(0);
+	for (let column = 32; column <= 96; column++) state.floorPiles[column] = 0.6 * (column - 32) / (96 - 32);
+	const drawContext = { fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} };
+	ceiling.drawFloor(drawContext);
+	w.platform.x = 4.8;
+	w.platform.previousX = 4.8;
+	w.platform.y = 0;
+	w.platform.previousY = 0;
+	w.platform.angle = 0;
+	w.platform.previousAngle = 0;
+	w.platform.vx = 0;
+	w.direction = 1;
+	w.target = NaN;
+	sync(w);
+	run(w, 0.35);
+	assert.ok(w.platform.x > 4.8, 'the platform continues to drive along the ground');
+	assert.ok(w.platform.y > 0.05, 'the chassis rises with the rubble heightmap');
+	assert.ok(w.platform.angle > 0, 'the chassis pitches toward the rising terrain');
+	assert.ok(w.platform.angle <= c.platformMaxPitch);
+	assert.ok(w.platform.y >= physics.platformBaseAt(w.platform.x, w.platform.angle) - 1e-9);
+	const bodyBottom = c.platformBodyBottom;
+	for (let localX = -c.platformWidth * 0.5; localX <= c.platformWidth * 0.5 + 1e-9; localX += state.cell * 0.5) {
+		const groundX = w.platform.x + localX * Math.cos(w.platform.angle) - bodyBottom * Math.sin(w.platform.angle);
+		const underside = w.platform.y + localX * Math.sin(w.platform.angle) + bodyBottom * Math.cos(w.platform.angle);
+		assert.ok(underside >= ceiling.floorAt(groundX) - 1e-8, 'the chassis stays above the floor');
+	}
+	for (const sign of [-1, 1]) {
+		const localX = sign * c.platformWheelHalfSpan;
+		const radius = c.platformWheelRadius;
+		const groundX = w.platform.x + localX * Math.cos(w.platform.angle) - radius * Math.sin(w.platform.angle);
+		const wheelBottom = w.platform.y + localX * Math.sin(w.platform.angle) + radius * Math.cos(w.platform.angle) - radius;
+		assert.ok(wheelBottom >= ceiling.floorAt(groundX) - 1e-8, 'the wheels stay on or above the ground');
+	}
+	balanced(w);
+	physics.createWorld();
+});
+
+test('collector and piston contact follow a raised terrain-following deck', () => {
+	const w = physics.createWorld();
+	ceiling.state.floorPiles.fill(0.4);
+	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} });
+	w.platform.y = 0.4;
+	w.platform.previousY = 0.4;
+	w.platform.angle = 0;
+	w.platform.previousAngle = 0;
+	w.ball.x = 10.7;
+	w.ball.y = w.platform.y + c.deck + c.radius + 0.02;
+	w.ball.vx = 0;
+	w.ball.vy = -10;
+	w.ball.state = 'flying';
+	w.drive = false;
+	sync(w);
+	physics.step(w, c.step);
+	assert.equal(w.ball.state, 'held', 'the collector catches the falling ball at its raised deck plane');
+	near(w.ball.y, w.platform.y + c.deck + c.radius);
+	balanced(w);
+
+	w.ball.state = 'flying';
+	w.ball.x = w.platform.x + c.pistonCentre;
+	w.ball.y = w.platform.y + c.deck + c.radius + 0.02;
+	w.ball.vx = 0;
+	w.ball.vy = -10;
+	sync(w);
+	physics.step(w, c.step);
+	assert.equal(w.bounces, 1, 'the piston catches a ball at the raised terrain-following plane');
+	assert.equal(w.ball.state, 'flying');
+	balanced(w);
+	physics.createWorld();
+});
+
 test('the ball grounds on fallen rubble at the pile surface and keeps the ledger exact', () => {
 	const w = physics.createWorld();
 	const state = ceiling.state;

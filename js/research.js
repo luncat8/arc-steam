@@ -78,17 +78,15 @@
 		return AVAILABLE;
 	}
 
-	// Research couples added or removed mass to the moving platform exactly like
-	// an equipment installation, so the physics helper is shared.
-	function research(id, world) {
-		const node = find(id);
-		if (!node || status(id) !== AVAILABLE) return false;
+	function apply(node, world, testGrant) {
 		const economy = root.SteamCeiling;
 		if (!economy) return false;
 		const physics = root.SteamPhysics;
 		const oldMass = world && physics ? physics.platformMass(world) : 0;
-		if (!economy.purchase(node.name, node.cost, world ? world.time : 0, 'research')) return false;
-		done.add(id);
+		const time = world ? world.time : 0;
+		const booked = testGrant ? economy.grant(node.name, time, 'research') : economy.purchase(node.name, node.cost, time, 'research');
+		if (!booked) return false;
+		done.add(node.id);
 		installedMass += node.massDelta || 0;
 		installedRetention += node.retentionBonus || 0;
 		installedPulse += node.pulseBonus || 0;
@@ -96,6 +94,28 @@
 		if (node.capability === 'prediction') predictionEnabled = true;
 		if (physics) physics.applyMassChange(world, node.massDelta || 0, oldMass);
 		return true;
+	}
+
+	// Research couples added or removed mass to the moving platform exactly like
+	// an equipment installation, so the physics helper is shared.
+	function research(id, world) {
+		const node = find(id);
+		if (!node || status(id) !== AVAILABLE) return false;
+		return apply(node, world, false);
+	}
+
+	// Test mode grants every node without funds or prerequisite checks, while
+	// retaining the same measured effects and mass/energy bookkeeping.
+	function grant(id, world) {
+		const node = find(id);
+		if (!node || done.has(id)) return false;
+		return apply(node, world, true);
+	}
+
+	function researchAll(world) {
+		let granted = 0;
+		for (const node of nodes) if (grant(node.id, world)) granted++;
+		return granted;
 	}
 
 	function reset() {
@@ -107,7 +127,7 @@
 		predictionEnabled = false;
 	}
 
-	const api = { nodes, state, status, constants: Object.freeze({ LOCKED, AVAILABLE, RESEARCHED }), find, isResearched, research, reset };
+	const api = { nodes, state, status, constants: Object.freeze({ LOCKED, AVAILABLE, RESEARCHED }), find, isResearched, research, grant, researchAll, reset };
 	root.SteamResearch = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
