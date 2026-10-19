@@ -101,6 +101,7 @@ function runTrip(shape, seed, maxSeconds, upgrades) {
 		maxSpeed, maxPlatformSpeed, maxTemperature, minimumPower,
 		upgrades: upgrades ? ownedCount() : 0, spent: upgrades ? spent() : 0,
 		refuels: upgrades ? refuels() : 0, imported: upgrades ? w.importedEnergy / 1000 : 0,
+		pad: w.chargedEnergy / 1000,
 		state: w.ball.state
 	};
 }
@@ -116,7 +117,7 @@ for (const [label, upgrades] of modes) {
 			console.log(
 				`${shape.padEnd(6)} seed ${String(seed).padStart(2)}  t ${r.time.toFixed(0)}s  extracted ${String(r.extracted).padStart(4)}  caught ${String(r.caught).padStart(4)}  lost ${String(r.lost).padStart(4)}` +
 				`  sold ${String(r.sold).padStart(4)}  earned ${r.earned.toFixed(0).padStart(5)} cr  credits ${r.credits.toFixed(0).padStart(5)}  sales ${r.trips}  battery ${(r.batteryUsed / 1000).toFixed(2)} kJ  ballSpeed ${r.maxSpeed.toFixed(1)}  platformSpeed ${r.maxPlatformSpeed.toFixed(1)}` +
-				`  maxTemp ${r.maxTemperature.toFixed(1)} C  minPower ${(r.minimumPower * 100).toFixed(0)}%` +
+				`  maxTemp ${r.maxTemperature.toFixed(1)} C  minPower ${(r.minimumPower * 100).toFixed(0)}%  pad ${r.pad.toFixed(2)} kJ` +
 				(upgrades ? `  upgrades ${r.upgrades}/${progression.length}  spent ${r.spent.toFixed(0)} cr  refuels ${r.refuels}  imported ${r.imported.toFixed(1)} kJ` : '')
 			);
 		}
@@ -129,6 +130,7 @@ for (const [label, upgrades] of modes) {
 		console.log(`  gross income ${avg('earned').toFixed(0)} cr/shift, ${(avg('earned') / avg('time') * 60).toFixed(1)} cr/min, ${avg('trips').toFixed(1)} wall sales, ${(avg('earned') / Math.max(1, avg('trips'))).toFixed(0)} cr/sale, ${avg('credits').toFixed(0)} cr unspent`);
 		console.log(`  energy ${(avg('batteryUsed') / avg('time')).toFixed(1)} W average draw, ball speed ${avg('maxSpeed').toFixed(1)} m/s, platform speed ${avg('maxPlatformSpeed').toFixed(1)} m/s`);
 		console.log(`  maxTemperature ${avg('maxTemperature').toFixed(1)} °C average, minimum drive output ${(avg('minimumPower') * 100).toFixed(0)}%`);
+		console.log(`  centre-pad charging ${avg('pad').toFixed(2)} kJ per shift (${(avg('pad') / avg('time') * 1000).toFixed(1)} W average)`);
 		if (upgrades) console.log(`  progression ${avg('upgrades').toFixed(1)}/${progression.length} nodes owned, ${avg('spent').toFixed(0)} cr spent of ${avg('earned').toFixed(0)} cr earned, ${avg('refuels').toFixed(1)} recharges importing ${avg('imported').toFixed(1)} kJ`);
 	}
 }

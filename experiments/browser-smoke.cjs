@@ -5,6 +5,15 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
 
+// Mirror the renderer's chamber transform to click a known world point.
+async function chamberClick(page, worldX, worldY) {
+	const box = await page.locator('#c').boundingBox();
+	const scale = Math.min((box.width - 32) / 25.5, (box.height - 80) / 10);
+	const offsetX = (box.width - 25.5 * scale) / 2 + 1.5 * scale;
+	const floorY = (box.height + 10 * scale) / 2 + 9;
+	await page.locator('#c').click({ position: { x: offsetX + worldX * scale, y: floorY - worldY * scale } });
+}
+
 async function main() {
 	const options = { headless: true };
 	if (process.env.CHROMIUM_PACKAGE) {
@@ -97,25 +106,30 @@ async function main() {
 		await page.locator('#shape').selectOption('square');
 		assert.equal(await page.locator('#shape').inputValue(), 'square');
 		await page.locator('#shape').selectOption('smooth');
-		await page.locator('#mineral-column').fill('10');
-		assert.equal(await page.locator('#column-label').textContent(), '10 / 192');
-		await page.locator('#mineral-layer').fill('2');
-		assert.equal(await page.locator('#layer-label').textContent(), '2 / 16');
+		// The inspector follows clicks now: sliders are gone, and the low band
+		// commands travel while open air between the zones does nothing.
+		assert.equal(await page.locator('#mineral-column, #mineral-layer').count(), 0, 'inspector sliders removed');
+		assert.match(await page.locator('#mineral-cell').textContent(), /^Column \d+ \/ 192 · Layer \d+ \/ 16$/);
 		assert.match(await page.locator('#mineral-strength').textContent(), /J/);
 		assert.equal(await page.locator('#transaction-count').textContent(), '(0)');
+		assert.match(await page.locator('#reserve-note').textContent(), /Centre pad|Reserve full|Charging/);
+		assert.match(await page.locator('.mine-footer').textContent(), /CHARGE PAD · 3 kW/);
 		// Locked upgrades explain themselves instead of failing silently: blocked buttons are
 		// aria-disabled, so the click reaches the handler (force skips Playwright's enabled check).
 		await page.locator('#research-rows .upgrade-row').last().locator('button').click({ force: true });
 		assert.match(await page.locator('#research-status').textContent(), /stays locked until/);
 		await page.locator('#equipment-rows .upgrade-row').first().locator('button').click({ force: true });
 		assert.match(await page.locator('#equipment-status').textContent(), /needs the .* research first/);
-		await page.locator('#c').click({ position: { x: 500, y: 50 } });
-		assert.notEqual(await page.locator('#column-label').textContent(), '10 / 192');
-		assert.notEqual(await page.locator('#layer-label').textContent(), '2 / 16');
-		await page.locator('#c').click({ position: { x: 100, y: 200 } });
+		const inspected = await page.locator('#mineral-cell').textContent();
+		await chamberClick(page, 12, 9.5);
+		assert.notEqual(await page.locator('#mineral-cell').textContent(), inspected, 'a rock click moves the inspector');
+		await page.waitForTimeout(300);
+		assert.equal(await page.locator('#motion').textContent(), '0.00 m/s', 'a rock click does not command travel');
+		await chamberClick(page, 5, 0.5);
 		await page.waitForTimeout(400);
 		assert.notEqual(await page.locator('#motion').textContent(), '0.00 m/s');
 		assert.equal(await page.locator('#launch').isDisabled(), true);
+		assert.match(await page.locator('#mineral-cell').textContent(), /^Column \d+ \/ 192 · Layer \d+ \/ 16$/, 'travel does not change the selected cell');
 		assert.ok(Math.abs(parseFloat(await page.locator('#error').textContent())) < 0.00001);
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.waitForTimeout(100);
@@ -130,7 +144,7 @@ async function main() {
 		assert.equal(await touch.locator('#view-modes input[value="minerals"]').isChecked(), true, 'hover does not switch on touch');
 		await touch.locator('#view-modes label', { hasText: 'Price' }).tap();
 		assert.equal(await touch.locator('#view-modes input[value="price"]').isChecked(), true, 'tap switches on touch');
-		console.log('PASS: startup, four-row layout, view-mode hover/click/arrow keys with paused redraw and touch gating, drive toggle (Space/Q without pressing GUI controls), keyboard force, pause/reset, shape selector, inspector select, target travel, research/equipment gating, ledger, narrow layout; no page errors.');
+		console.log('PASS: startup, four-row layout, view-mode hover/click/arrow keys with paused redraw and touch gating, drive toggle (Space/Q without pressing GUI controls), keyboard force, pause/reset, shape selector, inspector click without sliders, rock-versus-low click zones, target travel, centre pad note, research/equipment gating, ledger, narrow layout; no page errors.');
 	} finally {
 		await browser.close();
 	}

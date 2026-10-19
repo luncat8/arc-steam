@@ -6,10 +6,11 @@
 	const context = canvas.getContext('2d');
 	const ids = ['clock', 'drive', 'launch', 'status', 'prediction-status', 'force', 'force-value', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'view-modes',
 		'platform-spec', 'research-rows', 'research-status', 'research-progress',
-		'mineral-column', 'column-label', 'mineral-layer', 'layer-label', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
+		'mineral-cell', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
 		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger', 'equipment-rows', 'equipment-status',
-		'refuel', 'refuel-cost', 'fuel-price'];
+		'refuel', 'refuel-cost', 'fuel-price', 'reserve-note', 'cargo-note',
+		'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry'];
 	const ui = {};
 	for (const id of ids) ui[id] = document.getElementById(id);
 	let selectedColumn = 95;
@@ -203,6 +204,19 @@
 	const hoverPointer = window.matchMedia('(hover: hover) and (pointer: fine)');
 	const viewMinX = -1.5;
 	const viewWidth = 25.5;
+	// Clicks below this height are travel commands; rock clicks inspect instead.
+	// The target marker is drawn to the same height, so the zones are visible.
+	const moveClickHeight = 1.7;
+	const warningState = { 'reserve-telemetry': '', 'cargo-telemetry': '', 'thermal-telemetry': '' };
+	const padLabel = 'CHARGE PAD · 3 kW';
+	const padLabelActive = 'CHARGING';
+
+	function setWarning(id, state) {
+		if (warningState[id] === state) return;
+		warningState[id] = state;
+		if (state) ui[id].dataset.warning = state;
+		else delete ui[id].dataset.warning;
+	}
 
 	function resize() {
 		const bounds = canvas.getBoundingClientRect();
@@ -233,6 +247,13 @@
 		context.stroke();
 		context.fillStyle = '#29383d';
 		context.fillRect(-pocketDepth, -0.35, config.width + pocketDepth, 0.35);
+		const padMin = physics.chargePadMin();
+		const padMax = physics.chargePadMax();
+		const chargingNow = physics.charging(world);
+		context.fillStyle = chargingNow ? '#2a4a3b' : '#1b3038';
+		context.fillRect(padMin, -0.35, padMax - padMin, 0.35);
+		context.fillStyle = chargingNow ? '#b9ed91' : '#7fb6d9';
+		for (let x = padMin + 0.25; x < padMax; x += 0.5) context.fillRect(x, -0.35, 0.08, 0.35);
 		context.fillRect(-pocketDepth - 0.3, 0, 0.3, pocketTop);
 		context.fillRect(-0.3, pocketTop, 0.3, config.ceiling - pocketTop);
 		context.fillRect(0, config.ceiling, config.width, 0.35);
@@ -274,6 +295,7 @@
 		context.restore();
 		drawSellLabel(offsetX + 8, floorY - scale * 1.4, -Math.PI * 0.5);
 		drawSellLabel(offsetX + config.width * scale - 8, floorY - scale * 1.4, Math.PI * 0.5);
+		drawPadLabel(offsetX + config.width * 0.5 * scale, floorY + 0.35 * scale + 12, chargingNow);
 	}
 
 	// Ballistic overlay, drawn in world units inside the chamber transform: the
@@ -309,6 +331,13 @@
 		context.restore();
 	}
 
+	function drawPadLabel(x, y, active) {
+		context.fillStyle = active ? '#b9ed91' : '#7fb6d9';
+		context.font = '700 9px ui-monospace, monospace';
+		context.textAlign = 'center';
+		context.fillText(active ? padLabelActive : padLabel, x, y);
+	}
+
 	// One ledger carries sales, purchases and research; each entry keeps its own
 	// wording so the money trail stays explicit.
 	function ledgerText(entry) {
@@ -332,8 +361,7 @@
 		const offset = index * 3;
 		const remaining = ceiling.strength[index];
 		const initial = ceiling.initialStrength[index];
-		ui['column-label'].textContent = (selectedColumn + 1) + ' / ' + ceiling.columns;
-		ui['layer-label'].textContent = (selectedLayer + 1) + ' / ' + ceiling.rows;
+		ui['mineral-cell'].textContent = 'Column ' + (selectedColumn + 1) + ' / ' + ceiling.columns + ' · Layer ' + (selectedLayer + 1) + ' / ' + ceiling.rows;
 		ui['mineral-strength'].textContent = remaining.toFixed(2) + ' / ' + initial.toFixed(2) + ' J' + (remaining === 0 ? ' · depleted' : ' · remaining strength');
 		ui['strength-meter'].value = initial > 0 ? remaining / initial : 0;
 		ui['mineral-composition'].textContent = 'Fe ' + (ceiling.minerals[offset] * 100).toFixed(1) + '% · Cu ' + (ceiling.minerals[offset + 1] * 100).toFixed(1) + '% · Cr ' + (ceiling.minerals[offset + 2] * 100).toFixed(1) + '%';
@@ -383,7 +411,20 @@
 		ui.clock.textContent = world.time.toFixed(1) + ' s';
 		ui.battery.textContent = (world.battery / 1000).toFixed(2) + ' kJ';
 		const ceiling = window.SteamCeiling.state;
+		const reserveWarning = world.battery < 0.5 ? 'EMPTY' : world.battery < config.battery * 0.1 ? 'LOW' : '';
+		const onPad = physics.onChargePad(world);
+		const chargingNow = physics.charging(world);
+		setWarning('reserve-telemetry', reserveWarning);
+		if (chargingNow) ui['reserve-note'].textContent = 'Charging ' + (config.chargePower / 1000).toFixed(1) + ' kW · ' + ((config.battery - world.battery) / config.chargePower).toFixed(1) + ' s to full';
+		else if (onPad && world.battery >= config.battery) ui['reserve-note'].textContent = 'Reserve full · centre pad';
+		else if (onPad) ui['reserve-note'].textContent = 'On the centre pad · stop to charge (' + config.chargeSeconds + ' s full)';
+		else if (reserveWarning === 'EMPTY') ui['reserve-note'].textContent = 'Empty · market import or reach the centre pad';
+		else if (reserveWarning) ui['reserve-note'].textContent = 'Low reserve · park on the centre pad';
+		else ui['reserve-note'].textContent = 'Centre pad refills free in ' + config.chargeSeconds + ' s · emergency import in the market';
 		const heldMass = world.ball.state === 'held' ? config.ballMass : 0;
+		const cargoFull = ceiling.cargoCells >= ceiling.storageLimit;
+		setWarning('cargo-telemetry', cargoFull ? 'FULL' : '');
+		ui['cargo-note'].textContent = cargoFull ? 'Full · extra fragments are refused until you sell at a wall' : '100 cells maximum · cargo adds mass';
 		ui.cargo.textContent = ceiling.cargoCells + ' / ' + ceiling.storageLimit;
 		ui['platform-mass'].textContent = (physics.dryMass() + ceiling.cargoMass + heldMass).toFixed(1) + ' kg';
 		ui.funds.textContent = ceiling.funds.toFixed(1) + ' cr';
@@ -392,9 +433,10 @@
 		const temperature = physics.temperature(world);
 		const thermalFactor = physics.thermalFactor(world);
 		ui.temperature.textContent = temperature.toFixed(1) + ' °C';
+		setWarning('thermal-telemetry', thermalFactor === 0 ? 'CUTOFF' : thermalFactor < 1 ? 'HOT' : '');
 		ui['thermal-status'].textContent = thermalFactor >= 1 ? 'Drive output 100% · cooling normally'
-			: thermalFactor > 0 ? 'Drive output ' + Math.round(thermalFactor * 100) + '% · cooling'
-			: 'Thermal cutoff · cool before powering';
+			: thermalFactor > 0 ? 'Overheating · drive output ' + Math.round(thermalFactor * 100) + '%'
+			: 'Cutoff · cool before powering';
 		ui.cooled.textContent = world.cooledEnergy.toFixed(1) + ' J';
 		ui.error.textContent = (physics.totalEnergy(world) - world.initialEnergy).toFixed(6) + ' J';
 		ui.motion.textContent = world.platform.vx.toFixed(2) + ' m/s';
@@ -434,6 +476,29 @@
 		if (!input || input.name !== viewGroup) return;
 		input.checked = true;
 		setViewMode(input.value);
+	}
+
+	// Click zones: visible rock selects an inspector cell; the low band near the
+	// ground commands travel. Open air between them does neither, so inspecting
+	// rock never moves the platform by accident.
+	function rockCellIndex(worldX, worldY) {
+		const ceiling = window.SteamCeiling.state;
+		if (worldX < 0 || worldX > config.width || worldY < ceiling.bottom || worldY > ceiling.top) return -1;
+		const column = Math.min(ceiling.columns - 1, Math.floor(worldX / ceiling.cell));
+		const row = Math.min(ceiling.rows - 1, Math.floor((worldY - ceiling.bottom) / ceiling.cell));
+		const index = row * ceiling.columns + column;
+		if (ceiling.shape === 'square') return ceiling.strength[index] > 0 ? index : -1;
+		// The smooth surface is drawn as a linear profile between column vertices.
+		const fraction = (worldX - column * ceiling.cell) / ceiling.cell;
+		const surface = ceiling.heightmap[column] + (ceiling.heightmap[column + 1] - ceiling.heightmap[column]) * fraction;
+		return worldY >= surface ? index : -1;
+	}
+
+	function selectCell(index) {
+		const columns = window.SteamCeiling.state.columns;
+		selectedColumn = index % columns;
+		selectedLayer = Math.floor(index / columns);
+		refresh();
 	}
 
 	function updateDirection() {
@@ -524,24 +589,20 @@
 	ui['view-modes'].addEventListener('change', viewModeChanged);
 	ui['view-modes'].addEventListener('pointerover', viewModeHovered);
 	ui.force.addEventListener('input', function () { setForce(Number(ui.force.value) / 100); });
-	ui['mineral-column'].addEventListener('input', function () { selectedColumn = Number(ui['mineral-column'].value) - 1; refresh(); });
-	ui['mineral-layer'].addEventListener('input', function () { selectedLayer = Number(ui['mineral-layer'].value) - 1; refresh(); });
 	canvas.addEventListener('pointerdown', function (event) {
 		const bounds = canvas.getBoundingClientRect();
 		const worldX = (event.clientX - bounds.left - offsetX) / scale;
 		const worldY = (floorY - (event.clientY - bounds.top)) / scale;
-		const ceiling = window.SteamCeiling.state;
-		if (worldY >= ceiling.bottom && worldX >= 0 && worldX <= config.width) {
-			selectedColumn = Math.max(0, Math.min(ceiling.columns - 1, Math.floor(worldX / ceiling.cell)));
-			selectedLayer = Math.max(0, Math.min(ceiling.rows - 1, Math.floor((worldY - ceiling.bottom) / ceiling.cell)));
-			ui['mineral-column'].value = selectedColumn + 1;
-			ui['mineral-layer'].value = selectedLayer + 1;
-			refresh();
+		const cell = rockCellIndex(worldX, worldY);
+		if (cell >= 0) {
+			selectCell(cell);
 			canvas.focus();
 			return;
 		}
-		world.target = Math.max(physics.platformMin(), Math.min(physics.platformMax(), worldX));
-		sceneDirty = true;
+		if (worldY <= moveClickHeight && worldX >= 0 && worldX <= config.width) {
+			world.target = Math.max(physics.platformMin(), Math.min(physics.platformMax(), worldX));
+			sceneDirty = true;
+		}
 		canvas.focus();
 	});
 	window.addEventListener('keydown', keydown);

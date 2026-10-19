@@ -1,4 +1,4 @@
-:root { color-scheme: dark; font-family: system-ui, sans-serif; color: #dce6e4; background: #0c1215; --line: #29363a; --muted: #82959a; --accent: #b9ed91; --amber: #e6b66e; --control-line: #3a4c50; }
+:root { color-scheme: dark; font-family: system-ui, sans-serif; color: #dce6e4; background: #0c1215; --line: #29363a; --muted: #82959a; --accent: #b9ed91; --amber: #e6b66e; --power: #7fb6d9; --danger: #e0775e; --control-line: #3a4c50; }
 * { box-sizing: border-box; }
 body { margin: 0; }
 small { display: block; }
@@ -31,10 +31,18 @@ main { max-width: 1920px; margin: auto; padding: 16px 2vw 24px; display: grid; g
 .system-options { margin-left: auto; }
 
 .telemetry { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 1px; overflow: hidden; background: var(--line); }
-.telemetry article { min-width: 0; padding: 10px 14px 11px; background: #0c1215; }
+.telemetry article { position: relative; min-width: 0; padding: 10px 14px 11px; background: #0c1215; }
 .telemetry span { font: 9px ui-monospace, monospace; color: #94a8ac; letter-spacing: 1px; }
 .telemetry strong { display: block; font: 17px ui-monospace, monospace; margin: 6px 0 4px; }
 .telemetry small { font-size: 10px; color: #71868a; }
+/* Live warnings highlight the telemetry card that needs attention; the tag is
+   drawn from the data state, so the readout only flips one attribute. */
+.telemetry article[data-warning] { background: #1d1a11; box-shadow: inset 3px 0 0 var(--amber); }
+.telemetry article[data-warning] strong { color: var(--amber); }
+.telemetry article[data-warning]::after { content: attr(data-warning); position: absolute; top: 7px; right: 10px; padding: 2px 5px; border-radius: 2px; background: var(--amber); color: #16130b; font: 8px ui-monospace, monospace; letter-spacing: 1px; }
+.telemetry article[data-warning="EMPTY"], .telemetry article[data-warning="CUTOFF"] { background: #231412; box-shadow: inset 3px 0 0 var(--danger); }
+.telemetry article[data-warning="EMPTY"] strong, .telemetry article[data-warning="CUTOFF"] strong { color: var(--danger); }
+.telemetry article[data-warning="EMPTY"]::after, .telemetry article[data-warning="CUTOFF"]::after { background: var(--danger); color: #1b0f0c; }
 
 .workspace { display: grid; gap: 12px; grid-template-columns: 260px minmax(0, 1fr) 250px 210px; grid-template-areas: "tech mine controls inspector"; }
 .tech-panel { grid-area: tech; }
@@ -49,6 +57,7 @@ canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 .key-color { display: inline-block; height: 7px; width: 12px; margin-right: 7px; }
 .collector { background: var(--amber); }
 .reflector { background: var(--accent); }
+.pad { background: var(--power); }
 .view-switch { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .view-modes { display: flex; flex-wrap: wrap; border: 1px solid var(--control-line); border-radius: 4px; overflow: hidden; }
 .view-modes label { position: relative; padding: 6px 10px; font: 9px ui-monospace, monospace; letter-spacing: 1px; color: #94a8ac; cursor: pointer; user-select: none; }
@@ -72,6 +81,8 @@ canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 .experiment { border-top: 1px solid var(--line); padding: 14px 16px; }
 .experiment p { font-size: 11px; margin-bottom: 0; }
 
+#mineral-cell { display: block; margin-bottom: 10px; font: 11px ui-monospace, monospace; letter-spacing: 0.4px; color: var(--accent); }
+.mineral-panel .eyebrow { margin: 0 0 5px; }
 #mineral-strength { display: block; font: 14px ui-monospace, monospace; line-height: 1.6; }
 progress { width: 100%; height: 8px; accent-color: var(--amber); margin-top: 12px; }
 #mineral-composition, #mineral-price { font-size: 12px; }
@@ -128,7 +139,10 @@ summary { cursor: pointer; }
 }
 @media (max-width: 760px) {
 	main { padding: 12px; }
+	.system-bar { gap: 6px 14px; }
 	.system-options { margin-left: 0; }
+	.system-options label { display: flex; align-items: center; }
+	.system-options select { margin-left: 4px; max-width: 132px; }
 	.telemetry { grid-template-columns: 1fr 1fr; }
 	.telemetry strong { font-size: 13px; }
 	.workspace { grid-template-columns: minmax(0, 1fr); grid-template-areas: "mine" "controls" "inspector" "tech"; }

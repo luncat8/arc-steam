@@ -126,14 +126,60 @@ test('limited drive takes repeated pushes to reach ceiling height', () => {
 	balanced(w);
 });
 
-test('drive cannot create energy with an empty reserve', () => {
+test('drive cannot create energy with an empty reserve off the charge pad', () => {
 	const w = physics.createWorld();
 	w.battery = 0; w.drive = true;
+	// The centre pad would refill the reserve; this measures the empty drive.
+	w.platform.x = 8;
+	w.ball.x = 8.8;
 	w.ball.y = c.deck + c.radius; w.ball.vy = -5;
 	sync(w); physics.step(w, c.step);
 	near(w.lastPush, 0); balanced(w);
 	w.ball.state = 'held';
 	assert.equal(physics.launch(w), false);
+});
+
+test('the centre ground pad refills the reserve in four seconds and books the import', () => {
+	const w = physics.createWorld();
+	w.ball.state = 'held'; w.platform.x = 12; w.platform.vx = 0;
+	w.battery = 0;
+	sync(w);
+	assert.equal(physics.onChargePad(w), true);
+	assert.equal(physics.charging(w), true);
+	near(physics.chargePadMin(), 10);
+	near(physics.chargePadMax(), 14);
+	physics.step(w, c.step);
+	near(w.battery, c.chargePower * c.step);
+	near(w.importedEnergy, w.battery);
+	balanced(w);
+	// A full reserve takes four seconds; the pad then stops importing.
+	run(w, c.chargeSeconds + 1);
+	near(w.battery, c.battery);
+	near(w.importedEnergy, c.battery);
+	near(w.chargedEnergy, c.battery);
+	assert.equal(physics.charging(w), false, 'a full reserve draws nothing');
+	balanced(w);
+});
+
+test('the charge pad needs a standstill and the platform to be on it', () => {
+	const moving = physics.createWorld();
+	moving.ball.state = 'held'; moving.platform.x = 12; moving.platform.vx = 1;
+	moving.battery = 0;
+	sync(moving);
+	run(moving, 0.2);
+	near(moving.platform.x, 12.2);
+	near(moving.battery, 0, 1e-9);
+	near(moving.importedEnergy, 0, 1e-9);
+	balanced(moving);
+	const away = physics.createWorld();
+	away.ball.state = 'held'; away.platform.x = 3; away.platform.vx = 0;
+	away.battery = 0;
+	sync(away);
+	run(away, 1);
+	assert.equal(physics.onChargePad(away), false);
+	near(away.battery, 0, 1e-9);
+	near(away.importedEnergy, 0, 1e-9);
+	balanced(away);
 });
 
 test('convection and radiation cool the machinery without hiding exported energy', () => {

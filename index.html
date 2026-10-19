@@ -14,7 +14,7 @@
 			<button id="reset" class="quiet">New game ↺</button>
 			<div class="system-options"><label for="shape">ROCK SHAPE <select id="shape" autocomplete="off"><option value="smooth" selected>Smooth heightmap</option><option value="square">Square cells</option></select></label></div>
 		</header>
-		<section class="telemetry panel" aria-label="System telemetry"><article><span>ENERGY RESERVE</span><strong id="battery">—</strong><small>Shared movement & bounce supply · recharge in the market panel</small></article><article><span>CARGO STORAGE</span><strong id="cargo">—</strong><small>100 cells maximum · cargo adds mass</small></article><article><span>PLATFORM MASS</span><strong id="platform-mass">—</strong><small>Dry chassis + cargo + held ball</small></article><article><span>FUNDS / SOLD</span><strong id="funds">—</strong><small>Automatic sale at either wall</small></article><article><span>BALL ENERGY</span><strong id="ball-energy">—</strong><small>Kinetic + gravitational</small></article><article><span>STORED THERMAL ENERGY</span><strong id="heat">—</strong><small>Cooling exported <span id="cooled">—</span></small></article><article><span>MACHINERY TEMPERATURE</span><strong id="temperature">—</strong><small id="thermal-status">Drive output 100% · cooling normally</small></article><article><span>ENERGY BALANCE ERROR</span><strong id="error">—</strong><small>Includes heat, cooling, rock & cargo</small></article></section>
+		<section class="telemetry panel" aria-label="System telemetry"><article id="reserve-telemetry"><span>ENERGY RESERVE</span><strong id="battery">—</strong><small id="reserve-note">Centre pad refills free in 4 s · emergency import in the market</small></article><article id="cargo-telemetry"><span>CARGO STORAGE</span><strong id="cargo">—</strong><small id="cargo-note">100 cells maximum · cargo adds mass</small></article><article><span>PLATFORM MASS</span><strong id="platform-mass">—</strong><small>Dry chassis + cargo + held ball</small></article><article><span>FUNDS / SOLD</span><strong id="funds">—</strong><small>Automatic sale at either wall</small></article><article><span>BALL ENERGY</span><strong id="ball-energy">—</strong><small>Kinetic + gravitational</small></article><article><span>STORED THERMAL ENERGY</span><strong id="heat">—</strong><small>Cooling exported <span id="cooled">—</span></small></article><article id="thermal-telemetry"><span>MACHINERY TEMPERATURE</span><strong id="temperature">—</strong><small id="thermal-status">Drive output 100% · cooling normally</small></article><article><span>ENERGY BALANCE ERROR</span><strong id="error">—</strong><small>Includes heat, cooling, rock & cargo</small></article></section>
 		<section class="workspace">
 			<article class="tech-panel panel">
 				<div class="panel-title"><span>TECHNOLOGY / RESEARCH</span><span id="research-progress">0 / 6</span></div>
@@ -29,6 +29,7 @@
 				<div class="mine-footer">
 					<span><i class="key-color collector"></i> COLLECTOR · CATCH & STORE</span>
 					<span><i class="key-color reflector"></i> REFLECTOR · POWERED BOUNCE</span>
+					<span><i class="key-color pad"></i> CHARGE PAD · 3 kW</span>
 					<div class="view-switch"><span id="view-label">ROCK VIEW</span><div id="view-modes" class="view-modes" role="radiogroup" aria-labelledby="view-label">
 						<label><input type="radio" name="rock-view" value="minerals" autocomplete="off" checked>Minerals</label>
 						<label><input type="radio" name="rock-view" value="elements" autocomplete="off">Elements R/G/B</label>
@@ -39,21 +40,19 @@
 			</section>
 			<aside class="controls-panel panel">
 				<div class="panel-title"><span>PLATFORM / LOW-TIER DRIVE</span><span id="motion">0.00 m/s</span></div>
-				<div class="controls"><p class="eyebrow">BOUNCE ASSIST</p><button id="drive" class="drive" aria-pressed="false">Drive off <span>SPACE / Q</span></button><p class="hint">Each powered contact adds the pulse shown in the installed specification. Heat can derate the drive; several pushes reach the ceiling.</p><button id="launch" disabled>Release held ball <span>E</span></button><p id="status" role="status">Ball in flight</p><p id="prediction-status" class="hint" hidden></p><label for="force">Movement force <output id="force-value">60%</output></label><input id="force" type="range" min="10" max="100" value="60"><div class="control-row"><button id="left" aria-label="Move left">← A</button><button id="right" aria-label="Move right">D →</button></div><p class="hint">Hold A / D to drive or brake. W / S adjusts force. Space or Q toggles the bounce drive. Click the chamber to set a travel target. The collector docks into the left-wall pocket so the reflector can cover the wall.</p></div>
-				<div class="experiment"><span class="eyebrow">RECOVERY RULE</span><p>Ground contact dissipates all ball energy. Move over the ball to collect it, then enable the drive and release.</p><p>The collector also dissipates energy. Release transfers a held ball to the reflector; lifting energy is included in the pulse.</p></div>
+				<div class="controls"><p class="eyebrow">BOUNCE ASSIST</p><button id="drive" class="drive" aria-pressed="false">Drive off <span>SPACE / Q</span></button><p class="hint">Each powered contact adds the pulse shown in the installed specification. Heat can derate the drive; several pushes reach the ceiling.</p><button id="launch" disabled>Release held ball <span>E</span></button><p id="status" role="status">Ball in flight</p><p id="prediction-status" class="hint" hidden></p><label for="force">Movement force <output id="force-value">60%</output></label><input id="force" type="range" min="10" max="100" value="60"><div class="control-row"><button id="left" aria-label="Move left">← A</button><button id="right" aria-label="Move right">D →</button></div><p class="hint">Hold A / D to drive or brake. W / S adjusts force. Space or Q toggles the bounce drive. Click rock to inspect a cell; click low near the ground to set a travel target. The collector docks into the left-wall pocket so the reflector can cover the wall.</p></div>
+				<div class="experiment"><span class="eyebrow">RECOVERY · CHARGE</span><p>Ground contact dissipates all ball energy. Move over the ball to collect it, then enable the drive and release.</p><p>Park on the centre strip of ground to refill the reserve in 4 s; the market import is the rescue when the pad is out of reach.</p></div>
 			</aside>
 			<article class="mineral-panel panel">
 				<div class="panel-title">MINERAL INSPECTOR</div>
 				<div class="panel-body">
-					<label for="mineral-column">Column <output id="column-label">96 / 192</output></label>
-					<input id="mineral-column" type="range" min="1" max="192" value="96">
-					<label for="mineral-layer">Layer from bottom <output id="layer-label">1 / 16</output></label>
-					<input id="mineral-layer" type="range" min="1" max="16" value="1">
+					<p class="eyebrow">SELECTED CELL</p>
+					<strong id="mineral-cell">—</strong>
 					<strong id="mineral-strength">—</strong>
 					<progress id="strength-meter" max="1" value="1" aria-label="Remaining cell strength"></progress>
 					<p id="mineral-composition">—</p>
 					<p id="mineral-price">—</p>
-					<p class="hint">Strength is the fracture energy still needed, in joules. Click the rock to select a cell; the outlined cell is selected. A depleted cell emits material only once.</p>
+					<p class="hint">Strength is the fracture energy still needed, in joules. Click any visible rock cell to inspect it; the outlined cell is the selection. A depleted cell emits material only once.</p>
 				</div>
 			</article>
 		</section>
@@ -80,7 +79,7 @@
 				<div class="panel-title"><span>MARKET / LEDGER</span><span id="credits">0.0 cr</span></div>
 				<div class="panel-body">
 					<div class="summary"><div><span>Sold · lifetime</span><strong id="sold-mass">—</strong><small id="sold-value">—</small></div><div><span>Ledger</span><strong id="sale-count">—</strong><small>Sales, purchases, research, fuel</small></div></div>
-					<div class="refuel"><div><span>Reserve recharge</span><strong id="refuel-cost">—</strong><small>Buys imported energy at <span id="fuel-price">—</span> cr/kJ up to the full reserve; the import is tracked in the energy balance.</small></div><button id="refuel" disabled>Recharge</button></div>
+					<div class="refuel"><div><span>Emergency resupply</span><strong id="refuel-cost">—</strong><small>Instant import at <span id="fuel-price">—</span> cr/kJ, up to the full reserve. The centre pad refills free in 4 s, but only if the platform can get there.</small></div><button id="refuel" disabled>Recharge</button></div>
 					<p class="hint">Touch either wall marked SELL to sell the entire load automatically; sales, equipment purchases, research and recharges are all recorded below, each sale with its mineral mix.</p>
 					<p id="transaction-status" role="status">Catch fragments in the amber collector, then touch a SELL wall.</p>
 					<details open><summary>Transaction ledger <span id="transaction-count">(0)</span></summary><ol id="ledger" reversed aria-label="Latest eight transactions"></ol></details>

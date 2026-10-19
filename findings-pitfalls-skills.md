@@ -36,12 +36,18 @@ cd /home/user/arc-steam && LD_LIBRARY_PATH=/tmp/al/lib PLAYWRIGHT_PATH=/tmp/pw/n
 - A side column that must take the chamber's height instead of stretching the row uses `contain: size` plus `overflow-y: auto` in a grid. Turn it on in `min-width` queries, not as a base rule overridden later: a `.workspace > .panel:not(.mine-panel)` base selector outranks a single-class override and collapses the stacked panels to zero height.
 - Hover-to-switch is safe only for display state (rock view). The rock shape changes collision physics, so it stays a click-only select: a passing mouse must not change the game.
 
+## Interface pitfalls
+
+- A click on the chamber now has two meanings, so the zones must be visible and must not overlap: rock selects an inspector cell, the low band (the drawn 1.7 m target height) sets travel, and open air does neither. Testing rock by "is any strength left in this column" is not enough — the smooth renderer draws a sloped surface between column vertices, so hit-testing the same linear profile is what makes a crater-edge click land where the player sees rock.
+- Before the click-zone change, every chamber click set `world.target`. Any new "click does nothing" assertion must also assert `world.target` is unchanged, not just that the inspector text changed.
+
 ## Simulation pitfalls
 
 - `SteamCeiling.trace` returns a contact point on the *chord* of the swept parabola (linear in the swept fraction), while `advanceBall` integrates the true parabola. Any predictor must snap to `hit.x`/`hit.y` like the simulation does, or contacts drift by about 3e-5 m and predictions stop matching impacts.
 - A rock contact flips the ball downward: the ball hits the *underside* of the layer, so the outward normal points down. Assertions that expect an upward rebound after a rock hit are wrong.
 - `harness.near(actual, expected, tolerance)` has no message parameter. Passing a string as the third argument makes the comparison `0 < NaN`, which fails with a confusing `0 != 0` message.
 - Helpers that prepare cargo teleport fragments (`earnFunds` moves debris onto the collector), which destroys potential energy from the page's point of view. Call `sync(world)` after them before asserting `balanced(world)`, otherwise the balance check reports the teleport, not a bug.
+- The centre charge pad refills the reserve while the platform stands on it, so a test that wants an empty reserve must move the platform off the pad first (`world.platform.x = 3`). Without that, `step()` immediately books imported energy and a zero-reserve assertion fails at the first step. Tests that mutate `world.battery` directly also need `harness.sync(world)` before checking that the balance error is zero, because the mutation itself is not booked.
 - Braking, wall stops and the speed limiter are three different energy paths. Only controlled braking is recoverable; a wall clamp books its kinetic energy as heat directly, and the limiter needs no separate term because the battery is charged for the clamped kinetic-energy gain only.
 
 ## Architecture notes that held up

@@ -56,12 +56,14 @@ test('an empty reserve stops the platform until credits buy energy back', () => 
 	const w = physics.createWorld();
 	w.ball.state = 'held';
 	w.battery = 0;
+	// Off the centre charge pad, so the empty reserve cannot refill itself.
+	w.platform.x = 3;
 	w.direction = 1;
 	w.forceSetting = 1;
 	sync(w);
 	run(w, 1);
 	near(w.platform.vx, 0, 1e-9);
-	near(w.platform.x, 12, 1e-9);
+	near(w.platform.x, 3, 1e-9);
 	assert.equal(ceiling.recharge(w, w.time), 0, 'no funds, no energy');
 	balanced(w);
 	earnFunds(w, 100);

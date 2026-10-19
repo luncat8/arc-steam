@@ -2,6 +2,8 @@
 	'use strict';
 	const gravity = 9.81;
 	const ballSpeedScale = 1 / 1.5;
+	const reserveCapacity = 12000;
+	const chargeSeconds = 4;
 	const config = Object.freeze({
 		width: 24, ceiling: 10, gravity, ballGravity: gravity * ballSpeedScale * ballSpeedScale,
 		ballMass: 1 / (ballSpeedScale * ballSpeedScale), ballSpeedScale, radius: 0.18,
@@ -9,7 +11,11 @@
 		// Drive response: two 1.5x increases over the original 180 N / 7 m/s
 		// tuning, each rounded down to a whole number.
 		platformMass: 60, force: 400, maxSpeed: 10,
-		retention: 0.9, pulse: 36, efficiency: 0.8, battery: 12000, step: 1 / 240,
+		retention: 0.9, pulse: 36, efficiency: 0.8, battery: reserveCapacity, step: 1 / 240,
+		// Centre ground charge pad: a refuelling surface, not a consumable. It
+		// fills the reserve in four seconds while the platform stands on it, so
+		// the cost of energy is position and downtime rather than credits.
+		chargePadWidth: 4, chargeSeconds, chargePower: reserveCapacity / chargeSeconds, chargeMaxSpeed: 0.1,
 		recoveryEfficiency: 0.9,
 		ambientTemperature: 20, heatCapacity: 300,
 		convectiveConductance: 1.1, radiatorConvectionCoefficient: 8,
@@ -22,6 +28,26 @@
 
 	function platformMin() { return config.platformWidth * 0.5 - config.pocketDepth; }
 	function platformMax() { return config.width - config.platformWidth * 0.5; }
+
+	// The charge pad is a strip of ground at the chamber centre. Standing still
+	// on it hands the installed engine its fuel; a moving platform cannot
+	// collect, so recharging is a deliberate stop rather than free cruising.
+	function chargePadMin() { return config.width * 0.5 - config.chargePadWidth * 0.5; }
+	function chargePadMax() { return config.width * 0.5 + config.chargePadWidth * 0.5; }
+	function onChargePad(world) {
+		const x = world.platform.x;
+		return x >= chargePadMin() && x <= chargePadMax();
+	}
+	function charging(world) {
+		return onChargePad(world) && Math.abs(world.platform.vx) < config.chargeMaxSpeed && world.battery < config.battery;
+	}
+	function charge(world, dt) {
+		if (!charging(world)) return;
+		const added = Math.min(config.battery - world.battery, config.chargePower * dt);
+		world.battery += added;
+		world.importedEnergy += added;
+		world.chargedEnergy += added;
+	}
 
 	// Installed equipment and completed research contribute explicit deltas on
 	// top of base tuning through the same named channels.
@@ -70,7 +96,7 @@
 		if (root.SteamEquipment) root.SteamEquipment.reset();
 		if (root.SteamResearch) root.SteamResearch.reset();
 		const world = {
-			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0,
+			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, chargedEnergy: 0,
 			initialEnergy: 0,
 			drive: false, forceSetting: 0.6, direction: 0, target: NaN,
 			platform: { x: 12, vx: 0 },
@@ -357,6 +383,7 @@
 		const oldX = world.platform.x;
 		movePlatform(world, dt);
 		advanceBall(world, dt, oldX);
+		charge(world, dt);
 		if (root.SteamCeiling) {
 			const heldMass = world.ball.state === 'held' ? config.ballMass : 0;
 			root.SteamCeiling.step(world, dt, dryMass() + heldMass);
@@ -374,6 +401,7 @@
 	const api = {
 		config, createWorld, step, launch, canLaunch, ballEnergy, totalEnergy, temperature,
 		thermalFactor, coolingPower, platformMass, platformMin, platformMax, dryMass,
+		chargePadMin, chargePadMax, onChargePad, charging,
 		retentionNow, pulseNow, recoveryNow, conductanceNow, radiatorArea, applyMassChange
 	};
 	root.SteamPhysics = api;

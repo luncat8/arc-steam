@@ -215,6 +215,95 @@ test('the market panel recharges the reserve from measured funds', () => {
 	assert.ok(Math.abs(parseFloat(dom.element('error').textContent)) < 1e-4, dom.element('error').textContent);
 });
 
+// Catch a full load through the real collector, then let the page read it.
+function fillCargo(count) {
+	const state = ceiling.state;
+	const target = state.extractedCells + count;
+	for (let x = 1; x < 23 && state.extractedCells < target; x += 2) ceiling.damage(x, 8.2, 20);
+	let prepared = 0;
+	for (let i = 0; i < state.active.length && prepared < count; i++) {
+		if (!state.active[i]) continue;
+		state.debrisX[i] = world.platform.x - 1;
+		state.debrisY[i] = 0.701;
+		state.debrisVx[i] = 0;
+		state.debrisVy[i] = -1;
+		prepared++;
+	}
+	physics.step(world, physics.config.step);
+}
+
+// The shim canvas is 1000 × 420, matching the page's own view and margins.
+function chamberPoint(worldX, worldY) {
+	const scale = Math.min((1000 - 32) / 25.5, (420 - 80) / 10);
+	return { clientX: (1000 - 25.5 * scale) / 2 + 1.5 * scale + worldX * scale, clientY: (420 + 10 * scale) / 2 + 9 - worldY * scale };
+}
+
+test('clicking rock inspects a cell and clicking low commands travel, without inspector sliders', () => {
+	assert.equal(dom.elements.has('mineral-column'), false, 'the column slider is gone');
+	assert.equal(dom.elements.has('mineral-layer'), false, 'the layer slider is gone');
+	world.platform.x = 12; world.platform.vx = 0; world.target = NaN; world.direction = 0;
+	advance(8);
+	const state = ceiling.state;
+	let column = 0;
+	while (column < state.columns - 1 && state.firstRow[column] >= state.rows) column++;
+	const rock = chamberPoint((column + 0.5) * state.cell, state.top - 0.05);
+	dom.element('c').dispatch('pointerdown', rock);
+	assert.equal(dom.element('mineral-cell').textContent, 'Column ' + (column + 1) + ' / ' + state.columns + ' · Layer ' + state.rows + ' / ' + state.rows);
+	assert.ok(Number.isNaN(world.target), 'a rock click must not move the platform');
+	const low = chamberPoint(5, 0.5);
+	dom.element('c').dispatch('pointerdown', low);
+	assert.ok(Math.abs(world.target - 5) < 1e-6, 'the low band sets a travel target');
+	assert.equal(dom.element('mineral-cell').textContent, 'Column ' + (column + 1) + ' / ' + state.columns + ' · Layer ' + state.rows + ' / ' + state.rows, 'travel does not change the inspected cell');
+});
+
+test('telemetry highlights an empty reserve, a full cargo and overheating', () => {
+	world.platform.x = 3; world.platform.vx = 0; world.target = NaN; world.direction = 0;
+	world.ball.state = 'held'; world.drive = false;
+	world.battery = 0;
+	advance(8);
+	assert.equal(dom.element('reserve-telemetry').dataset.warning, 'EMPTY');
+	assert.match(dom.element('reserve-note').textContent, /^Empty · market import/);
+	world.battery = physics.config.battery * 0.05;
+	advance(8);
+	assert.equal(dom.element('reserve-telemetry').dataset.warning, 'LOW');
+	world.battery = physics.config.battery;
+	advance(8);
+	assert.equal(dom.element('reserve-telemetry').dataset.warning, undefined);
+
+	world.heat = physics.config.heatCapacity * (physics.config.thermalDerateStart + 20 - physics.config.ambientTemperature);
+	advance(8);
+	assert.equal(dom.element('thermal-telemetry').dataset.warning, 'HOT');
+	world.heat = physics.config.heatCapacity * (physics.config.thermalCutoff + 50 - physics.config.ambientTemperature);
+	advance(8);
+	assert.equal(dom.element('thermal-telemetry').dataset.warning, 'CUTOFF');
+	world.heat = 0;
+	advance(8);
+	assert.equal(dom.element('thermal-telemetry').dataset.warning, undefined);
+
+	fillCargo(100);
+	advance(8);
+	assert.equal(dom.element('cargo').textContent, '100 / 100');
+	assert.equal(dom.element('cargo-telemetry').dataset.warning, 'FULL');
+	assert.match(dom.element('cargo-note').textContent, /^Full/);
+});
+
+test('the centre pad is read as charging and refills the reserve in four seconds', () => {
+	world.platform.x = 12; world.platform.vx = 0; world.target = NaN; world.direction = 0;
+	world.battery = 0;
+	harness.sync(world);
+	advance(8);
+	assert.match(dom.element('reserve-note').textContent, /^Charging 3\.0 kW/);
+	const charged = world.battery;
+	assert.ok(charged > 0, 'the pad charges while the platform is parked');
+	advance(150);
+	assert.ok(world.battery > charged + 5000, 'a two-second stop imports several kilojoules');
+	assert.ok(Math.abs(parseFloat(dom.element('error').textContent)) < 1e-4, dom.element('error').textContent);
+	// Off the pad the note points at it instead of claiming a charge.
+	world.platform.x = 3;
+	advance(8);
+	assert.match(dom.element('reserve-note').textContent, /Centre pad/);
+});
+
 test('reset clears research, equipment and the overlay together', () => {
 	dom.element('reset').dispatch('click');
 	advance(8);
