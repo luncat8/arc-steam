@@ -58,10 +58,13 @@
 	}
 
 	// An item is purchasable once its research node is complete; funds are checked
-	// by the economy when the purchase is booked.
+	// by the economy when the purchase is booked. Communism mode waives the
+	// research gate as well, because the commons hands out the machinery.
 	function isUnlocked(id) {
 		const item = find(id);
 		if (!item) return false;
+		const economy = root.SteamCeiling;
+		if (economy && economy.state.commune) return true;
 		const technology = root.SteamResearch;
 		return !item.requires || Boolean(technology && technology.isResearched(item.requires));
 	}

@@ -4,7 +4,9 @@
 // nearest wall when the cargo is full, and stop when the reserve runs out. Gross
 // income is lifetime sale value; credits are what the run did not spend. The
 // progression variant additionally buys research and equipment in a fixed order as
-// funds allow, which is how the tree is calibrated against real trip income.
+// funds allow, which is how the tree is calibrated against real trip income. The
+// communism variant runs the same shift with every price zeroed, so the whole
+// progression lands on the first tick and the energy is free.
 const ceiling = require('../js/ceiling.js');
 const equipment = require('../js/equipment.js');
 const research = require('../js/research.js');
@@ -46,6 +48,7 @@ function ownedCount() {
 }
 
 function runTrip(shape, seed, maxSeconds, upgrades) {
+	ceiling.setCommune(upgrades === 'free');
 	ceiling.reset(seed);
 	ceiling.setShape(shape);
 	const w = physics.createWorld();
@@ -106,7 +109,7 @@ function runTrip(shape, seed, maxSeconds, upgrades) {
 	};
 }
 
-const modes = [['base tuning', false], ['with progression purchases', true]];
+const modes = [['base tuning', false], ['with progression purchases', true], ['communism mode (all free)', 'free']];
 for (const [label, upgrades] of modes) {
 	const rows = [];
 	console.log(`\n=== ${label} (force ${c.force} N, top speed ${c.maxSpeed} m/s) ===`);

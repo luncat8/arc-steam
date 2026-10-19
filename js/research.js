@@ -62,10 +62,18 @@
 		return done.has(id);
 	}
 
+	// Communism mode waives the tree: the commons hands out every node, so the
+	// prerequisites stop gating anything.
+	function commons() {
+		const economy = root.SteamCeiling;
+		return Boolean(economy && economy.state.commune);
+	}
+
 	function status(id) {
 		if (done.has(id)) return RESEARCHED;
 		const node = find(id);
 		if (!node) return LOCKED;
+		if (commons()) return AVAILABLE;
 		for (const prerequisite of node.requires) if (!done.has(prerequisite)) return LOCKED;
 		return AVAILABLE;
 	}

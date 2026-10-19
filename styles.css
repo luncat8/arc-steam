@@ -28,7 +28,14 @@ main { max-width: 1920px; margin: auto; padding: 16px 2vw 24px; display: grid; g
 .live { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 8px; }
 .time-controls { display: flex; align-items: center; gap: 12px; }
 #clock { min-width: 60px; color: var(--accent); }
-.system-options { margin-left: auto; }
+.system-options { margin-left: auto; display: flex; align-items: center; gap: 18px; }
+/* Communism mode: the switch is the label, the checkbox is the control. */
+.commune-switch { display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
+.commune-switch:hover { color: #dce6e4; }
+.commune-switch:has(:checked) { color: var(--accent); }
+.commune-switch:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.commune-switch input { margin: 0; accent-color: var(--accent); }
+.commune-switch i { font-style: normal; color: #7d9094; }
 
 .telemetry { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 1px; overflow: hidden; background: var(--line); }
 .telemetry article { position: relative; min-width: 0; padding: 10px 14px 11px; background: #0c1215; }

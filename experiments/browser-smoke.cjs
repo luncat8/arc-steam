@@ -167,6 +167,22 @@ async function main() {
 		assert.equal(await page.locator('#launch').isDisabled(), true);
 		assert.match(await page.locator('#mineral-cell').textContent(), /^Column \d+ \/ 192 · Layer \d+ \/ 16$/, 'travel does not change the selected cell');
 		assert.ok(Math.abs(parseFloat(await page.locator('#error').textContent())) < 0.00001);
+		// Communism mode: the system-bar switch zeroes every price, waives the
+		// research gates and books the handouts as free.
+		await page.locator('#commune').click();
+		assert.equal(await page.evaluate(() => SteamCeiling.state.commune), true);
+		assert.equal(await page.locator('#credits').textContent(), 'commons');
+		assert.equal(await page.locator('#refuel-cost').textContent(), 'free');
+		assert.match(await page.locator('#equipment-rows .upgrade-row').first().locator('b').textContent(), /ROAD GRADER · FREE/);
+		assert.equal(await page.locator('#research-rows .upgrade-row').last().locator('button').getAttribute('aria-disabled'), 'false', 'a gated node is open in the commons');
+		await page.locator('#equipment-rows .upgrade-row', { hasText: 'BRAKE FLYWHEEL' }).locator('button').click({ force: true });
+		assert.match(await page.locator('#equipment-status').textContent(), /^Installed Brake flywheel at /);
+		assert.match(await page.locator('#ledger').locator('li').first().textContent(), /Bought Brake flywheel · free/);
+		assert.equal(await page.evaluate(() => SteamCeiling.state.funds), 0, 'the commons charges nothing');
+		await page.keyboard.press('KeyM');
+		assert.equal(await page.evaluate(() => SteamCeiling.state.commune), false);
+		assert.match(await page.locator('#equipment-rows .upgrade-row').first().locator('b').textContent(), /ROAD GRADER · 300 CR/);
+		assert.equal(await page.locator('#credits').textContent(), '0.0 cr');
 		// Autopilot: one checkbox per duty, the same duty on a shortcut, and each one
 		// temporarily yields to the manual command that does the same job.
 		assert.equal(await page.locator('#autopilot input[type="checkbox"]').count(), 4);
@@ -220,7 +236,7 @@ async function main() {
 		assert.equal(await touch.locator('#view-modes input[value="minerals"]').isChecked(), true, 'hover does not switch on touch');
 		await touch.locator('#view-modes label', { hasText: 'Price' }).tap();
 		assert.equal(await touch.locator('#view-modes input[value="price"]').isChecked(), true, 'tap switches on touch');
-		console.log('PASS: startup, four-row layout, view-mode hover/click/arrow keys with paused redraw and touch gating, drive on by default and toggling (Space/Q without pressing GUI controls), piston tilt by slider, chamber wheel and an inverted open-air drag, keyboard force, pause/reset, shape selector, inspector click without sliders, rock-versus-low click zones, target travel, centre pad note, research/equipment gating, ledger, autopilot checkboxes with X/Z/C shortcuts and manual overrides, narrow layout; no page errors.');
+		console.log('PASS: startup, four-row layout, view-mode hover/click/arrow keys with paused redraw and touch gating, drive on by default and toggling (Space/Q without pressing GUI controls), piston tilt by slider, chamber wheel and an inverted open-air drag, keyboard force, pause/reset, shape selector, inspector click without sliders, rock-versus-low click zones, target travel, centre pad note, research/equipment gating, communism mode with free prices and waived gates, ledger, autopilot checkboxes with X/Z/C shortcuts and manual overrides, narrow layout; no page errors.');
 	} finally {
 		await browser.close();
 	}

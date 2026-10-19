@@ -6,11 +6,11 @@
 	const canvas = document.getElementById('c');
 	const context = canvas.getContext('2d');
 	const ids = ['clock', 'drive', 'launch', 'status', 'prediction-status', 'force', 'force-value', 'piston-angle', 'piston-value',
-		'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'view-modes',
-		'platform-spec', 'research-rows', 'research-status', 'research-progress',
+		'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'commune', 'view-modes',
+		'platform-spec', 'research-rows', 'research-status', 'research-progress', 'tech-hint',
 		'mineral-cell', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
-		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger', 'equipment-rows', 'equipment-status',
+		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger', 'equipment-rows', 'equipment-status', 'equipment-hint',
 		'refuel', 'refuel-cost', 'fuel-price', 'reserve-note', 'cargo-note',
 		'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry'];
 	const ui = {};
@@ -58,11 +58,10 @@
 	// Equipment and research rows share one layout: a title with cost and mass, an
 	// action button, the measured effect, and a prerequisite/unlock note. Built
 	// once at startup; only text and the blocked flag change afterwards.
-	function buildRow(container, title, action, effect, note, activate) {
+	function buildRow(container, name, cost, mass, action, effect, note, activate) {
 		const row = document.createElement('div');
 		row.className = 'upgrade-row';
 		const heading = document.createElement('b');
-		heading.textContent = title;
 		const button = document.createElement('button');
 		button.type = 'button';
 		button.textContent = action;
@@ -74,7 +73,18 @@
 		row.append(heading, button, detail, requirement);
 		container.appendChild(row);
 		button.addEventListener('click', activate);
-		return { row, button, requirement };
+		return { row, button, requirement, heading, name, cost, mass, note };
+	}
+
+	// The price in a row title follows the mode: a list price, or FREE while the
+	// commons owns the machinery.
+	function priceLabel(cost) {
+		return window.SteamCeiling.state.commune ? 'FREE' : cost + ' CR';
+	}
+
+	function rowTitle(row) {
+		const mass = row.mass ? ' · ' + (row.mass > 0 ? '+' : '−') + Math.abs(row.mass) + ' KG' : '';
+		return row.name.toUpperCase() + ' · ' + priceLabel(row.cost) + mass;
 	}
 
 	// Names are quoted exactly as authored, so the equipment and research notes
@@ -95,20 +105,21 @@
 	(function buildUpgrades() {
 		ui['fuel-price'].textContent = String(window.SteamCeiling.state.fuelPrice);
 		for (const item of SteamEquipment.items) {
-			const mass = item.mass ? ' · ' + (item.mass > 0 ? '+' : '−') + Math.abs(item.mass) + ' KG' : '';
 			const technology = SteamResearch.find(item.requires);
-			const row = buildRow(ui['equipment-rows'], item.name.toUpperCase() + ' · ' + item.cost + ' CR' + mass, 'Buy', item.effect,
+			const row = buildRow(ui['equipment-rows'], item.name, item.cost, item.mass || 0, 'Buy', item.effect,
 				technology ? 'Needs research: ' + technology.name : 'No research needed',
 				function () { buyEquipment(item.id); });
 			row.item = item;
+			row.freeNote = 'The commons shares it · no research needed';
 			equipmentRows.push(row);
 		}
 		for (const node of SteamResearch.nodes) {
 			const unlocked = unlockText(node);
 			const note = (node.requires.length ? 'Needs research: ' + prerequisiteNames(node) : 'No prerequisites') + (unlocked ? ' · unlocks ' + unlocked : '');
-			const row = buildRow(ui['research-rows'], node.name.toUpperCase() + ' · ' + node.cost + ' CR', 'Research', node.effect, note,
+			const row = buildRow(ui['research-rows'], node.name, node.cost, 0, 'Research', node.effect, note,
 				function () { buyResearch(node.id); });
 			row.node = node;
+			row.freeNote = 'The commons shares every node' + (unlocked ? ' · unlocks ' + unlocked : '');
 			researchRows.push(row);
 		}
 		for (const label of specLabels) {
@@ -139,6 +150,20 @@
 		refresh();
 	}
 
+	// Communism mode is one writer: the system-bar switch and the M shortcut
+	// both go through it, so the economy and the panels never disagree.
+	function setCommune(enabled) {
+		window.SteamCeiling.setCommune(enabled);
+		setChecked(ui.commune, enabled);
+		ui['equipment-status'].textContent = enabled ? commonsNote('equipment') : 'Sell cargo at a wall to earn credits.';
+		ui['research-status'].textContent = enabled ? commonsNote('research') : 'Sell cargo at a wall to fund research.';
+		refresh();
+	}
+
+	function commonsNote(panel) {
+		return panel === 'research' ? 'The commons shares every technology · nothing costs credits' : 'The commons shares every machine · nothing costs credits';
+	}
+
 	// Blocked upgrade buttons stay clickable (aria-disabled, not disabled): a real
 	// disabled button swallows the click, and the refusal must say why.
 	function setBlocked(button, blocked) {
@@ -150,25 +175,40 @@
 	// Locked, available and researched states drive both the button and the row
 	// styling, so the panel shows progression without relying on colour alone.
 	function refreshUpgrades() {
-		const funds = window.SteamCeiling.state.funds;
+		const ceiling = window.SteamCeiling.state;
+		const funds = ceiling.funds;
+		// In communism mode nothing is short of credits, so the price is the only
+		// thing that changes: the buttons stay open and the titles read FREE.
 		for (const row of equipmentRows) {
 			const installed = SteamEquipment.isInstalled(row.item.id);
 			const unlocked = SteamEquipment.isUnlocked(row.item.id);
-			setBlocked(row.button, installed || !unlocked || funds < row.item.cost);
+			setBlocked(row.button, installed || !unlocked || funds < row.item.cost && !ceiling.commune);
 			setText(row.button, installed ? 'Installed' : unlocked ? 'Buy' : 'Locked');
 			setRowState(row.row, installed ? 'installed' : unlocked ? 'available' : 'locked');
+			setText(row.heading, rowTitle(row));
+			setText(row.requirement, ceiling.commune ? row.freeNote : row.note);
 		}
 		let completed = 0;
 		for (const row of researchRows) {
 			const status = SteamResearch.status(row.node.id);
 			if (status === SteamResearch.constants.RESEARCHED) completed++;
-			setBlocked(row.button, status !== SteamResearch.constants.AVAILABLE || funds < row.node.cost);
+			setBlocked(row.button, status !== SteamResearch.constants.AVAILABLE || funds < row.node.cost && !ceiling.commune);
 			// 'Locked' means a missing prerequisite; an unaffordable but available
 			// node still reads 'Research' and is simply blocked.
 			setText(row.button, status === SteamResearch.constants.RESEARCHED ? 'Done' : status === SteamResearch.constants.AVAILABLE ? 'Research' : 'Locked');
 			setRowState(row.row, status);
+			setText(row.heading, rowTitle(row));
+			setText(row.requirement, ceiling.commune ? row.freeNote : row.note);
 		}
 		setText(ui['research-progress'], completed + ' / ' + researchRows.length);
+		// The panel introductions follow the mode too: they would otherwise ask
+		// for funds and prerequisites that the commons no longer wants.
+		setText(ui['tech-hint'], ceiling.commune
+			? 'The commons shares every technology: research is free, applies its measured effect immediately, and no prerequisite gates it.'
+			: 'Research debits funds once, applies its measured effect immediately, and unlocks the equipment that needs it. A node stays locked until every prerequisite is researched.');
+		setText(ui['equipment-hint'], ceiling.commune
+			? 'The commons shares every machine: purchases are free and install at once. The installed specification is the live result of every upgrade and research delta.'
+			: 'Purchases debit funds and install at once. The installed specification is the live result of every upgrade and research delta; each row states what buying it changes.');
 	}
 
 	// Installed specification: the live result of base tuning plus every equipment
@@ -409,17 +449,22 @@
 	// wording so the money trail stays explicit.
 	function ledgerText(entry) {
 		const stamp = entry.time.toFixed(1) + ' s · ';
-		if (entry.type === 'fuel') return stamp + 'Recharged ' + (entry.energy / 1000).toFixed(2) + ' kJ · −' + entry.credits.toFixed(1) + ' cr';
-		if (entry.type === 'research') return stamp + 'Researched ' + entry.label + ' · −' + entry.credits.toFixed(0) + ' cr';
-		if (entry.type === 'buy') return stamp + 'Bought ' + entry.label + ' · −' + entry.credits.toFixed(0) + ' cr';
+		if (entry.type === 'fuel') return stamp + 'Recharged ' + (entry.energy / 1000).toFixed(2) + ' kJ · ' + spent(entry.credits, 1);
+		if (entry.type === 'research') return stamp + 'Researched ' + entry.label + ' · ' + spent(entry.credits, 0);
+		if (entry.type === 'buy') return stamp + 'Bought ' + entry.label + ' · ' + spent(entry.credits, 0);
 		return stamp + 'Sold ' + entry.mass.toFixed(1) + ' kg (' + entry.cells + ' cells) · +' + entry.credits.toFixed(1) + ' cr';
 	}
 
 	function ledgerStatus(entry) {
-		if (entry.type === 'fuel') return 'Recharged ' + (entry.energy / 1000).toFixed(2) + ' kJ of reserve for ' + entry.credits.toFixed(1) + ' cr at ' + entry.time.toFixed(1) + ' s.';
-		if (entry.type === 'research') return 'Researched ' + entry.label + ' for ' + entry.credits.toFixed(0) + ' cr at ' + entry.time.toFixed(1) + ' s.';
-		if (entry.type === 'buy') return 'Bought ' + entry.label + ' for ' + entry.credits.toFixed(0) + ' cr at ' + entry.time.toFixed(1) + ' s.';
+		if (entry.type === 'fuel') return 'Recharged ' + (entry.energy / 1000).toFixed(2) + ' kJ of reserve ' + (entry.credits > 0 ? 'for ' + entry.credits.toFixed(1) + ' cr' : 'for free') + ' at ' + entry.time.toFixed(1) + ' s.';
+		if (entry.type === 'research') return 'Researched ' + entry.label + ' ' + (entry.credits > 0 ? 'for ' + entry.credits.toFixed(0) + ' cr' : 'for free') + ' at ' + entry.time.toFixed(1) + ' s.';
+		if (entry.type === 'buy') return 'Bought ' + entry.label + ' ' + (entry.credits > 0 ? 'for ' + entry.credits.toFixed(0) + ' cr' : 'for free') + ' at ' + entry.time.toFixed(1) + ' s.';
 		return 'Sold ' + entry.mass.toFixed(1) + ' kg for ' + entry.credits.toFixed(1) + ' cr at ' + entry.time.toFixed(1) + ' s.';
+	}
+
+	// A free entry has no credits to show, so the ledger says so.
+	function spent(credits, digits) {
+		return credits > 0 ? '−' + credits.toFixed(digits) + ' cr' : 'free';
 	}
 
 	function miningReadout() {
@@ -443,12 +488,15 @@
 		setText(ui['sold-mass'], (ceiling.soldCells * ceiling.cellMass).toFixed(1) + ' kg');
 		setText(ui['sold-value'], ceiling.soldValue.toFixed(1) + ' cr · ' + ceiling.soldCells + ' cells');
 		setText(ui['sale-count'], ceiling.ledger.length + ' entries');
-		setText(ui.credits, ceiling.funds.toFixed(1) + ' cr');
+		setText(ui.credits, ceiling.commune ? 'commons' : ceiling.funds.toFixed(1) + ' cr');
 		// Recharge is offered whenever the reserve is short and funds cover a joule.
+		// In communism mode the import is free, so only the reserve decides.
+		const deficit = config.battery - world.battery;
 		const refill = window.SteamCeiling.rechargeCost(world);
-		setText(ui['refuel-cost'], refill.toFixed(1) + ' cr');
-		setDisabled(ui.refuel, refill <= 0 || ceiling.funds < ceiling.fuelPrice / 1000);
-		setText(ui.refuel, refill > 0 ? 'Recharge ' + ((config.battery - world.battery) / 1000).toFixed(2) + ' kJ' : 'Reserve full');
+		setText(ui['refuel-cost'], ceiling.commune ? 'free' : refill.toFixed(1) + ' cr');
+		setText(ui['fuel-price'], ceiling.commune ? 'free' : String(ceiling.fuelPrice));
+		setDisabled(ui.refuel, ceiling.commune ? deficit < 1 : refill <= 0 || ceiling.funds < ceiling.fuelPrice / 1000);
+		setText(ui.refuel, deficit >= 1 ? 'Recharge ' + (deficit / 1000).toFixed(2) + ' kJ' : 'Reserve full');
 		for (let i = 0; i < 3; i++) {
 			setText(inventoryCells[i * 2], ceiling.cargoMinerals[i].toFixed(3));
 			setText(inventoryCells[i * 2 + 1], ceiling.soldMinerals[i].toFixed(3));
@@ -499,7 +547,8 @@
 		setText(ui['cargo-note'], cargoFull ? 'Full · extra fragments are refused until you sell at a wall' : '100 cells maximum · cargo adds mass');
 		ui.cargo.textContent = ceiling.cargoCells + ' / ' + ceiling.storageLimit;
 		ui['platform-mass'].textContent = (physics.dryMass() + ceiling.cargoMass + heldMass).toFixed(1) + ' kg';
-		ui.funds.textContent = ceiling.funds.toFixed(1) + ' cr';
+		ui.funds.textContent = ceiling.commune ? 'commons' : ceiling.funds.toFixed(1) + ' cr';
+		setText(ui['funds-note'], ceiling.commune ? 'Nothing costs · sales still measured' : 'Automatic sale at either wall');
 		ui['ball-energy'].textContent = physics.ballEnergy(world.ball).toFixed(1) + ' J';
 		ui.heat.textContent = world.heat.toFixed(1) + ' J';
 		const temperature = physics.temperature(world);
@@ -652,7 +701,7 @@
 
 	function isGameKey(code) {
 		return code === 'Space' || code === 'KeyQ' || code === 'KeyA' || code === 'KeyD' || code === 'KeyW' || code === 'KeyS' || code === 'KeyE'
-			|| code === 'KeyX' || code === 'KeyZ' || code === 'KeyC';
+			|| code === 'KeyX' || code === 'KeyZ' || code === 'KeyC' || code === 'KeyM';
 	}
 
 	function keydown(event) {
@@ -672,6 +721,7 @@
 		if (event.repeat) return;
 		if (key === 'Space' || key === 'KeyQ') toggleDrive();
 		if (key === 'KeyE') releaseBall();
+		if (key === 'KeyM') setCommune(!window.SteamCeiling.state.commune);
 		const channel = channelForKey(key, event.shiftKey);
 		if (channel) toggleChannel(channel);
 	}
@@ -709,15 +759,20 @@
 
 	document.getElementById('reset').addEventListener('click', function () {
 		world = physics.createWorld(); window.SteamCeiling.setShape(ui.shape.value); renderedSales = -1; clearInput(); endPistonDrag(); setForce(world.forceSetting); autopilot.reset(); accumulator = 0;
-		ui['equipment-status'].textContent = 'Sell cargo at a wall to earn credits.';
-		ui['research-status'].textContent = 'Sell cargo at a wall to fund research.';
+		ui['equipment-status'].textContent = window.SteamCeiling.state.commune ? commonsNote('equipment') : 'Sell cargo at a wall to earn credits.';
+		ui['research-status'].textContent = window.SteamCeiling.state.commune ? commonsNote('research') : 'Sell cargo at a wall to fund research.';
 		refresh();
 	});
 	ui.drive.addEventListener('click', toggleDrive);
+	ui.commune.addEventListener('change', function () { setCommune(ui.commune.checked); });
 	ui.refuel.addEventListener('click', function () {
 		const imported = window.SteamCeiling.recharge(world, world.time);
 		refresh();
-		if (!imported) ui['transaction-status'].textContent = 'Not enough funds to recharge · ' + window.SteamCeiling.rechargeCost(world).toFixed(1) + ' cr fills the reserve.';
+		if (!imported) {
+			ui['transaction-status'].textContent = window.SteamCeiling.state.commune
+				? 'The reserve is already full · the commons needs no import.'
+				: 'Not enough funds to recharge · ' + window.SteamCeiling.rechargeCost(world).toFixed(1) + ' cr fills the reserve.';
+		}
 	});
 	ui.launch.addEventListener('click', releaseBall);
 	ui.pause.addEventListener('click', togglePause);

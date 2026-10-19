@@ -31,6 +31,7 @@ On wide screens the page is four rows: a system bar (clock, pause, speed, New ga
 | Click low near the ground | Set horizontal travel target; manual movement overrides |
 | E, or release button | Release a held ball when drive is enabled |
 | Rock shape selector (system bar) | Choose smooth heightmap (default) or square cells |
+| Communism mode switch (system bar) or M | Make everything free: research, equipment and the emergency resupply cost nothing, and the research tree stops gating anything |
 | Rock view switch (under the chamber) | Show minerals, elemental R/G/B, price, or remaining strength; click, arrow keys, or hover with a mouse |
 | Mineral inspector | Reads the clicked cell: location, strength, minerals, price |
 | Technology panel | Research a node once its prerequisites are complete and funds cover it |
@@ -39,6 +40,8 @@ On wide screens the page is four rows: a system bar (clock, pause, speed, New ga
 | Pause / speed / New game | Inspect or restart the experiment from a fresh world, research and equipment |
 
 Ground impact loses all ball energy. Move the platform over a grounded ball to recover it. The amber collector catches and holds balls and mineral debris; the green reflector bounces balls. Release transfers a stored ball onto the reflector and pays for lifting it. A 42 J pulse at 80% efficiency debits up to 52.5 J from the shared reserve, and the tuning is sized so the third powered bounce from a release reaches the ceiling.
+
+Communism mode is a switch in the system bar, or the `M` key. The commons owns the machinery, so every price in the game drops to zero: research and equipment are free, the emergency resupply is free, and the technology tree stops gating anything — every node and every machine is available on the first click. The prices are the only thing that changes; the measured effects still apply, so a free drive coil still adds 12 J of pulse and a free chassis still cuts 12 kg of dry mass, and the energy ledger stays exact. The panels follow the mode: row titles read `FREE` instead of a price, the funds card reads `commons` (sales are still measured and still recorded), the market shows a free import, and the ledger books each handout as `free` rather than as a credit line. It is a mode rather than world state, so a new game keeps it, and switching it off puts every price and every gate back.
 
 The reflector is a sprung piston. Its face tilts ±10° around its centre, so reflections and powered pushes leave along the tilted face normal instead of always going straight up; the ballistic computer predicts deck contacts against the same tilted plane. Each contact compresses the piston along its normal in proportion to the normal impact speed (0.024 m per m/s, capped at 0.16 m), and a damped spring (650 N/m, damping 18) extends it again as the visible push, overshooting slightly before it settles in about half a second. Compression is a rendered state only — the collision plane stays at the rest position, so animation never feeds back into the physics.
 
@@ -75,7 +78,7 @@ node --test experiments/*.test.js
 node --check js/main.js
 ```
 
-The suite covers the rock field, physics accounting, equipment, research, prediction, the recharge economy, the autopilot policy (intercept accuracy, timed-versus-chase cost, drive-keeper band, level-bounce verticality and slew limits), and an interface run that boots the real `index.html` wiring against the small DOM shim in `experiments/dom.cjs`, so panels, gating, shortcuts, and the overlay are exercised without a browser.
+The suite covers the rock field, physics accounting, equipment, research, prediction, the recharge economy, the autopilot policy (intercept accuracy, timed-versus-chase cost, drive-keeper band, level-bounce verticality and slew limits), communism mode (free research, free equipment, free energy, the waived gates and the switch itself), and an interface run that boots the real `index.html` wiring against the small DOM shim in `experiments/dom.cjs`, so panels, gating, shortcuts, and the overlay are exercised without a browser.
 
 Optional browser smoke test (requires an externally installed Playwright and a Chromium; nothing is added to the repository):
 

@@ -77,6 +77,10 @@
 	let funds = 0;
 	let exportedEnergy = 0;
 	let ledger = [];
+	// Communism mode: the commons owns the machinery, so every price in the game
+	// drops to nothing. The flag lives beside the money it rules, and it is a
+	// mode rather than world state, so a new game keeps it.
+	let commune = false;
 
 	function hash(x, y, channel) {
 		let value = Math.imul(x + seed * 101 + channel * 7919, 374761393) ^ Math.imul(y + 17, 668265263);
@@ -131,6 +135,17 @@
 	function setShape(mode) {
 		rockShape = mode === 'square' ? 'square' : 'smooth';
 		return rockShape;
+	}
+
+	// The price the player actually pays. In communism mode every price is
+	// zero, whatever it was before.
+	function price(cost) {
+		return commune ? 0 : cost;
+	}
+
+	function setCommune(value) {
+		commune = Boolean(value);
+		return commune;
 	}
 
 	function reset(newSeed) {
@@ -670,16 +685,19 @@
 	}
 
 	// Purchases and research debit funds and append a ledger entry; false when
-	// funds are short.
+	// funds are short. In communism mode the debit is zero, so the entry is
+	// booked as a free handout.
 	function purchase(label, amount, time, type) {
-		if (!(amount > 0) || funds < amount) return false;
-		funds -= amount;
+		if (!(amount > 0)) return false;
+		const cost = price(amount);
+		if (funds < cost) return false;
+		funds -= cost;
 		ledger.push(Object.freeze({
 			id: ledger.length + 1,
 			type: type || 'buy',
 			time: typeof time === 'number' ? time : 0,
 			label,
-			credits: amount
+			credits: cost
 		}));
 		return true;
 	}
@@ -687,14 +705,15 @@
 	// Top the reserve up towards its capacity with bought energy. Funds buy as
 	// much as they cover, so a poor shift still refuels partially. Returns the
 	// imported joules, or 0 when the reserve is full or nothing is affordable.
+	// In communism mode the whole gap is free.
 	function recharge(world, time) {
 		const physics = root.SteamPhysics;
 		if (!physics || !world) return 0;
 		const deficit = physics.config.battery - world.battery;
 		if (deficit < 1) return 0;
-		const energy = Math.min(deficit, Math.floor(funds * 1000 / fuelPrice));
+		const energy = commune ? deficit : Math.min(deficit, Math.floor(funds * 1000 / fuelPrice));
 		if (energy < 1) return 0;
-		const credits = energy * fuelPrice / 1000;
+		const credits = price(energy * fuelPrice / 1000);
 		if (funds < credits) return 0;
 		funds -= credits;
 		world.battery += energy;
@@ -711,10 +730,11 @@
 	}
 
 	// Credits needed to fill the reserve; the panel shows it before the click.
+	// Nothing is needed in communism mode.
 	function rechargeCost(world) {
 		const physics = root.SteamPhysics;
 		if (!physics || !world) return 0;
-		return Math.max(0, physics.config.battery - world.battery) / 1000 * fuelPrice;
+		return price(Math.max(0, physics.config.battery - world.battery) / 1000 * fuelPrice);
 	}
 
 	function sellCargo(platformVelocity, time) {
@@ -854,12 +874,13 @@
 		get soldCells() { return soldCells; },
 		get soldValue() { return soldValue; },
 		get funds() { return funds; },
+		get commune() { return commune; },
 		get energy() { return energy(); }
 	});
 
 	reset(1);
 
-	const api = { reset, damage, trace, step, sellCargo, purchase, recharge, rechargeCost, draw, drawFloor, floorAt, state, setShape };
+	const api = { reset, damage, trace, step, sellCargo, purchase, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape };
 	root.SteamCeiling = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
