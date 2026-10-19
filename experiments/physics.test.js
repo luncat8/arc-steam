@@ -187,21 +187,57 @@ test('ground stops the ball; moving over it recovers it', () => {
 	balanced(w);
 });
 
-test('limited drive takes repeated pushes to reach ceiling height', () => {
+test('the ball grounds on fallen rubble at the pile surface and keeps the ledger exact', () => {
+	const w = physics.createWorld();
+	const state = ceiling.state;
+	// Break rock and drop every fragment at x = 3 so the floor piles up there.
+	for (let x = 1; x < 6; x += 0.5) ceiling.damage(x, state.bottom + 0.2, 20);
+	assert.ok(state.extractedCells > 0);
+	for (let i = 0; i < state.active.length; i++) if (state.active[i]) {
+		state.debrisX[i] = 3;
+		state.debrisY[i] = 4;
+		state.debrisVx[i] = 0;
+		state.debrisVy[i] = -1;
+	}
+	w.platform.x = 20;
+	for (let i = 0; i < 240 * 3 && state.airborneCells > 0; i++) physics.step(w, c.step);
+	assert.equal(state.airborneCells, 0);
+	assert.equal(state.lostCells, state.extractedCells);
+	const pile = ceiling.floorAt(3);
+	assert.ok(pile > 0.05, 'rubble raised the floor under the landing point');
+	assert.ok(pile <= state.pileLimit, 'the pile stops below the collector deck');
+	w.ball.state = 'flying'; w.ball.x = 3; w.ball.y = 2; w.ball.vx = 0; w.ball.vy = -1;
+	sync(w);
+	run(w, 2);
+	assert.equal(w.ball.state, 'grounded');
+	near(w.ball.y, pile + c.radius);
+	// The ball keeps the potential energy of its resting height on the rubble.
+	near(physics.ballEnergy(w.ball), c.ballMass * c.ballGravity * pile);
+	balanced(w);
+	w.target = 3; run(w, 10);
+	assert.equal(w.ball.state, 'held');
+	balanced(w);
+});
+
+function apex(w) {
+	return w.ball.y + w.ball.vy ** 2 / (2 * c.ballGravity);
+}
+
+test('three powered bounces from a release reach the ceiling height', () => {
 	const w = physics.createWorld();
 	w.ball.state = 'held'; w.ball.vx = 0; w.ball.vy = 0; w.drive = true;
 	sync(w);
 	assert.ok(physics.launch(w));
-	assert.ok(w.ball.y + w.ball.vy ** 2 / (2 * c.ballGravity) < c.ceiling - c.radius);
-	const pushesToCeiling = 6;
-	let maxBeforeLast = 0;
-	for (let i = 0; i < 240 * 40 && w.pushes < pushesToCeiling; i++) {
-		physics.step(w, c.step);
-		maxBeforeLast = Math.max(maxBeforeLast, w.ball.y);
+	assert.equal(w.pushes, 1, 'the release is the first powered push');
+	assert.ok(apex(w) < c.ceiling - c.radius, 'the release alone does not reach the top');
+	for (let bounce = 1; bounce <= 3; bounce++) {
+		const seen = w.bounces;
+		for (let i = 0; i < 240 * 20 && w.bounces === seen; i++) physics.step(w, c.step);
+		assert.ok(w.bounces > seen, 'the ball comes back to the piston');
+		if (bounce < 3) assert.ok(apex(w) < c.ceiling - c.radius, 'bounce ' + bounce + ' still falls short');
+		else assert.ok(apex(w) > c.ceiling - c.radius, 'the third bounce reaches the ceiling');
 	}
-	assert.equal(w.pushes, pushesToCeiling);
-	assert.ok(maxBeforeLast < c.ceiling - c.radius);
-	assert.ok(w.ball.y + w.ball.vy ** 2 / (2 * c.ballGravity) > c.ceiling - c.radius);
+	assert.equal(w.pushes, 4, 'release plus three powered bounces');
 	run(w, 20);
 	balanced(w);
 });

@@ -20,7 +20,11 @@
 		// Drive response: two 1.5x increases over the original 180 N / 7 m/s
 		// tuning, each rounded down to a whole number.
 		platformMass: 60, force: 400, maxSpeed: 10,
-		retention: 0.9, pulse: 36, efficiency: 0.8, battery: reserveCapacity, step: 1 / 240,
+		// Bounce pulse sized for the three-bounce rule: from a release, the apex
+		// after the third powered bounce must clear the ceiling plane (about
+		// 15.1 m at 42 J) while the first two stay short of it. One pulse adds
+		// P/(m·g) = 4.28 m of height; rounding up from the 41.2 J solution.
+		retention: 0.9, pulse: 42, efficiency: 0.8, battery: reserveCapacity, step: 1 / 240,
 		// Centre ground charge pad: a refuelling surface, not a consumable. It
 		// fills the reserve in four seconds while the platform stands on it, so
 		// the cost of energy is position and downtime rather than credits.
@@ -427,7 +431,11 @@
 			const wall = ball.vx > 0 ? config.width - config.radius : config.radius;
 			const wallTime = ball.vx ? (wall - ball.x) / ball.vx : Infinity;
 			if (wallTime >= 0 && wallTime <= time) { time = wallTime; type = 1; }
-			const groundTime = downwardTime(ball, config.radius);
+			// The floor is a heightmap of fallen rubble: the crossing is solved at
+			// the surface under the ball, and a centre already inside the surface
+			// (a rise ahead of the drift between steps) grounds at once.
+			const floor = root.SteamCeiling ? root.SteamCeiling.floorAt(ball.x) : 0;
+			const groundTime = ball.y < floor + config.radius ? 0 : downwardTime(ball, floor + config.radius);
 			if (groundTime <= time) { time = groundTime; type = 2; }
 			const topDiscriminant = ball.vy * ball.vy - 2 * config.ballGravity * (config.ceiling - config.radius - ball.y);
 			const topTime = ball.vy > 0 && topDiscriminant >= 0 ? (ball.vy - Math.sqrt(topDiscriminant)) / config.ballGravity : Infinity;
@@ -460,8 +468,11 @@
 			if (!type) return;
 			if (type === 1) { ball.vx = -ball.vx; continue; }
 			if (type === 2) {
-				world.heat += ballEnergy(ball);
-				ball.y = config.radius;
+				// The ball settles on the rubble surface and keeps the potential
+				// energy of its resting height; only the remainder becomes heat.
+				const rest = root.SteamCeiling ? root.SteamCeiling.floorAt(ball.x) : 0;
+				world.heat += ballEnergy(ball) - config.ballMass * config.ballGravity * rest;
+				ball.y = rest + config.radius;
 				ball.vx = 0;
 				ball.vy = 0;
 				ball.state = 'grounded';

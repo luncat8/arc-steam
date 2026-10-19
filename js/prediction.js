@@ -117,7 +117,9 @@
 					if (topTime >= 0 && topTime < step) { step = topTime; event = CEILING; }
 				}
 			}
-			const groundTime = crossing(y, vy, config.radius, gravity);
+			// Ground is the rubble surface under the march, not the bare floor.
+			const ground = (economy ? economy.floorAt(x) : 0) + config.radius;
+			const groundTime = y < ground ? 0 : crossing(y, vy, ground, gravity);
 			if (groundTime < step) { step = groundTime; event = GROUND; }
 			if (y >= config.deck + config.radius - 1e-10) {
 				const deckTime = crossing(y, vy, config.deck + config.radius, gravity);

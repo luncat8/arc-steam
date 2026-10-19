@@ -290,6 +290,8 @@
 		context.stroke();
 		context.fillStyle = '#29383d';
 		context.fillRect(-pocketDepth, -0.35, config.width + pocketDepth, 0.35);
+		// Fallen rubble first, so the charge pad plate stays visible on top of it.
+		if (window.SteamCeiling) window.SteamCeiling.drawFloor(context);
 		const padMin = physics.chargePadMin();
 		const padMax = physics.chargePadMax();
 		const chargingNow = physics.charging(world);

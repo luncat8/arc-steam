@@ -55,16 +55,16 @@ test('installed equipment changes retention, pulse and dry mass in the simulatio
 	balanced(w);
 	// Coil: launch delivers the researched and installed pulse from the reserve.
 	unlockResearch(w, 'electromagnetics');
-	near(physics.pulseNow(), 40);
+	near(physics.pulseNow(), 46);
 	const beforeCoil = physics.dryMass();
 	buy(w, 'coil');
-	near(physics.pulseNow(), 52);
+	near(physics.pulseNow(), 58);
 	near(physics.dryMass(), beforeCoil + 12);
 	w.ball.state = 'held';
 	w.drive = true;
 	sync(w);
 	assert.ok(physics.launch(w));
-	near(w.lastPush, 52);
+	near(w.lastPush, 58);
 	balanced(w);
 	// Chassis: researched alloys and the chassis both cut dry mass.
 	unlockResearch(w, 'alloys');
@@ -175,5 +175,35 @@ test('mass changes are booked so the energy ledger stays exact', () => {
 	// appearing from nowhere.
 	buy(w, 'coil');
 	balanced(w);
+	physics.createWorld();
+});
+
+test('the road grader digs, flattens and smooths rubble and never digs pits', () => {
+	const w = physics.createWorld();
+	const state = ceiling.state;
+	// A rough floor: a tall spike beside shallower rubble and bare ground.
+	state.floorPiles[40] = 0.7;
+	state.floorPiles[41] = 0.2;
+	state.floorPiles[42] = 0.45;
+	function spread() {
+		let high = 0;
+		let low = Infinity;
+		for (let column = 38; column <= 44; column++) {
+			high = Math.max(high, state.floorPiles[column]);
+			low = Math.min(low, state.floorPiles[column]);
+		}
+		return high - low;
+	}
+	const rough = spread();
+	buy(w, 'grader');
+	assert.ok(equipment.isInstalled('grader'), 'the grader installs without research');
+	run(w, 1);
+	assert.ok(state.floorPiles[40] < 0.7, 'the blade digs the spike down');
+	assert.ok(spread() < rough, 'the surface is flattened and smoothed toward its neighbours');
+	run(w, 10);
+	for (let column = 0; column < state.columns; column++) {
+		assert.equal(state.floorPiles[column], 0, 'the dig is clamped at the original floor, so no pit forms');
+	}
+	for (let vertex = 0; vertex <= state.columns; vertex++) assert.equal(state.floorHeight[vertex], 0);
 	physics.createWorld();
 });

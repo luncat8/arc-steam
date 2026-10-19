@@ -80,7 +80,7 @@ async function main() {
 		assert.equal(await page.locator('#view-modes input[value="minerals"]').isChecked(), true, 'arrow keys cycle the radios');
 		await page.locator('#pause').click();
 		assert.equal(await page.locator('#research-rows .upgrade-row').count(), 6);
-		assert.equal(await page.locator('#equipment-rows .upgrade-row').count(), 5);
+		assert.equal(await page.locator('#equipment-rows .upgrade-row').count(), 6);
 		assert.equal(await page.locator('#research-progress').textContent(), '0 / 6');
 		assert.equal(await page.locator('#platform-spec').evaluate(node => node.children.length), 14);
 		assert.equal(await page.locator('#refuel').isDisabled(), true, 'a full reserve needs no recharge');
@@ -152,7 +152,9 @@ async function main() {
 		// aria-disabled, so the click reaches the handler (force skips Playwright's enabled check).
 		await page.locator('#research-rows .upgrade-row').last().locator('button').click({ force: true });
 		assert.match(await page.locator('#research-status').textContent(), /stays locked until/);
-		await page.locator('#equipment-rows .upgrade-row').first().locator('button').click({ force: true });
+		// The road grader sits first and needs no research, so the pad row is the
+		// one that must explain its research prerequisite.
+		await page.locator('#equipment-rows .upgrade-row', { hasText: 'REBOUND PAD' }).locator('button').click({ force: true });
 		assert.match(await page.locator('#equipment-status').textContent(), /needs the .* research first/);
 		const inspected = await page.locator('#mineral-cell').textContent();
 		await chamberClick(page, 12, 14.5);

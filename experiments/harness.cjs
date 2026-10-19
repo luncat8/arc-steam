@@ -62,7 +62,7 @@ function unlockResearch(world, id) {
 
 function buy(world, id) {
 	const item = equipment.find(id);
-	unlockResearch(world, item.requires);
+	if (item.requires) unlockResearch(world, item.requires);
 	afford(world, item.cost);
 	assert.equal(equipment.install(id, world), true, id + ' installed');
 }

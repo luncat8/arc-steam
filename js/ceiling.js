@@ -13,6 +13,17 @@
 	const cellMass = 0.6;
 	const gravity = 9.81;
 	const cargoHeight = 0.7;
+	// Fallen rubble piles up on the floor heightmap, the mirror of the rock
+	// surface above. The pile never rises past the collector deck, so the
+	// running gear, the charge pad and the catch plane stay clear however much
+	// is lost — rubble buries nothing, it only roughens the ground.
+	const pileLimit = cargoHeight;
+	// Road grader blade: every column loses graderCut metres per second and
+	// flows toward the mean of its neighbours at graderSmooth per second, so
+	// piles are dug down, flattened and smoothed but never below the original
+	// floor (the dig is clamped at zero, which is what prevents pits).
+	const graderCut = 0.15;
+	const graderSmooth = 2;
 	// Impact tuning: hit point receives 2x impact energy in strength removal,
 	// falling linearly to zero across a 4.5-cell radius (1.5x of the base 3-cell radius).
 	const damageRadius = 4.5;
@@ -25,6 +36,8 @@
 	const prices = new Float32Array(count);
 	const firstRow = new Uint8Array(columns);
 	const heightmap = new Float64Array(columns + 1);
+	const floorPiles = new Float64Array(columns);
+	const floorHeight = new Float64Array(columns + 1);
 	const elementColors = new Array(count);
 	const mineralStyles = new Array(count);
 	const priceColors = new Array(count);
@@ -97,6 +110,24 @@
 		}
 	}
 
+	// The floor surface projects the per-column pile heights through the same
+	// binomial stencil as the rock, so rubble reads as the rock's mirror image.
+	function updateFloor() {
+		for (let v = 0; v <= columns; v++) {
+			const c0 = Math.max(0, Math.min(columns - 1, v - 2));
+			const c1 = Math.max(0, Math.min(columns - 1, v - 1));
+			const c2 = Math.max(0, Math.min(columns - 1, v));
+			const c3 = Math.max(0, Math.min(columns - 1, v + 1));
+			floorHeight[v] = (floorPiles[c0] + 3 * floorPiles[c1] + 3 * floorPiles[c2] + floorPiles[c3]) * 0.125;
+		}
+	}
+
+	function floorAt(x) {
+		const column = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
+		const fraction = Math.max(0, Math.min(1, (x - column * cell) / cell));
+		return floorHeight[column] + (floorHeight[column + 1] - floorHeight[column]) * fraction;
+	}
+
 	function setShape(mode) {
 		rockShape = mode === 'square' ? 'square' : 'smooth';
 		return rockShape;
@@ -121,6 +152,7 @@
 		debrisCells.fill(0);
 		debrisValue.fill(0);
 		debrisMinerals.fill(0);
+		floorPiles.fill(0);
 		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
 			const index = row * columns + column;
 			const x = column * 0.075;
@@ -152,6 +184,7 @@
 			mineralStyles[index] = 'rgb(' + Math.round(mineralRed) + ' ' + Math.round(mineralGreen) + ' ' + Math.round(mineralBlue) + ')';
 		}
 		updateHeightmap();
+		updateFloor();
 	}
 
 	function damageWeight(distance) {
@@ -558,6 +591,31 @@
 		return time >= 0 ? time : Infinity;
 	}
 
+	// A landed fragment adds its cells to the pile under its landing point. The
+	// column is capped at the deck line so packed rubble can never bury the
+	// platform or block the collector; lostCells still counts every cell.
+	function deposit(i, x) {
+		const column = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
+		floorPiles[column] = Math.min(pileLimit, floorPiles[column] + fragmentCells(i) * cell);
+		updateFloor();
+	}
+
+	// The road grader blade smooths the profile toward the neighbouring heights
+	// (cut and fill, so volume is conserved) and digs every column down at a
+	// fixed rate. The dig is clamped at the original floor: flattening and
+	// smoothing never leave a pit behind.
+	function grade(dt) {
+		const ease = Math.min(1, graderSmooth * dt);
+		for (let column = 0; column < columns; column++) {
+			const left = floorPiles[column > 0 ? column - 1 : 0];
+			const right = floorPiles[column < columns - 1 ? column + 1 : columns - 1];
+			floorPiles[column] += ((left + right) * 0.5 - floorPiles[column]) * ease;
+		}
+		const cut = graderCut * dt;
+		for (let column = 0; column < columns; column++) floorPiles[column] = Math.max(0, floorPiles[column] - cut);
+		updateFloor();
+	}
+
 	function step(world, dt, carriedMass) {
 		for (let i = 0; i < maxDebris; i++) {
 			if (!active[i]) continue;
@@ -575,15 +633,22 @@
 				debrisVy[i] = oldVy - gravity * deckTime;
 				if (catchFragment(world, i, carriedMass + cargoCells * cellMass)) continue;
 			}
-			const floorTime = oldY >= 0 ? fallTime(oldY, oldVy, 0) : 0;
+			// The rubble surface sits under the fragment's current drift; the
+			// crossing is solved at that height and the deposit books the landing.
+			const surface = floorAt(oldX);
+			const floorTime = oldY >= surface ? fallTime(oldY, oldVy, surface) : 0;
 			if (floorTime <= dt) {
+				// Book the fragment at its actual landing position: when the pile
+				// rose under it mid-fall, the real state is below the new surface,
+				// and the energy ledger may only see what the fragment carried.
 				debrisX[i] = oldX + oldVx * floorTime;
-				debrisY[i] = 0;
+				debrisY[i] = oldY + oldVy * floorTime - 0.5 * gravity * floorTime * floorTime;
 				debrisVx[i] = oldVx;
 				debrisVy[i] = oldVy - gravity * floorTime;
 				world.heat += fragmentMechanical(i);
 				lostCells += fragmentCells(i);
 				lostValue += fragmentValue(i);
+				deposit(i, debrisX[i]);
 				active[i] = 0;
 				debrisCells[i] = 0;
 				debrisValue[i] = 0;
@@ -601,6 +666,7 @@
 			debrisCells[i] = 0;
 			debrisValue[i] = 0;
 		}
+		if (root.SteamEquipment && root.SteamEquipment.isInstalled('grader')) grade(dt);
 	}
 
 	// Purchases and research debit funds and append a ledger entry; false when
@@ -748,11 +814,29 @@
 		}
 	}
 
+	// Fallen rubble under the chamber floor line: a fill up to the smoothed
+	// surface with a lighter crest, drawn before the charge pad stays visible.
+	function drawFloor(context) {
+		updateFloor();
+		context.fillStyle = '#443a2d';
+		context.beginPath();
+		context.moveTo(0, 0);
+		for (let v = 0; v <= columns; v++) context.lineTo(v * cell, floorHeight[v]);
+		context.lineTo(width, 0);
+		context.closePath();
+		context.fill();
+		context.strokeStyle = '#8b7454';
+		context.beginPath();
+		context.moveTo(0, floorHeight[0]);
+		for (let v = 1; v <= columns; v++) context.lineTo(v * cell, floorHeight[v]);
+		context.stroke();
+	}
+
 	// Stable live view: reading simulation state allocates nothing and invokes no command.
 	const state = Object.freeze({
 		columns, rows, cell, bottom, top, defaultPixelSize, storageLimit, cellMass,
-		damageRadius, damageMultiplier,
-		get shape() { return rockShape; }, heightmap, firstRow,
+		damageRadius, damageMultiplier, pileLimit, graderCut, graderSmooth,
+		get shape() { return rockShape; }, heightmap, firstRow, floorPiles, floorHeight,
 		mineralNames, mineralPrices, fuelPrice,
 		strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
 		cargoMinerals, soldMinerals,
@@ -775,7 +859,7 @@
 
 	reset(1);
 
-	const api = { reset, damage, trace, step, sellCargo, purchase, recharge, rechargeCost, draw, state, setShape };
+	const api = { reset, damage, trace, step, sellCargo, purchase, recharge, rechargeCost, draw, drawFloor, floorAt, state, setShape };
 	root.SteamCeiling = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

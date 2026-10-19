@@ -67,6 +67,14 @@ drag (air) or mouse wheel - set angle of platform's piston to control reflection
 
 charge station at center - just type of ground that charge/refuel according to engine. speed is like 4s for whole
 
+## fallen debris
+
+increase floor heightmap. similar array to top rock.
+
+equipment: road grader installed gradually recover floor, dig, flatten, smooth, but prevent pitfalls
+
+because debriss fall same G force as ball - not possible to create effective autopilot to cauch it, so do not implement.
+
 ## autopilot
 
 checkboxes and shortcuts

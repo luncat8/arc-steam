@@ -5,6 +5,10 @@
 	// research node that unlocks it, so purchases need funds and prerequisites.
 	const items = Object.freeze([
 		Object.freeze({
+			id: 'grader', name: 'Road grader', cost: 300, mass: 10,
+			effect: 'Digs fallen rubble off the floor at 0.15 m/s and grades the surface: piles are flattened and smoothed but never below the original ground, so no pits form. Adds 10 kg.'
+		}),
+		Object.freeze({
 			id: 'pad', name: 'Rebound pad', cost: 250, mass: 6, requires: 'materials',
 			retentionBonus: 0.03,
 			effect: 'Reflector keeps 93% of normal kinetic energy per bounce (up from the 90% base). Denser pad adds 6 kg.'

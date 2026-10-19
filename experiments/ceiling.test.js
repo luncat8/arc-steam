@@ -229,3 +229,32 @@ test('extracted, airborne, caught and lost cells stay conserved', () => {
 	assert.equal(state.extractedCells, state.caughtCells + state.lostCells);
 	near(state.caughtValue, state.cargoValue + state.soldValue);
 });
+
+test('lost fragments pile up on the floor heightmap under their landing point', () => {
+	ceiling.reset(17);
+	const state = ceiling.state;
+	const world = { platform: { x: -5, vx: 0 }, heat: 0 };
+	ceiling.damage(6.25, state.bottom + 0.5, 12);
+	const extracted = state.extractedCells;
+	assert.ok(extracted > 0);
+	for (let i = 0; i < state.active.length; i++) if (state.active[i]) {
+		state.debrisX[i] = 6.25;
+		state.debrisY[i] = 3;
+		state.debrisVx[i] = 0;
+		state.debrisVy[i] = -1;
+	}
+	for (let step = 0; step < 240 * 4 && state.airborneCells > 0; step++) ceiling.step(world, 1 / 240, 60);
+	assert.equal(state.airborneCells, 0);
+	assert.equal(state.lostCells, extracted);
+	assert.equal(state.extractedCells, state.airborneCells + state.caughtCells + state.lostCells);
+	assert.ok(world.heat > 0, 'landing energy is booked as heat');
+	const column = Math.floor(6.25 / state.cell);
+	assert.ok(state.floorPiles[column] > 0);
+	assert.ok(ceiling.floorAt(6.25) > 0);
+	// The pile is capped at the deck line and smoothed into its neighbours with
+	// the same binomial stencil as the rock heightmap above.
+	assert.ok(state.floorPiles[column] <= state.pileLimit);
+	assert.ok(state.floorHeight[column - 1] > 0);
+	assert.ok(state.floorHeight[column] > 0);
+	assert.ok(state.floorHeight[column + 1] > 0);
+});

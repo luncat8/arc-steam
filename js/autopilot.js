@@ -178,8 +178,10 @@
 		contactIn = path.time;
 		if (path.kind !== kinds.GROUND) return;
 		// A ground mark means nothing is under the ball yet; the save happens one
-		// deck height earlier, so time and speed are backed out to the deck plane.
-		const deckSpeed = -Math.sqrt(Math.max(0, contactVy * contactVy - 2 * config.ballGravity * config.deck));
+		// deck height earlier, so time and speed are backed out to the deck plane
+		// from the rubble surface the ball would die on.
+		const pile = root.SteamCeiling ? root.SteamCeiling.floorAt(path.endX) : 0;
+		const deckSpeed = -Math.sqrt(Math.max(0, contactVy * contactVy - 2 * config.ballGravity * (config.deck - pile)));
 		contactIn = path.time - (deckSpeed - contactVy) / config.ballGravity;
 		contactVy = deckSpeed;
 	}

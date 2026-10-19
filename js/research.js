@@ -17,7 +17,7 @@
 		Object.freeze({
 			id: 'electromagnetics', name: 'Pulse electromagnetics', cost: 300, requires: Object.freeze(['materials']),
 			pulseBonus: 4,
-			effect: 'Bounce drive pulse rises to 40 J per contact, still paid from the shared reserve at 80% efficiency.'
+			effect: 'Bounce drive pulse rises to 46 J per contact, still paid from the shared reserve at 80% efficiency.'
 		}),
 		Object.freeze({
 			id: 'thermodynamics', name: 'Heat transfer', cost: 340, requires: Object.freeze(['alloys']),

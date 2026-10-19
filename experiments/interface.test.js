@@ -80,7 +80,7 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	assert.equal(spec[1].textContent, physics.config.platformMass.toFixed(1) + ' kg');
 	assert.equal(spec[3].textContent, '400 N');
 	assert.equal(spec[5].textContent, '10 m/s');
-	assert.equal(spec[7].textContent, '36 J');
+	assert.equal(spec[7].textContent, '42 J');
 	assert.equal(spec[9].textContent, '90%');
 	assert.equal(spec[13].textContent, '0%');
 });

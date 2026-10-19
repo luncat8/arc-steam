@@ -50,6 +50,9 @@ function untilBounces(world, count, limitSeconds) {
 		autopilot.update(world, c.step);
 		const before = world.bounces;
 		physics.step(world, c.step);
+		// Keep the ball in play the way the drive keeper releases it, so a run
+		// that studies only the pulse policy measures the same span of bounces.
+		if (world.ball.state === 'held' && world.drive && physics.canLaunch(world)) physics.launch(world);
 		measure.steps++;
 		measure.peakSpeed = Math.max(measure.peakSpeed, Math.abs(world.platform.vx));
 		measure.maxAngle = Math.max(measure.maxAngle, Math.abs(world.pistonAngle));
@@ -126,14 +129,17 @@ test('the drive keeper holds the ball inside one pulse of the ceiling and switch
 	assert.ok(measure.maxApex <= target + gain + 0.05,
 		`apex ${measure.maxApex.toFixed(2)} m stays within one pulse (${(target + gain).toFixed(2)} m) of the ceiling`);
 	assert.ok(measure.maxApex > ceiling.state.bottom - c.radius, 'and it still reaches the rock');
+	assert.ok(world.pushes < measure.contacts.length, 'the keeper leaves bounces that already reach the ceiling passive');
 	balanced(world);
-	// The same ball with the drive simply left on climbs far past that band.
+	// The same ball with the drive simply left on pays for every contact and
+	// every release; the pulse band is the ceiling's, but the reserve cost is not.
 	const loose = flight(physics.createWorld(), 8.63, 6, 8);
 	loose.drive = true;
 	engage('move', 'angle');
 	const unchecked = untilBounces(loose, 25, 120);
-	assert.ok(unchecked.maxApex > measure.maxApex + gain * 0.5,
-		`an always-on drive reaches ${unchecked.maxApex.toFixed(2)} m against the keeper's ${measure.maxApex.toFixed(2)} m`);
+	assert.ok(unchecked.contacts.length >= 20, 'the always-on run stays in play as well');
+	assert.ok(loose.pushes > world.pushes,
+		`an always-on drive spends ${loose.pushes} pulses against the keeper's ${world.pushes}`);
 	balanced(loose);
 });
 
