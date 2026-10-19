@@ -8,6 +8,11 @@
 		width: 24, ceiling: 10, gravity, ballGravity: gravity * ballSpeedScale * ballSpeedScale,
 		ballMass: 1 / (ballSpeedScale * ballSpeedScale), ballSpeedScale, radius: 0.18,
 		platformWidth: 3.6, deck: 0.7, collectorFraction: 0.35,
+		// The reflector is a sprung piston: its face tilts to steer reflections
+		// (centre and half-width follow from the collector/reflector split) and
+		// compresses along its normal in proportion to the impact speed.
+		pistonCentre: 0.63, pistonHalf: 1.17, pistonMaxAngle: Math.PI / 18,
+		pistonTravel: 0.16, pistonCompression: 0.024, pistonSpring: 650, pistonDamping: 18,
 		// Drive response: two 1.5x increases over the original 180 N / 7 m/s
 		// tuning, each rounded down to a whole number.
 		platformMass: 60, force: 400, maxSpeed: 10,
@@ -28,6 +33,48 @@
 
 	function platformMin() { return config.platformWidth * 0.5 - config.pocketDepth; }
 	function platformMax() { return config.width - config.platformWidth * 0.5; }
+
+	function setPistonAngle(world, angle) {
+		world.pistonAngle = Math.max(-config.pistonMaxAngle, Math.min(config.pistonMaxAngle, angle));
+		return world.pistonAngle;
+	}
+
+	// Sprung return from a compression: stiff enough to extend again (the push)
+	// within a few frames, damped enough not to rattle. Offset is along the
+	// piston normal, positive when compressed into the platform.
+	function advancePiston(world, dt) {
+		if (!world.pistonOffset && !world.pistonVelocity) return;
+		const acceleration = -config.pistonSpring * world.pistonOffset - config.pistonDamping * world.pistonVelocity;
+		world.pistonVelocity += acceleration * dt;
+		world.pistonOffset += world.pistonVelocity * dt;
+		if (Math.abs(world.pistonOffset) < 1e-6 && Math.abs(world.pistonVelocity) < 1e-4) {
+			world.pistonOffset = 0;
+			world.pistonVelocity = 0;
+		}
+	}
+
+	// Earliest time the ball centre reaches one radius from the tilted piston
+	// face, or Infinity. The centre travels with the platform, so its velocity
+	// is part of the approach; a contact only counts on the face segment.
+	function pistonContactTime(x, y, vx, vy, centreX, centreVx, angle, limit) {
+		const nx = -Math.sin(angle);
+		const ny = Math.cos(angle);
+		const signed = nx * (x - centreX) + ny * (y - config.deck) - config.radius;
+		if (signed < -1e-9) return Infinity;
+		const a = -0.5 * config.ballGravity * ny;
+		const b = nx * (vx - centreVx) + ny * vy;
+		const discriminant = b * b - 4 * a * signed;
+		if (discriminant < 0) return Infinity;
+		const root = Math.sqrt(discriminant);
+		let time = (-b - root) / (2 * a);
+		if (!(time >= -1e-10) || time > limit || b + 2 * a * time >= 0) time = (-b + root) / (2 * a);
+		if (!(time >= -1e-10) || time > limit || b + 2 * a * time >= 0) return Infinity;
+		time = Math.max(0, time);
+		const contactX = x + vx * time;
+		const contactY = y + vy * time - 0.5 * config.ballGravity * time * time;
+		const foot = (contactX - (centreX + centreVx * time)) * ny + (contactY - config.deck) * -nx;
+		return Math.abs(foot) <= config.pistonHalf + 1e-9 ? time : Infinity;
+	}
 
 	// The charge pad is a strip of ground at the chamber centre. Standing still
 	// on it hands the installed engine its fuel; a moving platform cannot
@@ -98,7 +145,8 @@
 		const world = {
 			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, chargedEnergy: 0,
 			initialEnergy: 0,
-			drive: false, forceSetting: 0.6, direction: 0, target: NaN,
+			drive: true, forceSetting: 0.6, direction: 0, target: NaN,
+			pistonAngle: 0, pistonOffset: 0, pistonVelocity: 0, pistonImpact: 0,
 			platform: { x: 12, vx: 0 },
 			ball: { x: 12.8, y: 5, vx: 1.2 * config.ballSpeedScale, vy: 0, state: 'flying' },
 			bounces: 0, pushes: 0, lastPush: 0, groundings: 0, sales: 0, lastSale: 0
@@ -183,20 +231,32 @@
 		return Math.min(pulseNow() * thermalFactor(world), world.battery * config.efficiency);
 	}
 
+	// The released ball rests on the tilted piston face, a little right of its
+	// centre, so its resting height follows the tilt.
+	function launchHeight(world) {
+		const along = config.platformWidth * 0.25 - config.pistonCentre;
+		return config.deck + along * Math.sin(world.pistonAngle) + config.radius * Math.cos(world.pistonAngle) - config.radius;
+	}
+
 	function canLaunch(world) {
 		if (world.ball.state !== 'held' || !world.drive) return false;
-		return launchCapacity(world) > config.ballMass * config.ballGravity * config.deck;
+		return launchCapacity(world) > config.ballMass * config.ballGravity * launchHeight(world);
 	}
 
 	function launch(world) {
 		if (!canLaunch(world)) return false;
 		const ball = world.ball;
 		const energy = spend(world, pulseNow() * thermalFactor(world));
-		ball.x = world.platform.x + config.platformWidth * 0.25;
-		ball.y = config.deck + config.radius;
+		const height = launchHeight(world);
+		const nx = -Math.sin(world.pistonAngle);
+		ball.x = world.platform.x + config.pistonCentre + Math.cos(world.pistonAngle) * (config.platformWidth * 0.25 - config.pistonCentre) + nx * config.radius;
+		ball.y = height + config.radius;
 		ball.vx = world.platform.vx;
-		ball.vy = Math.sqrt(2 * (energy - config.ballMass * config.ballGravity * config.deck) / config.ballMass);
+		ball.vy = Math.sqrt(2 * (energy - config.ballMass * config.ballGravity * height) / config.ballMass);
 		ball.state = 'flying';
+		// The piston visibly shoves the ball away, then springs back.
+		world.pistonOffset = config.pistonTravel * 0.6;
+		world.pistonVelocity = 0;
 		world.lastPush = energy;
 		world.pushes++;
 		return true;
@@ -313,7 +373,12 @@
 			const deckTime = ball.y >= config.deck + config.radius - 1e-10 ? downwardTime(ball, config.deck + config.radius) : Infinity;
 			const platformX = oldPlatformX + (world.platform.x - oldPlatformX) * (elapsed + deckTime) / dt;
 			const impactX = ball.x + ball.vx * deckTime;
-			if (deckTime <= time && Math.abs(impactX - platformX) <= config.platformWidth * 0.5) { time = deckTime; type = 4; }
+			const collectorEdgeX = platformX - config.platformWidth * 0.5 + config.platformWidth * config.collectorFraction;
+			if (deckTime <= time && impactX >= platformX - config.platformWidth * 0.5 && impactX <= collectorEdgeX) { time = deckTime; type = 4; }
+			const platformVelocity = (world.platform.x - oldPlatformX) / dt;
+			const pistonCentreX = oldPlatformX + platformVelocity * elapsed + config.pistonCentre;
+			const pistonTime = pistonContactTime(ball.x, ball.y, ball.vx, ball.vy, pistonCentreX, platformVelocity, world.pistonAngle, remaining);
+			if (pistonTime <= time) { time = pistonTime; type = 6; }
 			ball.x += ball.vx * time;
 			ball.y += ball.vy * time - 0.5 * config.ballGravity * time * time;
 			ball.vy -= config.ballGravity * time;
@@ -354,28 +419,55 @@
 				}
 				continue;
 			}
-			const collectorEdge = platformX - config.platformWidth * 0.5 + config.platformWidth * config.collectorFraction;
-			if (ball.x < collectorEdge) { capture(world); return; }
-			const carriedMass = platformMass(world);
-			const relativeVx = ball.vx - (world.platform.x - oldPlatformX) / dt;
-			const normalImpulse = config.ballMass * Math.abs(ball.vy) * (1 + Math.sqrt(retentionNow()));
-			const frictionImpulse = Math.max(-normalImpulse * 0.35, Math.min(normalImpulse * 0.35, -relativeVx / (1 / config.ballMass + 1 / carriedMass)));
-			const beforeTangential = 0.5 * config.ballMass * ball.vx * ball.vx + 0.5 * carriedMass * world.platform.vx * world.platform.vx;
-			ball.vx += frictionImpulse / config.ballMass;
-			world.platform.vx -= frictionImpulse / carriedMass;
-			const afterTangential = 0.5 * config.ballMass * ball.vx * ball.vx + 0.5 * carriedMass * world.platform.vx * world.platform.vx;
-			world.heat += Math.max(0, beforeTangential - afterTangential);
-			passiveImpact(world, 0, 1, 0);
-			world.bounces++;
-			world.lastPush = 0;
-			if (world.drive) {
-				world.lastPush = spend(world, pulseNow() * thermalFactor(world));
-				if (world.lastPush > 0) {
-					ball.vy = Math.sqrt(ball.vy * ball.vy + 2 * world.lastPush / config.ballMass);
-					world.pushes++;
+			if (type === 6) {
+				const angle = world.pistonAngle;
+				const nx = -Math.sin(angle);
+				const ny = Math.cos(angle);
+				const tx = ny;
+				const ty = -nx;
+				const carriedMass = platformMass(world);
+				const relativeVx = ball.vx - world.platform.vx;
+				const impactSpeed = -(relativeVx * nx + ball.vy * ny);
+				if (impactSpeed <= 0) continue;
+				// Compression follows the normal impact speed; the spring in
+				// step() then extends the face back out as the visible push.
+				world.pistonImpact = impactSpeed;
+				world.pistonOffset = Math.min(config.pistonTravel, Math.max(world.pistonOffset, impactSpeed * config.pistonCompression));
+				world.pistonVelocity = 0;
+				const beforeEnergy = 0.5 * config.ballMass * (ball.vx * ball.vx + ball.vy * ball.vy) + 0.5 * carriedMass * world.platform.vx * world.platform.vx;
+				const normalImpulse = config.ballMass * impactSpeed * (1 + Math.sqrt(retentionNow()));
+				const tangentVelocity = relativeVx * tx + ball.vy * ty;
+				const frictionImpulse = Math.max(-normalImpulse * 0.35, Math.min(normalImpulse * 0.35, -tangentVelocity / (1 / config.ballMass + 1 / carriedMass)));
+				ball.vx += frictionImpulse * tx / config.ballMass;
+				ball.vy += frictionImpulse * ty / config.ballMass;
+				world.platform.vx -= frictionImpulse * tx / carriedMass;
+				const normalVelocity = (ball.vx - world.platform.vx) * nx + ball.vy * ny;
+				if (normalVelocity < 0) {
+					const impulse = -(1 + Math.sqrt(retentionNow())) * normalVelocity / (1 / config.ballMass + nx * nx / carriedMass);
+					ball.vx += impulse * nx / config.ballMass;
+					ball.vy += impulse * ny / config.ballMass;
+					world.platform.vx -= impulse * nx / carriedMass;
 				}
+				const afterEnergy = 0.5 * config.ballMass * (ball.vx * ball.vx + ball.vy * ball.vy) + 0.5 * carriedMass * world.platform.vx * world.platform.vx;
+				world.heat += Math.max(0, beforeEnergy - afterEnergy);
+				world.bounces++;
+				world.lastPush = 0;
+				if (world.drive) {
+					world.lastPush = spend(world, pulseNow() * thermalFactor(world));
+					if (world.lastPush > 0) {
+						const normalBallVelocity = ball.vx * nx + ball.vy * ny;
+						const boosted = Math.sqrt(normalBallVelocity * normalBallVelocity + 2 * world.lastPush / config.ballMass);
+						ball.vx += (boosted - normalBallVelocity) * nx;
+						ball.vy += (boosted - normalBallVelocity) * ny;
+						world.pushes++;
+					}
+				}
+				if ((ball.vx - world.platform.vx) * nx + ball.vy * ny < 0.08) { capture(world); return; }
+				continue;
 			}
-			if (ball.vy < 0.08) { capture(world); return; }
+			// Type 4 is the flat collector only: it catches and holds the ball.
+			capture(world);
+			return;
 		}
 	}
 
@@ -383,6 +475,7 @@
 		const oldX = world.platform.x;
 		movePlatform(world, dt);
 		advanceBall(world, dt, oldX);
+		advancePiston(world, dt);
 		charge(world, dt);
 		if (root.SteamCeiling) {
 			const heldMass = world.ball.state === 'held' ? config.ballMass : 0;
@@ -402,7 +495,8 @@
 		config, createWorld, step, launch, canLaunch, ballEnergy, totalEnergy, temperature,
 		thermalFactor, coolingPower, platformMass, platformMin, platformMax, dryMass,
 		chargePadMin, chargePadMax, onChargePad, charging,
-		retentionNow, pulseNow, recoveryNow, conductanceNow, radiatorArea, applyMassChange
+		retentionNow, pulseNow, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
+		setPistonAngle, pistonContactTime
 	};
 	root.SteamPhysics = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;

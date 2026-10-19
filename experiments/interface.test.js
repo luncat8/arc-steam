@@ -70,6 +70,8 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	assert.match(dom.element('temperature').textContent, /°C$/);
 	assert.match(dom.element('motion').textContent, /m\/s$/);
 	assert.ok(Math.abs(parseFloat(dom.element('error').textContent)) < 1e-5);
+	assert.equal(dom.element('drive').getAttribute('aria-pressed'), 'true', 'the bounce drive is enabled by default');
+	assert.equal(dom.element('drive').firstChild.textContent, 'Drive on ');
 	assert.equal(dom.element('research-progress').textContent, '0 / ' + research.nodes.length);
 	assert.equal(dom.element('prediction-status').hidden, true, 'the overlay stays hidden before its research');
 	// The installed specification starts at base tuning.
@@ -80,6 +82,43 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	assert.equal(spec[7].textContent, '36 J');
 	assert.equal(spec[9].textContent, '90%');
 	assert.equal(spec[13].textContent, '0%');
+});
+
+test('settled readouts do not rewrite buttons, status or control state', () => {
+	// Freeze the world: telemetry may keep reporting, but with nothing changed
+	// no button label, status line, pressed state or disabled flag may be
+	// written again. Count the actual DOM writes instead of comparing values,
+	// because a redundant write stores the same string it replaces.
+	dom.element('pause').dispatch('click');
+	advance(4);
+	const counts = { text: 0, disabled: 0, attribute: 0 };
+	function countText(node) {
+		let value = node.textContent;
+		Object.defineProperty(node, 'textContent', {
+			configurable: true,
+			get() { return value; },
+			set(next) { counts.text++; value = next; }
+		});
+	}
+	countText(dom.element('drive').firstChild);
+	countText(dom.element('status'));
+	countText(dom.element('refuel'));
+	countText(dom.element('piston-value'));
+	countText(buttonOf(gearRow('pad')));
+	countText(buttonOf(techRow('materials')));
+	const launch = dom.element('launch');
+	let launchDisabled = launch.disabled;
+	Object.defineProperty(launch, 'disabled', {
+		configurable: true,
+		get() { return launchDisabled; },
+		set(next) { counts.disabled++; launchDisabled = next; }
+	});
+	const drive = dom.element('drive');
+	const writeAttribute = drive.setAttribute.bind(drive);
+	drive.setAttribute = function (name, value) { counts.attribute++; return writeAttribute(name, value); };
+	advance(30);
+	assert.deepEqual(counts, { text: 0, disabled: 0, attribute: 0 });
+	dom.element('pause').dispatch('click');
 });
 
 test('locked and unaffordable upgrades say why instead of failing silently', () => {
@@ -104,11 +143,14 @@ test('locked and unaffordable upgrades say why instead of failing silently', () 
 });
 
 test('shortcuts drive the simulation without re-triggering focused controls', () => {
-	dom.key('Space');
+	// The drive starts on (see the boot test), so the first toggle turns it off.
 	assert.equal(dom.element('drive').getAttribute('aria-pressed'), 'true');
 	assert.equal(dom.element('drive').firstChild.textContent, 'Drive on ');
-	dom.key('KeyQ');
+	dom.key('Space');
 	assert.equal(dom.element('drive').getAttribute('aria-pressed'), 'false');
+	assert.equal(dom.element('drive').firstChild.textContent, 'Drive off ');
+	dom.key('KeyQ');
+	assert.equal(dom.element('drive').getAttribute('aria-pressed'), 'true');
 	dom.key('KeyW');
 	assert.equal(dom.element('force').value, '70');
 	assert.equal(dom.element('force-value').textContent, '70%');
@@ -125,7 +167,7 @@ test('shortcuts drive the simulation without re-triggering focused controls', ()
 	assert.equal(dom.element('clock').textContent, frozen);
 	// Space after clicking Pause still toggles the drive, not the pause button.
 	dom.key('Space');
-	assert.equal(dom.element('drive').getAttribute('aria-pressed'), 'true');
+	assert.equal(dom.element('drive').getAttribute('aria-pressed'), 'false');
 	assert.equal(dom.element('pause').textContent, 'Resume');
 	dom.key('Space');
 	dom.element('pause').dispatch('click');
@@ -254,6 +296,40 @@ test('clicking rock inspects a cell and clicking low commands travel, without in
 	dom.element('c').dispatch('pointerdown', low);
 	assert.ok(Math.abs(world.target - 5) < 1e-6, 'the low band sets a travel target');
 	assert.equal(dom.element('mineral-cell').textContent, 'Column ' + (column + 1) + ' / ' + state.columns + ' · Layer ' + state.rows + ' / ' + state.rows, 'travel does not change the inspected cell');
+});
+
+test('the piston angle is set by the slider, the chamber wheel and an air drag', () => {
+	const slider = dom.element('piston-angle');
+	slider.value = '-4';
+	slider.dispatch('input');
+	assert.ok(Math.abs(world.pistonAngle + 4 * Math.PI / 180) < 1e-12);
+	assert.equal(dom.element('piston-value').textContent, '-4.0°');
+	slider.value = '0';
+	slider.dispatch('input');
+	assert.equal(world.pistonAngle, 0);
+	// Wheel up over the chamber raises the angle; wheel down lowers it.
+	dom.element('c').dispatch('wheel', { deltaY: -100 });
+	assert.ok(Math.abs(world.pistonAngle - 2 * Math.PI / 180) < 1e-12, 'one wheel notch tilts about two degrees');
+	assert.equal(slider.value, '2');
+	dom.element('c').dispatch('wheel', { deltaY: 50 });
+	assert.ok(Math.abs(world.pistonAngle - Math.PI / 180) < 1e-12);
+	// A drag through open air (above the travel band, below the rock) tilts too.
+	world.target = NaN;
+	const start = chamberPoint(12, 5);
+	dom.element('c').dispatch('pointerdown', start);
+	dom.element('c').dispatch('pointermove', { clientX: start.clientX + 100, clientY: start.clientY });
+	dom.element('c').dispatch('pointerup', {});
+	assert.ok(Math.abs(world.pistonAngle - 6 * Math.PI / 180) < 1e-9, `drag tilts to six degrees, got ${world.pistonAngle * 180 / Math.PI}`);
+	assert.equal(dom.element('piston-value').textContent, '6.0°');
+	assert.ok(Number.isNaN(world.target), 'an air drag does not command travel');
+	// The angle clamps at ten degrees however it is set.
+	slider.value = '10';
+	slider.dispatch('input');
+	dom.element('c').dispatch('wheel', { deltaY: -500 });
+	assert.ok(Math.abs(world.pistonAngle - physics.config.pistonMaxAngle) < 1e-12);
+	slider.value = '0';
+	slider.dispatch('input');
+	assert.equal(world.pistonAngle, 0);
 });
 
 test('telemetry highlights an empty reserve, a full cargo and overheating', () => {

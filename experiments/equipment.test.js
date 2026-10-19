@@ -47,6 +47,7 @@ test('installed equipment changes retention, pulse and dry mass in the simulatio
 	near(physics.retentionNow(), 0.94);
 	near(physics.dryMass(), beforePad + 6);
 	w.ball.state = 'flying';
+	w.drive = false;
 	w.ball.x = 12.8; w.ball.vx = 0; w.ball.y = c.deck + c.radius; w.ball.vy = -5;
 	sync(w);
 	physics.step(w, c.step);

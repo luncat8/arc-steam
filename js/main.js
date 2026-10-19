@@ -4,7 +4,7 @@
 	const config = physics.config;
 	const canvas = document.getElementById('c');
 	const context = canvas.getContext('2d');
-	const ids = ['clock', 'drive', 'launch', 'status', 'prediction-status', 'force', 'force-value', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'view-modes',
+	const ids = ['clock', 'drive', 'launch', 'status', 'prediction-status', 'force', 'force-value', 'piston-angle', 'piston-value', 'battery', 'cargo', 'platform-mass', 'funds', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'view-modes',
 		'platform-spec', 'research-rows', 'research-status', 'research-progress',
 		'mineral-cell', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
@@ -13,6 +13,14 @@
 		'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry'];
 	const ui = {};
 	for (const id of ids) ui[id] = document.getElementById(id);
+	// The readout cadence re-evaluates far more often than the panels actually
+	// change, so every non-telemetry write goes through these guards: an
+	// unchanged value never touches the DOM (no text replacement, attribute
+	// churn, or button state flicker). Telemetry numbers below keep writing
+	// directly, since they are expected to move.
+	function setText(node, text) { if (node.textContent !== text) node.textContent = text; }
+	function setDisabled(node, disabled) { if (node.disabled !== disabled) node.disabled = disabled; }
+	function setHidden(node, hidden) { if (node.hidden !== hidden) node.hidden = hidden; }
 	let selectedColumn = 95;
 	let selectedLayer = 0;
 	let renderedSales = -1;
@@ -130,7 +138,11 @@
 
 	// Blocked upgrade buttons stay clickable (aria-disabled, not disabled): a real
 	// disabled button swallows the click, and the refusal must say why.
-	function setBlocked(button, blocked) { button.setAttribute('aria-disabled', blocked ? 'true' : 'false'); }
+	function setBlocked(button, blocked) {
+		const value = blocked ? 'true' : 'false';
+		if (button.getAttribute('aria-disabled') !== value) button.setAttribute('aria-disabled', value);
+	}
+	function setRowState(row, state) { if (row.dataset.state !== state) row.dataset.state = state; }
 
 	// Locked, available and researched states drive both the button and the row
 	// styling, so the panel shows progression without relying on colour alone.
@@ -140,8 +152,8 @@
 			const installed = SteamEquipment.isInstalled(row.item.id);
 			const unlocked = SteamEquipment.isUnlocked(row.item.id);
 			setBlocked(row.button, installed || !unlocked || funds < row.item.cost);
-			row.button.textContent = installed ? 'Installed' : unlocked ? 'Buy' : 'Locked';
-			row.row.dataset.state = installed ? 'installed' : unlocked ? 'available' : 'locked';
+			setText(row.button, installed ? 'Installed' : unlocked ? 'Buy' : 'Locked');
+			setRowState(row.row, installed ? 'installed' : unlocked ? 'available' : 'locked');
 		}
 		let completed = 0;
 		for (const row of researchRows) {
@@ -150,38 +162,38 @@
 			setBlocked(row.button, status !== SteamResearch.constants.AVAILABLE || funds < row.node.cost);
 			// 'Locked' means a missing prerequisite; an unaffordable but available
 			// node still reads 'Research' and is simply blocked.
-			row.button.textContent = status === SteamResearch.constants.RESEARCHED ? 'Done' : status === SteamResearch.constants.AVAILABLE ? 'Research' : 'Locked';
-			row.row.dataset.state = status;
+			setText(row.button, status === SteamResearch.constants.RESEARCHED ? 'Done' : status === SteamResearch.constants.AVAILABLE ? 'Research' : 'Locked');
+			setRowState(row.row, status);
 		}
-		ui['research-progress'].textContent = completed + ' / ' + researchRows.length;
+		setText(ui['research-progress'], completed + ' / ' + researchRows.length);
 	}
 
 	// Installed specification: the live result of base tuning plus every equipment
 	// and research delta, which is what the row effects compare against.
 	function specReadout() {
-		specValues[0].textContent = physics.dryMass().toFixed(1) + ' kg';
-		specValues[1].textContent = config.force.toFixed(0) + ' N';
-		specValues[2].textContent = config.maxSpeed.toFixed(0) + ' m/s';
-		specValues[3].textContent = physics.pulseNow().toFixed(0) + ' J';
-		specValues[4].textContent = (physics.retentionNow() * 100).toFixed(0) + '%';
-		specValues[5].textContent = physics.conductanceNow().toFixed(2) + ' W/K';
-		specValues[6].textContent = (physics.recoveryNow() * 100).toFixed(0) + '%';
+		setText(specValues[0], physics.dryMass().toFixed(1) + ' kg');
+		setText(specValues[1], config.force.toFixed(0) + ' N');
+		setText(specValues[2], config.maxSpeed.toFixed(0) + ' m/s');
+		setText(specValues[3], physics.pulseNow().toFixed(0) + ' J');
+		setText(specValues[4], (physics.retentionNow() * 100).toFixed(0) + '%');
+		setText(specValues[5], physics.conductanceNow().toFixed(2) + ' W/K');
+		setText(specValues[6], (physics.recoveryNow() * 100).toFixed(0) + '%');
 	}
 
 	function predictionReadout() {
 		if (!SteamResearch.state.prediction) {
-			ui['prediction-status'].hidden = true;
+			setHidden(ui['prediction-status'], true);
 			return false;
 		}
-		ui['prediction-status'].hidden = false;
+		setHidden(ui['prediction-status'], false);
 		const computer = window.SteamPrediction;
 		const kinds = computer.kinds;
 		const path = computer.predict(world);
-		if (path.kind === kinds.PARKED) ui['prediction-status'].textContent = 'Ballistic computer: the ball is ' + world.ball.state + ', so there is no flight to predict.';
-		else if (path.kind === kinds.ROCK) ui['prediction-status'].textContent = 'Predicted rock contact at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + ' s · the rebound depends on fracture, so the path stops there.';
-		else if (path.kind === kinds.TIMEOUT) ui['prediction-status'].textContent = 'Ballistic computer: still airborne after ' + computer.horizon.toFixed(0) + ' s of prediction.';
-		else ui['prediction-status'].textContent = 'Landing ' + (path.kind === kinds.DECK ? 'on the deck' : 'on the ground') + ' at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + ' s · ghost coasts to ' + path.ghostX.toFixed(1) + ' m · '
-			+ (path.reachable ? 'intercept reachable at full thrust' : 'intercept short by ' + path.gap.toFixed(1) + ' m at full thrust');
+		if (path.kind === kinds.PARKED) setText(ui['prediction-status'], 'Ballistic computer: the ball is ' + world.ball.state + ', so there is no flight to predict.');
+		else if (path.kind === kinds.ROCK) setText(ui['prediction-status'], 'Predicted rock contact at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + ' s · the rebound depends on fracture, so the path stops there.');
+		else if (path.kind === kinds.TIMEOUT) setText(ui['prediction-status'], 'Ballistic computer: still airborne after ' + computer.horizon.toFixed(0) + ' s of prediction.');
+		else setText(ui['prediction-status'], 'Landing ' + (path.kind === kinds.DECK ? 'on the deck' : 'on the ground') + ' at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + ' s · ghost coasts to ' + path.ghostX.toFixed(1) + ' m · '
+			+ (path.reachable ? 'intercept reachable at full thrust' : 'intercept short by ' + path.gap.toFixed(1) + ' m at full thrust'));
 		return true;
 	}
 	let paused = false;
@@ -195,6 +207,11 @@
 	let floorY = 0;
 	let leftHeld = false;
 	let rightHeld = false;
+	// An air drag tilts the piston from the angle it had when the drag began.
+	let pistonDragActive = false;
+	let pistonDragX = 0;
+	let pistonDragY = 0;
+	let pistonDragAngle = 0;
 	// The canvas is redrawn after simulation steps or when something it shows
 	// changed while time stands still (pause, resize, selection, view mode).
 	let sceneDirty = true;
@@ -282,8 +299,30 @@
 		context.fillRect(left, 0.2, config.platformWidth, 0.4);
 		context.fillStyle = '#e6b66e';
 		context.fillRect(left, 0.55, collectorWidth, 0.15);
+		// Piston face: a plate on the piston centre, rotated by the tilt and
+		// pushed into the platform along its normal by the spring compression,
+		// with the rod that drives it visible underneath.
+		const pistonNx = -Math.sin(world.pistonAngle);
+		const pistonNy = Math.cos(world.pistonAngle);
+		const pistonTx = pistonNy;
+		const pistonTy = -pistonNx;
+		const pistonCentreX = platform.x + config.pistonCentre - pistonNx * world.pistonOffset;
+		const pistonCentreY = config.deck - pistonNy * world.pistonOffset;
+		context.strokeStyle = '#718d75';
+		context.lineWidth = 0.06;
+		context.beginPath();
+		context.moveTo(pistonCentreX - pistonNx * 0.15, pistonCentreY - pistonNy * 0.15);
+		context.lineTo(platform.x + config.pistonCentre, 0.22);
+		context.stroke();
+		context.lineWidth = 1 / scale;
 		context.fillStyle = world.drive ? '#b9ed91' : '#718d75';
-		context.fillRect(left + collectorWidth, 0.55, config.platformWidth - collectorWidth, 0.15);
+		context.beginPath();
+		context.moveTo(pistonCentreX - pistonTx * config.pistonHalf, pistonCentreY - pistonTy * config.pistonHalf);
+		context.lineTo(pistonCentreX + pistonTx * config.pistonHalf, pistonCentreY + pistonTy * config.pistonHalf);
+		context.lineTo(pistonCentreX + pistonTx * config.pistonHalf - pistonNx * 0.15, pistonCentreY + pistonTy * config.pistonHalf - pistonNy * 0.15);
+		context.lineTo(pistonCentreX - pistonTx * config.pistonHalf - pistonNx * 0.15, pistonCentreY - pistonTy * config.pistonHalf - pistonNy * 0.15);
+		context.closePath();
+		context.fill();
 		context.fillStyle = '#10191d';
 		context.beginPath(); context.arc(left + 0.5, 0.18, 0.18, 0, Math.PI * 2); context.arc(left + config.platformWidth - 0.5, 0.18, 0.18, 0, Math.PI * 2); context.fill();
 		const ball = world.ball;
@@ -361,33 +400,34 @@
 		const offset = index * 3;
 		const remaining = ceiling.strength[index];
 		const initial = ceiling.initialStrength[index];
-		ui['mineral-cell'].textContent = 'Column ' + (selectedColumn + 1) + ' / ' + ceiling.columns + ' · Layer ' + (selectedLayer + 1) + ' / ' + ceiling.rows;
-		ui['mineral-strength'].textContent = remaining.toFixed(2) + ' / ' + initial.toFixed(2) + ' J' + (remaining === 0 ? ' · depleted' : ' · remaining strength');
-		ui['strength-meter'].value = initial > 0 ? remaining / initial : 0;
-		ui['mineral-composition'].textContent = 'Fe ' + (ceiling.minerals[offset] * 100).toFixed(1) + '% · Cu ' + (ceiling.minerals[offset + 1] * 100).toFixed(1) + '% · Cr ' + (ceiling.minerals[offset + 2] * 100).toFixed(1) + '%';
-		ui['mineral-price'].textContent = 'Value ' + ceiling.prices[index].toFixed(2) + ' cr/cell · R ' + (ceiling.elements[offset] * 100).toFixed(0) + '% G ' + (ceiling.elements[offset + 1] * 100).toFixed(0) + '% B ' + (ceiling.elements[offset + 2] * 100).toFixed(0) + '%';
-		ui.extracted.textContent = ceiling.extractedCells + ' cells';
-		ui.falling.textContent = ceiling.airborneCells + ' cells';
-		ui.caught.textContent = ceiling.caughtCells + ' cells';
-		ui.lost.textContent = ceiling.lostCells + ' cells';
-		ui['cargo-mass'].textContent = ceiling.cargoMass.toFixed(1) + ' kg';
-		ui['cargo-value'].textContent = ceiling.cargoValue.toFixed(1) + ' cr · ' + ceiling.cargoCells + ' cells';
-		ui['sold-mass'].textContent = (ceiling.soldCells * ceiling.cellMass).toFixed(1) + ' kg';
-		ui['sold-value'].textContent = ceiling.soldValue.toFixed(1) + ' cr · ' + ceiling.soldCells + ' cells';
-		ui['sale-count'].textContent = ceiling.ledger.length + ' entries';
-		ui.credits.textContent = ceiling.funds.toFixed(1) + ' cr';
+		setText(ui['mineral-cell'], 'Column ' + (selectedColumn + 1) + ' / ' + ceiling.columns + ' · Layer ' + (selectedLayer + 1) + ' / ' + ceiling.rows);
+		setText(ui['mineral-strength'], remaining.toFixed(2) + ' / ' + initial.toFixed(2) + ' J' + (remaining === 0 ? ' · depleted' : ' · remaining strength'));
+		const strengthRatio = initial > 0 ? remaining / initial : 0;
+		if (Number(ui['strength-meter'].value) !== strengthRatio) ui['strength-meter'].value = strengthRatio;
+		setText(ui['mineral-composition'], 'Fe ' + (ceiling.minerals[offset] * 100).toFixed(1) + '% · Cu ' + (ceiling.minerals[offset + 1] * 100).toFixed(1) + '% · Cr ' + (ceiling.minerals[offset + 2] * 100).toFixed(1) + '%');
+		setText(ui['mineral-price'], 'Value ' + ceiling.prices[index].toFixed(2) + ' cr/cell · R ' + (ceiling.elements[offset] * 100).toFixed(0) + '% G ' + (ceiling.elements[offset + 1] * 100).toFixed(0) + '% B ' + (ceiling.elements[offset + 2] * 100).toFixed(0) + '%');
+		setText(ui.extracted, ceiling.extractedCells + ' cells');
+		setText(ui.falling, ceiling.airborneCells + ' cells');
+		setText(ui.caught, ceiling.caughtCells + ' cells');
+		setText(ui.lost, ceiling.lostCells + ' cells');
+		setText(ui['cargo-mass'], ceiling.cargoMass.toFixed(1) + ' kg');
+		setText(ui['cargo-value'], ceiling.cargoValue.toFixed(1) + ' cr · ' + ceiling.cargoCells + ' cells');
+		setText(ui['sold-mass'], (ceiling.soldCells * ceiling.cellMass).toFixed(1) + ' kg');
+		setText(ui['sold-value'], ceiling.soldValue.toFixed(1) + ' cr · ' + ceiling.soldCells + ' cells');
+		setText(ui['sale-count'], ceiling.ledger.length + ' entries');
+		setText(ui.credits, ceiling.funds.toFixed(1) + ' cr');
 		// Recharge is offered whenever the reserve is short and funds cover a joule.
 		const refill = window.SteamCeiling.rechargeCost(world);
-		ui['refuel-cost'].textContent = refill.toFixed(1) + ' cr';
-		ui.refuel.disabled = refill <= 0 || ceiling.funds < ceiling.fuelPrice / 1000;
-		ui.refuel.textContent = refill > 0 ? 'Recharge ' + ((config.battery - world.battery) / 1000).toFixed(2) + ' kJ' : 'Reserve full';
+		setText(ui['refuel-cost'], refill.toFixed(1) + ' cr');
+		setDisabled(ui.refuel, refill <= 0 || ceiling.funds < ceiling.fuelPrice / 1000);
+		setText(ui.refuel, refill > 0 ? 'Recharge ' + ((config.battery - world.battery) / 1000).toFixed(2) + ' kJ' : 'Reserve full');
 		for (let i = 0; i < 3; i++) {
-			inventoryCells[i * 2].textContent = ceiling.cargoMinerals[i].toFixed(3);
-			inventoryCells[i * 2 + 1].textContent = ceiling.soldMinerals[i].toFixed(3);
+			setText(inventoryCells[i * 2], ceiling.cargoMinerals[i].toFixed(3));
+			setText(inventoryCells[i * 2 + 1], ceiling.soldMinerals[i].toFixed(3));
 		}
 		if (renderedSales === ceiling.ledger.length) return;
 		renderedSales = ceiling.ledger.length;
-		ui['transaction-count'].textContent = '(' + renderedSales + ')';
+		setText(ui['transaction-count'], '(' + renderedSales + ')');
 		ui.ledger.replaceChildren();
 		ui.ledger.start = renderedSales;
 		for (let i = renderedSales - 1; i >= Math.max(0, renderedSales - 8); i--) {
@@ -397,9 +437,9 @@
 			ui.ledger.appendChild(item);
 		}
 		if (renderedSales > 0) {
-			ui['transaction-status'].textContent = ledgerStatus(ceiling.ledger[renderedSales - 1]);
+			setText(ui['transaction-status'], ledgerStatus(ceiling.ledger[renderedSales - 1]));
 		} else {
-			ui['transaction-status'].textContent = 'Catch fragments in the amber collector, then touch a SELL wall.';
+			setText(ui['transaction-status'], 'Catch fragments in the amber collector, then touch a SELL wall.');
 		}
 	}
 
@@ -415,16 +455,16 @@
 		const onPad = physics.onChargePad(world);
 		const chargingNow = physics.charging(world);
 		setWarning('reserve-telemetry', reserveWarning);
-		if (chargingNow) ui['reserve-note'].textContent = 'Charging ' + (config.chargePower / 1000).toFixed(1) + ' kW · ' + ((config.battery - world.battery) / config.chargePower).toFixed(1) + ' s to full';
-		else if (onPad && world.battery >= config.battery) ui['reserve-note'].textContent = 'Reserve full · centre pad';
-		else if (onPad) ui['reserve-note'].textContent = 'On the centre pad · stop to charge (' + config.chargeSeconds + ' s full)';
-		else if (reserveWarning === 'EMPTY') ui['reserve-note'].textContent = 'Empty · market import or reach the centre pad';
-		else if (reserveWarning) ui['reserve-note'].textContent = 'Low reserve · park on the centre pad';
-		else ui['reserve-note'].textContent = 'Centre pad refills free in ' + config.chargeSeconds + ' s · emergency import in the market';
+		if (chargingNow) setText(ui['reserve-note'], 'Charging ' + (config.chargePower / 1000).toFixed(1) + ' kW · ' + ((config.battery - world.battery) / config.chargePower).toFixed(1) + ' s to full');
+		else if (onPad && world.battery >= config.battery) setText(ui['reserve-note'], 'Reserve full · centre pad');
+		else if (onPad) setText(ui['reserve-note'], 'On the centre pad · stop to charge (' + config.chargeSeconds + ' s full)');
+		else if (reserveWarning === 'EMPTY') setText(ui['reserve-note'], 'Empty · market import or reach the centre pad');
+		else if (reserveWarning) setText(ui['reserve-note'], 'Low reserve · park on the centre pad');
+		else setText(ui['reserve-note'], 'Centre pad refills free in ' + config.chargeSeconds + ' s · emergency import in the market');
 		const heldMass = world.ball.state === 'held' ? config.ballMass : 0;
 		const cargoFull = ceiling.cargoCells >= ceiling.storageLimit;
 		setWarning('cargo-telemetry', cargoFull ? 'FULL' : '');
-		ui['cargo-note'].textContent = cargoFull ? 'Full · extra fragments are refused until you sell at a wall' : '100 cells maximum · cargo adds mass';
+		setText(ui['cargo-note'], cargoFull ? 'Full · extra fragments are refused until you sell at a wall' : '100 cells maximum · cargo adds mass');
 		ui.cargo.textContent = ceiling.cargoCells + ' / ' + ceiling.storageLimit;
 		ui['platform-mass'].textContent = (physics.dryMass() + ceiling.cargoMass + heldMass).toFixed(1) + ' kg';
 		ui.funds.textContent = ceiling.funds.toFixed(1) + ' cr';
@@ -434,25 +474,44 @@
 		const thermalFactor = physics.thermalFactor(world);
 		ui.temperature.textContent = temperature.toFixed(1) + ' °C';
 		setWarning('thermal-telemetry', thermalFactor === 0 ? 'CUTOFF' : thermalFactor < 1 ? 'HOT' : '');
-		ui['thermal-status'].textContent = thermalFactor >= 1 ? 'Drive output 100% · cooling normally'
+		setText(ui['thermal-status'], thermalFactor >= 1 ? 'Drive output 100% · cooling normally'
 			: thermalFactor > 0 ? 'Overheating · drive output ' + Math.round(thermalFactor * 100) + '%'
-			: 'Cutoff · cool before powering';
+			: 'Cutoff · cool before powering');
 		ui.cooled.textContent = world.cooledEnergy.toFixed(1) + ' J';
 		ui.error.textContent = (physics.totalEnergy(world) - world.initialEnergy).toFixed(6) + ' J';
 		ui.motion.textContent = world.platform.vx.toFixed(2) + ' m/s';
-		ui.drive.setAttribute('aria-pressed', String(world.drive));
-		ui.drive.firstChild.textContent = world.drive ? 'Drive on ' : 'Drive off ';
-		ui.launch.disabled = !physics.canLaunch(world);
+		const pressed = String(world.drive);
+		if (ui.drive.getAttribute('aria-pressed') !== pressed) ui.drive.setAttribute('aria-pressed', pressed);
+		setText(ui.drive.firstChild, world.drive ? 'Drive on ' : 'Drive off ');
+		setDisabled(ui.launch, !physics.canLaunch(world));
 		if (world.ball.state === 'held') {
-			if (!world.drive) ui.status.textContent = 'Ball held · enable drive to release';
-			else if (!physics.canLaunch(world)) ui.status.textContent = thermalFactor === 0 ? 'Overheated · wait for cooling' : 'Insufficient energy to lift ball';
-			else ui.status.textContent = 'Ball held · press E to release' + (thermalFactor < 1 ? ' · drive derated' : '');
-		} else if (world.ball.state === 'grounded') ui.status.textContent = 'Ball grounded · move over it to collect';
-		else ui.status.textContent = 'Ball in flight · ' + world.pushes + ' powered pushes' + (thermalFactor < 1 ? ' · drive derated' : '');
+			if (!world.drive) setText(ui.status, 'Ball held · enable drive to release');
+			else if (!physics.canLaunch(world)) setText(ui.status, thermalFactor === 0 ? 'Overheated · wait for cooling' : 'Insufficient energy to lift ball');
+			else setText(ui.status, 'Ball held · press E to release' + (thermalFactor < 1 ? ' · drive derated' : ''));
+		} else if (world.ball.state === 'grounded') setText(ui.status, 'Ball grounded · move over it to collect');
+		else setText(ui.status, 'Ball in flight · ' + world.pushes + ' powered pushes' + (thermalFactor < 1 ? ' · drive derated' : ''));
 	}
 
 	// Event-driven readouts also mark the scene, so a paused chamber reflects the change.
-	function refresh() { readout(); sceneDirty = true; }
+	function refresh() { syncPistonControl(); readout(); sceneDirty = true; }
+
+	// Single writer for the piston angle: slider, chamber wheel and air drag
+	// all set the world angle through here, and the controls only move when
+	// the angle actually changed.
+	function pistonDegrees() { return world.pistonAngle * 180 / Math.PI; }
+	function syncPistonControl() {
+		const degrees = pistonDegrees();
+		setText(ui['piston-value'], degrees.toFixed(1) + '°');
+		const snapped = Math.round(degrees * 2) / 2;
+		if (Number(ui['piston-angle'].value) !== snapped) ui['piston-angle'].value = snapped;
+	}
+	function setPistonAngle(degrees) {
+		if (!Number.isFinite(degrees)) return;
+		const before = world.pistonAngle;
+		physics.setPistonAngle(world, Math.max(-10, Math.min(10, degrees)) * Math.PI / 180);
+		if (world.pistonAngle !== before) sceneDirty = true;
+		syncPistonControl();
+	}
 
 	// Single writer of the rock view mode; click, keyboard and hover all go through it.
 	function setViewMode(mode) {
@@ -513,8 +572,9 @@
 	function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }
 	function setForce(value) {
 		world.forceSetting = Math.max(0.1, Math.min(1, value));
-		ui.force.value = Math.round(world.forceSetting * 100);
-		ui['force-value'].textContent = ui.force.value + '%';
+		const percent = Math.round(world.forceSetting * 100);
+		if (Number(ui.force.value) !== percent) ui.force.value = percent;
+		setText(ui['force-value'], percent + '%');
 	}
 
 	function isGameKey(code) {
@@ -589,6 +649,13 @@
 	ui['view-modes'].addEventListener('change', viewModeChanged);
 	ui['view-modes'].addEventListener('pointerover', viewModeHovered);
 	ui.force.addEventListener('input', function () { setForce(Number(ui.force.value) / 100); });
+	ui['piston-angle'].addEventListener('input', function () { setPistonAngle(Number(ui['piston-angle'].value)); });
+	// Wheel over the chamber tilts the piston instead of scrolling the page:
+	// up (negative delta) raises the angle, a standard notch steps about 2°.
+	canvas.addEventListener('wheel', function (event) {
+		event.preventDefault();
+		setPistonAngle(pistonDegrees() - Math.max(-100, Math.min(100, event.deltaY)) * 0.02);
+	}, { passive: false });
 	canvas.addEventListener('pointerdown', function (event) {
 		const bounds = canvas.getBoundingClientRect();
 		const worldX = (event.clientX - bounds.left - offsetX) / scale;
@@ -602,9 +669,23 @@
 		if (worldY <= moveClickHeight && worldX >= 0 && worldX <= config.width) {
 			world.target = Math.max(physics.platformMin(), Math.min(physics.platformMax(), worldX));
 			sceneDirty = true;
+		} else if (worldX >= 0 && worldX <= config.width && worldY <= config.ceiling) {
+			// Open air starts a piston drag; dragging right or up raises the angle.
+			pistonDragActive = true;
+			pistonDragX = event.clientX;
+			pistonDragY = event.clientY;
+			pistonDragAngle = pistonDegrees();
+			if (typeof canvas.setPointerCapture === 'function' && event.pointerId !== undefined) canvas.setPointerCapture(event.pointerId);
 		}
 		canvas.focus();
 	});
+	canvas.addEventListener('pointermove', function (event) {
+		if (!pistonDragActive) return;
+		setPistonAngle(pistonDragAngle + ((event.clientX - pistonDragX) - (event.clientY - pistonDragY)) * 0.05);
+	});
+	function endPistonDrag() { pistonDragActive = false; }
+	canvas.addEventListener('pointerup', endPistonDrag);
+	canvas.addEventListener('pointercancel', endPistonDrag);
 	window.addEventListener('keydown', keydown);
 	window.addEventListener('keyup', keyup);
 	window.addEventListener('blur', clearInput);

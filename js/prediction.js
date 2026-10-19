@@ -106,11 +106,16 @@
 				const deckTime = crossing(y, vy, config.deck + config.radius, gravity);
 				if (deckTime < step) {
 					// The ghost assumes the platform holds its current velocity; the
-					// intercept test is the simulation's own capture condition.
+					// flat collector is the simulation's capture zone.
 					const ghost = platform.x + platform.vx * (time + deckTime);
-					if (Math.abs(x + vx * deckTime - ghost) <= config.platformWidth * 0.5) { step = deckTime; event = DECK; }
+					const relative = x + vx * deckTime - ghost;
+					if (relative >= -config.platformWidth * 0.5 && relative <= -config.platformWidth * 0.5 + config.platformWidth * config.collectorFraction) { step = deckTime; event = DECK; }
 				}
 			}
+			// The tilted piston face is met on its own plane, at the angle the
+			// player last set; physics exports the same contact solver it uses.
+			const pistonTime = physics.pistonContactTime(x, y, vx, vy, platform.x + platform.vx * time + config.pistonCentre, platform.vx, world.pistonAngle, step);
+			if (pistonTime < step) { step = pistonTime; event = DECK; }
 			let contactX = 0;
 			let contactY = 0;
 			if (economy && y + Math.max(0, vy) * step + config.radius > rockReach) {

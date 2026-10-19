@@ -59,6 +59,7 @@ test('research deltas reach the simulation instead of acting as labels', () => {
 	unlockResearch(w, 'materials');
 	near(physics.retentionNow(), c.retention + 0.01);
 	w.ball.state = 'flying';
+	w.drive = false;
 	w.ball.x = 12.8; w.ball.vx = 0; w.ball.y = c.deck + c.radius; w.ball.vy = -5;
 	sync(w);
 	physics.step(w, c.step);

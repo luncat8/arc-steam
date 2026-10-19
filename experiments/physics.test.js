@@ -78,11 +78,87 @@ test('analytic free fall is exact across fixed steps', () => {
 
 test('passive deck bounce retains 90% normal energy', () => {
 	const w = physics.createWorld();
+	w.drive = false;
 	w.ball.x = 12.8; w.ball.vx = 0; w.ball.y = c.deck + c.radius; w.ball.vy = -5;
 	sync(w);
 	physics.step(w, c.step);
 	near(w.ball.vy + c.ballGravity * c.step, 5 * Math.sqrt(0.9));
 	assert.equal(w.bounces, 1);
+	balanced(w);
+});
+
+function placeOnPiston(w, speed) {
+	const nx = -Math.sin(w.pistonAngle);
+	const ny = Math.cos(w.pistonAngle);
+	w.ball.state = 'flying';
+	w.ball.x = w.platform.x + c.pistonCentre + nx * (c.radius + 0.005);
+	w.ball.y = c.deck + ny * (c.radius + 0.005);
+	w.ball.vx = 0;
+	w.ball.vy = -speed;
+}
+
+test('the drive is enabled by default and the piston angle clamps to ten degrees', () => {
+	const w = physics.createWorld();
+	assert.equal(w.drive, true, 'a new world starts with the bounce drive on');
+	physics.setPistonAngle(w, 1);
+	near(w.pistonAngle, c.pistonMaxAngle);
+	near(c.pistonMaxAngle * 180 / Math.PI, 10);
+	physics.setPistonAngle(w, -1);
+	near(w.pistonAngle, -c.pistonMaxAngle);
+	balanced(w);
+});
+
+test('a tilted piston steers a falling ball and compresses with impact speed', () => {
+	const left = physics.createWorld();
+	left.drive = false;
+	physics.setPistonAngle(left, c.pistonMaxAngle);
+	placeOnPiston(left, 5);
+	sync(left);
+	physics.step(left, c.step);
+	assert.equal(left.bounces, 1);
+	assert.ok(left.ball.vx < -0.5, `positive tilt sends the ball left, vx=${left.ball.vx}`);
+	assert.ok(left.ball.vy > 0);
+	assert.ok(left.pistonImpact > 4);
+	assert.ok(left.pistonOffset > 0.05, 'the impact compresses the piston');
+	balanced(left);
+
+	const right = physics.createWorld();
+	right.drive = false;
+	physics.setPistonAngle(right, -c.pistonMaxAngle);
+	placeOnPiston(right, 5);
+	sync(right);
+	physics.step(right, c.step);
+	assert.ok(right.ball.vx > 0.5, `negative tilt sends the ball right, vx=${right.ball.vx}`);
+	balanced(right);
+
+	const slow = physics.createWorld();
+	slow.drive = false;
+	placeOnPiston(slow, 2);
+	sync(slow);
+	physics.step(slow, c.step);
+	const fast = physics.createWorld();
+	fast.drive = false;
+	placeOnPiston(fast, 8);
+	sync(fast);
+	physics.step(fast, c.step);
+	assert.ok(slow.pistonOffset > 0);
+	assert.ok(fast.pistonOffset > slow.pistonOffset * 2, `faster impact compresses further: ${slow.pistonOffset} -> ${fast.pistonOffset}`);
+	assert.ok(fast.pistonOffset <= c.pistonTravel);
+	const compressed = fast.pistonOffset;
+	run(fast, 1.5);
+	assert.ok(Math.abs(fast.pistonOffset) < compressed * 0.2, 'the spring pushes the piston back out');
+	balanced(fast);
+});
+
+test('a powered piston push leaves along the tilted face normal', () => {
+	const w = physics.createWorld();
+	physics.setPistonAngle(w, c.pistonMaxAngle);
+	placeOnPiston(w, 3);
+	sync(w);
+	physics.step(w, c.step);
+	assert.equal(w.pushes, 1);
+	assert.ok(w.ball.vx < 0, 'the powered push also steers left at positive tilt');
+	assert.ok(w.ball.vy > 3 * Math.sqrt(c.retention), 'the pulse adds energy along the normal');
 	balanced(w);
 });
 

@@ -82,12 +82,20 @@ async function main() {
 			typeof window.SteamCeiling.state.funds,
 			typeof window.SteamCeiling.funds
 		]), ['object', 'number', 'undefined']);
+		assert.equal(await page.locator('#drive').getAttribute('aria-pressed'), 'true', 'the drive is enabled by default');
 		await page.locator('#drive').click();
-		assert.equal(await page.locator('#drive').getAttribute('aria-pressed'), 'true');
-		await page.keyboard.press('Space');
 		assert.equal(await page.locator('#drive').getAttribute('aria-pressed'), 'false');
-		await page.keyboard.press('KeyQ');
+		await page.keyboard.press('Space');
 		assert.equal(await page.locator('#drive').getAttribute('aria-pressed'), 'true');
+		await page.keyboard.press('KeyQ');
+		assert.equal(await page.locator('#drive').getAttribute('aria-pressed'), 'false');
+		// Piston tilt: the slider and the chamber mouse wheel share one angle.
+		await page.locator('#piston-angle').evaluate(input => { input.value = '5'; input.dispatchEvent(new Event('input', { bubbles: true })); });
+		assert.equal(await page.locator('#piston-value').textContent(), '5.0°');
+		await page.locator('#c').hover();
+		await page.mouse.wheel(0, -120);
+		assert.equal(await page.locator('#piston-angle').inputValue(), '7');
+		assert.equal(await page.locator('#piston-value').textContent(), '7.0°');
 		await page.keyboard.press('KeyW');
 		assert.equal(await page.locator('#force').inputValue(), '70');
 		await page.locator('#pause').click();
@@ -97,10 +105,11 @@ async function main() {
 		assert.equal(await page.locator('#clock').textContent(), time);
 		// Pressing Space while Pause was the last clicked GUI button toggles drive, not Pause.
 		await page.keyboard.press('Space');
-		assert.equal(await page.locator('#drive').getAttribute('aria-pressed'), 'false');
+		assert.equal(await page.locator('#drive').getAttribute('aria-pressed'), 'true');
 		assert.equal(await page.locator('#pause').textContent(), 'Resume');
 		await page.locator('#reset').click();
 		assert.equal(await page.locator('#force').inputValue(), '60');
+		assert.equal(await page.locator('#piston-value').textContent(), '0.0°', 'reset levels the piston');
 		await page.locator('#pause').click();
 		assert.equal(await page.locator('#shape').inputValue(), 'smooth');
 		await page.locator('#shape').selectOption('square');
@@ -144,7 +153,7 @@ async function main() {
 		assert.equal(await touch.locator('#view-modes input[value="minerals"]').isChecked(), true, 'hover does not switch on touch');
 		await touch.locator('#view-modes label', { hasText: 'Price' }).tap();
 		assert.equal(await touch.locator('#view-modes input[value="price"]').isChecked(), true, 'tap switches on touch');
-		console.log('PASS: startup, four-row layout, view-mode hover/click/arrow keys with paused redraw and touch gating, drive toggle (Space/Q without pressing GUI controls), keyboard force, pause/reset, shape selector, inspector click without sliders, rock-versus-low click zones, target travel, centre pad note, research/equipment gating, ledger, narrow layout; no page errors.');
+		console.log('PASS: startup, four-row layout, view-mode hover/click/arrow keys with paused redraw and touch gating, drive on by default and toggling (Space/Q without pressing GUI controls), piston tilt by slider and chamber wheel, keyboard force, pause/reset, shape selector, inspector click without sliders, rock-versus-low click zones, target travel, centre pad note, research/equipment gating, ledger, narrow layout; no page errors.');
 	} finally {
 		await browser.close();
 	}
