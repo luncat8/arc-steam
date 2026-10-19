@@ -67,6 +67,15 @@ drag (air) or mouse wheel - set angle of platform's piston to control reflection
 
 charge station at center - just type of ground that charge/refuel according to engine. speed is like 4s for whole
 
+## autopilot
+
+checkboxes and shortcuts
+
+x - auto move to predicted ball fall x
+X - same but smart use brake, no need to stop to zero speed, but possible to move at that point at predicted time if this save energy. if recuperation available this also allow to use slow recuperation instead of fast brake with loosing energy.
+z - auto enable/disable piston drive to keep ball engine in reasonable value enough to reach top but not more to prevent very fast ball movement
+c - auto change angle to keep upcoming ball reflection vertical up. should respect angle change speed and range
+
 ## shortcuts actions
 
 click - move platform to x autopilot
