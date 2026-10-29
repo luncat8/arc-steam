@@ -79,9 +79,10 @@ async function main() {
 		await page.keyboard.press('ArrowRight');
 		assert.equal(await page.locator('#view-modes input[value="minerals"]').isChecked(), true, 'arrow keys cycle the radios');
 		await page.locator('#pause').click();
-		assert.equal(await page.locator('#research-rows .upgrade-row').count(), 6);
-		assert.equal(await page.locator('#equipment-rows .upgrade-row').count(), 6);
-		assert.equal(await page.locator('#research-progress').textContent(), '0 / 6');
+		const nodeCount = await page.evaluate(() => SteamResearch.nodes.length);
+		assert.equal(await page.locator('#research-rows .upgrade-row').count(), nodeCount);
+		assert.equal(await page.locator('#equipment-rows .upgrade-row').count(), await page.evaluate(() => SteamEquipment.items.length));
+		assert.equal(await page.locator('#research-progress').textContent(), '0 / ' + nodeCount);
 		assert.equal(await page.locator('#platform-spec').evaluate(node => node.children.length), 14);
 		assert.equal(await page.locator('#refuel').isDisabled(), true, 'a full reserve needs no recharge');
 		assert.equal(await page.locator('#prediction-status').isHidden(), true, 'the overlay waits for its research');
@@ -156,6 +157,10 @@ async function main() {
 		// one that must explain its research prerequisite.
 		await page.locator('#equipment-rows .upgrade-row', { hasText: 'REBOUND PAD' }).locator('button').click({ force: true });
 		assert.match(await page.locator('#equipment-status').textContent(), /needs the .* research first/);
+		// The force-clicks above scrolled the economy row into view, which can
+		// push the chamber's top above the viewport; a chamber point computed
+		// from a bounding box up there clicks nothing. Scroll back first.
+		await page.locator('#c').scrollIntoViewIfNeeded();
 		const inspected = await page.locator('#mineral-cell').textContent();
 		await chamberClick(page, 12, 14.5);
 		assert.notEqual(await page.locator('#mineral-cell').textContent(), inspected, 'a rock click moves the inspector');
@@ -186,16 +191,16 @@ async function main() {
 			// Test mode grants the whole tree and shop for free, persists as a mode
 			// across New game, and leaves those grants in place when turned off.
 			await page.locator('#test-mode').click();
-			assert.equal(await page.locator('#research-progress').textContent(), '6 / 6');
-			assert.equal(await page.locator('#equipment-rows .upgrade-row[data-state="installed"]').count(), 6);
+			assert.equal(await page.locator('#research-progress').textContent(), nodeCount + ' / ' + nodeCount);
+			assert.equal(await page.locator('#equipment-rows .upgrade-row[data-state="installed"]').count(), await page.evaluate(() => SteamEquipment.items.length));
 			assert.match(await page.locator('#ledger li').first().textContent(), /Test installed /);
 			await page.locator('#reset').click();
 			assert.equal(await page.locator('#test-mode').isChecked(), true);
-			assert.equal(await page.locator('#research-progress').textContent(), '6 / 6');
+			assert.equal(await page.locator('#research-progress').textContent(), nodeCount + ' / ' + nodeCount);
 			await page.locator('#test-mode').click();
-			assert.equal(await page.locator('#research-progress').textContent(), '6 / 6', 'test grants are not revoked by switching the mode off');
+			assert.equal(await page.locator('#research-progress').textContent(), nodeCount + ' / ' + nodeCount, 'test grants are not revoked by switching the mode off');
 			await page.locator('#reset').click();
-			assert.equal(await page.locator('#research-progress').textContent(), '0 / 6');
+			assert.equal(await page.locator('#research-progress').textContent(), '0 / ' + nodeCount);
 			// Autopilot: one checkbox per duty, the same duty on a shortcut, and each one
 		// temporarily yields to the manual command that does the same job.
 		assert.equal(await page.locator('#autopilot input[type="checkbox"]').count(), 4);

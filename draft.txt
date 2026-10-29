@@ -70,6 +70,28 @@ drag (air) or mouse wheel - set angle of platform's piston to control reflection
 
 charge station at center - just type of ground that charge/refuel according to engine. speed is like 4s for whole
 
+Platform drive supplies the ball’s bounce energy. iris storyline told ball 'active' in this game this mean ball is not broke when fall to ground.
+
+ball fall on the ground:
+loss energy, need collect ball (move to it) and push it with enough  energy. Better implement low-tier drive has no such force and can add only part of energy (i.e. need 3 push bounce to ball again reach whole height)
+
+ball fall on collector:
+Catch and hold. energy lost. 
+
+## engine
+
+top engine need better top bat or energy source balance. i expect lowest non upgraded storage of each engine is enough to something around (2...6 this looks good for now for test) times run across map of max force and speed.
+
+fallback hand - reserve - move to charging station when out of fuel
+
+hand - med J/kg , very light engine, slow reload, very low torque force, very low heat/J
+coal - med J/kg , heavy engine, slow reload, med torque force, very big waste heat/J
+oil - good J/kg, med weight engine, fast reload, med force, med waste heat/J
+electric - med J/kg, light weight engine, med reload, big force, very low waste heat/J : sum is less weight then above.
+nuclear - excellent J/kg, heavy engine, med reload, big force, med waste heat/J 
+
+
+
 ## fallen debris
 
 increase floor heightmap. similar array to top rock.
@@ -118,7 +140,7 @@ equipment | cargo | market
 below canvas is legend and view mode change. this is typical prompt for mode change (may not fit this project, i just copy paste it so think before use) :
 
 
-View-mode menu (click + pointer hover)
+## View-mode menu (click + pointer hover)
 
 Add a single-source view-mode switcher where a radio menu can be changed by click or by hovering, following this contract:
 

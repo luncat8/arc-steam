@@ -224,7 +224,7 @@
 		if (!Number.isFinite(distance)) { world.direction = 0; return; }
 		const physics = root.SteamPhysics;
 		const config = physics.config;
-		const acceleration = config.force * world.forceSetting / physics.platformMass(world);
+		const acceleration = physics.forceNow() * world.forceSetting / physics.platformMass(world);
 		// Offsets inside the reflector face do not change the outcome, so they are
 		// not worth a manoeuvre: inside that slack the platform is left alone, which
 		// is also why it never has to stand still on the mark.
@@ -237,7 +237,7 @@
 		// every correction becomes heat and the platform is allowed to drift further
 		// before it pays for one.
 		const deadband = physics.recoveryNow() > 0 ? trackedDeadband : coastingDeadband;
-		const demand = Math.max(-config.maxSpeed, Math.min(config.maxSpeed, sign * speed));
+		const demand = Math.max(-physics.speedNow(), Math.min(physics.speedNow(), sign * speed));
 		world.direction = platform.vx < demand - deadband ? 1 : platform.vx > demand + deadband ? -1 : 0;
 	}
 

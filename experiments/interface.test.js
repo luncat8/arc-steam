@@ -78,8 +78,8 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	// The installed specification starts at base tuning.
 	const spec = dom.element('platform-spec').children;
 	assert.equal(spec[1].textContent, physics.config.platformMass.toFixed(1) + ' kg');
-	assert.equal(spec[3].textContent, '400 N');
-	assert.equal(spec[5].textContent, '10 m/s');
+	assert.equal(spec[3].textContent, physics.config.force.toFixed(0) + ' N');
+	assert.equal(spec[5].textContent, physics.config.maxSpeed.toFixed(0) + ' m/s');
 	assert.equal(spec[7].textContent, '42 J');
 	assert.equal(spec[9].textContent, '90%');
 	assert.equal(spec[13].textContent, '0%');
@@ -447,7 +447,7 @@ test('telemetry highlights an empty reserve, a full cargo and overheating', () =
 	world.battery = 0;
 	advance(8);
 	assert.equal(dom.element('reserve-telemetry').dataset.warning, 'EMPTY');
-	assert.match(dom.element('reserve-note').textContent, /^Empty · market import/);
+	assert.match(dom.element('reserve-note').textContent, /^Empty · hand-crank crawl/);
 	world.battery = physics.config.battery * 0.05;
 	advance(8);
 	assert.equal(dom.element('reserve-telemetry').dataset.warning, 'LOW');

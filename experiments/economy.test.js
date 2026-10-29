@@ -52,7 +52,7 @@ test('a short budget buys a partial recharge and an exhausted one refuses', () =
 	physics.createWorld();
 });
 
-test('an empty reserve stops the platform until credits buy energy back', () => {
+test('an empty reserve leaves only the crank crawl until credits buy energy back', () => {
 	const w = physics.createWorld();
 	w.ball.state = 'held';
 	w.battery = 0;
@@ -62,15 +62,16 @@ test('an empty reserve stops the platform until credits buy energy back', () => 
 	w.forceSetting = 1;
 	sync(w);
 	run(w, 1);
-	near(w.platform.vx, 0, 1e-9);
-	near(w.platform.x, 3, 1e-9);
+	near(w.platform.vx, c.crankMaxSpeed, 1e-9);
+	assert.ok(w.platform.x > 3, 'the crew can still crawl toward the pad or a wall');
+	assert.ok(w.crankEnergy > 0, 'the crawl is crew work, not reserve energy');
 	assert.equal(ceiling.recharge(w, w.time), 0, 'no funds, no energy');
 	balanced(w);
 	earnFunds(w, 100);
 	assert.ok(ceiling.recharge(w, w.time) > 0, 'one load buys the reserve back');
 	sync(w);
 	run(w, 1);
-	assert.ok(w.platform.vx > 0, 'the platform drives again');
+	assert.ok(w.platform.vx > c.crankMaxSpeed, 'the powered drive outruns the crawl again');
 	assert.ok(w.battery < c.battery, 'driving spends the imported energy');
 	balanced(w);
 	physics.createWorld();

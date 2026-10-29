@@ -20,6 +20,11 @@
 			effect: 'Bounce drive pulse rises to 46 J per contact, still paid from the shared reserve at 80% efficiency.'
 		}),
 		Object.freeze({
+			id: 'traction', name: 'Traction motors', cost: 380, requires: Object.freeze(['electromagnetics']),
+			forceBonus: 240, speedBonus: 3,
+			effect: 'Engine force rises by 240 N and top speed by 3 m/s. Unlocks the high-torque motor.'
+		}),
+		Object.freeze({
 			id: 'thermodynamics', name: 'Heat transfer', cost: 340, requires: Object.freeze(['alloys']),
 			coolingBonus: 0.5,
 			effect: 'Ducting and surface treatment add 0.5 W/K of convective cooling on top of the bare chassis.'
@@ -27,6 +32,11 @@
 		Object.freeze({
 			id: 'storage', name: 'Flywheel storage', cost: 460, requires: Object.freeze(['thermodynamics']),
 			effect: 'Unlocks the brake flywheel, which returns part of every braking manoeuvre to the reserve instead of heat.'
+		}),
+		Object.freeze({
+			id: 'power', name: 'Power electronics', cost: 640, requires: Object.freeze(['traction', 'thermodynamics']),
+			forceBonus: 360, speedBonus: 3,
+			effect: 'Engine force rises by a further 360 N and top speed by 3 m/s. Unlocks the overdrive unit.'
 		}),
 		Object.freeze({
 			id: 'ballistics', name: 'Ballistic computer', cost: 520, requires: Object.freeze(['electromagnetics']),
@@ -42,6 +52,8 @@
 	let installedRetention = 0;
 	let installedPulse = 0;
 	let installedCooling = 0;
+	let installedForce = 0;
+	let installedSpeed = 0;
 	let predictionEnabled = false;
 
 	const state = Object.freeze({
@@ -49,6 +61,8 @@
 		get retentionBonus() { return installedRetention; },
 		get pulseBonus() { return installedPulse; },
 		get coolingBonus() { return installedCooling; },
+		get forceBonus() { return installedForce; },
+		get speedBonus() { return installedSpeed; },
 		get prediction() { return predictionEnabled; },
 		get completed() { return done.size; }
 	});
@@ -91,6 +105,8 @@
 		installedRetention += node.retentionBonus || 0;
 		installedPulse += node.pulseBonus || 0;
 		installedCooling += node.coolingBonus || 0;
+		installedForce += node.forceBonus || 0;
+		installedSpeed += node.speedBonus || 0;
 		if (node.capability === 'prediction') predictionEnabled = true;
 		if (physics) physics.applyMassChange(world, node.massDelta || 0, oldMass);
 		return true;
@@ -124,6 +140,8 @@
 		installedRetention = 0;
 		installedPulse = 0;
 		installedCooling = 0;
+		installedForce = 0;
+		installedSpeed = 0;
 		predictionEnabled = false;
 	}
 

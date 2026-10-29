@@ -19,6 +19,16 @@
 			effect: 'Bounce drive pulse rises by 12 J per contact. Coil adds 12 kg.'
 		}),
 		Object.freeze({
+			id: 'motor', name: 'High-torque motor', cost: 550, mass: 6, requires: 'traction',
+			forceBonus: 360, speedBonus: 6,
+			effect: 'Replaces the stock motor: engine force rises by 360 N and top speed by 6 m/s, for 6 kg net.'
+		}),
+		Object.freeze({
+			id: 'overdrive', name: 'Overdrive unit', cost: 950, mass: 8, requires: 'power',
+			forceBonus: 480, speedBonus: 6,
+			effect: 'Engine force rises by a further 480 N and top speed by 6 m/s. Adds 8 kg. Full-speed runs spend the reserve fast and brake hot.'
+		}),
+		Object.freeze({
 			id: 'chassis', name: 'Lightweight chassis', cost: 350, mass: -12, requires: 'alloys',
 			effect: 'Cuts dry platform mass by 12 kg for stronger acceleration under load.'
 		}),
@@ -39,13 +49,17 @@
 	let installedPulse = 0;
 	let installedRadiatorArea = 0;
 	let installedRecovery = 0;
+	let installedForce = 0;
+	let installedSpeed = 0;
 
 	const state = Object.freeze({
 		get massDelta() { return installedMass; },
 		get retentionBonus() { return installedRetention; },
 		get pulseBonus() { return installedPulse; },
 		get radiatorArea() { return installedRadiatorArea; },
-		get recoveryFraction() { return installedRecovery; }
+		get recoveryFraction() { return installedRecovery; },
+		get forceBonus() { return installedForce; },
+		get speedBonus() { return installedSpeed; }
 	});
 
 	function find(id) {
@@ -83,6 +97,8 @@
 		installedPulse += item.pulseBonus || 0;
 		installedRadiatorArea += item.radiatorArea || 0;
 		installedRecovery += item.recoveryFraction || 0;
+		installedForce += item.forceBonus || 0;
+		installedSpeed += item.speedBonus || 0;
 		if (physics) physics.applyMassChange(world, item.mass || 0, oldMass);
 		return true;
 	}
@@ -114,6 +130,8 @@
 		installedPulse = 0;
 		installedRadiatorArea = 0;
 		installedRecovery = 0;
+		installedForce = 0;
+		installedSpeed = 0;
 	}
 
 	const api = { items, state, find, isInstalled, isUnlocked, install, grant, installAll, reset };

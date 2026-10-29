@@ -19,9 +19,10 @@
 		// towards the angle it wants instead of snapping to it. Direct manual tilt
 		// stays immediate, because the player is the one aiming.
 		pistonSlewRate: Math.PI / 4,
-		// Drive response: two 1.5x increases over the original 180 N / 7 m/s
-		// tuning, each rounded down to a whole number.
-		platformMass: 60, force: 400, maxSpeed: 10,
+		// Tier-1 engine tune: 480 N / 12 m/s (1.2x the previous 400 N / 10 m/s).
+		// Research and machinery add forceBonus/speedBonus on top of this; the
+		// full chain reaches 1920 N / 30 m/s. See engine.1-plan.md.
+		platformMass: 60, force: 480, maxSpeed: 12,
 		// Bounce pulse sized for the three-bounce rule: from a release, the apex
 		// after the third powered bounce must clear the ceiling plane (about
 		// 15.1 m at 42 J) while the first two stay short of it. One pulse adds
@@ -31,6 +32,10 @@
 		// fills the reserve in four seconds while the platform stands on it, so
 		// the cost of energy is position and downtime rather than credits.
 		chargePadWidth: 4, chargeSeconds, chargePower: reserveCapacity / chargeSeconds, chargeMaxSpeed: 0.1,
+		// Manual-drive fallback: an empty reserve leaves the crew's hand crank,
+		// a crawl next to the powered 400 N / 10 m/s but enough to always reach
+		// the charge pad or a selling wall. It moves the platform only.
+		crankForce: 60, crankMaxSpeed: 0.8,
 		recoveryEfficiency: 0.9,
 		ambientTemperature: 20, heatCapacity: 300,
 		convectiveConductance: 1.1, radiatorConvectionCoefficient: 8,
@@ -280,6 +285,8 @@
 	}
 	function retentionNow() { return config.retention + installed('retentionBonus'); }
 	function pulseNow() { return config.pulse + installed('pulseBonus'); }
+	function forceNow() { return config.force + installed('forceBonus'); }
+	function speedNow() { return config.maxSpeed + installed('speedBonus'); }
 	function dryMass() { return config.platformMass + installed('massDelta'); }
 	function recoveryNow() { return installed('recoveryFraction'); }
 	function radiatorArea() { return installed('radiatorArea'); }
@@ -318,7 +325,7 @@
 		if (root.SteamEquipment) root.SteamEquipment.reset();
 		if (root.SteamResearch) root.SteamResearch.reset();
 		const world = {
-			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, chargedEnergy: 0, terrainWork: 0,
+			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, chargedEnergy: 0, crankEnergy: 0, terrainWork: 0,
 			initialEnergy: 0,
 			drive: true, forceSetting: 0.6, direction: 0, target: NaN,
 			pistonAngle: 0, pistonOffset: 0, pistonVelocity: 0, pistonImpact: 0,
@@ -462,10 +469,11 @@
 		platform.previousY = platform.y;
 		platform.previousAngle = platform.angle;
 		const mass = platformMass(world);
+		const engineForce = forceNow();
 		let direction = world.direction;
 		if (!direction && Number.isFinite(world.target)) {
 			const distance = world.target - platform.x;
-			const acceleration = config.force * world.forceSetting / mass;
+			const acceleration = engineForce * world.forceSetting / mass;
 			const stopping = platform.vx * platform.vx / (2 * acceleration);
 			direction = Math.sign(distance);
 			if (platform.vx * distance > 0 && Math.abs(distance) < stopping + 0.04) direction = -Math.sign(platform.vx);
@@ -476,7 +484,12 @@
 			}
 		}
 		const oldVelocity = platform.vx;
-		const acceleration = config.force * world.forceSetting / mass;
+		const acceleration = engineForce * world.forceSetting / mass;
+		// An empty reserve leaves the manual drive: the crew hand-cranks the
+		// platform at a crawl, so the charge pad (or a wall sale) stays
+		// reachable. Braking above keeps full force either way, and crank work
+		// is booked below as imported energy like a pad charge.
+		const crank = world.battery <= 0;
 		let velocity = oldVelocity;
 		let remaining = dt;
 		if (direction && oldVelocity * direction < 0) {
@@ -484,13 +497,24 @@
 			velocity += direction * acceleration * brakingTime;
 			remaining -= brakingTime;
 		}
-		if (remaining > 0) velocity += direction * acceleration * thermalFactor(world) * remaining;
-		velocity = Math.max(-config.maxSpeed, Math.min(config.maxSpeed, velocity));
+		if (remaining > 0) velocity += direction * (crank ? config.crankForce / mass : acceleration * thermalFactor(world)) * remaining;
+		if (crank && direction) {
+			// The crank tops out at its crawl, but never drags a faster coast
+			// down to it: the limit is whichever the platform already has.
+			const limit = Math.max(config.crankMaxSpeed, direction * oldVelocity);
+			if (direction * velocity > limit) velocity = direction * limit;
+		}
+		velocity = Math.max(-speedNow(), Math.min(speedNow(), velocity));
 		const before = 0.5 * mass * oldVelocity * oldVelocity;
 		const after = 0.5 * mass * velocity * velocity;
 		if (after > before) {
-			const available = spend(world, after - before);
-			velocity = Math.sign(velocity) * Math.sqrt(2 * (before + available) / mass);
+			if (crank) {
+				world.importedEnergy += after - before;
+				world.crankEnergy += after - before;
+			} else {
+				const available = spend(world, after - before);
+				velocity = Math.sign(velocity) * Math.sqrt(2 * (before + available) / mass);
+			}
 		} else {
 			dissipate(world, before - after);
 		}
@@ -536,6 +560,15 @@
 			return;
 		}
 		if (ball.state === 'grounded') {
+			// The rubble surface under a resting ball can still move (a fresh
+			// deposit, a grader cut): re-seat on it so the ball is neither
+			// buried nor left floating. Settling down dissipates as heat;
+			// being lifted is work by the prescribed terrain.
+			const rest = terrainHeight(ball.x) + config.radius;
+			const delta = config.ballMass * config.ballGravity * (rest - ball.y);
+			if (delta > 0) world.terrainWork += delta;
+			else world.heat -= delta;
+			ball.y = rest;
 			if (Math.abs(ball.x - world.platform.x) <= config.platformWidth * 0.5) capture(world);
 			return;
 		}
@@ -688,7 +721,7 @@
 		thermalFactor, coolingPower, platformMass, platformMin, platformMax, dryMass,
 		platformPitchAt, platformBaseAt, platformPointAt, platformSurfaceAt, planeContactTime,
 		chargePadMin, chargePadMax, onChargePad, charging,
-		retentionNow, pulseNow, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
+		retentionNow, pulseNow, forceNow, speedNow, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
 		setPistonAngle, pistonContactTime, solvePiston, contactResult
 	};
 	root.SteamPhysics = api;

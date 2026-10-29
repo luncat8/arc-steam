@@ -1,0 +1,142 @@
+
+=== base tuning (force 480 N, top speed 12 m/s) ===
+smooth seed  1  t 96s  extracted  333  caught   23  lost  310  sold   23  earned   165 cr  credits   165  sales 1  battery 11.96 kJ  ballSpeed 12.6  platformSpeed 4.0  maxTemp 124.1 C  minPower 22%  pad 0.00 kJ  crank 0.00 kJ  floor 9.69 max 0.31
+smooth seed  2  t 118s  extracted  371  caught   39  lost  332  sold   38  earned   265 cr  credits   265  sales 1  battery 11.96 kJ  ballSpeed 12.7  platformSpeed 5.4  maxTemp 128.6 C  minPower 13%  pad 0.61 kJ  crank 0.00 kJ  floor 10.38 max 0.31
+smooth seed  3  t 107s  extracted  338  caught   28  lost  309  sold   28  earned   185 cr  credits   185  sales 1  battery 11.96 kJ  ballSpeed 12.7  platformSpeed 4.3  maxTemp 124.5 C  minPower 21%  pad 0.00 kJ  crank 0.00 kJ  floor 9.66 max 0.31
+smooth seed  4  t 49s  extracted   56  caught    0  lost   56  sold    0  earned     0 cr  credits     0  sales 0  battery 11.96 kJ  ballSpeed 11.2  platformSpeed 2.7  maxTemp 68.5 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 1.75 max 0.19
+smooth seed  5  t 47s  extracted  114  caught    0  lost  114  sold    0  earned     0 cr  credits     0  sales 0  battery 11.96 kJ  ballSpeed 11.5  platformSpeed 4.4  maxTemp 83.1 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 3.56 max 0.34
+smooth seed  6  t 87s  extracted  340  caught   31  lost  309  sold   31  earned   223 cr  credits   223  sales 1  battery 11.96 kJ  ballSpeed 12.7  platformSpeed 4.2  maxTemp 125.3 C  minPower 19%  pad 0.00 kJ  crank 0.00 kJ  floor 9.66 max 0.31
+smooth seed  7  t 162s  extracted  364  caught   23  lost  341  sold   23  earned   157 cr  credits   157  sales 1  battery 11.96 kJ  ballSpeed 12.6  platformSpeed 4.4  maxTemp 123.8 C  minPower 22%  pad 9.08 kJ  crank 0.00 kJ  floor 10.66 max 0.31
+smooth seed  8  t 109s  extracted  351  caught   29  lost  322  sold   29  earned   238 cr  credits   238  sales 1  battery 11.96 kJ  ballSpeed 12.7  platformSpeed 5.0  maxTemp 125.6 C  minPower 19%  pad 0.16 kJ  crank 0.00 kJ  floor 10.06 max 0.31
+square seed  1  t 38s  extracted   72  caught    0  lost   72  sold    0  earned     0 cr  credits     0  sales 0  battery 11.96 kJ  ballSpeed 11.3  platformSpeed 5.9  maxTemp 73.4 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 2.25 max 0.28
+square seed  2  t 38s  extracted   71  caught    0  lost   71  sold    0  earned     0 cr  credits     0  sales 0  battery 11.96 kJ  ballSpeed 11.3  platformSpeed 5.9  maxTemp 73.1 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 2.22 max 0.28
+square seed  3  t 38s  extracted   72  caught    0  lost   72  sold    0  earned     0 cr  credits     0  sales 0  battery 11.96 kJ  ballSpeed 11.3  platformSpeed 5.9  maxTemp 73.4 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 2.25 max 0.28
+square seed  4  t 106s  extracted  358  caught   77  lost  281  sold   77  earned   547 cr  credits   547  sales 5  battery 11.96 kJ  ballSpeed 12.7  platformSpeed 2.3  maxTemp 130.6 C  minPower 9%  pad 0.00 kJ  crank 0.00 kJ  floor 8.78 max 0.25
+square seed  5  t 38s  extracted   67  caught    0  lost   67  sold    0  earned     0 cr  credits     0  sales 0  battery 11.96 kJ  ballSpeed 11.3  platformSpeed 5.9  maxTemp 72.1 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 2.09 max 0.25
+square seed  6  t 38s  extracted   70  caught    0  lost   70  sold    0  earned     0 cr  credits     0  sales 0  battery 11.96 kJ  ballSpeed 11.3  platformSpeed 5.9  maxTemp 72.9 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 2.19 max 0.28
+square seed  7  t 38s  extracted   71  caught    0  lost   71  sold    0  earned     0 cr  credits     0  sales 0  battery 11.96 kJ  ballSpeed 11.3  platformSpeed 5.9  maxTemp 73.1 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 2.22 max 0.28
+square seed  8  t 38s  extracted   71  caught    0  lost   71  sold    0  earned     0 cr  credits     0  sales 0  battery 11.96 kJ  ballSpeed 11.3  platformSpeed 5.9  maxTemp 73.1 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 2.22 max 0.28
+
+smooth averages over 8 seeds (240 s cap):
+  extraction rate 175.6 cells/min, catch rate 7.6%
+  gross income 154 cr/shift, 95.5 cr/min, 0.8 wall sales, 154 cr/sale, 154 cr unspent
+  energy 123.5 W average draw, ball speed 12.3 m/s, platform speed 4.3 m/s
+  maxTemperature 112.9 °C average, minimum drive output 40%
+  centre-pad charging 1.23 kJ per shift (12.7 W average), crank 0.00 kJ per shift
+  floor piles sum 8.18 column-m, tallest pile 0.30 m
+
+square averages over 8 seeds (240 s cap):
+  extraction rate 137.5 cells/min, catch rate 9.0%
+  gross income 68 cr/shift, 88.2 cr/min, 0.6 wall sales, 68 cr/sale, 68 cr unspent
+  energy 257.2 W average draw, ball speed 11.4 m/s, platform speed 5.5 m/s
+  maxTemperature 80.2 °C average, minimum drive output 89%
+  centre-pad charging 0.00 kJ per shift (0.0 W average), crank 0.00 kJ per shift
+  floor piles sum 3.03 column-m, tallest pile 0.27 m
+
+=== with progression purchases (pad-aware) (force 480 N, top speed 12 m/s) ===
+smooth seed  1  t 240s  extracted  404  caught   31  lost  373  sold   31  earned   225 cr  credits    45  sales 3  battery 4.09 kJ  ballSpeed 12.6  platformSpeed 5.8  maxTemp 124.1 C  minPower 22%  pad 24.09 kJ  crank 0.00 kJ  floor 11.66 max 0.31  upgrades 1/15  spent 180 cr  refuels 0  imported 24.1 kJ
+smooth seed  2  t 240s  extracted  399  caught   40  lost  359  sold   40  earned   279 cr  credits    99  sales 2  battery 7.46 kJ  ballSpeed 12.7  platformSpeed 4.4  maxTemp 128.6 C  minPower 13%  pad 21.64 kJ  crank 0.00 kJ  floor 11.22 max 0.34  upgrades 1/15  spent 180 cr  refuels 0  imported 21.6 kJ
+smooth seed  3  t 240s  extracted  418  caught   55  lost  363  sold   37  earned   250 cr  credits    70  sales 5  battery 7.26 kJ  ballSpeed 12.7  platformSpeed 5.9  maxTemp 124.5 C  minPower 21%  pad 22.94 kJ  crank 0.00 kJ  floor 11.34 max 0.31  upgrades 1/15  spent 180 cr  refuels 0  imported 22.9 kJ
+smooth seed  4  t 240s  extracted  142  caught   36  lost  106  sold   36  earned   249 cr  credits    69  sales 5  battery 4.07 kJ  ballSpeed 11.2  platformSpeed 5.8  maxTemp 118.4 C  minPower 33%  pad 39.69 kJ  crank 0.00 kJ  floor 3.31 max 0.19  upgrades 1/15  spent 180 cr  refuels 0  imported 39.7 kJ
+smooth seed  5  t 240s  extracted  121  caught    1  lost  116  sold    0  earned     0 cr  credits     0  sales 0  battery 7.21 kJ  ballSpeed 11.5  platformSpeed 6.6  maxTemp 117.7 C  minPower 35%  pad 39.70 kJ  crank 0.00 kJ  floor 3.63 max 0.34  upgrades 0/15  spent 0 cr  refuels 0  imported 39.7 kJ
+smooth seed  6  t 240s  extracted  347  caught   31  lost  316  sold   31  earned   223 cr  credits    43  sales 1  battery 4.97 kJ  ballSpeed 12.7  platformSpeed 6.2  maxTemp 125.3 C  minPower 19%  pad 29.86 kJ  crank 0.00 kJ  floor 9.88 max 0.31  upgrades 1/15  spent 180 cr  refuels 0  imported 29.9 kJ
+smooth seed  7  t 240s  extracted  373  caught   28  lost  345  sold   28  earned   188 cr  credits     8  sales 2  battery 3.82 kJ  ballSpeed 12.6  platformSpeed 5.0  maxTemp 123.8 C  minPower 22%  pad 28.48 kJ  crank 0.00 kJ  floor 10.78 max 0.31  upgrades 1/15  spent 180 cr  refuels 0  imported 28.5 kJ
+smooth seed  8  t 240s  extracted  384  caught   29  lost  355  sold   29  earned   238 cr  credits    58  sales 1  battery 2.23 kJ  ballSpeed 12.7  platformSpeed 5.6  maxTemp 125.6 C  minPower 19%  pad 29.69 kJ  crank 0.00 kJ  floor 11.09 max 0.34  upgrades 1/15  spent 180 cr  refuels 0  imported 29.7 kJ
+square seed  1  t 240s  extracted  270  caught  104  lost  166  sold  104  earned   733 cr  credits    63  sales 3  battery 6.49 kJ  ballSpeed 11.3  platformSpeed 5.9  maxTemp 122.0 C  minPower 26%  pad 30.29 kJ  crank 0.00 kJ  floor 5.19 max 0.28  upgrades 3/15  spent 670 cr  refuels 0  imported 30.3 kJ
+square seed  2  t 240s  extracted  332  caught  187  lost  145  sold   87  earned   578 cr  credits   158  sales 1  battery 6.13 kJ  ballSpeed 11.3  platformSpeed 5.9  maxTemp 125.8 C  minPower 18%  pad 30.01 kJ  crank 0.00 kJ  floor 4.53 max 0.28  upgrades 2/15  spent 420 cr  refuels 0  imported 30.0 kJ
+square seed  3  t 240s  extracted  214  caught  100  lost  114  sold  100  earned   746 cr  credits    76  sales 4  battery 2.28 kJ  ballSpeed 11.3  platformSpeed 5.9  maxTemp 124.7 C  minPower 21%  pad 40.31 kJ  crank 0.00 kJ  floor 3.56 max 0.28  upgrades 3/15  spent 670 cr  refuels 0  imported 40.3 kJ
+square seed  4  t 240s  extracted  380  caught   85  lost  295  sold   81  earned   573 cr  credits   153  sales 7  battery 0.44 kJ  ballSpeed 12.7  platformSpeed 5.1  maxTemp 130.6 C  minPower 9%  pad 30.79 kJ  crank 0.00 kJ  floor 9.22 max 0.25  upgrades 2/15  spent 420 cr  refuels 0  imported 30.8 kJ
+square seed  5  t 240s  extracted  221  caught  100  lost  121  sold    0  earned     0 cr  credits     0  sales 0  battery 8.95 kJ  ballSpeed 11.3  platformSpeed 5.9  maxTemp 124.4 C  minPower 21%  pad 20.38 kJ  crank 0.00 kJ  floor 3.78 max 0.25  upgrades 0/15  spent 0 cr  refuels 0  imported 20.4 kJ
+square seed  6  t 240s  extracted  214  caught    0  lost  214  sold    0  earned     0 cr  credits     0  sales 0  battery 2.80 kJ  ballSpeed 11.3  platformSpeed 5.9  maxTemp 123.0 C  minPower 24%  pad 38.29 kJ  crank 0.00 kJ  floor 6.69 max 0.28  upgrades 0/15  spent 0 cr  refuels 0  imported 38.3 kJ
+square seed  7  t 240s  extracted  194  caught   81  lost  113  sold   81  earned   585 cr  credits   165  sales 2  battery 2.88 kJ  ballSpeed 11.3  platformSpeed 5.9  maxTemp 122.5 C  minPower 25%  pad 41.25 kJ  crank 0.00 kJ  floor 3.53 max 0.28  upgrades 2/15  spent 420 cr  refuels 0  imported 41.3 kJ
+square seed  8  t 240s  extracted  205  caught   62  lost  143  sold    0  earned     0 cr  credits     0  sales 0  battery 0.54 kJ  ballSpeed 11.3  platformSpeed 5.9  maxTemp 123.8 C  minPower 22%  pad 39.99 kJ  crank 0.00 kJ  floor 4.47 max 0.28  upgrades 0/15  spent 0 cr  refuels 0  imported 40.0 kJ
+
+smooth averages over 8 seeds (240 s cap):
+  extraction rate 80.9 cells/min, catch rate 9.7%
+  gross income 206 cr/shift, 51.6 cr/min, 2.4 wall sales, 87 cr/sale, 49 cr unspent
+  energy 21.4 W average draw, ball speed 12.3 m/s, platform speed 5.7 m/s
+  maxTemperature 123.5 °C average, minimum drive output 23%
+  centre-pad charging 29.51 kJ per shift (123.0 W average), crank 0.00 kJ per shift
+  floor piles sum 9.11 column-m, tallest pile 0.31 m
+  progression 0.9/15 nodes owned, 158 cr spent of 206 cr earned, 0.0 recharges importing 29.5 kJ
+
+square averages over 8 seeds (240 s cap):
+  extraction rate 63.4 cells/min, catch rate 35.4%
+  gross income 402 cr/shift, 100.5 cr/min, 2.1 wall sales, 189 cr/sale, 77 cr unspent
+  energy 15.9 W average draw, ball speed 11.4 m/s, platform speed 5.8 m/s
+  maxTemperature 124.6 °C average, minimum drive output 21%
+  centre-pad charging 33.91 kJ per shift (141.3 W average), crank 0.00 kJ per shift
+  floor piles sum 5.12 column-m, tallest pile 0.27 m
+  progression 1.5/15 nodes owned, 325 cr spent of 402 cr earned, 0.0 recharges importing 33.9 kJ
+
+=== communism mode (all free) (force 480 N, top speed 12 m/s) ===
+smooth seed  1  t 240s  extracted  549  caught  105  lost  444  sold  105  earned   757 cr  credits   757  sales 8  battery 7.91 kJ  ballSpeed 15.3  platformSpeed 9.1  maxTemp 133.6 C  minPower 3%  pad 0.49 kJ  crank 0.00 kJ  floor 13.88 max 0.38  upgrades 15/15  spent 0 cr  refuels 15  imported 144.6 kJ
+smooth seed  2  t 240s  extracted  509  caught  110  lost  399  sold  110  earned   793 cr  credits   793  sales 6  battery 4.62 kJ  ballSpeed 15.8  platformSpeed 10.7  maxTemp 137.2 C  minPower 0%  pad 0.23 kJ  crank 0.00 kJ  floor 12.47 max 0.50  upgrades 15/15  spent 0 cr  refuels 16  imported 151.2 kJ
+smooth seed  3  t 240s  extracted  166  caught   23  lost  143  sold   23  earned   160 cr  credits   160  sales 4  battery 4.37 kJ  ballSpeed 18.6  platformSpeed 2.3  maxTemp 71.5 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 4.47 max 0.50  upgrades 15/15  spent 0 cr  refuels 2  imported 18.1 kJ
+smooth seed  4  t 240s  extracted  846  caught  128  lost  718  sold  128  earned   866 cr  credits   866  sales 6  battery 8.45 kJ  ballSpeed 15.3  platformSpeed 7.1  maxTemp 142.2 C  minPower 0%  pad 0.18 kJ  crank 0.00 kJ  floor 22.44 max 0.44  upgrades 15/15  spent 0 cr  refuels 12  imported 113.5 kJ
+smooth seed  5  t 240s  extracted  152  caught   19  lost  133  sold   19  earned   116 cr  credits   116  sales 1  battery 4.37 kJ  ballSpeed 18.6  platformSpeed 2.3  maxTemp 67.9 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 4.16 max 0.50  upgrades 15/15  spent 0 cr  refuels 2  imported 18.1 kJ
+smooth seed  6  t 240s  extracted  224  caught   19  lost  205  sold   19  earned   144 cr  credits   144  sales 1  battery 0.30 kJ  ballSpeed 15.8  platformSpeed 8.5  maxTemp 128.3 C  minPower 13%  pad 0.00 kJ  crank 0.00 kJ  floor 6.41 max 0.50  upgrades 15/15  spent 0 cr  refuels 19  imported 181.6 kJ
+smooth seed  7  t 240s  extracted  584  caught  105  lost  479  sold  105  earned   701 cr  credits   701  sales 5  battery 0.87 kJ  ballSpeed 15.2  platformSpeed 8.7  maxTemp 146.1 C  minPower 0%  pad 0.38 kJ  crank 0.00 kJ  floor 14.97 max 0.28  upgrades 15/15  spent 0 cr  refuels 15  imported 147.6 kJ
+smooth seed  8  t 235s  extracted  654  caught  111  lost  543  sold   86  earned   684 cr  credits   684  sales 8  battery 11.97 kJ  ballSpeed 15.3  platformSpeed 10.0  maxTemp 133.3 C  minPower 3%  pad 4.99 kJ  crank 0.00 kJ  floor 16.97 max 0.41  upgrades 15/15  spent 0 cr  refuels 13  imported 125.5 kJ
+square seed  1  t 240s  extracted  384  caught  122  lost  262  sold   22  earned   145 cr  credits   145  sales 1  battery 5.42 kJ  ballSpeed 14.9  platformSpeed 8.9  maxTemp 126.8 C  minPower 16%  pad 0.00 kJ  crank 0.00 kJ  floor 8.19 max 0.50  upgrades 15/15  spent 0 cr  refuels 3  imported 29.9 kJ
+square seed  2  t 240s  extracted  564  caught   34  lost  530  sold   34  earned   242 cr  credits   242  sales 6  battery 2.71 kJ  ballSpeed 15.8  platformSpeed 9.6  maxTemp 129.5 C  minPower 11%  pad 0.09 kJ  crank 0.00 kJ  floor 16.56 max 0.50  upgrades 15/15  spent 0 cr  refuels 15  imported 144.2 kJ
+square seed  3  t 240s  extracted  166  caught   23  lost  143  sold   23  earned   160 cr  credits   160  sales 4  battery 4.37 kJ  ballSpeed 18.6  platformSpeed 2.3  maxTemp 71.5 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 4.47 max 0.50  upgrades 15/15  spent 0 cr  refuels 2  imported 18.1 kJ
+square seed  4  t 240s  extracted  393  caught  122  lost  271  sold   22  earned   151 cr  credits   151  sales 1  battery 5.22 kJ  ballSpeed 14.9  platformSpeed 8.9  maxTemp 127.7 C  minPower 15%  pad 0.00 kJ  crank 0.00 kJ  floor 8.47 max 0.50  upgrades 15/15  spent 0 cr  refuels 3  imported 30.0 kJ
+square seed  5  t 240s  extracted  152  caught   19  lost  133  sold   19  earned   116 cr  credits   116  sales 1  battery 4.37 kJ  ballSpeed 18.6  platformSpeed 2.3  maxTemp 67.9 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 4.16 max 0.50  upgrades 15/15  spent 0 cr  refuels 2  imported 18.1 kJ
+square seed  6  t 240s  extracted  640  caught  119  lost  521  sold   19  earned   144 cr  credits   144  sales 1  battery 3.04 kJ  ballSpeed 16.2  platformSpeed 9.5  maxTemp 132.7 C  minPower 5%  pad 0.13 kJ  crank 0.00 kJ  floor 16.28 max 0.50  upgrades 15/15  spent 0 cr  refuels 9  imported 87.0 kJ
+square seed  7  t 240s  extracted  387  caught  122  lost  265  sold   22  earned   143 cr  credits   143  sales 1  battery 5.34 kJ  ballSpeed 14.9  platformSpeed 8.9  maxTemp 127.2 C  minPower 16%  pad 0.00 kJ  crank 0.00 kJ  floor 8.28 max 0.50  upgrades 15/15  spent 0 cr  refuels 3  imported 29.9 kJ
+square seed  8  t 240s  extracted  388  caught  122  lost  266  sold   22  earned   166 cr  credits   166  sales 1  battery 5.33 kJ  ballSpeed 14.9  platformSpeed 8.9  maxTemp 127.2 C  minPower 16%  pad 0.00 kJ  crank 0.00 kJ  floor 8.31 max 0.50  upgrades 15/15  spent 0 cr  refuels 3  imported 29.9 kJ
+
+smooth averages over 8 seeds (240 s cap):
+  extraction rate 115.4 cells/min, catch rate 16.8%
+  gross income 528 cr/shift, 132.3 cr/min, 4.9 wall sales, 108 cr/sale, 528 cr unspent
+  energy 22.4 W average draw, ball speed 16.2 m/s, platform speed 7.3 m/s
+  maxTemperature 120.0 °C average, minimum drive output 27%
+  centre-pad charging 0.78 kJ per shift (3.3 W average), crank 0.00 kJ per shift
+  floor piles sum 11.97 column-m, tallest pile 0.44 m
+  progression 15.0/15 nodes owned, 0 cr spent of 528 cr earned, 11.8 recharges importing 112.5 kJ
+
+square averages over 8 seeds (240 s cap):
+  extraction rate 96.1 cells/min, catch rate 22.2%
+  gross income 158 cr/shift, 39.6 cr/min, 2.0 wall sales, 79 cr/sale, 158 cr unspent
+  energy 18.6 W average draw, ball speed 16.1 m/s, platform speed 7.4 m/s
+  maxTemperature 113.8 °C average, minimum drive output 35%
+  centre-pad charging 0.03 kJ per shift (0.1 W average), crank 0.00 kJ per shift
+  floor piles sum 9.34 column-m, tallest pile 0.50 m
+  progression 15.0/15 nodes owned, 0 cr spent of 158 cr earned, 5.0 recharges importing 48.4 kJ
+
+=== communism mode + grader (all free) (force 480 N, top speed 12 m/s) ===
+smooth seed  1  t 240s  extracted  447  caught   46  lost  401  sold   46  earned   337 cr  credits   337  sales 2  battery 0.01 kJ  ballSpeed 15.8  platformSpeed 7.8  maxTemp 130.8 C  minPower 8%  pad 0.34 kJ  crank 0.00 kJ  floor 0.25 max 0.22  upgrades 15/15  spent 0 cr  refuels 16  imported 152.0 kJ
+smooth seed  2  t 240s  extracted  273  caught   22  lost  251  sold   22  earned   154 cr  credits   154  sales 1  battery 2.08 kJ  ballSpeed 15.8  platformSpeed 7.7  maxTemp 127.9 C  minPower 14%  pad 0.00 kJ  crank 0.00 kJ  floor 0.00 max 0.00  upgrades 15/15  spent 0 cr  refuels 18  imported 174.4 kJ
+smooth seed  3  t 240s  extracted  312  caught   29  lost  265  sold   29  earned   202 cr  credits   202  sales 6  battery 2.76 kJ  ballSpeed 14.7  platformSpeed 10.5  maxTemp 128.2 C  minPower 14%  pad 0.31 kJ  crank 0.00 kJ  floor 0.54 max 0.13  upgrades 15/15  spent 0 cr  refuels 16  imported 156.1 kJ
+smooth seed  4  t 240s  extracted  162  caught   22  lost  140  sold   22  earned   151 cr  credits   151  sales 1  battery 3.71 kJ  ballSpeed 18.6  platformSpeed 2.1  maxTemp 70.5 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 4.38 max 0.50  upgrades 15/15  spent 0 cr  refuels 2  imported 18.0 kJ
+smooth seed  5  t 240s  extracted  155  caught   19  lost  136  sold   19  earned   114 cr  credits   114  sales 1  battery 6.99 kJ  ballSpeed 14.7  platformSpeed 10.5  maxTemp 128.1 C  minPower 14%  pad 0.26 kJ  crank 0.00 kJ  floor 0.00 max 0.00  upgrades 15/15  spent 0 cr  refuels 19  imported 183.4 kJ
+smooth seed  6  t 240s  extracted  314  caught  119  lost  195  sold   19  earned   145 cr  credits   145  sales 1  battery 1.56 kJ  ballSpeed 14.7  platformSpeed 10.4  maxTemp 127.4 C  minPower 15%  pad 0.38 kJ  crank 0.00 kJ  floor 1.94 max 0.13  upgrades 15/15  spent 0 cr  refuels 9  imported 86.6 kJ
+smooth seed  7  t 240s  extracted  651  caught  127  lost  524  sold  127  earned   780 cr  credits   780  sales 6  battery 8.04 kJ  ballSpeed 15.8  platformSpeed 7.5  maxTemp 130.7 C  minPower 9%  pad 0.08 kJ  crank 0.00 kJ  floor 1.60 max 0.22  upgrades 15/15  spent 0 cr  refuels 12  imported 115.9 kJ
+smooth seed  8  t 240s  extracted  577  caught  112  lost  465  sold  112  earned   862 cr  credits   862  sales 2  battery 3.46 kJ  ballSpeed 18.0  platformSpeed 7.6  maxTemp 134.4 C  minPower 1%  pad 0.00 kJ  crank 0.00 kJ  floor 0.00 max 0.00  upgrades 15/15  spent 0 cr  refuels 15  imported 145.5 kJ
+square seed  1  t 240s  extracted  485  caught  122  lost  363  sold   22  earned   145 cr  credits   145  sales 1  battery 5.77 kJ  ballSpeed 15.8  platformSpeed 9.1  maxTemp 129.1 C  minPower 12%  pad 0.00 kJ  crank 0.00 kJ  floor 2.52 max 0.22  upgrades 15/15  spent 0 cr  refuels 9  imported 84.5 kJ
+square seed  2  t 240s  extracted  609  caught   49  lost  560  sold   49  earned   331 cr  credits   331  sales 3  battery 3.03 kJ  ballSpeed 15.8  platformSpeed 8.8  maxTemp 136.3 C  minPower 0%  pad 0.23 kJ  crank 0.00 kJ  floor 0.00 max 0.00  upgrades 15/15  spent 0 cr  refuels 14  imported 136.0 kJ
+square seed  3  t 240s  extracted  953  caught  102  lost  851  sold   89  earned   613 cr  credits   613  sales 4  battery 8.64 kJ  ballSpeed 14.9  platformSpeed 10.2  maxTemp 134.1 C  minPower 2%  pad 0.00 kJ  crank 0.00 kJ  floor 0.76 max 0.28  upgrades 15/15  spent 0 cr  refuels 10  imported 94.8 kJ
+square seed  4  t 240s  extracted  162  caught   22  lost  140  sold   22  earned   151 cr  credits   151  sales 1  battery 3.71 kJ  ballSpeed 18.6  platformSpeed 2.1  maxTemp 70.5 C  minPower 100%  pad 0.00 kJ  crank 0.00 kJ  floor 4.38 max 0.50  upgrades 15/15  spent 0 cr  refuels 2  imported 18.0 kJ
+square seed  5  t 240s  extracted  741  caught   78  lost  663  sold   78  earned   469 cr  credits   469  sales 10  battery 2.47 kJ  ballSpeed 14.9  platformSpeed 10.2  maxTemp 136.9 C  minPower 0%  pad 0.71 kJ  crank 0.00 kJ  floor 0.49 max 0.38  upgrades 15/15  spent 0 cr  refuels 13  imported 122.6 kJ
+square seed  6  t 240s  extracted  422  caught   19  lost  403  sold   19  earned   145 cr  credits   145  sales 1  battery 4.26 kJ  ballSpeed 14.9  platformSpeed 7.8  maxTemp 128.3 C  minPower 13%  pad 0.00 kJ  crank 0.00 kJ  floor 0.35 max 0.28  upgrades 15/15  spent 0 cr  refuels 17  imported 160.0 kJ
+square seed  7  t 130s  extracted  296  caught   24  lost  258  sold   22  earned   144 cr  credits   144  sales 1  battery 11.99 kJ  ballSpeed 15.8  platformSpeed 9.2  maxTemp 127.6 C  minPower 15%  pad 0.00 kJ  crank 0.00 kJ  floor 1.82 max 0.15  upgrades 15/15  spent 0 cr  refuels 7  imported 65.9 kJ
+square seed  8  t 240s  extracted  273  caught   22  lost  251  sold   22  earned   167 cr  credits   167  sales 1  battery 7.57 kJ  ballSpeed 15.8  platformSpeed 8.3  maxTemp 128.3 C  minPower 13%  pad 0.73 kJ  crank 0.00 kJ  floor 0.21 max 0.19  upgrades 15/15  spent 0 cr  refuels 17  imported 165.8 kJ
+
+smooth averages over 8 seeds (240 s cap):
+  extraction rate 90.3 cells/min, catch rate 17.2%
+  gross income 343 cr/shift, 85.8 cr/min, 2.5 wall sales, 137 cr/sale, 343 cr unspent
+  energy 14.9 W average draw, ball speed 16.0 m/s, platform speed 8.0 m/s
+  maxTemperature 122.2 °C average, minimum drive output 22%
+  centre-pad charging 0.17 kJ per shift (0.7 W average), crank 0.00 kJ per shift
+  floor piles sum 1.09 column-m, tallest pile 0.15 m
+  progression 15.0/15 nodes owned, 0 cr spent of 343 cr earned, 13.4 recharges importing 129.0 kJ
+
+square averages over 8 seeds (240 s cap):
+  extraction rate 130.7 cells/min, catch rate 11.1%
+  gross income 271 cr/shift, 71.8 cr/min, 2.8 wall sales, 98 cr/sale, 271 cr unspent
+  energy 26.2 W average draw, ball speed 15.8 m/s, platform speed 8.2 m/s
+  maxTemperature 123.9 °C average, minimum drive output 19%
+  centre-pad charging 0.21 kJ per shift (0.9 W average), crank 0.00 kJ per shift
+  floor piles sum 1.31 column-m, tallest pile 0.25 m
+  progression 15.0/15 nodes owned, 0 cr spent of 271 cr earned, 11.1 recharges importing 106.0 kJ

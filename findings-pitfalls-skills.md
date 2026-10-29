@@ -41,6 +41,7 @@ cd /home/user/arc-steam && LD_LIBRARY_PATH=/tmp/al/lib PLAYWRIGHT_PATH=/tmp/pw/n
 - A click on the chamber now has two meanings, so the zones must be visible and must not overlap: rock selects an inspector cell, the low band (the drawn 1.7 m target height) sets travel, and open air does neither. Testing rock by "is any strength left in this column" is not enough — the smooth renderer draws a sloped surface between column vertices, so hit-testing the same linear profile is what makes a crater-edge click land where the player sees rock.
 - Before the click-zone change, every chamber click set `world.target`. Any new "click does nothing" assertion must also assert `world.target` is unchanged, not just that the inspector text changed.
 - A browser-smoke block that takes a second of wall time gives the running ball time to break rock, so a click on a mined-away cell selects nothing and the "a rock click moves the inspector" assertion fails for the wrong reason. Put new slow checks after the inspector section, not before it.
+- The same assertion also fails when earlier below-fold clicks (research/equipment rows) leave the page scrolled so the chamber's top is above the viewport: `chamberClick` computes points from the canvas `boundingBox`, and a rock point up there clicks nothing at all. Symptom: rock state evaluates intact, the inspector text is byte-identical. `scrollIntoViewIfNeeded()` on `#c` before chamber clicks that follow panel clicks.
 
 ## Simulation pitfalls
 
@@ -65,7 +66,7 @@ cd /home/user/arc-steam && LD_LIBRARY_PATH=/tmp/al/lib PLAYWRIGHT_PATH=/tmp/pw/n
 ## Architecture notes that held up
 
 - Cached bounds over the exposed typed arrays are unsafe: tests and tools legitimately mark `state.active` slots from outside, and a stale bound silently hides fragments from the step loop, the energy term and the renderer. Scanning the full pool costs about 4 µs per step, which is cheap insurance.
-- One `installed(channel)` aggregator over equipment and research deltas keeps both systems additive without duplicating getters, and each module only declares the channels it actually changes.
+- One `installed(channel)` aggregator over equipment and research deltas keeps both systems additive without duplicating getters, and each module only declares the channels it actually changes. A new channel needs all four wirings per module that carries it (accumulator, `state` getter, `apply`, `reset`); a missing getter makes `installed()` silently read 0, so the upgrade buys a label. The engine.1 tier test asserts `forceNow()`/`speedNow()` after each purchase for exactly this reason.
 - Purchases, research and recharges all go through `SteamCeiling.purchase`/`recharge`, so the ledger stays the single money trail; only the entry `type` differs.
 - A mode that only changes prices belongs in the economy, not in a new module. One flag behind `purchase`/`recharge` makes research, equipment and bought energy free at once, and `research.status` / `equipment.isUnlocked` can ask the economy for the gate instead of knowing how the mode works. One source of truth for "what does this cost now" beats a second pricing path.
 

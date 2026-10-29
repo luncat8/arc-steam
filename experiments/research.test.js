@@ -12,6 +12,8 @@ test('technology states move locked to available to researched with prerequisite
 	assert.equal(research.status('thermodynamics'), LOCKED, 'needs light alloys');
 	assert.equal(research.status('storage'), LOCKED);
 	assert.equal(research.status('ballistics'), LOCKED);
+	assert.equal(research.status('traction'), LOCKED, 'needs pulse electromagnetics');
+	assert.equal(research.status('power'), LOCKED, 'needs traction motors and heat transfer');
 	assert.equal(research.state.completed, 0);
 	assert.equal(research.research('electromagnetics', w), false, 'a locked node cannot be bought');
 	assert.equal(research.research('materials', w), false, 'an available node still needs funds');
@@ -42,6 +44,9 @@ test('technology states move locked to available to researched with prerequisite
 	unlockResearch(w, 'ballistics');
 	assert.equal(research.state.prediction, true);
 	unlockResearch(w, 'storage');
+	unlockResearch(w, 'traction');
+	assert.equal(research.status('power'), AVAILABLE, 'both engine prerequisites are in');
+	unlockResearch(w, 'power');
 	assert.equal(research.state.completed, research.nodes.length);
 	physics.createWorld();
 	assert.equal(research.state.completed, 0, 'a world reset clears research');
@@ -111,9 +116,9 @@ test('every node and item stays fundable inside a measured working shift', () =>
 	let total = 0;
 	for (const node of research.nodes) total += node.cost;
 	for (const item of equipment.items) total += item.cost;
-	// Eight full 100-cell loads have to cover the whole tree and shop, otherwise
+	// Eleven full 100-cell loads have to cover the whole tree and shop, otherwise
 	// the prerequisites would push the first upgrades out of ordinary play.
-	for (let load = 0; load < 8; load++) earnFunds(w, 100);
+	for (let load = 0; load < 11; load++) earnFunds(w, 100);
 	assert.ok(ceiling.state.funds >= total, `${ceiling.state.funds.toFixed(0)} cr earned against ${total} cr of upgrades`);
 	physics.createWorld();
 });

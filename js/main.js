@@ -250,8 +250,8 @@
 	// and research delta, which is what the row effects compare against.
 	function specReadout() {
 		setText(specValues[0], physics.dryMass().toFixed(1) + ' kg');
-		setText(specValues[1], config.force.toFixed(0) + ' N');
-		setText(specValues[2], config.maxSpeed.toFixed(0) + ' m/s');
+		setText(specValues[1], physics.forceNow().toFixed(0) + ' N');
+		setText(specValues[2], physics.speedNow().toFixed(0) + ' m/s');
 		setText(specValues[3], physics.pulseNow().toFixed(0) + ' J');
 		setText(specValues[4], (physics.retentionNow() * 100).toFixed(0) + '%');
 		setText(specValues[5], physics.conductanceNow().toFixed(2) + ' W/K');
@@ -586,7 +586,7 @@
 		if (chargingNow) setText(ui['reserve-note'], 'Charging ' + (config.chargePower / 1000).toFixed(1) + ' kW · ' + ((config.battery - world.battery) / config.chargePower).toFixed(1) + ' s to full');
 		else if (onPad && world.battery >= config.battery) setText(ui['reserve-note'], 'Reserve full · centre pad');
 		else if (onPad) setText(ui['reserve-note'], 'On the centre pad · stop to charge (' + config.chargeSeconds + ' s full)');
-		else if (reserveWarning === 'EMPTY') setText(ui['reserve-note'], 'Empty · market import or reach the centre pad');
+		else if (reserveWarning === 'EMPTY') setText(ui['reserve-note'], 'Empty · hand-crank crawl to the centre pad, or market import');
 		else if (reserveWarning) setText(ui['reserve-note'], 'Low reserve · park on the centre pad');
 		else setText(ui['reserve-note'], 'Centre pad refills free in ' + config.chargeSeconds + ' s · emergency import in the market');
 		const heldMass = world.ball.state === 'held' ? config.ballMass : 0;

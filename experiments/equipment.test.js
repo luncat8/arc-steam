@@ -239,3 +239,58 @@ test('the road grader smooths a local travel-side swath without digging under th
 	assert.equal(state.floorPiles[100], 0.3, 'remote rubble remains untouched');
 	physics.createWorld();
 });
+
+test('engine tiers multiply force and top speed through research and machinery', () => {
+	const w = physics.createWorld();
+	near(physics.forceNow(), 480);
+	near(physics.speedNow(), 12);
+	assert.equal(equipment.isUnlocked('motor'), false, 'the motor waits for traction research');
+	unlockResearch(w, 'traction');
+	near(physics.forceNow(), 480 + 240);
+	near(physics.speedNow(), 12 + 3);
+	buy(w, 'motor');
+	near(physics.forceNow(), 1080, 1e-9);
+	near(physics.speedNow(), 21, 1e-9);
+	unlockResearch(w, 'power');
+	buy(w, 'overdrive');
+	near(physics.forceNow(), 1920, 1e-9);
+	near(physics.forceNow() / c.force, 4, 1e-9);
+	near(physics.speedNow(), 30, 1e-9);
+	near(physics.speedNow() / c.maxSpeed, 2.5, 1e-9);
+	// Funding teleports debris (see harness), so re-sync before the ledger check.
+	sync(w);
+	run(w, 2);
+	balanced(w);
+	physics.createWorld();
+	near(physics.forceNow(), 480);
+	near(physics.speedNow(), 12);
+});
+
+test('a tier-3 engine at full force meets a far-side fall that tier 1 cannot', () => {
+	// The same save attempted twice: ball dropped at the far wall, platform
+	// parked at the near wall, 100% force, piston centred on the landing.
+	function attempt(world) {
+		world.ball.state = 'flying';
+		world.ball.x = 21.4; world.ball.y = 9; world.ball.vx = 0; world.ball.vy = 0;
+		world.platform.x = 2; world.platform.vx = 0;
+		world.target = 21.4 - c.pistonCentre;
+		world.direction = 0;
+		world.forceSetting = 1;
+		world.drive = true;
+		world.battery = c.battery;
+		sync(world);
+		run(world, 2.6);
+		return world.bounces;
+	}
+	const base = physics.createWorld();
+	assert.equal(attempt(base), 0, 'tier 1 arrives after the ball grounds');
+	balanced(base);
+	const w = physics.createWorld();
+	unlockResearch(w, 'traction');
+	buy(w, 'motor');
+	unlockResearch(w, 'power');
+	buy(w, 'overdrive');
+	assert.ok(attempt(w) >= 1, 'tier 3 is under the ball in time to bounce it');
+	balanced(w);
+	physics.createWorld();
+});

@@ -44,12 +44,13 @@ test('ball response is another 1.2x slower while platform force and top speed st
 	const oldFallTime = Math.sqrt(2 / c.gravity);
 	const newFallTime = Math.sqrt(2 / c.ballGravity);
 	near(newFallTime, oldFallTime * (1.5 * 1.2));
-	// Second 1.5x drive-response step: 270 N -> 400 N and 7 m/s -> 10 m/s,
-	// each rounded to a whole number instead of keeping 405 N / 10.5 m/s.
-	near(c.force, 400);
-	assert.equal(c.maxSpeed, 10);
-	assert.ok(Math.abs(c.force / 270 - 1.5) < 0.02, 'force is the rounded 1.5x step');
-	assert.ok(Math.abs(c.maxSpeed / 7 - 1.5) < 0.08, 'top speed is the rounded 1.5x step');
+	// Tier-1 engine tune (engine.1): 1.2x the previous 400 N / 10 m/s.
+	near(c.force, 480);
+	assert.equal(c.maxSpeed, 12);
+	near(c.force / 400, 1.2);
+	near(c.maxSpeed / 10, 1.2);
+	near(physics.forceNow(), c.force);
+	near(physics.speedNow(), c.maxSpeed);
 	const sprint = physics.createWorld();
 	sprint.ball.state = 'held';
 	sprint.direction = 1;
@@ -369,6 +370,85 @@ test('the charge pad needs a standstill and the platform to be on it', () => {
 	near(away.battery, 0, 1e-9);
 	near(away.importedEnergy, 0, 1e-9);
 	balanced(away);
+});
+
+test('an empty reserve leaves a hand-crank crawl to the charge pad', () => {
+	const w = physics.createWorld();
+	w.ball.state = 'held'; w.platform.x = 4; w.platform.vx = 0;
+	w.battery = 0; w.direction = 1; w.target = NaN;
+	sync(w);
+	run(w, 2);
+	near(w.platform.vx, c.crankMaxSpeed, 1e-9);
+	near(w.battery, 0, 1e-9);
+	assert.ok(w.crankEnergy > 0, 'the crew supplied the kinetic energy');
+	near(w.crankEnergy, w.importedEnergy);
+	near(w.crankEnergy, 0.5 * physics.platformMass(w) * w.platform.vx * w.platform.vx, 1e-6);
+	balanced(w);
+	// The crawl plus full-strength braking parks on the pad and charges.
+	w.direction = 0; w.target = 12;
+	run(w, 30);
+	assert.equal(physics.onChargePad(w), true);
+	assert.ok(w.battery > 1000, 'the pad refills a cranked-in platform');
+	assert.ok(w.chargedEnergy > 1000);
+	balanced(w);
+});
+
+test('the crank never supplements a charged reserve or a faster coast', () => {
+	const charged = physics.createWorld();
+	charged.ball.state = 'held'; charged.direction = 1; charged.target = NaN;
+	sync(charged);
+	run(charged, 1);
+	assert.ok(charged.platform.vx > c.crankMaxSpeed, 'the powered drive outruns the crawl');
+	near(charged.crankEnergy, 0, 1e-12);
+	assert.ok(charged.battery < c.battery, 'movement spent the reserve, not the crew');
+	balanced(charged);
+	const coasting = physics.createWorld();
+	coasting.ball.state = 'held'; coasting.battery = 0;
+	coasting.platform.vx = 2; coasting.direction = 1; coasting.target = NaN;
+	sync(coasting);
+	run(coasting, 0.5);
+	near(coasting.platform.vx, 2, 1e-9);
+	near(coasting.crankEnergy, 0, 1e-12);
+	balanced(coasting);
+});
+
+test('the tier-1 engine caps at its 12 m/s top speed at full force', () => {
+	const w = physics.createWorld();
+	w.ball.state = 'held';
+	w.platform.x = physics.platformMin(); w.platform.vx = 0;
+	w.direction = 1; w.target = NaN; w.forceSetting = 1;
+	sync(w);
+	run(w, 2);
+	near(w.platform.vx, c.maxSpeed, 1e-9);
+	assert.ok(w.battery < c.battery, 'the sprint was bought from the reserve');
+	balanced(w);
+});
+
+test('a grounded ball re-seats when rubble rises or is cut beneath it', () => {
+	const w = physics.createWorld();
+	const state = ceiling.state;
+	const drawContext = { fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} };
+	w.ball.x = 3; w.ball.y = 1; w.ball.vx = 0; w.platform.x = 20;
+	sync(w); run(w, 1);
+	assert.equal(w.ball.state, 'grounded');
+	near(w.ball.y, c.radius);
+	state.floorPiles.fill(0.5); ceiling.drawFloor(drawContext);
+	sync(w);
+	const terrainWork = w.terrainWork;
+	run(w, 0.5);
+	assert.equal(w.ball.state, 'grounded');
+	near(w.ball.y, ceiling.floorAt(3) + c.radius);
+	assert.ok(w.terrainWork > terrainWork, 'the growing pile did the lifting');
+	balanced(w);
+	state.floorPiles.fill(0); ceiling.drawFloor(drawContext);
+	sync(w);
+	const heat = w.heat;
+	run(w, 0.5);
+	assert.equal(w.ball.state, 'grounded');
+	near(w.ball.y, c.radius);
+	assert.ok(w.heat > heat, 'settling back down dissipates as heat');
+	balanced(w);
+	physics.createWorld();
 });
 
 test('convection and radiation cool the machinery without hiding exported energy', () => {

@@ -207,9 +207,10 @@
 		// platform accelerates at its current force setting to the speed limit and
 		// then cruises for the rest of the flight time. Braking is not budgeted, so
 		// a reachable mark means the landing can be met, not that coasting meets it.
-		const acceleration = config.force * world.forceSetting / physics.platformMass(world);
-		const ramp = Math.min(time, config.maxSpeed / acceleration);
-		const cover = 0.5 * acceleration * ramp * ramp + config.maxSpeed * (time - ramp);
+		const acceleration = physics.forceNow() * world.forceSetting / physics.platformMass(world);
+		const topSpeed = physics.speedNow();
+		const ramp = Math.min(time, topSpeed / acceleration);
+		const cover = 0.5 * acceleration * ramp * ramp + topSpeed * (time - ramp);
 		gap = Math.abs(endX - platform.x) - cover;
 		reachable = (kind === DECK || kind === GROUND) && gap <= 0;
 		return state;
