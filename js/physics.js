@@ -301,6 +301,13 @@
 		return (machinery ? machinery.state[channel] || 0 : 0) + (technology ? technology.state[channel] || 0 : 0);
 	}
 	function retentionNow() { return config.retention + installed('retentionBonus'); }
+	function rockRetentionNow() {
+		const r = retentionNow() + installed('rockRetentionBonus');
+		return Math.max(0, Math.min(0.995, r));
+	}
+	function ballMassNow() { return config.ballMass + installed('ballMassBonus'); }
+	function damageBonusNow() { return installed('damageBonus'); }
+	function damageRadiusBonusNow() { return installed('damageRadiusBonus'); }
 	function pulseNow() { return config.pulse + installed('pulseBonus'); }
 	function forceNow() { return (config.force + installed('forceBonus')) * engine.force; }
 	function speedNow() { return (config.maxSpeed + installed('speedBonus')) * engine.speed; }
@@ -309,7 +316,7 @@
 	function reserveNow() {
 		// Four full-throttle, wall-to-wall starts; acceleration distance caps
 		// the kinetic cost when the map is too short to attain rated speed.
-		const mass = config.platformMass + engine.mass - 18 + installed('massDelta') + config.ballMass;
+		const mass = config.platformMass + engine.mass - 18 + installed('massDelta') + ballMassNow();
 		const speed = speedNow();
 		const kinetic = Math.min(0.5 * mass * speed * speed, forceNow() * (platformMax() - platformMin()));
 		return 4 * kinetic / engine.efficiency;
@@ -378,7 +385,7 @@
 
 	function ballEnergy(ball) {
 		if (ball.state === 'held') return 0;
-		return config.ballMass * (0.5 * (ball.vx * ball.vx + ball.vy * ball.vy) + config.ballGravity * (ball.y - config.radius));
+		return ballMassNow() * (0.5 * (ball.vx * ball.vx + ball.vy * ball.vy) + config.ballGravity * (ball.y - config.radius));
 	}
 
 	function cargoMass() {
@@ -386,7 +393,7 @@
 	}
 
 	function platformMass(world) {
-		return dryMass() + cargoMass() + (world.ball.state === 'held' ? config.ballMass : 0);
+		return dryMass() + cargoMass() + (world.ball.state === 'held' ? ballMassNow() : 0);
 	}
 
 	// Imported (bought) energy is subtracted and exported (sold, cooled) energy is
@@ -451,7 +458,7 @@ function spend(world, useful) {
 		const platform = world.platform;
 		const carriedMass = dryMass() + cargoMass();
 		const before = ballEnergy(ball) + 0.5 * carriedMass * platform.vx * platform.vx;
-		platform.vx = (carriedMass * platform.vx + config.ballMass * ball.vx) / (carriedMass + config.ballMass);
+		platform.vx = (carriedMass * platform.vx + ballMassNow() * ball.vx) / (carriedMass + ballMassNow());
 		ball.state = 'held';
 		ball.vx = 0;
 		ball.vy = 0;
@@ -476,7 +483,7 @@ function spend(world, useful) {
 
 	function canLaunch(world) {
 		if (world.ball.state !== 'held' || !world.drive) return false;
-		return launchCapacity(world) > config.ballMass * config.ballGravity * launchHeight(world);
+		return launchCapacity(world) > ballMassNow() * config.ballGravity * launchHeight(world);
 	}
 
 	function launch(world) {
@@ -493,7 +500,7 @@ function spend(world, useful) {
 		ball.x = centreX + Math.cos(faceAngle) * along - Math.sin(faceAngle) * config.radius;
 		ball.y = centreY + Math.sin(faceAngle) * along + Math.cos(faceAngle) * config.radius;
 		ball.vx = platform.vx;
-		ball.vy = Math.sqrt(2 * (energy - config.ballMass * config.ballGravity * height) / config.ballMass);
+		ball.vy = Math.sqrt(2 * (energy - ballMassNow() * config.ballGravity * height) / ballMassNow());
 		ball.state = 'flying';
 		// The piston visibly shoves the ball away, then springs back.
 		world.pistonOffset = config.pistonTravel * 0.6;
@@ -601,7 +608,20 @@ function spend(world, useful) {
 		const normalVelocity = ball.vx * nx + ball.vy * ny;
 		if (normalVelocity >= 0) return;
 		const retention = retentionNow();
-		const lost = 0.5 * config.ballMass * normalVelocity * normalVelocity * (1 - retention);
+		const lost = 0.5 * ballMassNow() * normalVelocity * normalVelocity * (1 - retention);
+		const spentOnRock = Math.min(lost, fracture || 0);
+		const impulseVelocity = (1 + Math.sqrt(retention)) * normalVelocity;
+		world.fractureEnergy += spentOnRock;
+		world.heat += lost - spentOnRock;
+		ball.vx -= impulseVelocity * nx;
+		ball.vy -= impulseVelocity * ny;
+	}
+	function rockPassiveImpact(world, nx, ny, fracture) {
+		const ball = world.ball;
+		const normalVelocity = ball.vx * nx + ball.vy * ny;
+		if (normalVelocity >= 0) return;
+		const retention = rockRetentionNow();
+		const lost = 0.5 * ballMassNow() * normalVelocity * normalVelocity * (1 - retention);
 		const spentOnRock = Math.min(lost, fracture || 0);
 		const impulseVelocity = (1 + Math.sqrt(retention)) * normalVelocity;
 		world.fractureEnergy += spentOnRock;
@@ -622,14 +642,14 @@ function spend(world, useful) {
 			// buried nor left floating. Settling down dissipates as heat;
 			// being lifted is work by the prescribed terrain.
 			const rest = terrainHeight(ball.x) + config.radius;
-			const delta = config.ballMass * config.ballGravity * (rest - ball.y);
-			if (delta > 0) world.terrainWork += delta;
-			else world.heat -= delta;
-			ball.y = rest;
-			if (Math.abs(ball.x - world.platform.x) <= config.platformWidth * 0.5) capture(world);
-			return;
-		}
-		let remaining = dt;
+				const delta = ballMassNow() * config.ballGravity * (rest - ball.y);
+				if (delta > 0) world.terrainWork += delta;
+				else world.heat -= delta;
+				ball.y = rest;
+				if (Math.abs(ball.x - world.platform.x) <= config.platformWidth * 0.5) capture(world);
+				return;
+			}
+			let remaining = dt;
 		let elapsed = 0;
 		let rockImpulse = false;
 		for (let event = 0; event < 12 && remaining > 1e-10; event++) {
@@ -692,7 +712,7 @@ function spend(world, useful) {
 				// The ball settles on the rubble surface and keeps the potential
 				// energy of its resting height; only the remainder becomes heat.
 				const rest = root.SteamCeiling ? root.SteamCeiling.floorAt(ball.x) : 0;
-				world.heat += ballEnergy(ball) - config.ballMass * config.ballGravity * rest;
+				world.heat += ballEnergy(ball) - ballMassNow() * config.ballGravity * rest;
 				ball.y = rest + config.radius;
 				ball.vx = 0;
 				ball.vy = 0;
@@ -708,18 +728,19 @@ function spend(world, useful) {
 				// Contact position is exact (separated to radius), so the ball
 				// cannot sit inside the surface between events. The snap's
 				// potential change is booked so the energy ledger stays exact.
-				world.heat += config.ballMass * config.ballGravity * (ball.y - rockY);
+				world.heat += ballMassNow() * config.ballGravity * (ball.y - rockY);
 				ball.x = rockX;
 				ball.y = rockY;
 				const normalVelocity = ball.vx * rockNx + ball.vy * rockNy;
 				// One impulse per step: later zero-time contacts only separate,
 				// keeping the ball's contact impulse instead of stacking flips.
 				if (normalVelocity < 0 && !rockImpulse) {
-					const damageBudget = 0.5 * config.ballMass * normalVelocity * normalVelocity * (1 - config.retention);
+					const rockRetention = rockRetentionNow();
+					const damageBudget = 0.5 * ballMassNow() * normalVelocity * normalVelocity * (1 - rockRetention);
 					const contactX = ball.x - rockNx * config.radius;
 					const contactY = ball.y - rockNy * config.radius;
 					const fracture = root.SteamCeiling.damage(contactX, contactY, damageBudget);
-					passiveImpact(world, rockNx, rockNy, fracture);
+					rockPassiveImpact(world, rockNx, rockNy, fracture);
 					rockImpulse = true;
 				}
 				continue;
@@ -760,7 +781,7 @@ function spend(world, useful) {
 		advancePiston(world, dt);
 		charge(world, dt);
 		if (root.SteamCeiling) {
-			const heldMass = world.ball.state === 'held' ? config.ballMass : 0;
+			const heldMass = world.ball.state === 'held' ? ballMassNow() : 0;
 			root.SteamCeiling.step(world, dt, dryMass() + heldMass);
 			const minX = platformMin();
 			const maxX = platformMax();
@@ -779,7 +800,7 @@ function spend(world, useful) {
 		thermalFactor, coolingPower, platformMass, platformMin, platformMax, dryMass,
 		platformPitchAt, platformBaseAt, platformPointAt, platformSurfaceAt, planeContactTime,
 		chargePadMin, chargePadMax, onChargePad, charging,
-		retentionNow, pulseNow, forceNow, speedNow, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
+		retentionNow, rockRetentionNow, ballMassNow, damageBonusNow, damageRadiusBonusNow, pulseNow, forceNow, speedNow, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
 		setPistonAngle, pistonContactTime, solvePiston, contactResult
 	};
 	root.SteamPhysics = api;

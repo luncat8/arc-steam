@@ -56,6 +56,23 @@
 			effect: 'Adds 0.70 m² of cooling surface for 16 kg — the most cooling, at a real mass penalty.'
 		})
 		]);
+	// Ball upgrades swap one installed ball: a heavier/harder tip does more damage
+	// but loses more bounce energy on rock (trade-off). Impact forging research
+	// unlocks the family; every tier is purchasable once, swapping owned is free.
+	const balls = Object.freeze([
+		Object.freeze({
+			id: 'standard', name: 'Standard ball', cost: 0, mass: 0, damageBonus: 0, rockRetentionBonus: 0, damageRadiusBonus: 0,
+			effect: 'Stock 3.2 kg sphere · 10% bounce loss into fracture (×2.0 damage) · balanced rebound.'
+		}),
+		Object.freeze({
+			id: 'hardened', name: 'Hardened steel ball', cost: 380, mass: 3, damageBonus: 0.3, rockRetentionBonus: -0.04, damageRadiusBonus: 0.7,
+			effect: 'Hardened tip · +15% fracture per joule (×2.3) and 14% loss per rock hit (vs 10% stock), 8% wider splash. +3 kg. Trade-off: lower rebounds, needs more frequent recharges.'
+		}),
+		Object.freeze({
+			id: 'spike', name: 'Spiked hammer ball', cost: 720, mass: 5, damageBonus: 0.7, rockRetentionBonus: -0.10, damageRadiusBonus: 1.4,
+			effect: 'Spiked hammer head · +35% fracture per joule (×2.7) and 20% loss per rock hit, 16% wider splash. +5 kg. Trade-off: rock drains more energy, fewer bounces per charge.'
+		})
+		]);
 	const engineCosts = Object.freeze({ hand: 60, coal: 250, oil: 650, electric: 850, nuclear: 2400 });
 	const ownedEngines = new Set(['electric']);
 	function ownsEngine(id) { return ownedEngines.has(id); }
@@ -79,6 +96,12 @@
 	let installedForce = 0;
 	let installedSpeed = 0;
 	const ownedRadiators = new Set();
+	// Ball family: one installed ball at a time, default standard.
+	let installedBallId = 'standard';
+	let installedDamageBonus = 0;
+	let installedRockRetentionBonus = 0;
+	let installedDamageRadiusBonus = 0;
+	const ownedBalls = new Set(['standard']);
 
 	const state = Object.freeze({
 		get massDelta() { return installedMass; },
@@ -87,7 +110,11 @@
 		get radiatorArea() { return installedRadiatorId ? radiatorEntry(installedRadiatorId).radiatorArea : 0; },
 		get recoveryFraction() { return installedRecovery; },
 		get forceBonus() { return installedForce; },
-		get speedBonus() { return installedSpeed; }
+		get speedBonus() { return installedSpeed; },
+		get damageBonus() { return installedDamageBonus; },
+		get rockRetentionBonus() { return installedRockRetentionBonus; },
+		get damageRadiusBonus() { return installedDamageRadiusBonus; },
+		get ballId() { return installedBallId; }
 	});
 
 	function find(id) {
@@ -111,6 +138,18 @@
 		return Boolean(root.SteamResearch && root.SteamResearch.isResearched('thermodynamics'));
 	}
 	function installedRadiator() { return installedRadiatorId; }
+	function ballEntry(id) {
+		for (const ball of balls) if (ball.id === id) return ball;
+		return null;
+	}
+	function ballUnlocked(id) {
+		const ball = ballEntry(id);
+		if (!ball) return false;
+		const economy = root.SteamCeiling;
+		if (economy && economy.state.commune) return true;
+		return Boolean(root.SteamResearch && root.SteamResearch.isResearched('impact'));
+	}
+	function installedBall() { return installedBallId; }
 
 // An item is purchasable once its research node is complete; funds are checked
 	// by the economy when the purchase is booked. Communism mode waives the
@@ -140,6 +179,28 @@
 		installedRadiatorId = id;
 		installedMass += radiator.mass - (oldEntry ? oldEntry.mass : 0);
 		ownedRadiators.add(id);
+		if (physics) physics.applyMassChange(world, world ? physics.platformMass(world) - oldMass : 0, oldMass);
+		return true;
+	}
+	function installBall(id, world, testGrant) {
+		const ball = ballEntry(id);
+		const economy = root.SteamCeiling;
+		const physics = root.SteamPhysics;
+		if (!ball || !economy) return false;
+		if (!economy.state.commune && !root.SteamResearch.isResearched('impact')) return false;
+		if (installedBallId === id) return false;
+		const time = world ? world.time : 0;
+		const oldMass = world && physics ? physics.platformMass(world) : 0;
+		const alreadyOwned = ownedBalls.has(id);
+		const booked = testGrant ? economy.grant(ball.name, time, 'buy') : (alreadyOwned || economy.purchase(ball.name, ball.cost, time));
+		if (!booked) return false;
+		const oldEntry = ballEntry(installedBallId);
+		installedBallId = id;
+		installedMass += ball.mass - (oldEntry ? oldEntry.mass : 0);
+		installedDamageBonus += ball.damageBonus - (oldEntry ? oldEntry.damageBonus : 0);
+		installedRockRetentionBonus += ball.rockRetentionBonus - (oldEntry ? oldEntry.rockRetentionBonus : 0);
+		installedDamageRadiusBonus += ball.damageRadiusBonus - (oldEntry ? oldEntry.damageRadiusBonus : 0);
+		ownedBalls.add(id);
 		if (physics) physics.applyMassChange(world, world ? physics.platformMass(world) - oldMass : 0, oldMass);
 		return true;
 	}
@@ -188,15 +249,21 @@
 		ownedEngines.add('electric');
 		installedRadiatorId = null;
 		ownedRadiators.clear();
+		installedBallId = 'standard';
+		ownedBalls.clear();
+		ownedBalls.add('standard');
 		installedMass = 0;
 		installedRetention = 0;
 		installedPulse = 0;
 		installedRecovery = 0;
 		installedForce = 0;
 		installedSpeed = 0;
+		installedDamageBonus = 0;
+		installedRockRetentionBonus = 0;
+		installedDamageRadiusBonus = 0;
 	}
 
-	const api = { engineCosts, ownsEngine, atShop, buyEngine, items, radiators, radiatorUnlocked, installedRadiator, installRadiator, state, find, isInstalled, isUnlocked, install, grant, installAll, reset };
+	const api = { engineCosts, ownsEngine, atShop, buyEngine, items, radiators, radiatorUnlocked, installedRadiator, installRadiator, balls, ballEntry, ballUnlocked, installedBall, installBall, state, find, isInstalled, isUnlocked, install, grant, installAll, reset };
 	root.SteamEquipment = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

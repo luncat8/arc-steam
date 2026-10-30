@@ -39,6 +39,10 @@
 			effect: 'Engine force rises by a further 360 N and top speed by 3 m/s. Unlocks the overdrive unit.'
 		}),
 		Object.freeze({
+			id: 'impact', name: 'Impact forging', cost: 320, requires: Object.freeze(['materials']),
+			effect: 'Hardened tips shatter more rock per joule at the cost of more bounce energy lost on rock. Unlocks the hardened and spiked ball upgrades (higher damage, higher rock loss).'
+		}),
+		Object.freeze({
 			id: 'ballistics', name: 'Ballistic computer', cost: 520, requires: Object.freeze(['electromagnetics']),
 			capability: 'prediction',
 			effect: 'Unlocks the predicted flight path, landing mark, intercept ghost and reachability warning on the chamber view.'
@@ -58,6 +62,10 @@
 	let installedCooling = 0;
 	let installedForce = 0;
 	let installedSpeed = 0;
+	let installedDamageBonus = 0;
+	let installedRockRetentionBonus = 0;
+	let installedDamageRadiusBonus = 0;
+	let installedBallMassBonus = 0;
 	let predictionEnabled = false;
 
 	const state = Object.freeze({
@@ -67,6 +75,10 @@
 		get coolingBonus() { return installedCooling; },
 		get forceBonus() { return installedForce; },
 		get speedBonus() { return installedSpeed; },
+		get damageBonus() { return installedDamageBonus; },
+		get rockRetentionBonus() { return installedRockRetentionBonus; },
+		get damageRadiusBonus() { return installedDamageRadiusBonus; },
+		get ballMassBonus() { return installedBallMassBonus; },
 		get prediction() { return predictionEnabled; },
 		get predictionBounces() { return done.has('ballistics2'); },
 		get completed() { return done.size; }
@@ -112,6 +124,10 @@
 		installedCooling += node.coolingBonus || 0;
 		installedForce += node.forceBonus || 0;
 		installedSpeed += node.speedBonus || 0;
+		installedDamageBonus += node.damageBonus || 0;
+		installedRockRetentionBonus += node.rockRetentionBonus || 0;
+		installedDamageRadiusBonus += node.damageRadiusBonus || 0;
+		installedBallMassBonus += node.ballMassBonus || 0;
 		if (node.capability === 'prediction') predictionEnabled = true;
 		if (physics) physics.applyMassChange(world, world ? physics.platformMass(world) - oldMass : 0, oldMass);
 		return true;
@@ -147,6 +163,10 @@
 		installedCooling = 0;
 		installedForce = 0;
 		installedSpeed = 0;
+		installedDamageBonus = 0;
+		installedRockRetentionBonus = 0;
+		installedDamageRadiusBonus = 0;
+		installedBallMassBonus = 0;
 		predictionEnabled = false;
 	}
 

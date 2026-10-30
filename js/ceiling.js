@@ -33,16 +33,25 @@
 	const garageDepth = 1.5;
 	const garageParkX = width + (garageDepth - 0.12) * 0.5;
 	const graderSpeed = 1.5;
-// Impact tuning: hit point receives 2x impact energy in strength removal,
-// falling to zero across a 8.78-cell radius (2.93× the base 3-cell radius,
-// 1.5× the previous 5.85-cell radius).
+	// Impact tuning: hit point receives 2x impact energy in strength removal,
+	// falling to zero across a 8.78-cell radius (2.93× the base 3-cell radius,
+	// 1.5× the previous 5.85-cell radius) with a fast power-2.8 falloff.
+	// Balls can add damage, radius and trade retention: see equipment.balls.
 	// New curve falls a lot faster from the contact point: 1-2 cells typically
 	// destroyed, medium damage in mid-ring, slight damage in wide tail.
 	// power 2.8 gives ~0.68 at 1 cell, ~0.42 at 2 cells, ~0.10 at 5 cells vs linear 0.89/0.77/0.43.
-	const damageRadius = 8.775;
-	const damageMultiplier = 2;
-	const damageRange = 9;
+	const baseDamageRadius = 8.775;
+	const baseDamageMultiplier = 2;
+	const baseDamageRange = 9;
 	const damageFalloffPower = 2.8;
+	function installed(channel) {
+		const machinery = root.SteamEquipment;
+		const technology = root.SteamResearch;
+		return (machinery ? machinery.state[channel] || 0 : 0) + (technology ? technology.state[channel] || 0 : 0);
+	}
+	function damageRadiusNow() { return baseDamageRadius + installed('damageRadiusBonus'); }
+	function damageMultiplierNow() { return baseDamageMultiplier + installed('damageBonus'); }
+	function damageRangeNow() { return Math.ceil(damageRadiusNow()); }
 	const initialStrength = new Float32Array(count);
 	const strength = new Float32Array(count);
 	const elements = new Float32Array(count * 3);
@@ -337,7 +346,7 @@
 	}
 
 	function damageWeight(distance) {
-		const t = Math.max(0, 1 - distance / damageRadius);
+		const t = Math.max(0, 1 - distance / damageRadiusNow());
 		return Math.pow(t, damageFalloffPower);
 	}
 
@@ -347,25 +356,28 @@
 		while (firstIntact < rows && strength[firstIntact * columns + centerColumn] <= 0) firstIntact++;
 		const rawRow = Math.max(0, Math.min(rows - 1, Math.floor((y - bottom) / cell)));
 		const centerRow = firstIntact < rows ? Math.max(firstIntact, rawRow) : rawRow;
-		const budget = impactJ * damageMultiplier;
+		const mult = damageMultiplierNow();
+		const radius = damageRadiusNow();
+		const range = damageRangeNow();
+		const budget = impactJ * mult;
 		let removed = 0;
-		for (let rowOffset = -damageRange; rowOffset <= damageRange; rowOffset++) for (let columnOffset = -damageRange; columnOffset <= damageRange; columnOffset++) {
+		for (let rowOffset = -range; rowOffset <= range; rowOffset++) for (let columnOffset = -range; columnOffset <= range; columnOffset++) {
 			const row = centerRow + rowOffset;
 			const column = centerColumn + columnOffset;
 			const distance = Math.sqrt(columnOffset * columnOffset + rowOffset * rowOffset);
-			if (row < 0 || row >= rows || column < 0 || column >= columns || distance > damageRadius) continue;
+			if (row < 0 || row >= rows || column < 0 || column >= columns || distance > radius) continue;
 			const index = row * columns + column;
 			if (strength[index] <= 0) continue;
 			const amount = Math.min(strength[index], budget * damageWeight(distance));
 			strength[index] -= amount;
-			removed += amount / damageMultiplier;
+			removed += amount / mult;
 			if (strength[index] > 0.0001) continue;
-			removed += strength[index] / damageMultiplier;
+			removed += strength[index] / mult;
 			strength[index] = 0;
 			spawn(index);
 		}
-		const minCol = Math.max(0, centerColumn - damageRange);
-		const maxCol = Math.min(columns - 1, centerColumn + damageRange);
+		const minCol = Math.max(0, centerColumn - range);
+		const maxCol = Math.min(columns - 1, centerColumn + range);
 		for (let column = minCol; column <= maxCol; column++) {
 			let highestBroken = -1;
 			for (let row = rows - 1; row >= 0; row--) {
@@ -374,7 +386,7 @@
 			for (let row = 0; row < highestBroken; row++) {
 				const index = row * columns + column;
 				if (strength[index] <= 0) continue;
-				removed += strength[index] / damageMultiplier;
+				removed += strength[index] / mult;
 				strength[index] = 0;
 				spawn(index);
 			}
@@ -1027,7 +1039,12 @@
 	// Stable live view: reading simulation state allocates nothing and invokes no command.
 	const state = Object.freeze({
 		columns, rows, cell, floorCellHeight, bottom, top, defaultPixelSize, storageLimit, cellMass,
-		damageRadius, damageMultiplier, damageFalloffPower, pileLimit, graderCut, graderSmooth, graderClearance, graderSwath,
+		get damageRadius() { return damageRadiusNow(); },
+		get baseDamageRadius() { return baseDamageRadius; },
+		get damageMultiplier() { return damageMultiplierNow(); },
+		get baseDamageMultiplier() { return baseDamageMultiplier; },
+		get damageRange() { return damageRangeNow(); },
+		damageFalloffPower, pileLimit, graderCut, graderSmooth, graderClearance, graderSwath,
 		graderBot, floorValues,
 		get shape() { return rockShape; }, heightmap, firstRow, floorPiles, floorHeight,
 		garageHeight, garageDepth, garageParkX, graderSpeed,

@@ -55,10 +55,11 @@
 	const equipmentRows = [];
 	const engineRows = [];
 	const radiatorRows = [];
+	const ballRows = [];
 	const researchRows = [];
 	let commercialGraderButton = null;
 	const specValues = [];
-	const specLabels = ['Dry mass', 'Engine force', 'Top speed', 'Bounce pulse', 'Retention', 'Convective cooling', 'Brake recovery'];
+	const specLabels = ['Dry mass', 'Engine force', 'Top speed', 'Bounce pulse', 'Retention', 'Rock retention', 'Rock damage', 'Damage radius', 'Convective cooling', 'Brake recovery'];
 
 	// Equipment and research rows share one layout: a title with cost and mass, an
 	// action button, the measured effect, and a prerequisite/unlock note. Built
@@ -163,6 +164,45 @@
 			});
 			radiatorRows.push({ select, button, note, options, selectedIndex: -1 });
 		})();
+		(function buildBalls() {
+			// Ball upgrades swap one installed ball: more damage but more rock
+			// bounce loss (trade-off). Impact forging research unlocks the family.
+			const container = document.createElement('div');
+			container.className = 'upgrade-row';
+			const select = document.createElement('select');
+			const options = [];
+			for (const ball of SteamEquipment.balls) {
+				const option = document.createElement('option');
+				option.value = ball.id;
+				const dmg = (2 + (ball.damageBonus || 0)).toFixed(1);
+				const loss = Math.round((1 - (0.9 + (ball.rockRetentionBonus || 0))) * 100);
+				const rad = (8.775 + (ball.damageRadiusBonus || 0)).toFixed(1);
+				const label = ball.name.toUpperCase() + ' · ' + priceLabel(ball.cost) + ' · ×' + dmg + ' dmg · ' + loss + '% loss · ' + rad + ' cells · ' + ball.mass + ' kg';
+				if (option.textContent !== label) option.textContent = label;
+				options.push(option);
+				select.appendChild(option);
+			}
+			const button = document.createElement('button');
+			button.type = 'button';
+			button.textContent = 'Install';
+			const note = document.createElement('small');
+			note.className = 'requirement';
+			container.append(select, button, note);
+			ui['equipment-rows'].appendChild(container);
+			button.addEventListener('click', function () {
+				const id = select.value;
+				const ok = SteamEquipment.installBall(id, world);
+				if (!ok) {
+					if (!SteamEquipment.ballUnlocked(id)) ui['equipment-status'].textContent = 'The ball upgrades need the Impact forging research first.';
+					else if (SteamEquipment.installedBall() === id) ui['equipment-status'].textContent = id.toUpperCase() + ' is already installed.';
+					else ui['equipment-status'].textContent = 'Not enough funds for the ' + id + '.';
+				} else {
+					ui['equipment-status'].textContent = 'Installed ' + SteamEquipment.ballEntry(id).name + '.';
+				}
+				refresh();
+			});
+			ballRows.push({ select, button, note, options, selectedIndex: -1 });
+		})();
 		commercialGraderButton = document.createElement('button');
 		commercialGraderButton.id = 'commercial-grader';
 		commercialGraderButton.type = 'button';
@@ -228,6 +268,7 @@
 		SteamResearch.researchAll(world);
 		SteamEquipment.installAll(world);
 		SteamEquipment.installRadiator('radiator', world, true);
+		SteamEquipment.installBall('spike', world, true);
 		const researched = SteamResearch.state.completed;
 		const installed = SteamEquipment.items.filter(function (item) { return SteamEquipment.isInstalled(item.id); }).length;
 		setText(ui['research-status'], 'Test mode · all ' + researched + ' technologies researched.');
@@ -315,6 +356,22 @@
 			setText(row.button, installed !== null && installed === selected.id ? 'Installed' : 'Install');
 			setText(row.note, testMode ? 'Granted by test mode · measured effects active' : ceiling.commune ? 'The commons shares it · no research needed' : unlocked ? '' : 'Needs research: Heat transfer');
 		}
+		for (const row of ballRows) {
+			const installed = SteamEquipment.installedBall();
+			let selectedIndex = row.selectedIndex;
+			if (selectedIndex < 0 || SteamEquipment.balls[selectedIndex].id !== installed) {
+				selectedIndex = SteamEquipment.balls.findIndex(ball => ball.id === installed);
+				if (selectedIndex < 0) selectedIndex = 0;
+				row.selectedIndex = selectedIndex;
+				for (const [i, option] of row.options.entries()) option.selected = i === selectedIndex;
+			}
+			const selected = SteamEquipment.balls[selectedIndex];
+			const unlocked = SteamEquipment.ballUnlocked(selected.id);
+			const blocked = installed === selected.id || !unlocked || funds < selected.cost && !ceiling.commune;
+			setBlocked(row.button, blocked);
+			setText(row.button, installed === selected.id ? 'Installed' : 'Install');
+			setText(row.note, testMode ? 'Granted by test mode · measured effects active' : ceiling.commune ? 'The commons shares it · no research needed' : unlocked ? '' : 'Needs research: Impact forging');
+		}
 		let completed = 0;
 		for (const row of researchRows) {
 			const status = SteamResearch.status(row.node.id);
@@ -350,8 +407,13 @@
 		setText(specValues[2], physics.speedNow().toFixed(0) + ' m/s');
 		setText(specValues[3], physics.pulseNow().toFixed(0) + ' J');
 		setText(specValues[4], (physics.retentionNow() * 100).toFixed(0) + '%');
-		setText(specValues[5], physics.conductanceNow().toFixed(2) + ' W/K');
-		setText(specValues[6], (physics.recoveryNow() * 100).toFixed(0) + '%');
+		setText(specValues[5], (physics.rockRetentionNow() * 100).toFixed(0) + '%');
+		const dmg = (window.SteamCeiling.state.damageMultiplier).toFixed(1) + '×';
+		setText(specValues[6], dmg);
+		const rad = window.SteamCeiling.state.damageRadius.toFixed(1) + ' cells';
+		setText(specValues[7], rad);
+		setText(specValues[8], physics.conductanceNow().toFixed(2) + ' W/K');
+		setText(specValues[9], (physics.recoveryNow() * 100).toFixed(0) + '%');
 	}
 
 	function predictionReadout() {

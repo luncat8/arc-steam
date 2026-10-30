@@ -169,6 +169,13 @@ make low-height garage for Commercial grader (similar like existing hole in wall
 platform's road grader add friction when work.
 should work under center of platform while movement but not ahead 
 
+## ball
+
+ball damage radius
+i expect first hit typically destroy 1-2 pixels, med damage in some area and slight damage in wide area. so curve need to be adjusted.
+
+add possible upgrade ball to increase damage but trade-off with increase energy loss bounce from rock.
+
 
 ## game balance.
 heat and heat sink radiators balance and install engines

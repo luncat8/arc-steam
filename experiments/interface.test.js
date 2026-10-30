@@ -63,9 +63,9 @@ function study(id) {
 advance(2);
 
 test('the page boots, builds every panel, and reports live telemetry', () => {
-	assert.equal(dom.element('equipment-rows').children.length, equipment.items.length + physics.engines.length + 2);
+	assert.equal(dom.element('equipment-rows').children.length, equipment.items.length + physics.engines.length + 3);
 	assert.equal(dom.element('research-rows').children.length, research.nodes.length);
-	assert.equal(dom.element('platform-spec').children.length, 14);
+	assert.equal(dom.element('platform-spec').children.length, 20);
 	assert.equal(dom.element('inventory-rows').children.length, ceiling.state.mineralNames.length);
 	assert.match(dom.element('battery').textContent, /kJ$/);
 	assert.match(dom.element('temperature').textContent, /°C$/);
@@ -80,12 +80,12 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	assert.equal(dom.element('prediction-status').hidden, true, 'the overlay stays hidden before its research');
 	// The installed specification starts at base tuning.
 	const spec = dom.element('platform-spec').children;
-	assert.equal(spec[1].textContent, physics.config.platformMass.toFixed(1) + ' kg');
+	assert.equal(spec[1].textContent, physics.dryMass().toFixed(1) + ' kg');
 	assert.equal(spec[3].textContent, physics.config.force.toFixed(0) + ' N');
 	assert.equal(spec[5].textContent, physics.config.maxSpeed.toFixed(0) + ' m/s');
 	assert.equal(spec[7].textContent, '42 J');
 	assert.equal(spec[9].textContent, '90%');
-	assert.equal(spec[13].textContent, '0%');
+	assert.equal(spec[19].textContent, '0%');
 });
 
 test('settled readouts do not rewrite buttons, status or control state', () => {

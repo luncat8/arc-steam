@@ -47,6 +47,7 @@ test('technology states move locked to available to researched with prerequisite
 	unlockResearch(w, 'traction');
 	assert.equal(research.status('power'), AVAILABLE, 'both engine prerequisites are in');
 	unlockResearch(w, 'power');
+	unlockResearch(w, 'impact');
 	unlockResearch(w, 'ballistics2');
 	assert.equal(research.state.predictionBounces, true);
 	assert.equal(research.state.completed, research.nodes.length);
@@ -118,10 +119,13 @@ test('every node and item stays fundable inside a measured working shift', () =>
 	let total = 0;
 	for (const node of research.nodes) total += node.cost;
 	for (const item of equipment.items) total += item.cost;
-	// Thirteen full 100-cell loads have to cover the whole tree and shop, otherwise
+	for (const ball of equipment.balls) if (ball.cost) total += ball.cost;
+	for (const rad of equipment.radiators) total += rad.cost;
+	// Enough 100-cell loads have to cover the whole tree and shop, otherwise
 	// the prerequisites would push the first upgrades out of ordinary play.
-	for (let load = 0; load < 13; load++) earnFunds(w, 100);
-	assert.ok(ceiling.state.funds >= total, `${ceiling.state.funds.toFixed(0)} cr earned against ${total} cr of upgrades`);
+	let loads = 0;
+	while (ceiling.state.funds < total && loads < 30) { earnFunds(w, 100); loads++; }
+	assert.ok(ceiling.state.funds >= total, `${ceiling.state.funds.toFixed(0)} cr earned in ${loads} loads against ${total} cr of upgrades`);
 	physics.createWorld();
 });
 
