@@ -107,7 +107,9 @@ test('installed equipment changes retention, pulse and dry mass in the simulatio
 		// Swapping tiers replaces mass and area instead of stacking them.
 		assert.equal(equipment.installRadiator('vent', w), true, 'the vent grille installs');
 		near(equipment.state.massDelta, 4);
-		earnFunds(w, 150);
+		// Wider damage splashes can slightly shift ore mix per batch; ensure the
+		// heavy tier is fundable regardless of the exact mineral draw.
+		while (ceiling.state.funds < 1400) earnFunds(w, 20);
 		near(physics.radiatorArea(), 0.15);
 		assert.ok(physics.dryMass() < baseMass + 8, 'the lighter tier removes mass');
 		assert.equal(equipment.installRadiator('bank', w), true, 'the heavy bank installs');

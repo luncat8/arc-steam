@@ -18,11 +18,12 @@
 	// surface above. The cap bounds its height; the platform follows the terrain
 	// and its deck remains above the capped pile.
 	const pileLimit = cargoHeight;
-	// The grader treats only the travel-side swath: neighbours flow toward their
-	// mean and the blade shaves the top, clamped at the original floor so it
-	// cannot dig pits beneath the chassis.
-	const graderCut = 0.15;
-	const graderSmooth = 2;
+	// The grader works a swath under the platform centre while it moves,
+	// not ahead of it. Neighbours flow toward their mean and the blade shaves
+	// the top, clamped at the original floor so it cannot dig pits beneath
+	// the chassis. Working adds rolling resistance (see physics graderFriction).
+	const graderCut = 0.03;
+	const graderSmooth = 0.4;
 	const graderClearance = 0.5;
 	const graderSwath = 1.5;
 	// The commercial grader lives in a recessed low bay outside the right wall.
@@ -32,11 +33,16 @@
 	const garageDepth = 1.5;
 	const garageParkX = width + (garageDepth - 0.12) * 0.5;
 	const graderSpeed = 1.5;
-	// Impact tuning: hit point receives 2x impact energy in strength removal,
-	// falling linearly to zero across a 4.5-cell radius (1.5x of the base 3-cell radius).
-	const damageRadius = 4.5;
+// Impact tuning: hit point receives 2x impact energy in strength removal,
+// falling to zero across a 8.78-cell radius (2.93× the base 3-cell radius,
+// 1.5× the previous 5.85-cell radius).
+	// New curve falls a lot faster from the contact point: 1-2 cells typically
+	// destroyed, medium damage in mid-ring, slight damage in wide tail.
+	// power 2.8 gives ~0.68 at 1 cell, ~0.42 at 2 cells, ~0.10 at 5 cells vs linear 0.89/0.77/0.43.
+	const damageRadius = 8.775;
 	const damageMultiplier = 2;
-	const damageRange = 5;
+	const damageRange = 9;
+	const damageFalloffPower = 2.8;
 	const initialStrength = new Float32Array(count);
 	const strength = new Float32Array(count);
 	const elements = new Float32Array(count * 3);
@@ -331,7 +337,8 @@
 	}
 
 	function damageWeight(distance) {
-		return Math.max(0, 1 - distance / damageRadius);
+		const t = Math.max(0, 1 - distance / damageRadius);
+		return Math.pow(t, damageFalloffPower);
 	}
 
 	function damage(x, y, impactJ) {
@@ -745,20 +752,20 @@
 		updateFloor();
 	}
 
-	// The blade works a swath ahead of the platform, not beneath its wheels.
-	// Neighbouring columns flow toward one another while the blade shaves the top;
-	// clamping at zero protects the original floor from becoming a pit.
+	// The blade works a centred swath under the platform while it moves,
+	// not ahead of it. Neighbouring columns flow toward one another while
+	// the blade shaves the top; clamping at zero protects the original floor
+	// from becoming a pit.
 	function grade(world, dt) {
 		const platform = world.platform;
-		const physics = root.SteamPhysics;
-		const halfWidth = physics ? physics.config.platformWidth * 0.5 : 1.8;
-		let direction = Math.sign(world.direction || platform.vx);
-		if (!direction && Number.isFinite(world.target)) direction = Math.sign(world.target - platform.x);
-		if (!direction) return;
-		const near = platform.x + direction * (halfWidth + graderClearance);
-		const far = near + direction * graderSwath;
-		const first = Math.max(1, Math.floor(Math.min(near, far) / cell));
-		const last = Math.min(columns - 2, Math.floor(Math.max(near, far) / cell));
+		// Only while the platform is moving; a stationary platform does not grade.
+		const moving = Math.abs(platform.vx) > 0.02 || world.direction !== 0 || Number.isFinite(world.target);
+		if (!moving) return;
+		const half = graderSwath * 0.5;
+		const left = platform.x - half;
+		const right = platform.x + half;
+		const first = Math.max(1, Math.floor(Math.min(left, right) / cell));
+		const last = Math.min(columns - 2, Math.floor(Math.max(left, right) / cell));
 		if (first > last) return;
 		floorScratch.set(floorPiles);
 		const ease = Math.min(1, graderSmooth * dt);
@@ -1020,7 +1027,7 @@
 	// Stable live view: reading simulation state allocates nothing and invokes no command.
 	const state = Object.freeze({
 		columns, rows, cell, floorCellHeight, bottom, top, defaultPixelSize, storageLimit, cellMass,
-		damageRadius, damageMultiplier, pileLimit, graderCut, graderSmooth, graderClearance, graderSwath,
+		damageRadius, damageMultiplier, damageFalloffPower, pileLimit, graderCut, graderSmooth, graderClearance, graderSwath,
 		graderBot, floorValues,
 		get shape() { return rockShape; }, heightmap, firstRow, floorPiles, floorHeight,
 		garageHeight, garageDepth, garageParkX, graderSpeed,

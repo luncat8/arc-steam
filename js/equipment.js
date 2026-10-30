@@ -6,7 +6,7 @@
 	const items = Object.freeze([
 		Object.freeze({
 			id: 'grader', name: 'Road grader', cost: 300, mass: 10,
-			effect: 'Grades a 1.5 m swath ahead at 0.15 m/s, shaving and smoothing the top without digging beneath the platform or below the original ground. Adds 10 kg.'
+			effect: 'Grades a 1.5 m swath under the centre while moving at 0.03 m/s, shaving and smoothing the top without digging beneath the platform or below the original ground. Adds 10 kg and rolling resistance when working.'
 		}),
 		Object.freeze({
 			id: 'pad', name: 'Rebound pad', cost: 250, mass: 6, requires: 'materials',

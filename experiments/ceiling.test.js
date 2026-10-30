@@ -156,10 +156,10 @@ test('storage stops at 100 cells, adds one dry-platform mass, and sells at once'
 	assert.equal(state.ledger[0].time, 1.5);
 });
 
-test('damage applies 2x hit-point strength falling linearly to zero at 4.5-cell radius', () => {
+test('damage applies 2x hit-point strength falling to zero at 8.78-cell radius with fast power falloff', () => {
 	ceiling.reset(9);
 	const state = ceiling.state;
-	assert.equal(state.damageRadius, 4.5);
+	assert.equal(state.damageRadius, 8.775);
 	assert.equal(state.damageMultiplier, 2);
 	const before = Array.from(state.strength);
 	const impactJ = 1.2;
@@ -170,11 +170,12 @@ test('damage applies 2x hit-point strength falling linearly to zero at 4.5-cell 
 	const centerRow = Math.floor((ceiling.state.bottom + 0.06 - state.bottom) / state.cell);
 	const center = centerRow * state.columns + centerColumn;
 	const mid = centerRow * state.columns + centerColumn + 2;
-	const edge = centerRow * state.columns + centerColumn + 4;
-	const outside = centerRow * state.columns + centerColumn + 5;
-	near(before[center] - state.strength[center], impactJ * 2, 1e-5);
-	near(before[mid] - state.strength[mid], impactJ * 2 * (1 - 2 / 4.5), 1e-5);
-	near(before[edge] - state.strength[edge], impactJ * 2 * (1 - 4 / 4.5), 1e-5);
+	const edge = centerRow * state.columns + centerColumn + 5;
+	const outside = centerRow * state.columns + centerColumn + 10;
+	function w(d) { return Math.pow(Math.max(0, 1 - d / state.damageRadius), 2.8); }
+	near(before[center] - state.strength[center], impactJ * 2 * w(0), 1e-5);
+	near(before[mid] - state.strength[mid], impactJ * 2 * w(2), 1e-5);
+	near(before[edge] - state.strength[edge], impactJ * 2 * w(5), 1e-5);
 	near(state.strength[outside], before[outside]);
 });
 

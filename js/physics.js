@@ -52,7 +52,12 @@
 		thermalDerateStart: 85, thermalCutoff: 135,
 		// Left-wall pocket lets the asymmetric collector slide into the wall so
 		// the reflector can cover the wall all the way to x = 0.
-		pocketDepth: 3.6 * 0.35
+		pocketDepth: 3.6 * 0.35,
+		// Road-grader rolling resistance when its blade is engaged under the
+		// platform centre while moving. Adds friction opposite motion.
+		// Kept below the 60 N hand crank so an empty reserve can still crawl
+		// to the charge pad with the grader installed.
+		graderFriction: 45
 	});
 
 	function platformMin() { return config.platformWidth * 0.5 - config.pocketDepth; }
@@ -554,15 +559,31 @@ function spend(world, useful) {
 		} else {
 			dissipate(world, before - after);
 		}
-		platform.vx = velocity;
-		platform.x += (oldVelocity + velocity) * 0.5 * dt;
+		// Road grader friction when its blade is working under the centre.
+		// Applied after the engine so its cost appears as extra heat and reduced
+		// net speed, keeping the energy ledger exact.
+		let finalVelocity = velocity;
+		const grading = root.SteamEquipment && root.SteamEquipment.isInstalled('grader')
+			&& (Math.abs(velocity) > 1e-6 || Math.abs(oldVelocity) > 0.02 || world.direction !== 0 || Number.isFinite(world.target));
+		if (grading && Math.abs(velocity) > 1e-9) {
+			const frictionAccel = config.graderFriction / mass;
+			let afterFriction = velocity - Math.sign(velocity) * frictionAccel * dt;
+			if (Math.sign(afterFriction) !== Math.sign(velocity)) afterFriction = 0;
+			const beforeFriction = 0.5 * mass * velocity * velocity;
+			const afterFrictionEnergy = 0.5 * mass * afterFriction * afterFriction;
+			const frictionLoss = beforeFriction - afterFrictionEnergy;
+			if (frictionLoss > 0) world.heat += frictionLoss;
+			finalVelocity = afterFriction;
+		}
+		platform.vx = finalVelocity;
+		platform.x += (oldVelocity + finalVelocity) * 0.5 * dt;
 		const minX = platformMin();
 		const maxX = platformMax();
 		if (platform.x < minX || platform.x > maxX) {
 			// A wall stop is a crash, not braking: all of it becomes heat. The sale
 			// itself is handled once per step by step(), which also covers fragments.
 			platform.x = Math.max(minX, Math.min(maxX, platform.x));
-			world.heat += 0.5 * mass * velocity * velocity;
+			world.heat += 0.5 * mass * finalVelocity * finalVelocity;
 			platform.vx = 0;
 		}
 		updatePlatformTerrain(world, dt);
