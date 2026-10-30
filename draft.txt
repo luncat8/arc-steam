@@ -126,6 +126,8 @@ a-d - manual movement - cause activation of engine or brake depend on situation.
 click on rock - select inspect pos
 click low near ground - set pos movement
 
+brake: b, B (recuperative)
+
 ## HTML layout
 
 make in horizontal layout:
@@ -157,13 +159,15 @@ Hot path: Do not allocate closures or object literals inside the hover/pointer-m
 
 add warnings (overheating, empty reserve, full cargo) as highlight telemetry elements
 
-##
+## grader
+
+commercial grader bot: when platform parked left shop - it move once across field and collect 1 layer of material. return 50% to player cost. collision: bot is low-height circle-segment shaped and platform easy run above it once it pass behind wheels
+
+make low-height garage for Commercial grader (similar like existing hole in wall but low height) : so it does not respawn but same move back and forth. make commercial grader btn call/dismiss without despawn.
 
 
-make low-height garage for Commercial grader (similar like existing hole in wall but low height) : so it does not respawn but same move back and forth.
-
-make commercial grader btn always active.
-
+platform's road grader add friction when work.
+should work under center of platform while movement but not ahead 
 
 
 ## game balance.
