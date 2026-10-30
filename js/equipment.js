@@ -43,6 +43,19 @@
 			effect: 'Stores 55% of braking energy and returns it to the reserve at 90% round-trip efficiency; the rest still becomes heat. Wall stops stay unrecovered. Adds 14 kg.'
 		})
 	]);
+	const engineCosts = Object.freeze({ hand: 60, coal: 250, oil: 650, electric: 850, nuclear: 2400 });
+	const ownedEngines = new Set(['electric']);
+	function ownsEngine(id) { return ownedEngines.has(id); }
+	function atShop(world) {
+		return world && world.platform.x <= root.SteamPhysics.platformMin() + 0.2 && Math.abs(world.platform.vx) <= 0.1;
+	}
+	function buyEngine(id, world) {
+		const physics = root.SteamPhysics;
+		if (!atShop(world) || !Object.hasOwn(engineCosts, id)) return false;
+		if (!ownsEngine(id) && !root.SteamCeiling.purchase(id + ' engine', engineCosts[id], world.time)) return false;
+		ownedEngines.add(id);
+		return physics.selectEngine(id, world);
+	}
 	const installed = new Set();
 	let installedMass = 0;
 	let installedRetention = 0;
@@ -99,7 +112,7 @@
 		installedRecovery += item.recoveryFraction || 0;
 		installedForce += item.forceBonus || 0;
 		installedSpeed += item.speedBonus || 0;
-		if (physics) physics.applyMassChange(world, item.mass || 0, oldMass);
+		if (physics) physics.applyMassChange(world, world ? physics.platformMass(world) - oldMass : 0, oldMass);
 		return true;
 	}
 
@@ -125,6 +138,8 @@
 
 	function reset() {
 		installed.clear();
+		ownedEngines.clear();
+		ownedEngines.add('electric');
 		installedMass = 0;
 		installedRetention = 0;
 		installedPulse = 0;
@@ -134,7 +149,7 @@
 		installedSpeed = 0;
 	}
 
-	const api = { items, state, find, isInstalled, isUnlocked, install, grant, installAll, reset };
+	const api = { engineCosts, ownsEngine, atShop, buyEngine, items, state, find, isInstalled, isUnlocked, install, grant, installAll, reset };
 	root.SteamEquipment = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

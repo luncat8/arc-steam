@@ -15,6 +15,7 @@
 		'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry'];
 	const ui = {};
 	for (const id of ids) ui[id] = document.getElementById(id);
+
 	// The readout cadence re-evaluates far more often than the panels actually
 	// change, so every non-telemetry write goes through these guards: an
 	// unchanged value never touches the DOM (no text replacement, attribute
@@ -52,6 +53,7 @@
 	let testMode = false;
 	let showPrediction = false;
 	const equipmentRows = [];
+	const engineRows = [];
 	const researchRows = [];
 	const specValues = [];
 	const specLabels = ['Dry mass', 'Engine force', 'Top speed', 'Bounce pulse', 'Retention', 'Convective cooling', 'Brake recovery'];
@@ -113,6 +115,23 @@
 			row.freeNote = 'The commons shares it · no research needed';
 			equipmentRows.push(row);
 		}
+		for (const engine of physics.engines) {
+			const row = buildRow(ui['equipment-rows'], engine.name + ' engine', SteamEquipment.engineCosts[engine.id], 0, 'Buy & install',
+				engine.mass + ' kg engine · ' + engine.density / 1000 + ' kJ/kg · ' + engine.reload + ' s refill · ' + Math.round(engine.efficiency * 100) + '% efficiency · force ×' + engine.force + ' · speed ×' + engine.speed + '. About four full-throttle crossings per pack.',
+				'Park at the left shop. Owned engines swap free.', () => {
+					const installed = SteamEquipment.buyEngine(engine.id, world);
+					ui['equipment-status'].textContent = installed ? 'Installed ' + engine.name + ' engine.' : !SteamEquipment.atShop(world) ? 'Park at the left shop to buy or swap engines.' : 'Not enough funds for the ' + engine.name + ' engine.';
+					refresh();
+				});
+			row.engine = engine;
+			engineRows.push(row);
+		}
+		const botButton = document.createElement('button');
+		botButton.textContent = 'Hire grader · one pass · receive 50% of collected value';
+		botButton.addEventListener('click', () => {
+			ui['equipment-status'].textContent = SteamCeiling.hireGrader(world) ? 'Grader dispatched: one layer, one crossing.' : 'Park at the left shop; only one grader can run at a time.';
+		});
+		ui['equipment-rows'].append(botButton);
 		for (const node of SteamResearch.nodes) {
 			const unlocked = unlockText(node);
 			const note = (node.requires.length ? 'Needs research: ' + prerequisiteNames(node) : 'No prerequisites') + (unlocked ? ' · unlocks ' + unlocked : '');
@@ -219,6 +238,13 @@
 			setText(row.heading, rowTitle(row));
 			setText(row.requirement, testMode ? 'Granted by test mode · measured effects active' : ceiling.commune ? row.freeNote : row.note);
 		}
+		for (const row of engineRows) {
+			const owned = SteamEquipment.ownsEngine(row.engine.id);
+			const active = physics.engineNow().id === row.engine.id;
+			setText(row.button, active ? 'Installed' : owned ? 'Install free' : 'Buy & install');
+			setBlocked(row.button, active || !SteamEquipment.atShop(world) || !owned && funds < row.cost && !ceiling.commune);
+			setText(row.heading, row.name.toUpperCase() + (owned ? ' · OWNED' : ' · ' + priceLabel(row.cost)));
+		}
 		let completed = 0;
 		for (const row of researchRows) {
 			const status = SteamResearch.status(row.node.id);
@@ -268,7 +294,7 @@
 		const kinds = computer.kinds;
 		const path = computer.predict(world);
 		if (path.kind === kinds.PARKED) setText(ui['prediction-status'], 'Ballistic computer: the ball is ' + world.ball.state + ', so there is no flight to predict.');
-		else if (path.kind === kinds.ROCK) setText(ui['prediction-status'], 'Predicted rock contact at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + ' s · the rebound depends on fracture, so the path stops there.');
+		else if (path.kind === kinds.ROCK) setText(ui['prediction-status'], 'Predicted rock contact at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + (SteamResearch.state.predictionBounces ? ' s · tier II continues through estimated rebounds; fracture and future controls can change them.' : ' s · the rebound depends on fracture, so the path stops there.'));
 		else if (path.kind === kinds.TIMEOUT) setText(ui['prediction-status'], 'Ballistic computer: still airborne after ' + computer.horizon.toFixed(0) + ' s of prediction.');
 		else setText(ui['prediction-status'], 'Landing ' + (path.kind === kinds.DECK ? 'on the deck' : 'on the ground') + ' at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + ' s · ghost coasts to ' + path.ghostX.toFixed(1) + ' m · '
 			+ (path.reachable ? 'intercept reachable at full thrust' : 'intercept short by ' + path.gap.toFixed(1) + ' m at full thrust'));
@@ -367,6 +393,7 @@
 		context.fillRect(-pocketDepth, -0.35, config.width + pocketDepth, 0.35);
 		// Fallen rubble first, so the charge pad plate stays visible on top of it.
 		if (window.SteamCeiling) window.SteamCeiling.drawFloor(context);
+		window.SteamCeiling.drawGraderBot(context);
 		const padMin = physics.chargePadMin();
 		const padMax = physics.chargePadMax();
 		const chargingNow = physics.charging(world);
@@ -496,6 +523,7 @@
 	function ledgerText(entry) {
 		const stamp = entry.time.toFixed(1) + ' s · ';
 		if (entry.source === 'test') return stamp + (entry.type === 'research' ? 'Test researched ' : 'Test installed ') + entry.label;
+		if (entry.type === 'grader') return stamp + 'Grader settlement · +' + entry.credits.toFixed(2) + ' cr (50% share)';
 		if (entry.type === 'fuel') return stamp + 'Recharged ' + (entry.energy / 1000).toFixed(2) + ' kJ · ' + spent(entry.credits, 1);
 		if (entry.type === 'research') return stamp + 'Researched ' + entry.label + ' · ' + spent(entry.credits, 0);
 		if (entry.type === 'buy') return stamp + 'Bought ' + entry.label + ' · ' + spent(entry.credits, 0);
@@ -504,6 +532,7 @@
 
 	function ledgerStatus(entry) {
 		if (entry.source === 'test') return (entry.type === 'research' ? 'Test mode researched ' : 'Test mode installed ') + entry.label + ' at ' + entry.time.toFixed(1) + ' s.';
+		if (entry.type === 'grader') return 'Grader completed one pass · received ' + entry.credits.toFixed(2) + ' cr (50% share).';
 		if (entry.type === 'fuel') return 'Recharged ' + (entry.energy / 1000).toFixed(2) + ' kJ of reserve ' + (entry.credits > 0 ? 'for ' + entry.credits.toFixed(1) + ' cr' : 'for free') + ' at ' + entry.time.toFixed(1) + ' s.';
 		if (entry.type === 'research') return 'Researched ' + entry.label + ' ' + (entry.credits > 0 ? 'for ' + entry.credits.toFixed(0) + ' cr' : 'for free') + ' at ' + entry.time.toFixed(1) + ' s.';
 		if (entry.type === 'buy') return 'Bought ' + entry.label + ' ' + (entry.credits > 0 ? 'for ' + entry.credits.toFixed(0) + ' cr' : 'for free') + ' at ' + entry.time.toFixed(1) + ' s.';
@@ -731,12 +760,12 @@
 
 	function updateDirection() {
 		world.direction = Number(rightHeld) - Number(leftHeld);
-		autopilot.hold('move', leftHeld || rightHeld);
+		autopilot.hold('move', world.brake || leftHeld || rightHeld);
 		if (leftHeld || rightHeld) world.target = NaN;
 		sceneDirty = true;
 	}
 
-	function clearInput() { leftHeld = false; rightHeld = false; updateDirection(); }
+	function clearInput() { world.brake = false; leftHeld = false; rightHeld = false; updateDirection(); }
 	function toggleDrive() { world.drive = !world.drive; autopilot.override('drive'); refresh(); }
 	function releaseBall() { physics.launch(world); refresh(); }
 	function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }
@@ -749,7 +778,7 @@
 
 	function isGameKey(code) {
 		return code === 'Space' || code === 'KeyQ' || code === 'KeyA' || code === 'KeyD' || code === 'KeyW' || code === 'KeyS' || code === 'KeyE'
-			|| code === 'KeyX' || code === 'KeyZ' || code === 'KeyC' || code === 'KeyM';
+			|| code === 'KeyB' || code === 'KeyX' || code === 'KeyZ' || code === 'KeyC' || code === 'KeyM';
 	}
 
 	function keydown(event) {
@@ -761,6 +790,7 @@
 		if (document.activeElement && document.activeElement !== canvas && document.activeElement !== document.body) {
 			document.activeElement.blur();
 		}
+		if (key === 'KeyB') { world.brake = true; world.target = NaN; autopilot.hold('move', true); }
 		if (key === 'KeyA') leftHeld = true;
 		if (key === 'KeyD') rightHeld = true;
 		if (key === 'KeyA' || key === 'KeyD') updateDirection();
@@ -777,6 +807,7 @@
 	function keyup(event) {
 		const key = event.code;
 		if (key === 'Space' || key === 'KeyQ') event.preventDefault();
+		if (key === 'KeyB') { world.brake = false; updateDirection(); }
 		if (key === 'KeyA') leftHeld = false;
 		if (key === 'KeyD') rightHeld = false;
 		if (key === 'KeyA' || key === 'KeyD') updateDirection();

@@ -45,7 +45,7 @@ test('installed equipment changes retention, pulse and dry mass in the simulatio
 	near(beforePad, c.platformMass);
 	buy(w, 'pad');
 	near(physics.retentionNow(), 0.94);
-	near(physics.dryMass(), beforePad + 6);
+	near(physics.dryMass(), beforePad + 6 * 1.018);
 	w.ball.state = 'flying';
 	w.drive = false;
 	w.ball.x = 12.8; w.ball.vx = 0; w.ball.y = c.deck + c.radius; w.ball.vy = -5;
@@ -59,7 +59,7 @@ test('installed equipment changes retention, pulse and dry mass in the simulatio
 	const beforeCoil = physics.dryMass();
 	buy(w, 'coil');
 	near(physics.pulseNow(), 58);
-	near(physics.dryMass(), beforeCoil + 12);
+	near(physics.dryMass(), beforeCoil + 12 * 1.018);
 	w.ball.state = 'held';
 	w.drive = true;
 	sync(w);
@@ -69,9 +69,9 @@ test('installed equipment changes retention, pulse and dry mass in the simulatio
 	// Chassis: researched alloys and the chassis both cut dry mass.
 	unlockResearch(w, 'alloys');
 	const beforeChassis = physics.dryMass();
-	near(beforeChassis, c.platformMass + 6 + 12 - 4);
+	near(beforeChassis, c.platformMass + (6 + 12 - 4) * 1.018);
 	buy(w, 'chassis');
-	near(physics.dryMass(), beforeChassis - 12);
+	near(physics.dryMass(), beforeChassis - 12 * 1.018);
 	w.ball.state = 'held';
 	w.platform.vx = 0;
 	w.direction = 1;
@@ -100,7 +100,7 @@ test('radiator installation increases real convective and radiative cooling', ()
 	buy(w, 'radiator');
 	near(equipment.state.radiatorArea, 0.35);
 	near(physics.conductanceNow(), c.convectiveConductance + 0.5 + c.radiatorConvectionCoefficient * 0.35);
-	near(physics.dryMass(), baseMass + 8);
+	near(physics.dryMass(), baseMass + 8 * 1.018);
 	sync(w);
 	assert.ok(physics.coolingPower(w) > baseCooling);
 	physics.step(w, c.step);
@@ -118,9 +118,9 @@ test('brake flywheel returns part of the braking energy to the reserve', () => {
 	unlockResearch(w, 'storage');
 	buy(w, 'flywheel');
 	near(physics.recoveryNow(), 0.55);
-	near(physics.dryMass(), c.platformMass - 4 + 14);
+	near(physics.dryMass(), c.platformMass + (-4 + 14) * 1.018);
 	w.ball.state = 'held';
-	w.platform.x = physics.platformMin();
+	w.platform.x = 3;
 	w.target = NaN;
 	w.platform.vx = c.maxSpeed;
 	w.direction = -1;
@@ -193,7 +193,7 @@ test('test-mode equipment grants install every item for free without research pr
 		assert.equal(entry.credits, 0);
 		assert.ok(Object.isFrozen(entry));
 	}
-	near(physics.dryMass(), c.platformMass + equipment.state.massDelta);
+	near(physics.dryMass(), c.platformMass + equipment.state.massDelta + physics.packMass() - 1.13832);
 	near(physics.recoveryNow(), 0.55);
 	balanced(w);
 	physics.createWorld();

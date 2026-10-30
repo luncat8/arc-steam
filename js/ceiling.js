@@ -39,6 +39,60 @@
 	const heightmap = new Float64Array(columns + 1);
 	const floorPiles = new Float64Array(columns);
 	const floorHeight = new Float64Array(columns + 1);
+	const floorValues = new Float64Array(columns);
+	const graderBot = { active: false, x: 0, column: 0, value: 0, cells: 0 };
+	const botRadius = 0.7;
+	const botHeight = 0.12;
+	function hireGrader(world) {
+		const physics = root.SteamPhysics;
+		if (!world || graderBot.active || world.platform.x > physics.platformMin() + 0.2 || Math.abs(world.platform.vx) > 0.1) return false;
+		graderBot.active = true;
+		graderBot.x = 0;
+		graderBot.column = 0;
+		graderBot.value = 0;
+		graderBot.cells = 0;
+		return true;
+	}
+	function botSurfaceAt(x) {
+		if (!graderBot.active) return 0;
+		const dx = x - graderBot.x;
+		if (Math.abs(dx) >= botRadius) return 0;
+		const height = Math.sqrt(botRadius * botRadius - dx * dx) - (botRadius - botHeight);
+		return height > 0 ? floorAt(graderBot.x) + height : 0;
+	}
+	function stepGraderBot(world, dt) {
+		if (!graderBot.active) return;
+		graderBot.x = Math.min(width, graderBot.x + 1.5 * dt);
+		let changed = false;
+		while (graderBot.column < columns && (graderBot.column + 0.5) * cell <= graderBot.x) {
+			const column = graderBot.column++;
+			const height = floorPiles[column];
+			if (height <= 0) continue;
+			const cut = Math.min(height, floorCellHeight);
+			const value = floorValues[column] * cut / height;
+			floorValues[column] -= value;
+			floorPiles[column] -= cut;
+			graderBot.value += value;
+			graderBot.cells += cut / floorCellHeight;
+			changed = true;
+		}
+		if (changed) updateFloor();
+		if (graderBot.x < width) return;
+		graderBot.active = false;
+		const credits = price(graderBot.value * 0.5);
+		funds += credits;
+		ledger.push(Object.freeze({ id: ledger.length + 1, type: 'grader', time: world.time, label: 'Commercial grader', credits, cells: graderBot.cells }));
+	}
+	function drawGraderBot(context) {
+		if (!graderBot.active) return;
+		const base = floorAt(graderBot.x);
+		const halfAngle = Math.acos((botRadius - botHeight) / botRadius);
+		context.fillStyle = '#dfac52';
+		context.beginPath();
+		context.arc(graderBot.x, base - botRadius + botHeight, botRadius, Math.PI / 2 - halfAngle, Math.PI / 2 + halfAngle);
+		context.closePath();
+		context.fill();
+	}
 	const floorScratch = new Float64Array(columns);
 	const elementColors = new Array(count);
 	const mineralStyles = new Array(count);
@@ -170,6 +224,9 @@
 		debrisValue.fill(0);
 		debrisMinerals.fill(0);
 		floorPiles.fill(0);
+		floorValues.fill(0);
+		graderBot.active = false;
+		graderBot.x = graderBot.column = graderBot.value = graderBot.cells = 0;
 		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
 			const index = row * columns + column;
 			const x = column * 0.075;
@@ -613,7 +670,9 @@
 	// The pile is capped below the deck line; excess rubble is still counted lost.
 	function deposit(i, x) {
 		const column = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
-		floorPiles[column] = Math.min(pileLimit, floorPiles[column] + fragmentCells(i) * floorCellHeight);
+		const added = Math.min(pileLimit - floorPiles[column], fragmentCells(i) * floorCellHeight);
+		floorValues[column] += fragmentValue(i) * added / (fragmentCells(i) * floorCellHeight);
+		floorPiles[column] += added;
 		updateFloor();
 	}
 
@@ -645,7 +704,10 @@
 			changed = true;
 		}
 		if (!changed) return;
-		for (let column = first; column <= last; column++) floorPiles[column] = floorScratch[column];
+		for (let column = first; column <= last; column++) {
+			if (floorPiles[column] > 0) floorValues[column] *= Math.min(1, floorScratch[column] / floorPiles[column]);
+			floorPiles[column] = floorScratch[column];
+		}
 		updateFloor();
 	}
 
@@ -700,6 +762,7 @@
 			debrisValue[i] = 0;
 		}
 		if (root.SteamEquipment && root.SteamEquipment.isInstalled('grader')) grade(world, dt);
+		stepGraderBot(world, dt);
 	}
 
 	// Purchases and research debit funds and append a ledger entry; false when
@@ -889,6 +952,7 @@
 	const state = Object.freeze({
 		columns, rows, cell, floorCellHeight, bottom, top, defaultPixelSize, storageLimit, cellMass,
 		damageRadius, damageMultiplier, pileLimit, graderCut, graderSmooth, graderClearance, graderSwath,
+		graderBot, floorValues,
 		get shape() { return rockShape; }, heightmap, firstRow, floorPiles, floorHeight,
 		mineralNames, mineralPrices, fuelPrice,
 		strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
@@ -913,7 +977,7 @@
 
 	reset(1);
 
-	const api = { reset, damage, trace, step, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape };
+	const api = { hireGrader, botSurfaceAt, drawGraderBot, reset, damage, trace, step, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape };
 	root.SteamCeiling = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

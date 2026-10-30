@@ -63,7 +63,7 @@ function study(id) {
 advance(2);
 
 test('the page boots, builds every panel, and reports live telemetry', () => {
-	assert.equal(dom.element('equipment-rows').children.length, equipment.items.length);
+	assert.equal(dom.element('equipment-rows').children.length, equipment.items.length + physics.engines.length + 1);
 	assert.equal(dom.element('research-rows').children.length, research.nodes.length);
 	assert.equal(dom.element('platform-spec').children.length, 14);
 	assert.equal(dom.element('inventory-rows').children.length, ceiling.state.mineralNames.length);
@@ -191,7 +191,7 @@ test('measured sales fund research, which unlocks equipment and the overlay', ()
 	assert.match(dom.element('equipment-status').textContent, /^Installed Rebound pad at /);
 	assert.equal(pad.dataset.state, 'installed');
 	const spec = dom.element('platform-spec').children;
-	assert.equal(spec[1].textContent, (physics.config.platformMass + 6).toFixed(1) + ' kg');
+	assert.equal(spec[1].textContent, physics.dryMass().toFixed(1) + ' kg');
 	assert.equal(spec[9].textContent, '94%', 'research and pad retention stack');
 	// One ledger carries sales, research and purchases, newest first.
 	assert.match(dom.element('ledger').children[0].textContent, /Bought Rebound pad · −250 cr/);
@@ -472,12 +472,12 @@ test('telemetry highlights an empty reserve, a full cargo and overheating', () =
 	assert.match(dom.element('cargo-note').textContent, /^Full/);
 });
 
-test('the centre pad is read as charging and refills the reserve in four seconds', () => {
+test('the centre pad is read as charging and uses the selected source reload rate', () => {
 	world.platform.x = 12; world.platform.vx = 0; world.target = NaN; world.direction = 0;
 	world.battery = 0;
 	harness.sync(world);
 	advance(8);
-	assert.match(dom.element('reserve-note').textContent, /^Charging 3\.0 kW/);
+	assert.match(dom.element('reserve-note').textContent, /^Charging [\d.]+ kW/);
 	const charged = world.battery;
 	assert.ok(charged > 0, 'the pad charges while the platform is parked');
 	advance(150);
@@ -595,4 +595,49 @@ test('test mode grants all upgrades, preserves credits, and reapplies them on Ne
 	assert.equal(research.state.completed, 0, 'a fresh non-test game clears research');
 	assert.ok(equipment.items.every(item => !equipment.isInstalled(item.id)));
 	assert.equal(dom.element('test-mode').checked, false);
+});
+
+test('B and Shift+B hold braking, override travel, and release cleanly', () => {
+	dom.element('reset').dispatch('click');
+	advance(2);
+	world.platform.x = 3;
+	world.platform.vx = 3;
+	world.target = 20;
+	harness.sync(world);
+	dom.key('KeyB');
+	assert.ok(world.brake);
+	assert.ok(Number.isNaN(world.target));
+	advance(100);
+	assert.ok(Math.abs(world.platform.vx) < 1e-6);
+	dom.keyUp('KeyB');
+	assert.equal(world.brake, false);
+	dom.key('KeyB', { shiftKey: true });
+	assert.ok(world.brake);
+	dom.keyUp('KeyB');
+	assert.equal(world.brake, false);
+});
+
+test('shop engine rows buy/install and offer free owned swaps only while parked left', () => {
+	dom.element('reset').dispatch('click');
+	advance(2);
+	const panel = dom.element('equipment-rows');
+	const hand = buttonOf(panel.children[equipment.items.length]);
+	const electric = buttonOf(panel.children[equipment.items.length + 3]);
+	assert.equal(hand.textContent, 'Buy & install');
+	assert.equal(hand.getAttribute('aria-disabled'), 'true');
+	fund(equipment.engineCosts.hand);
+	world.platform.x = physics.platformMin(); world.platform.vx = 0;
+	world.direction = 0; world.target = NaN;
+	harness.sync(world);
+	advance(8);
+	assert.equal(hand.getAttribute('aria-disabled'), 'false');
+	hand.dispatch('click');
+	assert.equal(physics.engineNow().id, 'hand');
+	assert.equal(hand.textContent, 'Installed');
+	assert.equal(electric.textContent, 'Install free');
+	const funds = ceiling.state.funds;
+	electric.dispatch('click');
+	assert.equal(physics.engineNow().id, 'electric');
+	assert.equal(hand.textContent, 'Install free');
+	assert.equal(ceiling.state.funds, funds);
 });

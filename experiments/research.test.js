@@ -47,6 +47,8 @@ test('technology states move locked to available to researched with prerequisite
 	unlockResearch(w, 'traction');
 	assert.equal(research.status('power'), AVAILABLE, 'both engine prerequisites are in');
 	unlockResearch(w, 'power');
+	unlockResearch(w, 'ballistics2');
+	assert.equal(research.state.predictionBounces, true);
 	assert.equal(research.state.completed, research.nodes.length);
 	physics.createWorld();
 	assert.equal(research.state.completed, 0, 'a world reset clears research');
@@ -81,7 +83,7 @@ test('research deltas reach the simulation instead of acting as labels', () => {
 	balanced(w);
 	// Light alloys: dry mass drops and the same engine force accelerates harder.
 	unlockResearch(w, 'alloys');
-	near(physics.dryMass(), c.platformMass - 4);
+	near(physics.dryMass(), c.platformMass - 4 * 1.018);
 	w.drive = false;
 	w.ball.state = 'held';
 	w.ball.vx = 0;
@@ -116,9 +118,9 @@ test('every node and item stays fundable inside a measured working shift', () =>
 	let total = 0;
 	for (const node of research.nodes) total += node.cost;
 	for (const item of equipment.items) total += item.cost;
-	// Eleven full 100-cell loads have to cover the whole tree and shop, otherwise
+	// Thirteen full 100-cell loads have to cover the whole tree and shop, otherwise
 	// the prerequisites would push the first upgrades out of ordinary play.
-	for (let load = 0; load < 11; load++) earnFunds(w, 100);
+	for (let load = 0; load < 13; load++) earnFunds(w, 100);
 	assert.ok(ceiling.state.funds >= total, `${ceiling.state.funds.toFixed(0)} cr earned against ${total} cr of upgrades`);
 	physics.createWorld();
 });

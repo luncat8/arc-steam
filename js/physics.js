@@ -2,8 +2,17 @@
 	'use strict';
 	const gravity = 9.81;
 	const ballSpeedScale = 1 / (1.5 * 1.2);
-	const reserveCapacity = 12000;
-	const chargeSeconds = 4;
+	// Source packs are full-pack masses: fuel depletion does not remove ballast.
+	const engines = Object.freeze([
+		Object.freeze({ id: 'hand', name: 'Hand', mass: 3, density: 20000, efficiency: 0.97, reload: 18, force: 0.125, speed: 0.15 }),
+		Object.freeze({ id: 'coal', name: 'Coal', mass: 45, density: 20000, efficiency: 0.2, reload: 16, force: 0.65, speed: 0.7 }),
+		Object.freeze({ id: 'oil', name: 'Oil', mass: 28, density: 60000, efficiency: 0.55, reload: 3, force: 0.75, speed: 0.85 }),
+		Object.freeze({ id: 'electric', name: 'Electric', mass: 18, density: 20000, efficiency: 0.8, reload: 6, force: 1, speed: 1 }),
+		Object.freeze({ id: 'nuclear', name: 'Nuclear', mass: 55, density: 2000000, efficiency: 0.55, reload: 8, force: 1.1, speed: 1 })
+	]);
+	let engine = engines[3];
+	// Stock electric pack is already included in the 60 kg base machine.
+	const basePackMass = 4 * 0.5 * (60 + 3.24) * 12 * 12 / 0.8 / 20000;
 	const config = Object.freeze({
 		width: 24, ceiling: 15, gravity, ballGravity: gravity * ballSpeedScale * ballSpeedScale,
 		ballMass: 1 / (ballSpeedScale * ballSpeedScale), ballSpeedScale, radius: 0.18,
@@ -21,19 +30,19 @@
 		pistonSlewRate: Math.PI / 4,
 		// Tier-1 engine tune: 480 N / 12 m/s (1.2x the previous 400 N / 10 m/s).
 		// Research and machinery add forceBonus/speedBonus on top of this; the
-		// full chain reaches 1920 N / 30 m/s. See engine.1-plan.md.
+		// electric full chain reaches 1920 N / 30 m/s.
 		platformMass: 60, force: 480, maxSpeed: 12,
 		// Bounce pulse sized for the three-bounce rule: from a release, the apex
 		// after the third powered bounce must clear the ceiling plane (about
 		// 15.1 m at 42 J) while the first two stay short of it. One pulse adds
 		// P/(m·g) = 4.28 m of height; rounding up from the 41.2 J solution.
-		retention: 0.9, pulse: 42, efficiency: 0.8, battery: reserveCapacity, step: 1 / 240,
+		retention: 0.9, pulse: 42, get efficiency() { return engine.efficiency; }, get battery() { return reserveNow(); }, step: 1 / 240,
 		// Centre ground charge pad: a refuelling surface, not a consumable. It
-		// fills the reserve in four seconds while the platform stands on it, so
+		// fills the installed source pack at its reload rate while parked, so
 		// the cost of energy is position and downtime rather than credits.
-		chargePadWidth: 4, chargeSeconds, chargePower: reserveCapacity / chargeSeconds, chargeMaxSpeed: 0.1,
+		chargePadWidth: 4, get chargeSeconds() { return engine.reload; }, get chargePower() { return reserveNow() / engine.reload; }, chargeMaxSpeed: 0.1,
 		// Manual-drive fallback: an empty reserve leaves the crew's hand crank,
-		// a crawl next to the powered 400 N / 10 m/s but enough to always reach
+		// a crawl next to the powered engines but enough to always reach
 		// the charge pad or a selling wall. It moves the platform only.
 		crankForce: 60, crankMaxSpeed: 0.8,
 		recoveryEfficiency: 0.9,
@@ -53,9 +62,12 @@
 		return root.SteamCeiling ? root.SteamCeiling.floorAt(x) : 0;
 	}
 
+	function platformGroundAt(x) {
+		return Math.max(terrainHeight(x), root.SteamCeiling ? root.SteamCeiling.botSurfaceAt(x) : 0);
+	}
 	function platformPitchAt(x) {
 		const span = config.platformWheelHalfSpan;
-		const rise = terrainHeight(x + span) - terrainHeight(x - span);
+		const rise = platformGroundAt(x + span) - platformGroundAt(x - span);
 		return Math.max(-config.platformMaxPitch, Math.min(config.platformMaxPitch, Math.atan2(rise, span * 2)));
 	}
 
@@ -72,17 +84,17 @@
 		const sampleStep = Math.min(config.platformWheelRadius, cell * 0.5);
 		for (let localX = -halfWidth; localX < halfWidth; localX += sampleStep) {
 			const groundX = x + localX * cosine - bodyBottom * sine;
-			const required = terrainHeight(groundX) - localX * sine - bodyBottom * cosine;
+			const required = platformGroundAt(groundX) - localX * sine - bodyBottom * cosine;
 			height = Math.max(height, required);
 		}
 		const groundX = x + halfWidth * cosine - bodyBottom * sine;
-		height = Math.max(height, terrainHeight(groundX) - halfWidth * sine - bodyBottom * cosine);
+		height = Math.max(height, platformGroundAt(groundX) - halfWidth * sine - bodyBottom * cosine);
 		const radius = config.platformWheelRadius;
 		const span = config.platformWheelHalfSpan;
 		for (let sign = -1; sign <= 1; sign += 2) {
 			const localX = sign * span;
 			const groundX = x + localX * cosine - radius * sine;
-			const required = terrainHeight(groundX) - localX * sine + radius - radius * cosine;
+			const required = platformGroundAt(groundX) - localX * sine + radius - radius * cosine;
 			height = Math.max(height, required);
 		}
 		return Math.max(0, height);
@@ -285,9 +297,30 @@
 	}
 	function retentionNow() { return config.retention + installed('retentionBonus'); }
 	function pulseNow() { return config.pulse + installed('pulseBonus'); }
-	function forceNow() { return config.force + installed('forceBonus'); }
-	function speedNow() { return config.maxSpeed + installed('speedBonus'); }
-	function dryMass() { return config.platformMass + installed('massDelta'); }
+	function forceNow() { return (config.force + installed('forceBonus')) * engine.force; }
+	function speedNow() { return (config.maxSpeed + installed('speedBonus')) * engine.speed; }
+	function packMass() { return reserveNow() / engine.density; }
+	function dryMass() { return config.platformMass + engine.mass - 18 + installed('massDelta') + packMass() - basePackMass; }
+	function reserveNow() {
+		// Four full-throttle, wall-to-wall starts; acceleration distance caps
+		// the kinetic cost when the map is too short to attain rated speed.
+		const mass = config.platformMass + engine.mass - 18 + installed('massDelta') + config.ballMass;
+		const speed = speedNow();
+		const kinetic = Math.min(0.5 * mass * speed * speed, forceNow() * (platformMax() - platformMin()));
+		return 4 * kinetic / engine.efficiency;
+	}
+	function engineNow() { return engine; }
+	function selectEngine(id, world) {
+		const next = engines.find(item => item.id === id);
+		if (!next || !world || Math.abs(world.platform.vx) > 0.1 || world.platform.x > platformMin() + 0.2) return false;
+		const oldMass = platformMass(world);
+		engine = next;
+		applyMassChange(world, platformMass(world) - oldMass, oldMass);
+		const excess = Math.max(0, world.battery - reserveNow());
+		world.battery -= excess;
+		world.heat += excess;
+		return true;
+	}
 	function recoveryNow() { return installed('recoveryFraction'); }
 	function radiatorArea() { return installed('radiatorArea'); }
 	function conductanceNow() {
@@ -315,19 +348,20 @@
 	function dissipate(world, energy) {
 		if (energy <= 0) return;
 		const recovery = recoveryNow();
-		const returned = energy * recovery * config.recoveryEfficiency;
+		const returned = Math.min(Math.max(0, config.battery - world.battery), energy * recovery * config.recoveryEfficiency);
 		world.battery += returned;
 		world.heat += energy - returned;
 	}
 
 	function createWorld() {
+		engine = engines[3];
 		if (root.SteamCeiling) root.SteamCeiling.reset(1);
 		if (root.SteamEquipment) root.SteamEquipment.reset();
 		if (root.SteamResearch) root.SteamResearch.reset();
 		const world = {
 			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, chargedEnergy: 0, crankEnergy: 0, terrainWork: 0,
 			initialEnergy: 0,
-			drive: true, forceSetting: 0.6, direction: 0, target: NaN,
+			brake: false, drive: true, forceSetting: 0.6, direction: 0, target: NaN,
 			pistonAngle: 0, pistonOffset: 0, pistonVelocity: 0, pistonImpact: 0,
 			platform: { x: 12, y: 0, vx: 0, vy: 0, angle: 0, omega: 0, previousX: 12, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0 },
 			ball: { x: 12.8, y: 5, vx: 1.2 * config.ballSpeedScale, vy: 0, state: 'flying' },
@@ -471,7 +505,7 @@
 		const mass = platformMass(world);
 		const engineForce = forceNow();
 		let direction = world.direction;
-		if (!direction && Number.isFinite(world.target)) {
+		if (!world.brake && !direction && Number.isFinite(world.target)) {
 			const distance = world.target - platform.x;
 			const acceleration = engineForce * world.forceSetting / mass;
 			const stopping = platform.vx * platform.vx / (2 * acceleration);
@@ -483,6 +517,7 @@
 				direction = 0;
 			}
 		}
+		if (world.brake) direction = -Math.sign(platform.vx);
 		const oldVelocity = platform.vx;
 		const acceleration = engineForce * world.forceSetting / mass;
 		// An empty reserve leaves the manual drive: the crew hand-cranks the
@@ -497,7 +532,7 @@
 			velocity += direction * acceleration * brakingTime;
 			remaining -= brakingTime;
 		}
-		if (remaining > 0) velocity += direction * (crank ? config.crankForce / mass : acceleration * thermalFactor(world)) * remaining;
+		if (remaining > 0 && !world.brake) velocity += direction * (crank ? config.crankForce / mass : acceleration * thermalFactor(world)) * remaining;
 		if (crank && direction) {
 			// The crank tops out at its crawl, but never drags a faster coast
 			// down to it: the limit is whichever the platform already has.
@@ -717,6 +752,7 @@
 	}
 
 	const api = {
+		engines, engineNow, selectEngine, reserveNow, packMass,
 		config, createWorld, step, launch, canLaunch, launchCapacity, ballEnergy, totalEnergy, temperature,
 		thermalFactor, coolingPower, platformMass, platformMin, platformMax, dryMass,
 		platformPitchAt, platformBaseAt, platformPointAt, platformSurfaceAt, planeContactTime,

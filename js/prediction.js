@@ -8,9 +8,10 @@
 	// Cover a full deck-to-ceiling-to-deck flight at the tuned ball gravity.
 	const horizon = 2 * Math.sqrt(2 * root.SteamPhysics.config.ceiling / root.SteamPhysics.config.ballGravity) + 1;
 	const march = 1 / 100;
-	const capacity = Math.ceil(horizon / march) + 2;
+	const capacity = Math.ceil(horizon * 3 / march) + 100;
 	const pathX = new Float64Array(capacity);
 	const pathY = new Float64Array(capacity);
+	const bounce = root.SteamPhysics.contactResult();
 	const platformPose = { x: 0, y: 0, angle: 0 };
 	const nextPlatformPose = { x: 0, y: 0, angle: 0 };
 	const platformSurface = { x: 0, y: 0, angle: 0 };
@@ -109,6 +110,10 @@
 			kind = PARKED;
 			return state;
 		}
+		const extended = Boolean(root.SteamResearch && root.SteamResearch.state.predictionBounces);
+		const limit = extended ? horizon * 3 : horizon;
+		let firstKind = NONE, firstX = 0, firstY = 0, firstVx = 0, firstVy = 0, firstTime = 0, firstSurface = NO_SURFACE;
+		let available = world.battery * config.efficiency;
 		const gravity = config.ballGravity;
 		const retention = Math.sqrt(physics.retentionNow());
 		// Rock contacts are only traced while the march can reach the layer, which
@@ -122,7 +127,7 @@
 		pathX[0] = x;
 		pathY[0] = y;
 		samples = 1;
-		while (time < horizon && samples < capacity - 1) {
+		while (time < limit && samples < capacity - 1) {
 			let step = march;
 			let event = NONE;
 			if (vx) {
@@ -162,13 +167,14 @@
 			const pistonTime = physics.pistonContactTime(x, y, vx, vy, platformSurface.x, platformSurface.y,
 				surfaceVx, surfaceVy, platformSurface.angle, step);
 			if (pistonTime < step) { step = pistonTime; event = DECK; surface = PISTON; }
+			let nx = 0, ny = -1;
 			let contactX = 0;
 			let contactY = 0;
 			if (economy && y + Math.max(0, vy) * step + config.radius > rockReach) {
 				const hit = economy.trace(x, y, vx, vy, step, config.radius, gravity);
 				// Rock wins over a deck contact found in the same march step, so the
 				// surface it would have landed on is no longer the answer.
-				if (hit.time < step) { step = hit.time; event = ROCK; surface = NO_SURFACE; contactX = hit.x; contactY = hit.y; }
+				if (hit.time < step) { step = hit.time; event = ROCK; surface = NO_SURFACE; contactX = hit.x; contactY = hit.y; nx = hit.nx; ny = hit.ny; }
 			}
 			x += vx * step;
 			y += vy * step - 0.5 * gravity * step * step;
@@ -180,8 +186,26 @@
 				// Rock contacts end at the trace's own separated contact point, which
 				// is where the simulation snaps the ball, so the mark and the impact agree.
 				if (event === ROCK) { x = contactX; y = contactY; }
+				if (!firstKind) {
+					firstKind = event; firstX = x; firstY = y; firstVx = vx; firstVy = vy; firstTime = time; firstSurface = surface;
+				}
 				kind = event;
-				break;
+				if (!extended || event === GROUND || event === DECK && surface === COLLECTOR) break;
+				pathX[samples] = x; pathY[samples] = y; samples++;
+				if (event === ROCK) {
+					const normal = vx * nx + vy * ny;
+					if (normal < 0) { vx -= (1 + retention) * normal * nx; vy -= (1 + retention) * normal * ny; }
+					x += nx * 0.0001; y += ny * 0.0001;
+				} else {
+					const push = world.drive ? Math.min(available, physics.pulseNow() * physics.thermalFactor(world)) : 0;
+					physics.solvePiston(world, vx, vy, platformSurface.angle - world.platform.angle, push, bounce, surfaceVx, surfaceVy);
+					vx = bounce.vx; vy = bounce.vy;
+					available -= bounce.push;
+					if (bounce.captured) break;
+					x -= Math.sin(platformSurface.angle) * 0.0001;
+					y += Math.cos(platformSurface.angle) * 0.0001;
+				}
+				time += 0.00001;
 			}
 			pathX[samples] = x;
 			pathY[samples] = y;
@@ -199,6 +223,11 @@
 		pathX[samples] = x;
 		pathY[samples] = y;
 		samples++;
+		if (extended && firstKind) {
+			kind = firstKind; endX = firstX; endY = firstY; endVx = firstVx; endVy = firstVy;
+			endTime = firstTime; surface = firstSurface; time = firstTime;
+			uncertain = firstKind === ROCK;
+		}
 		projectedPlatformPose(physics, platform, time, platformPose);
 		ghostX = platformPose.x;
 		ghostY = platformPose.y;

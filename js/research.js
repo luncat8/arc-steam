@@ -42,6 +42,10 @@
 			id: 'ballistics', name: 'Ballistic computer', cost: 520, requires: Object.freeze(['electromagnetics']),
 			capability: 'prediction',
 			effect: 'Unlocks the predicted flight path, landing mark, intercept ghost and reachability warning on the chamber view.'
+		}),
+		Object.freeze({
+			id: 'ballistics2', name: 'Trajectory computer II', cost: 700, requires: Object.freeze(['ballistics', 'power']),
+			effect: 'Extends the trajectory through rock and powered piston bounces over three flight horizons. Assumes the current terrain and a coasting platform; rock destruction and future controls remain uncertain.'
 		})
 	]);
 	const LOCKED = 'locked';
@@ -64,6 +68,7 @@
 		get forceBonus() { return installedForce; },
 		get speedBonus() { return installedSpeed; },
 		get prediction() { return predictionEnabled; },
+		get predictionBounces() { return done.has('ballistics2'); },
 		get completed() { return done.size; }
 	});
 
@@ -108,7 +113,7 @@
 		installedForce += node.forceBonus || 0;
 		installedSpeed += node.speedBonus || 0;
 		if (node.capability === 'prediction') predictionEnabled = true;
-		if (physics) physics.applyMassChange(world, node.massDelta || 0, oldMass);
+		if (physics) physics.applyMassChange(world, world ? physics.platformMass(world) - oldMass : 0, oldMass);
 		return true;
 	}
 

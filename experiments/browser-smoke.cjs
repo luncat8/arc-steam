@@ -81,7 +81,7 @@ async function main() {
 		await page.locator('#pause').click();
 		const nodeCount = await page.evaluate(() => SteamResearch.nodes.length);
 		assert.equal(await page.locator('#research-rows .upgrade-row').count(), nodeCount);
-		assert.equal(await page.locator('#equipment-rows .upgrade-row').count(), await page.evaluate(() => SteamEquipment.items.length));
+		assert.equal(await page.locator('#equipment-rows .upgrade-row').count(), await page.evaluate(() => SteamEquipment.items.length + SteamPhysics.engines.length));
 		assert.equal(await page.locator('#research-progress').textContent(), '0 / ' + nodeCount);
 		assert.equal(await page.locator('#platform-spec').evaluate(node => node.children.length), 14);
 		assert.equal(await page.locator('#refuel').isDisabled(), true, 'a full reserve needs no recharge');
