@@ -13,6 +13,7 @@ const research = require('../js/research.js');
 const physics = require('../js/physics.js');
 const harness = require('./harness.cjs');
 require('../js/prediction.js');
+require('../js/help.js');
 require('../js/autopilot.js');
 
 const near = harness.near;
@@ -113,8 +114,8 @@ test('the system-bar switch turns the commons on and the panels follow', () => {
 	assert.equal(techRow('ballistics').children[1].getAttribute('aria-disabled'), 'false', 'a prerequisite is waived');
 	assert.match(gearRow('pad').children[3].textContent, /The commons shares it/, 'the note stops asking for research');
 	assert.match(techRow('ballistics').children[3].textContent, /The commons shares every node/);
-	assert.match(dom.element('tech-hint').textContent, /The commons shares every technology/);
-	assert.match(dom.element('equipment-hint').textContent, /The commons shares every machine/);
+	assert.match(dom.element('tech-hint').textContent, /Free · no prerequisites/, 'the panel introduction is short and still names the mode');
+	assert.match(dom.element('equipment-hint').textContent, /Free · installs at once/);
 	assert.equal(dom.element('credits').textContent, 'commons');
 	assert.equal(dom.element('funds').textContent, 'commons');
 	assert.match(dom.element('funds-note').textContent, /Nothing costs/);
@@ -154,7 +155,7 @@ test('the M shortcut switches the mode off again', () => {
 	assert.equal(ceiling.state.commune, false);
 	assert.equal(dom.element('commune').checked, false, 'the switch follows the shortcut');
 	assert.match(gearRow('pad').children[0].textContent, /REBOUND PAD · 250 CR/, 'the list price is back');
-	assert.match(dom.element('tech-hint').textContent, /Research debits funds once/, 'the panel introduction is back too');
+	assert.match(dom.element('tech-hint').textContent, /Pay once/, 'the panel introduction is back too');
 	assert.equal(dom.element('credits').textContent, '0.0 cr');
 	dom.key('KeyM');
 	advance(4);

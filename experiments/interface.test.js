@@ -13,6 +13,7 @@ const research = require('../js/research.js');
 const physics = require('../js/physics.js');
 const harness = require('./harness.cjs');
 require('../js/prediction.js');
+const help = require('../js/help.js');
 const autopilot = require('../js/autopilot.js');
 
 // Capture the world the page owns so measured cargo sales can fund it.
@@ -676,4 +677,115 @@ test('commercial grader button toggles call/dismiss and can cancel a return', ()
 	assert.match(dom.element('equipment-status').textContent, /^Grader return cancelled/);
 	button.dispatch('click');
 	assert.equal(bot.returning, true);
+});
+
+test('context help lives in one drawer, and the panels keep short lines only', () => {
+	// The explanations moved out of the panels, so the workspace stays compact.
+	assert.ok(dom.element('tech-hint').textContent.length < 60, dom.element('tech-hint').textContent);
+	assert.ok(dom.element('equipment-hint').textContent.length < 70, dom.element('equipment-hint').textContent);
+	for (const node of ['research-status', 'equipment-status', 'transaction-status', 'mineral-price']) assert.ok(dom.element(node).textContent.length < 120);
+	// Every topic has one mark, every mark points at the drawer, and the index
+	// lists all of them.
+	for (const topic of help.topics) {
+		const trigger = dom.element('help-' + topic.id);
+		assert.equal(trigger.getAttribute('aria-expanded'), 'false', topic.id);
+		assert.equal(trigger.getAttribute('aria-controls'), 'help-drawer', topic.id);
+		// The ? marks carry a spoken name; the system-bar HELP button names its shortcut.
+		const label = trigger.getAttribute('aria-label');
+		if (label) assert.match(label, /^Help: /, topic.id);
+		else assert.equal(trigger.getAttribute('aria-keyshortcuts'), 'H', 'the HELP button names its shortcut');
+	}
+	assert.equal(dom.element('help-index').children.length, help.topics.length);
+	assert.equal(dom.element('help-drawer').dataset.open, 'false');
+	assert.equal(dom.element('help-drawer').getAttribute('aria-hidden'), 'true');
+	assert.equal(dom.element('help-body').children.length, 0, 'nothing is rendered before the first open');
+
+	// A precise pointer previews on hover without taking focus. Compare identity
+	// with ===, not assert.equal: two shim elements differ and the diff inspects
+	// the whole cyclic shim.
+	const focused = dom.document.activeElement;
+	dom.element('help-tilt').dispatch('pointerenter');
+	assert.equal(dom.element('help-drawer').dataset.open, 'true');
+	assert.equal(dom.element('help-title').textContent, help.find('tilt').title);
+	assert.equal(dom.element('help-drawer').getAttribute('aria-hidden'), 'false');
+	assert.equal(dom.element('help-tilt').getAttribute('aria-expanded'), 'true');
+	assert.equal(dom.element('help-body').children.length, help.find('tilt').text.length + 1, 'paragraphs plus the key list');
+	assert.ok(dom.document.activeElement === focused, 'hover never moves focus');
+
+	// Moving to another mark retargets the drawer and collapses the previous mark.
+	dom.element('help-autopilot').dispatch('pointerenter');
+	assert.equal(dom.element('help-title').textContent, help.find('autopilot').title);
+	assert.equal(dom.element('help-tilt').getAttribute('aria-expanded'), 'false');
+	assert.equal(dom.element('help-autopilot').getAttribute('aria-expanded'), 'true');
+
+	dom.key('Escape');
+	assert.equal(dom.element('help-drawer').dataset.open, 'false');
+	assert.equal(dom.element('help-drawer').getAttribute('aria-hidden'), 'true');
+
+	// Touch and stylus ignore hover; a tap is the whole interaction.
+	dom.pointerMedia.matches = false;
+	dom.element('help-cargo').dispatch('pointerenter');
+	assert.equal(dom.element('help-drawer').dataset.open, 'false', 'touch stays tap-only');
+	dom.element('help-cargo').dispatch('click');
+	assert.equal(dom.element('help-title').textContent, help.find('cargo').title);
+	assert.equal(dom.element('help-cargo').getAttribute('aria-expanded'), 'true');
+	dom.pointerMedia.matches = true;
+	dom.element('help-close').dispatch('click');
+	assert.equal(dom.element('help-drawer').dataset.open, 'false');
+
+	// The index switches topic inside the open drawer; a mark toggles its topic.
+	dom.element('help-keys').dispatch('click');
+	assert.equal(dom.element('help-title').textContent, help.find('keys').title);
+	dom.element('help-index').children[3].dispatch('click');
+	assert.equal(dom.element('help-title').textContent, help.topics[3].title);
+	assert.equal(dom.element('help-index').children[3].dataset.active, 'true');
+	assert.equal(dom.element('help-index').children[0].dataset.active, 'false');
+	// With a hovering pointer a click pins the preview instead of closing it;
+	// on touch the same mark toggles, so a tap is the whole interaction.
+	dom.element('help-movement').dispatch('click');
+	assert.equal(dom.element('help-drawer').dataset.open, 'true', 'a hover click pins the preview');
+	dom.pointerMedia.matches = false;
+	dom.element('help-movement').dispatch('click');
+	assert.equal(dom.element('help-drawer').dataset.open, 'false', 'the same mark closes what it opened on touch');
+	dom.element('help-movement').dispatch('click');
+	assert.equal(dom.element('help-drawer').dataset.open, 'true', 'and opens it again');
+	dom.pointerMedia.matches = true;
+
+	// H and F1 toggle from anywhere and reopen the last topic read.
+	dom.key('KeyH');
+	assert.equal(dom.element('help-drawer').dataset.open, 'false', 'H closes the open drawer');
+	dom.key('KeyH');
+	assert.equal(dom.element('help-drawer').dataset.open, 'true');
+	assert.equal(dom.element('help-title').textContent, help.topics[3].title, 'H reopens the last topic read');
+	dom.key('F1');
+	assert.equal(dom.element('help-drawer').dataset.open, 'false', 'F1 does the same');
+	assert.equal(help.find('nope'), undefined);
+});
+
+test('holding a panel opens that panel\'s topic, and a moving pointer cancels the hold', async () => {
+	const marker = dom.element('cargo-mass');
+	marker.dataset.topic = 'cargo';
+	const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+	dom.document.dispatch('pointerdown', { target: marker, clientX: 10, clientY: 10 });
+	await wait(700);
+	assert.equal(dom.element('help-drawer').dataset.open, 'true', 'a half-second hold opens the panel topic');
+	assert.equal(dom.element('help-title').textContent, help.find('cargo').title);
+	dom.document.dispatch('pointerup', { target: marker, clientX: 10, clientY: 10 });
+	dom.element('help-close').dispatch('click');
+
+	// Pressing a button, the chamber or a control is never a hold gesture.
+	dom.document.dispatch('pointerdown', { target: dom.element('help-drive'), clientX: 10, clientY: 10 });
+	dom.document.dispatch('pointerdown', { target: dom.element('c'), clientX: 10, clientY: 10 });
+	await wait(700);
+	assert.equal(dom.element('help-drawer').dataset.open, 'false');
+	dom.document.dispatch('pointerup', { target: marker, clientX: 10, clientY: 10 });
+
+	// Dragging away before the hold completes cancels it.
+	dom.document.dispatch('pointerdown', { target: marker, clientX: 10, clientY: 10 });
+	dom.document.dispatch('pointermove', { target: marker, clientX: 90, clientY: 10 });
+	await wait(700);
+	assert.equal(dom.element('help-drawer').dataset.open, 'false', 'a drag is not a hold');
+	dom.document.dispatch('pointerup', { target: marker, clientX: 90, clientY: 10 });
+	delete marker.dataset.topic;
 });

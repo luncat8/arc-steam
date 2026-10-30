@@ -81,9 +81,11 @@ async function main() {
 		await page.locator('#pause').click();
 		const nodeCount = await page.evaluate(() => SteamResearch.nodes.length);
 		assert.equal(await page.locator('#research-rows .upgrade-row').count(), nodeCount);
-		assert.equal(await page.locator('#equipment-rows .upgrade-row').count(), await page.evaluate(() => SteamEquipment.items.length + SteamPhysics.engines.length));
+		// Items, engines, and the radiator and ball tier selectors share the row layout.
+		assert.equal(await page.locator('#equipment-rows .upgrade-row').count(), await page.evaluate(() => SteamEquipment.items.length + SteamPhysics.engines.length + 2));
+		assert.equal(await page.locator('#commercial-grader').count(), 1);
 		assert.equal(await page.locator('#research-progress').textContent(), '0 / ' + nodeCount);
-		assert.equal(await page.locator('#platform-spec').evaluate(node => node.children.length), 14);
+		assert.equal(await page.locator('#platform-spec').evaluate(node => node.children.length), 20, 'ten specification labels with their values');
 		assert.equal(await page.locator('#refuel').isDisabled(), true, 'a full reserve needs no recharge');
 		assert.equal(await page.locator('#prediction-status').isHidden(), true, 'the overlay waits for its research');
 		assert.match(await page.locator('#temperature').textContent(), /°C/);
@@ -241,20 +243,73 @@ async function main() {
 		await page.keyboard.press('KeyZ');
 		await page.keyboard.press('Space');
 		assert.equal(await page.locator('#auto-drive').isChecked(), false, 'the drive shortcut keeps the duty manual');
+		// Context help: hover previews a topic without stealing focus, a click pins it,
+		// Escape closes, and the compact panels keep their short status lines.
+		await page.locator('#c').scrollIntoViewIfNeeded();
+		assert.equal(await page.evaluate(() => document.getElementById('help-drawer').dataset.open), 'false');
+		await page.locator('#help-tilt').hover();
+		await page.waitForTimeout(150);
+		assert.equal(await page.evaluate(() => document.getElementById('help-drawer').dataset.open), 'true', 'hover opens the drawer');
+		assert.equal(await page.locator('#help-title').textContent(), await page.evaluate(() => SteamHelp.find('tilt').title));
+		assert.equal(await page.locator('#help-tilt').getAttribute('aria-expanded'), 'true');
+		await page.locator('#help-index button', { hasText: 'Keys' }).click();
+		assert.match(await page.locator('#help-title').textContent(), /Controls/);
+		assert.ok(await page.locator('#help-body dt').count() > 10, 'the controls topic lists every shortcut');
+		assert.equal(await page.evaluate(() => Boolean(document.activeElement.closest('#help-drawer'))), true, 'the index keeps focus inside the drawer');
+		await page.keyboard.press('Escape');
+		assert.equal(await page.evaluate(() => document.getElementById('help-drawer').dataset.open), 'false');
+		assert.equal(await page.evaluate(() => Boolean(document.activeElement.closest('#help-drawer'))), false, 'closing never leaves focus inside the hidden drawer');
+		await page.keyboard.press('KeyH');
+		assert.equal(await page.evaluate(() => document.getElementById('help-drawer').dataset.open), 'true', 'H opens help');
+		await page.keyboard.press('KeyH');
+		assert.equal(await page.evaluate(() => document.getElementById('help-drawer').dataset.open), 'false');
+		// Holding a panel opens its topic. Hold the pointer down and wait for the
+		// state: this headless shell delays page timers by seconds, so a fixed
+		// release delay would race the 550 ms gesture.
+		const panelTitle = await page.locator('.cargo-panel .panel-title').boundingBox();
+		await page.mouse.move(panelTitle.x + 40, panelTitle.y + panelTitle.height / 2);
+		await page.mouse.down();
+		await page.waitForFunction(() => document.getElementById('help-drawer').dataset.open === 'true', null, { timeout: 30000 });
+		await page.mouse.up();
+		assert.equal(await page.locator('#help-title').textContent(), 'Cargo and storage', 'the held panel names its topic');
+		await page.keyboard.press('Escape');
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.waitForTimeout(100);
 		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
 		assert.equal(await page.evaluate(() => ['.tech-panel', '.controls-panel', '.mineral-panel'].every(selector => document.querySelector(selector).getBoundingClientRect().height > 200)), true, 'stacked panels keep their content height');
 		assert.deepEqual(errors, []);
-		// Touch-only devices keep the view menu click-only.
+		// Touch-only devices keep the view menu click-only. The touch page must be in
+		// front: a background page throttles its animation frames, and an unthrottled
+		// page is what a hover needs to measure a stable layout.
 		const touch = await browser.newPage({ viewport: { width: 1440, height: 1000 }, hasTouch: true, isMobile: true });
 		await touch.goto(process.env.TEST_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href);
+		await touch.bringToFront();
 		assert.equal(await touch.evaluate(() => matchMedia('(hover: hover) and (pointer: fine)').matches), false);
-		await touch.locator('#view-modes label', { hasText: 'Price' }).hover();
+		// A raw pointer move instead of locator.hover(): the hover actionability check
+		// waits for two identical animation frames, which a second page in this
+		// single-process headless shell does not reliably deliver.
+		const priceLabel = await touch.locator('#view-modes label', { hasText: 'Price' }).boundingBox();
+		await touch.mouse.move(priceLabel.x + priceLabel.width / 2, priceLabel.y + priceLabel.height / 2);
 		assert.equal(await touch.locator('#view-modes input[value="minerals"]').isChecked(), true, 'hover does not switch on touch');
 		await touch.locator('#view-modes label', { hasText: 'Price' }).tap();
 		assert.equal(await touch.locator('#view-modes input[value="price"]').isChecked(), true, 'tap switches on touch');
-		console.log('PASS: startup, four-row layout, view-mode hover/click/arrow keys with paused redraw and touch gating, drive on by default and toggling (Space/Q without pressing GUI controls), piston tilt by slider, chamber wheel and an inverted open-air drag, keyboard force, pause/reset, shape selector, inspector click without sliders, rock-versus-low click zones, target travel, centre pad note, research/equipment gating, communism mode with free prices and waived gates, ledger, autopilot checkboxes with X/Z/C shortcuts and manual overrides, narrow layout; no page errors.');
+		// A tap is the whole help interaction on touch: no hover preview, the same
+		// mark toggles, and a narrow screen gets a bottom sheet instead of a side
+		// drawer. Holding a panel opens its topic with no mark at all.
+		await touch.locator('#help-drive').tap();
+		assert.equal(await touch.evaluate(() => document.getElementById('help-drawer').dataset.open), 'true', 'tap opens help');
+		assert.equal(await touch.locator('#help-title').textContent(), 'Bounce drive');
+		assert.equal(await touch.evaluate(() => document.activeElement.id), 'help-close', 'the sheet brings its own controls into focus');
+		await touch.locator('#help-close').tap();
+		assert.equal(await touch.evaluate(() => document.getElementById('help-drawer').dataset.open), 'false', 'the close button dismisses it');
+		await touch.setViewportSize({ width: 390, height: 844 });
+		await touch.waitForTimeout(150);
+		await touch.locator('#help-drive').tap();
+		assert.equal(await touch.evaluate(() => document.getElementById('help-drawer').getBoundingClientRect().top > 150), true, 'a narrow touch screen gets a bottom sheet');
+		assert.equal(await touch.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the sheet does not overflow');
+		await touch.locator('#help-close').tap();
+		assert.equal(await touch.evaluate(() => document.getElementById('help-drawer').dataset.open), 'false');
+		console.log('PASS: startup, four-row layout, view-mode hover/click/arrow keys with paused redraw and touch gating, drive on by default and toggling (Space/Q without pressing GUI controls), piston tilt by slider, chamber wheel and an inverted open-air drag, keyboard force, pause/reset, shape selector, inspector click without sliders, rock-versus-low click zones, target travel, centre pad note, research/equipment gating, communism mode with free prices and waived gates, ledger, autopilot checkboxes with X/Z/C shortcuts and manual overrides, context help drawer (hover preview, click pin, H/Escape, touch tap and bottom sheet, held panel), narrow layout; no page errors.');
 	} finally {
 		await browser.close();
 	}

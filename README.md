@@ -16,6 +16,8 @@ python3 -m http.server 8000 --bind 0.0.0.0
 
 On wide screens the page is four rows: a system bar (clock, pause, speed, New game, rock shape, Communism and test-mode switches), the telemetry strip, the play row (technology research | chamber | platform controls | mineral inspector), and the economy row (equipment | cargo | market). The chamber sets the play row's height and the side columns scroll inside it. Below 1280 px research and the inspector move under the chamber; below 760 px every panel stacks.
 
+Explanations live in one context-help drawer instead of in the panels, so every panel keeps a single short status line. Each section and panel title carries a `?` mark: hovering one with a precise pointer previews its topic without taking focus, and clicking pins it. Touch has no hover, so there a tap opens the drawer and a second tap closes it, and pressing and holding any panel for half a second opens that panel's topic without hunting for a mark — the drawer then arrives as a bottom sheet that a downward drag on its head dismisses. `H` (or `F1`) toggles the drawer from anywhere and reopens the last topic read, `Escape` closes it, and the topic index at its foot switches between all thirteen topics. Content is data in `js/help.js`, so a topic is text and key rows rather than markup.
+
 ## Controls
 
 | Input | Action |
@@ -40,6 +42,8 @@ On wide screens the page is four rows: a system bar (clock, pause, speed, New ga
 | Hand crank (empty reserve) | A/D, arrow buttons or travel target crawl at 0.8 m/s on crew power — movement only, the bounce drive still needs charge |
 | Recharge button | Emergency import at 25 cr/kJ up to the full 12 kJ |
 | Pause / speed / New game | Inspect or restart the experiment from a fresh world, research and equipment |
+| Hover or tap a `?` mark, hold a panel, or H / F1 | Open the context-help drawer on that panel's topic |
+| Escape | Close the help drawer |
 
 Ground impact loses all ball energy. Move the platform over a grounded ball to recover it. The amber collector catches and holds balls and mineral debris; the green reflector bounces balls. Release transfers a stored ball onto the reflector and pays for lifting it. A 42 J pulse at 80% efficiency debits up to 52.5 J from the shared reserve, and the tuning is sized so the third powered bounce from a release reaches the ceiling.
 

@@ -77,10 +77,15 @@ function createContext() {
 }
 
 const elements = new Map();
-for (const match of html.matchAll(/<([a-z]+)[^>]*\bid="([^"]+)"/g)) {
-	const element = new Element(match[1], match[2]);
+for (const match of html.matchAll(/<([a-z]+)([^>]*)>/g)) {
+	const id = match[2].match(/\bid="([^"]+)"/);
+	if (!id) continue;
+	const element = new Element(match[1], id[1]);
+	// Attributes are read from the tag, so aria wiring asserted in the markup is
+	// tested as written instead of only after a script writes it.
+	for (const attribute of match[2].matchAll(/([a-z-]+)="([^"]*)"/g)) element.attributes[attribute[1]] = attribute[2];
 	if (match[1] === 'canvas') element.context = createContext();
-	elements.set(match[2], element);
+	elements.set(id[1], element);
 }
 
 // One shared media query result, so tests can switch between a hovering mouse and touch.

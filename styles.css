@@ -19,7 +19,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 13px 0; 
 /* Four rows: system bar, telemetry, play area (research | chamber | controls | inspector), economy (equipment | cargo | market). */
 main { max-width: 1920px; margin: auto; padding: 16px 2vw 24px; display: grid; gap: 12px; }
 .panel { min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: #101a1e; }
-.panel-title { min-height: 44px; padding: 15px 16px; border-bottom: 1px solid var(--line); color: #a7b8ba; display: flex; justify-content: space-between; gap: 10px; background: #101a1e; }
+.panel-title { min-height: 44px; padding: 15px 16px; border-bottom: 1px solid var(--line); color: #a7b8ba; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #101a1e; }
+.panel-meta { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .panel-body { padding: 16px; }
 
 .system-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; padding: 7px 16px; color: #a7b8ba; }
@@ -96,8 +97,9 @@ canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 .autopilot i { flex: none; font: 9px ui-monospace, monospace; letter-spacing: 0.6px; color: #7d9094; }
 .control-row { display: flex; gap: 8px; touch-action: none; }
 .control-row button { text-align: center; user-select: none; }
-.experiment { border-top: 1px solid var(--line); padding: 14px 16px; }
-.experiment p { font-size: 11px; margin-bottom: 0; }
+.eyebrow-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 16px 0 3px; }
+.eyebrow-row .eyebrow { margin: 0; }
+.controls > .eyebrow-row:first-child { margin-top: 0; }
 
 #mineral-cell { display: block; margin-bottom: 10px; font: 11px ui-monospace, monospace; letter-spacing: 0.4px; color: var(--accent); }
 .mineral-panel .eyebrow { margin: 0 0 5px; }
@@ -112,6 +114,9 @@ progress { width: 100%; height: 8px; accent-color: var(--amber); margin-top: 12p
 .upgrade-row small { grid-column: 1 / -1; font-size: 10px; line-height: 1.55; color: #9fb0b2; }
 .upgrade-row .requirement { color: #7d9094; font: 9px ui-monospace, monospace; letter-spacing: 0.7px; line-height: 1.5; }
 .upgrade-row button { align-self: start; padding: 7px 12px; font-size: 10px; letter-spacing: 0.8px; }
+/* Tier selectors carry long option labels, so they shrink with their column
+   instead of widening the panel past a narrow viewport. */
+.upgrade-row select { min-width: 0; width: 100%; max-width: 100%; }
 .upgrade-row[data-state="locked"] { opacity: 0.55; }
 .upgrade-row[data-state="installed"] b, .upgrade-row[data-state="researched"] b { color: var(--accent); }
 .tech-panel .hint, .equipment-panel .hint { margin-top: 0; margin-bottom: 10px; }
@@ -145,6 +150,41 @@ details { font-size: 11px; color: var(--muted); line-height: 1.8; }
 summary { cursor: pointer; }
 #ledger { padding-left: 25px; margin: 6px 0 0; }
 
+/* Context help: the panels keep short status lines and every ? mark, held panel
+   or shortcut opens the same drawer with the full explanation. */
+button.help-mark, .system-options button.help-mark, .controls button.help-mark, .panel-title button.help-mark, .mine-footer button.help-mark {
+	flex: none; width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--control-line);
+	background: transparent; color: #8fa3a6; font: 700 10px/1 ui-monospace, monospace; cursor: help; text-align: center;
+}
+button.help-mark:hover, button.help-mark[aria-expanded="true"] { color: #10191d; border-color: var(--accent); background: var(--accent); }
+.help-open { padding: 6px 10px; font: 10px ui-monospace, monospace; letter-spacing: 1.2px; color: #a7b8ba; background: transparent; }
+.help-open[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); background: #16241c; }
+.help-open span { color: #7d9094; }
+/* A finger needs a bigger target than a pointer, and the hold gesture is the
+   primary route there anyway. */
+@media (pointer: coarse) { button.help-mark { width: 26px; height: 26px; font-size: 12px; } }
+/* Visibility flips instantly on open and only after the slide-out on close, so
+   the drawer's own controls are focusable the moment it opens. */
+.help-drawer {
+	position: fixed; z-index: 30; top: 0; right: 0; bottom: 0; width: min(390px, 92vw); display: flex; flex-direction: column; gap: 12px;
+	padding: 14px 18px 16px; border-left: 1px solid var(--line); background: #0e171a; box-shadow: -24px 0 42px #0007;
+	transform: translateX(102%); visibility: hidden; transition: transform 0.22s ease, visibility 0s linear 0.22s;
+}
+.help-drawer[data-open="true"] { transform: none; visibility: visible; transition: transform 0.22s ease, visibility 0s; }
+.help-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: grab; touch-action: none; }
+.help-head .eyebrow { margin: 0; }
+#help-close { padding: 5px 9px; font-size: 11px; }
+#help-title { margin: 0; font: 600 15px ui-monospace, monospace; letter-spacing: 0.6px; color: #dce6e4; }
+.help-scroll { flex: 1 1 auto; overflow-y: auto; }
+.help-scroll p { margin: 0 0 10px; font-size: 12.5px; line-height: 1.65; color: #a9babc; }
+.help-keys { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 12px 0 2px; padding-top: 10px; border-top: 1px solid var(--line); }
+.help-keys dt { font: 10px ui-monospace, monospace; color: var(--accent); white-space: nowrap; }
+.help-keys dd { margin: 0; font-size: 11px; color: #9fb0b2; }
+.help-index { display: flex; flex-wrap: wrap; gap: 5px; padding-top: 10px; border-top: 1px solid var(--line); }
+.help-index button { padding: 5px 9px; font: 9px ui-monospace, monospace; letter-spacing: 0.9px; background: transparent; }
+.help-index button[data-active="true"] { color: var(--accent); border-color: var(--accent); background: #16241c; }
+.help-foot { margin: 0; font: 9px ui-monospace, monospace; letter-spacing: 0.6px; line-height: 1.6; color: #71868a; }
+
 /* Side columns next to the chamber take its height instead of setting it, and scroll inside. */
 @media (min-width: 761px) { .controls-panel { contain: size; overflow-y: auto; } .controls-panel .panel-title { position: sticky; top: 0; z-index: 1; } }
 @media (min-width: 1280px) { .tech-panel, .mineral-panel { contain: size; overflow-y: auto; } .tech-panel .panel-title, .mineral-panel .panel-title { position: sticky; top: 0; z-index: 1; } }
@@ -168,4 +208,9 @@ summary { cursor: pointer; }
 	.view-switch { margin-left: 0; }
 	.economy { grid-template-columns: minmax(0, 1fr); }
 }
+@media (max-width: 760px) {
+	/* A touch screen gets a bottom sheet, so the chamber and the ? marks stay reachable. */
+	.help-drawer { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 76vh; border-left: 0; border-top: 1px solid var(--line); border-radius: 10px 10px 0 0; box-shadow: 0 -20px 42px #0009; transform: translateY(102%); }
+}
+@media (prefers-reduced-motion: reduce) { .help-drawer { transition: none; } }
 @media (max-width: 400px) { .mass-readouts { grid-template-columns: 1fr 1fr; } .spec { grid-template-columns: minmax(0, 1fr) auto; } .summary strong, .refuel strong { font-size: 16px; } .refuel { flex-wrap: wrap; } .panel-body { padding: 12px; } }

@@ -31,12 +31,40 @@ cd /home/user/arc-steam && LD_LIBRARY_PATH=/tmp/al/lib PLAYWRIGHT_PATH=/tmp/pw/n
 - Playwright counts `aria-disabled="true"` as not enabled; `click({ force: true })` still delivers a real click.
 - `page.screenshot({ fullPage: true })` at 1920, 1440, 1100 and 390 px widths is the quickest layout review.
 
+- This headless shell delays page timers by seconds (a `setTimeout(550)` fired about 7 s late)
+  and a second, background page can have its animation frames throttled entirely. A gesture with
+  a hold threshold must therefore be driven by pointer-down + `waitForFunction` on the resulting
+  state, not by `tap({ delay })`, and the second page needs `bringToFront()`.
+- `locator.hover()` waits for two identical animation frames before acting, which the second page
+  in this single-process shell does not deliver: move a raw `mouse` to the element's
+  `boundingBox()` centre instead. Raw mouse coordinates are viewport-relative, so
+  `scrollIntoViewIfNeeded()` first — a below-fold box off screen clicks nothing.
+- Closing the last page closes the browser. Open a second page before closing the first, and
+  give the second page its own `waitForFunction` only after `bringToFront()`.
+- `assert.deepEqual`/`assert.equal` on two shim elements in `experiments/dom.cjs` dumps a
+  cyclic structure and kills the process with SIGKILL (no error text at all). Compare focus with
+  `assert.ok(a === b)`.
+- A drawer that slides in on `transform` must switch `visibility` instantly on open and only
+  after the slide on close (`transition: transform …, visibility 0s linear 0.22s` for the closed
+  state). A symmetric `visibility` transition keeps its buttons unfocusable for the whole slide,
+  so `focus()` silently lands nowhere and a tap on the drawer's own close button is rejected as
+  "intercepted by the drawer".
+
 ## Layout pitfalls
 
 - A side column that must take the chamber's height instead of stretching the row uses `contain: size` plus `overflow-y: auto` in a grid. Turn it on in `min-width` queries, not as a base rule overridden later: a `.workspace > .panel:not(.mine-panel)` base selector outranks a single-class override and collapses the stacked panels to zero height.
 - Hover-to-switch is safe only for display state (rock view). The rock shape changes collision physics, so it stays a click-only select: a passing mouse must not change the game.
 
 ## Interface pitfalls
+
+- Context help is data in `js/help.js`, rendered into one drawer. A new panel gets `data-topic`
+  and a `?` mark with the same topic id; the hold gesture walks up to the nearest `data-topic`,
+  so both routes work without extra wiring. The hold must skip anything a press already means
+  (buttons, fields, labels, the canvas) and cancel on a 12 px move, otherwise a drag or a
+  press-and-hold control opens help instead of doing its job.
+- With a hover preview the click on the mark that just opened the drawer must pin the preview,
+  not toggle it closed; on touch the same tap must toggle. Gate that on the same
+  `matchMedia('(hover: hover) and (pointer: fine)')` result that gates the preview.
 
 - A click on the chamber now has two meanings, so the zones must be visible and must not overlap: rock selects an inspector cell, the low band (the drawn 1.7 m target height) sets travel, and open air does neither. Testing rock by "is any strength left in this column" is not enough — the smooth renderer draws a sloped surface between column vertices, so hit-testing the same linear profile is what makes a crater-edge click land where the player sees rock.
 - Before the click-zone change, every chamber click set `world.target`. Any new "click does nothing" assertion must also assert `world.target` is unchanged, not just that the inspector text changed.
