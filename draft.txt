@@ -112,6 +112,9 @@ X - same but smart use brake, no need to stop to zero speed, but possible to mov
 z - auto enable/disable piston drive to keep ball engine in reasonable value enough to reach top but not more to prevent very fast ball movement
 c - auto change angle to keep upcoming ball reflection vertical up. should respect angle change speed and range
 
+autopilot should use add 2nd tier computer after available but not wait fall of ball so it has more time to move.
+2nd tier should move not only  during the descent but after bounce to move with minimal speed and save fuel
+
 ## shortcuts actions
 
 click - move platform to x autopilot
@@ -153,4 +156,18 @@ Render: The render loop reads the current mode from the single source of truth, 
 Hot path: Do not allocate closures or object literals inside the hover/pointer-move listeners; reuse preallocated scratch where needed.
 
 add warnings (overheating, empty reserve, full cargo) as highlight telemetry elements
+
+##
+
+
+make low-height garage for Commercial grader (similar like existing hole in wall but low height) : so it does not respawn but same move back and forth.
+
+make commercial grader btn always active.
+
+
+
+## game balance.
+heat and heat sink radiators balance and install engines
+dropwn to install radiators that has different mass and efficiency
+
 

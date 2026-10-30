@@ -178,14 +178,24 @@
 		const computer = root.SteamPrediction;
 		const path = computer.predict(world);
 		const kinds = computer.kinds;
-		if (path.kind !== kinds.DECK && path.kind !== kinds.GROUND) {
-			// Rock and horizon outcomes are unknown rebounds. Coasting would carry the
-			// platform away from where the ball comes back down, so until the flight is
-			// predictable again the mark tracks the ball itself, which is what a driver
-			// watching an uncertain rebound does.
-			interceptX = clampTravel(ball.x - config.pistonCentre);
+	if (path.kind !== kinds.DECK && path.kind !== kinds.GROUND) {
+		// The trajectory computer II traces the rock contact and the rebounds past
+		// it, so the strike point is known while the ball is still falling: move
+		// under it during the descent instead of waiting to see where the rebound
+		// comes down. Without it the mark tracks the ball itself, which is what a
+		// driver watching an uncertain rebound does.
+		if (root.SteamResearch.state.predictionBounces && path.kind === kinds.ROCK) {
+			interceptX = platformCentreForPiston(path.endX);
+			contactVx = path.endVx;
+			contactVy = path.endVy;
+			contactY = path.endY;
+			contactIn = path.time;
+			contactOnPiston = false;
 			return;
 		}
+		interceptX = clampTravel(ball.x - config.pistonCentre);
+		return;
+	}
 		// The reflector, not the collector, is what keeps the ball in play, so the
 		// platform is commanded to put its face centre under the mark.
 		interceptX = platformCentreForPiston(path.endX);

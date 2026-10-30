@@ -113,7 +113,7 @@
 		const extended = Boolean(root.SteamResearch && root.SteamResearch.state.predictionBounces);
 		const limit = extended ? horizon * 3 : horizon;
 		let firstKind = NONE, firstX = 0, firstY = 0, firstVx = 0, firstVy = 0, firstTime = 0, firstSurface = NO_SURFACE;
-		let available = world.battery * config.efficiency;
+		let available = world.battery * physics.engineNow().efficiency;
 		const gravity = config.ballGravity;
 		const retention = Math.sqrt(physics.retentionNow());
 		// Rock contacts are only traced while the march can reach the layer, which

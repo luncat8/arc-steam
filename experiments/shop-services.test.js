@@ -46,7 +46,7 @@ test('held brake stops without reversal or fuel and recuperates with flywheel', 
 	balanced(w);
 });
 
-test('commercial grader removes one layer in one crossing and settles 50% once', () => {
+test('commercial grader shuttles wall to wall and settles 50% at each sweep', () => {
 	const w = p.createWorld();
 	assert.equal(c.hireGrader(w), false);
 	w.platform.x = p.platformMin(); w.platform.vx = 0;
@@ -56,18 +56,23 @@ test('commercial grader removes one layer in one crossing and settles 50% once',
 	assert.ok(c.hireGrader(w));
 	assert.equal(c.hireGrader(w), false);
 	const funds = s.funds;
-	for (let i = 0; i < 240 * 17; i++) c.step(w, p.config.step, p.platformMass(w));
-	assert.equal(s.graderBot.active, false);
-	for (let i = 0; i < s.columns; i++) {
-		near(s.floorPiles[i], s.floorCellHeight * 2);
-		near(s.floorValues[i], 8);
-	}
+	// One full crossing takes 16 s at 1.5 m/s; one settlement at the far wall,
+	// then the bot keeps running (shuttles back and forth instead of respawning).
+	for (let i = 0; i < 240 * 16; i++) c.step(w, p.config.step, p.platformMass(w));
+	assert.equal(s.graderBot.active, true);
+	assert.equal(s.graderBot.direction, 1);
 	near(s.funds - funds, s.columns * 2);
+	for (let i = 0; i < s.columns; i++) near(s.floorPiles[i], s.floorCellHeight * 2);
 	const entries = s.ledger.length;
-	for (let i = 0; i < 240; i++) c.step(w, p.config.step, p.platformMass(w));
-	assert.equal(s.ledger.length, entries);
-	near(s.funds - funds, s.columns * 2);
 	assert.equal(s.ledger.at(-1).type, 'grader');
+	// The return sweep reaches the garage wall after another 16 s and settles again.
+	for (let i = 0; i < 240 * 16; i++) c.step(w, p.config.step, p.platformMass(w));
+	near(s.funds - funds, s.columns * 4);
+	for (let i = 0; i < s.columns; i++) near(s.floorPiles[i], s.floorCellHeight);
+	assert.equal(s.ledger.length, entries + 1);
+	assert.equal(s.ledger.at(-1).type, 'grader');
+	p.createWorld();
+	assert.equal(c.state.graderBot.active, false);
 });
 
 test('low rounded grader lifts a wheel, not the belly after passing between wheels', () => {

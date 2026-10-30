@@ -63,7 +63,7 @@ function study(id) {
 advance(2);
 
 test('the page boots, builds every panel, and reports live telemetry', () => {
-	assert.equal(dom.element('equipment-rows').children.length, equipment.items.length + physics.engines.length + 1);
+	assert.equal(dom.element('equipment-rows').children.length, equipment.items.length + physics.engines.length + 2);
 	assert.equal(dom.element('research-rows').children.length, research.nodes.length);
 	assert.equal(dom.element('platform-spec').children.length, 14);
 	assert.equal(dom.element('inventory-rows').children.length, ceiling.state.mineralNames.length);

@@ -21,10 +21,14 @@
 	// The grader treats only the travel-side swath: neighbours flow toward their
 	// mean and the blade shaves the top, clamped at the original floor so it
 	// cannot dig pits beneath the chassis.
-	const graderCut = 0.15;
-	const graderSmooth = 2;
-	const graderClearance = 0.5;
-	const graderSwath = 1.5;
+const graderCut = 0.15;
+const graderSmooth = 2;
+const graderClearance = 0.5;
+const graderSwath = 1.5;
+// The commercial grader's garage: a low-height door in the right wall, like the
+// left pocket but only tall enough for the low bot. The grader shuttles out of
+// it, grades a sweep, and turns around at the far wall instead of despawning.
+const garageHeight = 0.25;
 	// Impact tuning: hit point receives 2x impact energy in strength removal,
 	// falling linearly to zero across a 4.5-cell radius (1.5x of the base 3-cell radius).
 	const damageRadius = 4.5;
@@ -40,19 +44,22 @@
 	const floorPiles = new Float64Array(columns);
 	const floorHeight = new Float64Array(columns + 1);
 	const floorValues = new Float64Array(columns);
-	const graderBot = { active: false, x: 0, column: 0, value: 0, cells: 0 };
+	const graderBot = { active: false, x: 0, direction: -1, value: 0, cells: 0 };
+// Columns the blade has already cut in the current sweep; cleared at each
+// wall turnaround so the return pass grades the floor again.
+const graderCutMark = new Uint8Array(columns);
 	const botRadius = 0.7;
 	const botHeight = 0.12;
-	function hireGrader(world) {
-		const physics = root.SteamPhysics;
-		if (!world || graderBot.active || world.platform.x > physics.platformMin() + 0.2 || Math.abs(world.platform.vx) > 0.1) return false;
-		graderBot.active = true;
-		graderBot.x = 0;
-		graderBot.column = 0;
-		graderBot.value = 0;
-		graderBot.cells = 0;
-		return true;
-	}
+function hireGrader(world) {
+	const physics = root.SteamPhysics;
+	if (!world || graderBot.active || world.platform.x > physics.platformMin() + 0.2 || Math.abs(world.platform.vx) > 0.1) return false;
+	graderBot.active = true;
+	graderBot.x = width;
+	graderBot.direction = -1;
+	graderBot.value = 0;
+	graderBot.cells = 0;
+	return true;
+}
 	function botSurfaceAt(x) {
 		if (!graderBot.active) return 0;
 		const dx = x - graderBot.x;
@@ -60,29 +67,46 @@
 		const height = Math.sqrt(botRadius * botRadius - dx * dx) - (botRadius - botHeight);
 		return height > 0 ? floorAt(graderBot.x) + height : 0;
 	}
-	function stepGraderBot(world, dt) {
-		if (!graderBot.active) return;
-		graderBot.x = Math.min(width, graderBot.x + 1.5 * dt);
-		let changed = false;
-		while (graderBot.column < columns && (graderBot.column + 0.5) * cell <= graderBot.x) {
-			const column = graderBot.column++;
-			const height = floorPiles[column];
-			if (height <= 0) continue;
-			const cut = Math.min(height, floorCellHeight);
-			const value = floorValues[column] * cut / height;
-			floorValues[column] -= value;
-			floorPiles[column] -= cut;
-			graderBot.value += value;
-			graderBot.cells += cut / floorCellHeight;
-			changed = true;
-		}
-		if (changed) updateFloor();
-		if (graderBot.x < width) return;
-		graderBot.active = false;
+function stepGraderBot(world, dt) {
+	if (!graderBot.active) return;
+	const previousX = graderBot.x;
+	graderBot.x = Math.min(width, Math.max(0, graderBot.x + 1.5 * dt * graderBot.direction));
+	// Grade each column once per sweep: cut it when the blade passes its
+	// centre, in either direction. Cut marks clear at the wall turnaround so
+	// the return pass grades the floor again instead of respawning.
+	const from = Math.min(previousX, graderBot.x);
+	const to = Math.max(previousX, graderBot.x);
+	const first = Math.max(0, Math.floor(from / cell));
+	const last = Math.min(columns - 1, Math.floor(to / cell));
+	let changed = false;
+	for (let column = first; column <= last; column++) {
+		const centre = (column + 0.5) * cell;
+		if (centre < from || centre > to) continue;
+		if (graderCutMark[column]) continue;
+		const height = floorPiles[column];
+		if (height <= 0) continue;
+		const cut = Math.min(height, floorCellHeight);
+		const value = floorValues[column] * cut / height;
+		floorValues[column] -= value;
+		floorPiles[column] -= cut;
+		graderBot.value += value;
+		graderBot.cells += cut / floorCellHeight;
+		graderCutMark[column] = 1;
+		changed = true;
+	}
+	if (changed) updateFloor();
+	if (graderBot.x <= 0 || graderBot.x >= width) {
 		const credits = price(graderBot.value * 0.5);
 		funds += credits;
 		ledger.push(Object.freeze({ id: ledger.length + 1, type: 'grader', time: world.time, label: 'Commercial grader', credits, cells: graderBot.cells }));
+		graderBot.value = 0;
+		graderBot.cells = 0;
+		graderCutMark.fill(0);
+		graderBot.direction *= -1;
+		graderBot.x = Math.min(width, Math.max(0, graderBot.x));
 	}
+}
+
 	function drawGraderBot(context) {
 		if (!graderBot.active) return;
 		const base = floorAt(graderBot.x);
@@ -225,8 +249,9 @@
 		debrisMinerals.fill(0);
 		floorPiles.fill(0);
 		floorValues.fill(0);
-		graderBot.active = false;
-		graderBot.x = graderBot.column = graderBot.value = graderBot.cells = 0;
+	graderBot.active = false;
+	graderBot.x = graderBot.value = graderBot.cells = 0;
+	graderBot.direction = -1;
 		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
 			const index = row * columns + column;
 			const x = column * 0.075;
@@ -954,6 +979,7 @@
 		damageRadius, damageMultiplier, pileLimit, graderCut, graderSmooth, graderClearance, graderSwath,
 		graderBot, floorValues,
 		get shape() { return rockShape; }, heightmap, firstRow, floorPiles, floorHeight,
+		garageHeight,
 		mineralNames, mineralPrices, fuelPrice,
 		strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
 		cargoMinerals, soldMinerals,

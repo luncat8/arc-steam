@@ -54,6 +54,7 @@
 	let showPrediction = false;
 	const equipmentRows = [];
 	const engineRows = [];
+	const radiatorRows = [];
 	const researchRows = [];
 	const specValues = [];
 	const specLabels = ['Dry mass', 'Engine force', 'Top speed', 'Bounce pulse', 'Retention', 'Convective cooling', 'Brake recovery'];
@@ -126,10 +127,45 @@
 			row.engine = engine;
 			engineRows.push(row);
 		}
+		(function buildRadiators() {
+			// Radiator tiers share one installed unit: the dropdown picks a tier and
+			// Install fits it, swapping the previous tier together with its mass and
+			// exposed cooling area.
+			const container = document.createElement('div');
+			container.className = 'upgrade-row';
+			const select = document.createElement('select');
+			const options = [];
+			for (const radiator of SteamEquipment.radiators) {
+				const option = document.createElement('option');
+				option.value = radiator.id;
+				const label = radiator.name.toUpperCase() + ' · ' + priceLabel(radiator.cost) + ' · ' + radiator.radiatorArea.toFixed(2) + ' m² · ' + radiator.mass + ' kg';
+				if (option.textContent !== label) option.textContent = label;
+				options.push(option);
+				select.appendChild(option);
+			}
+			const button = document.createElement('button');
+			button.type = 'button';
+			button.textContent = 'Install';
+			const note = document.createElement('small');
+			note.className = 'requirement';
+			container.append(select, button, note);
+			ui['equipment-rows'].appendChild(container);
+			button.addEventListener('click', function () {
+				const id = select.value;
+				const ok = SteamEquipment.installRadiator(id, world);
+				if (!ok) {
+					if (!SteamEquipment.radiatorUnlocked(id)) ui['equipment-status'].textContent = 'The radiator tiers need the Heat transfer research first.';
+					else if (SteamEquipment.installedRadiator() === id) ui['equipment-status'].textContent = id.toUpperCase() + ' is already installed.';
+					else ui['equipment-status'].textContent = 'Not enough funds for the ' + id + '.';
+				}
+				refresh();
+			});
+			radiatorRows.push({ select, button, note, options, selectedIndex: -1 });
+		})();
 		const botButton = document.createElement('button');
-		botButton.textContent = 'Hire grader · one pass · receive 50% of collected value';
+		botButton.textContent = 'Hire grader · shuttles wall to wall · 50% of each sweep';
 		botButton.addEventListener('click', () => {
-			ui['equipment-status'].textContent = SteamCeiling.hireGrader(world) ? 'Grader dispatched: one layer, one crossing.' : 'Park at the left shop; only one grader can run at a time.';
+			ui['equipment-status'].textContent = window.SteamCeiling.hireGrader(world) ? 'Grader dispatched: shuttles wall to wall · 50% share of each sweep.' : 'Park at the left shop; only one grader can run at a time.';
 		});
 		ui['equipment-rows'].append(botButton);
 		for (const node of SteamResearch.nodes) {
@@ -183,6 +219,7 @@
 	function grantTestState() {
 		SteamResearch.researchAll(world);
 		SteamEquipment.installAll(world);
+		SteamEquipment.installRadiator('radiator', world, true);
 		const researched = SteamResearch.state.completed;
 		const installed = SteamEquipment.items.filter(function (item) { return SteamEquipment.isInstalled(item.id); }).length;
 		setText(ui['research-status'], 'Test mode · all ' + researched + ' technologies researched.');
@@ -244,6 +281,21 @@
 			setText(row.button, active ? 'Installed' : owned ? 'Install free' : 'Buy & install');
 			setBlocked(row.button, active || !SteamEquipment.atShop(world) || !owned && funds < row.cost && !ceiling.commune);
 			setText(row.heading, row.name.toUpperCase() + (owned ? ' · OWNED' : ' · ' + priceLabel(row.cost)));
+		}
+		for (const row of radiatorRows) {
+			const installed = SteamEquipment.installedRadiator();
+			let selectedIndex = row.selectedIndex;
+			if (selectedIndex < 0 || SteamEquipment.radiators[selectedIndex].id !== installed) {
+				selectedIndex = installed ? SteamEquipment.radiators.findIndex(radiator => radiator.id === installed) : 0;
+				row.selectedIndex = selectedIndex;
+				for (const [i, option] of row.options.entries()) option.selected = i === selectedIndex;
+			}
+			const selected = SteamEquipment.radiators[selectedIndex];
+			const unlocked = SteamEquipment.radiatorUnlocked(selected.id);
+			const blocked = installed !== null && installed === selected.id || !unlocked || funds < selected.cost && !ceiling.commune;
+			setBlocked(row.button, blocked);
+			setText(row.button, installed !== null && installed === selected.id ? 'Installed' : 'Install');
+			setText(row.note, testMode ? 'Granted by test mode · measured effects active' : ceiling.commune ? 'The commons shares it · no research needed' : unlocked ? '' : 'Needs research: Heat transfer');
 		}
 		let completed = 0;
 		for (const row of researchRows) {
@@ -403,10 +455,15 @@
 		for (let x = padMin + 0.25; x < padMax; x += 0.5) context.fillRect(x, -0.35, 0.08, 0.35);
 		context.fillRect(-pocketDepth - 0.3, 0, 0.3, pocketTop);
 		context.fillRect(-0.3, pocketTop, 0.3, config.ceiling - pocketTop);
-		context.fillRect(0, config.ceiling, config.width, 0.35);
-		context.fillRect(config.width, 0, 0.3, config.ceiling);
-		context.fillStyle = '#0a0f11';
-		context.fillRect(-pocketDepth, 0, pocketDepth, pocketTop);
+	context.fillRect(0, config.ceiling, config.width, 0.35);
+	// The right wall keeps a low garage door for the commercial grader: like
+	// the left pocket, but only as tall as the low bot, so the grader shuttles
+	// in and out instead of respawning after a single pass.
+	const garageHeight = window.SteamCeiling ? window.SteamCeiling.state.garageHeight : 0;
+	context.fillRect(config.width, garageHeight, 0.3, config.ceiling - garageHeight);
+	context.fillStyle = '#0a0f11';
+	context.fillRect(config.width, 0, 0.3, garageHeight);
+	context.fillRect(-pocketDepth, 0, pocketDepth, pocketTop);
 		if (window.SteamCeiling) window.SteamCeiling.draw(context, viewMode);
 		if (window.SteamCeiling) {
 			const ceiling = window.SteamCeiling.state;

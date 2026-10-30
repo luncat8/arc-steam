@@ -47,7 +47,7 @@
 		crankForce: 60, crankMaxSpeed: 0.8,
 		recoveryEfficiency: 0.9,
 		ambientTemperature: 20, heatCapacity: 300,
-		convectiveConductance: 1.1, radiatorConvectionCoefficient: 8,
+		convectiveConductance: 1.1, radiatorConvectionCoefficient: 50,
 		radiatingArea: 0.08, emissivity: 0.85,
 		thermalDerateStart: 85, thermalCutoff: 135,
 		// Left-wall pocket lets the asymmetric collector slide into the wall so
@@ -422,13 +422,14 @@
 		world.cooledEnergy += removed;
 	}
 
-	function spend(world, useful) {
-		const delivered = Math.min(useful, world.battery * config.efficiency);
-		const cost = delivered / config.efficiency;
-		world.battery -= cost;
-		world.heat += cost - delivered;
-		return delivered;
-	}
+function spend(world, useful) {
+	const efficiency = engine.efficiency;
+	const delivered = Math.min(useful, world.battery * efficiency);
+	const cost = delivered / efficiency;
+	world.battery -= cost;
+	world.heat += cost - delivered;
+	return delivered;
+}
 
 	function setHeldBallPose(world) {
 		const platform = world.platform;
@@ -454,7 +455,7 @@
 	}
 
 	function launchCapacity(world) {
-		return Math.min(pulseNow() * thermalFactor(world), world.battery * config.efficiency);
+		return Math.min(pulseNow() * thermalFactor(world), world.battery * engine.efficiency);
 	}
 
 	// The released ball rests on the tilted piston face, a little right of its
