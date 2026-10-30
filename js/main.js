@@ -112,26 +112,34 @@
 		return names;
 	}
 
-	function researchDepth(node) {
-		let depth = 0;
-		for (const id of node.requires) depth = Math.max(depth, researchDepth(SteamResearch.find(id)) + 1);
-		return depth;
-	}
-
-	function unlockText(node) {
-		if (node.capability === 'prediction') return 'the predicted trajectory overlay';
-		let names = '';
-		for (const item of SteamEquipment.items) if (item.requires === node.id) names += (names ? ', ' : '') + item.name;
-		return names;
-	}
-
 	(function buildUpgrades() {
 		ui['fuel-price'].textContent = String(window.SteamCeiling.state.fuelPrice);
+		const branches = {};
+		for (const node of SteamResearch.nodes) {
+			const branch = document.createElement('div');
+			branch.className = 'tree-branch';
+			const parent = node.requires.length ? branches[node.requires[0]] : ui['research-rows'];
+			parent.appendChild(branch);
+			const note = node.requires.length ? 'Needs research: ' + prerequisiteNames(node) : 'No prerequisites';
+			const row = buildRow(branch, node.name, node.cost, 0, 'Research', node.effect, note,
+				function () { buyResearch(node.id); });
+			row.row.dataset.technology = node.id;
+			row.node = node;
+			row.row.className = 'upgrade-row research-node';
+			row.freeNote = 'The commons shares every node';
+			researchRows.push(row);
+			const children = document.createElement('div');
+			children.className = 'tree-children';
+			branch.appendChild(children);
+			branches[node.id] = children;
+		}
+
 		for (const item of SteamEquipment.items) {
 			const technology = SteamResearch.find(item.requires);
-			const row = buildRow(ui['equipment-rows'], item.name, item.cost, item.mass || 0, 'Buy', item.effect,
+			const row = buildRow(item.requires ? branches[item.requires] : ui['equipment-rows'], item.name, item.cost, item.mass || 0, 'Buy', item.effect,
 				technology ? 'Needs research: ' + technology.name : 'No research needed',
 				function () { buyEquipment(item.id); });
+			row.row.dataset.item = item.id;
 			row.item = item;
 			row.freeNote = 'The commons shares it · no research needed';
 			equipmentRows.push(row);
@@ -168,8 +176,9 @@
 			button.textContent = 'Install';
 			const note = document.createElement('small');
 			note.className = 'requirement';
+			select.setAttribute('aria-label', 'Radiator upgrades');
 			container.append(select, button, note);
-			ui['equipment-rows'].appendChild(container);
+			branches.thermodynamics.appendChild(container);
 			button.addEventListener('click', function () {
 				const id = select.value;
 				const ok = SteamEquipment.installRadiator(id, world);
@@ -180,7 +189,9 @@
 				}
 				refresh();
 			});
-			radiatorRows.push({ select, button, note, options, selectedIndex: -1 });
+			const row = { select, button, note, options, selectedIndex: -1, installed: undefined };
+			select.addEventListener('change', function () { row.selectedIndex = SteamEquipment.radiators.findIndex(item => item.id === select.value); refresh(); });
+			radiatorRows.push(row);
 		})();
 		(function buildBalls() {
 			// Ball upgrades swap one installed ball: more damage but more rock
@@ -205,8 +216,9 @@
 			button.textContent = 'Install';
 			const note = document.createElement('small');
 			note.className = 'requirement';
+			select.setAttribute('aria-label', 'Ball upgrades');
 			container.append(select, button, note);
-			ui['equipment-rows'].appendChild(container);
+			branches.impact.appendChild(container);
 			button.addEventListener('click', function () {
 				const id = select.value;
 				const ok = SteamEquipment.installBall(id, world);
@@ -219,7 +231,9 @@
 				}
 				refresh();
 			});
-			ballRows.push({ select, button, note, options, selectedIndex: -1 });
+			const row = { select, button, note, options, selectedIndex: -1, installed: undefined };
+			select.addEventListener('change', function () { row.selectedIndex = SteamEquipment.balls.findIndex(item => item.id === select.value); refresh(); });
+			ballRows.push(row);
 		})();
 		commercialGraderButton = document.createElement('button');
 		commercialGraderButton.id = 'commercial-grader';
@@ -234,18 +248,6 @@
 				: 'Grader dismissed · returning to its garage with the current load.');
 		});
 		ui['equipment-rows'].append(commercialGraderButton);
-		for (const node of SteamResearch.nodes) {
-			const unlocked = unlockText(node);
-			const note = (node.requires.length ? 'Needs research: ' + prerequisiteNames(node) : 'No prerequisites') + (unlocked ? ' · unlocks ' + unlocked : '');
-			const row = buildRow(ui['research-rows'], node.name, node.cost, 0, 'Research', node.effect, note,
-				function () { buyResearch(node.id); });
-			row.node = node;
-			row.row.className = 'upgrade-row research-node';
-			row.row.dataset.depth = String(researchDepth(node));
-			row.row.style.marginLeft = researchDepth(node) * 18 + 'px';
-			row.freeNote = 'The commons shares every node' + (unlocked ? ' · unlocks ' + unlocked : '');
-			researchRows.push(row);
-		}
 		for (const label of specLabels) {
 			const term = document.createElement('dt');
 			term.textContent = label;
@@ -365,32 +367,36 @@
 		for (const row of radiatorRows) {
 			const installed = SteamEquipment.installedRadiator();
 			let selectedIndex = row.selectedIndex;
-			if (selectedIndex < 0 || SteamEquipment.radiators[selectedIndex].id !== installed) {
+			if (selectedIndex < 0 || row.installed !== installed) {
 				selectedIndex = installed ? SteamEquipment.radiators.findIndex(radiator => radiator.id === installed) : 0;
 				row.selectedIndex = selectedIndex;
+				row.installed = installed;
 				for (const [i, option] of row.options.entries()) option.selected = i === selectedIndex;
 			}
 			const selected = SteamEquipment.radiators[selectedIndex];
 			const unlocked = SteamEquipment.radiatorUnlocked(selected.id);
-			const blocked = installed !== null && installed === selected.id || !unlocked || funds < selected.cost && !ceiling.commune;
+			const owned = SteamEquipment.ownsRadiator(selected.id);
+			const blocked = installed === selected.id || !unlocked || !owned && funds < selected.cost && !ceiling.commune;
 			setBlocked(row.button, blocked);
-			setText(row.button, installed !== null && installed === selected.id ? 'Installed' : 'Install');
+			setText(row.button, installed === selected.id ? 'Installed' : owned ? 'Install free' : 'Buy & install');
 			setText(row.note, testMode ? 'Granted by test mode · measured effects active' : ceiling.commune ? 'The commons shares it · no research needed' : unlocked ? '' : 'Needs research: Heat transfer');
 		}
 		for (const row of ballRows) {
 			const installed = SteamEquipment.installedBall();
 			let selectedIndex = row.selectedIndex;
-			if (selectedIndex < 0 || SteamEquipment.balls[selectedIndex].id !== installed) {
+			if (selectedIndex < 0 || row.installed !== installed) {
 				selectedIndex = SteamEquipment.balls.findIndex(ball => ball.id === installed);
 				if (selectedIndex < 0) selectedIndex = 0;
 				row.selectedIndex = selectedIndex;
+				row.installed = installed;
 				for (const [i, option] of row.options.entries()) option.selected = i === selectedIndex;
 			}
 			const selected = SteamEquipment.balls[selectedIndex];
 			const unlocked = SteamEquipment.ballUnlocked(selected.id);
-			const blocked = installed === selected.id || !unlocked || funds < selected.cost && !ceiling.commune;
+			const owned = SteamEquipment.ownsBall(selected.id);
+			const blocked = installed === selected.id || !unlocked || !owned && funds < selected.cost && !ceiling.commune;
 			setBlocked(row.button, blocked);
-			setText(row.button, installed === selected.id ? 'Installed' : 'Install');
+			setText(row.button, installed === selected.id ? 'Installed' : owned ? 'Install free' : 'Buy & install');
 			setText(row.note, testMode ? 'Granted by test mode · measured effects active' : ceiling.commune ? 'The commons shares it · no research needed' : unlocked ? '' : 'Needs research: Impact forging');
 		}
 		let completed = 0;
@@ -412,7 +418,7 @@
 			? 'All nodes granted · effects already applied'
 			: ceiling.commune
 				? 'Free · no prerequisites · nothing is gated'
-				: 'Tree depth follows prerequisites · effects and unlocks are listed on each node.');
+				: 'Research unlocks the branches below it. Multiple prerequisites are listed on the node.');
 		setText(ui['equipment-hint'], testMode
 			? 'Every item granted · specification is live'
 			: ceiling.commune

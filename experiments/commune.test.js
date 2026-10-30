@@ -95,8 +95,16 @@ require('../js/main.js');
 function advance(count) {
 	for (let i = 0; i < count; i++) dom.frame(1000 / 60 * (i + 1));
 }
-function gearRow(id) { return dom.element('equipment-rows').children[equipment.items.findIndex(item => item.id === id)]; }
-function techRow(id) { return dom.element('research-rows').children[research.nodes.findIndex(node => node.id === id)]; }
+function findRow(root, key, id) {
+	if (root.dataset[key] === id) return root;
+	for (const child of root.children) {
+		const found = findRow(child, key, id);
+		if (found) return found;
+	}
+	return null;
+}
+function techRow(id) { return findRow(dom.element('research-rows'), 'technology', id); }
+function gearRow(id) { return findRow(dom.element('research-rows'), 'item', id) || findRow(dom.element('equipment-rows'), 'item', id); }
 
 test('the system-bar switch turns the commons on and the panels follow', () => {
 	const box = dom.element('commune');
@@ -155,7 +163,7 @@ test('the M shortcut switches the mode off again', () => {
 	assert.equal(ceiling.state.commune, false);
 	assert.equal(dom.element('commune').checked, false, 'the switch follows the shortcut');
 	assert.match(gearRow('pad').children[0].textContent, /REBOUND PAD · 250 CR/, 'the list price is back');
-	assert.match(dom.element('tech-hint').textContent, /Tree depth follows prerequisites/, 'the research tree introduction is back too');
+	assert.match(dom.element('tech-hint').textContent, /Research unlocks the branches/, 'the research tree introduction is back too');
 	assert.equal(dom.element('credits').textContent, '0.0 cr');
 	dom.key('KeyM');
 	advance(4);

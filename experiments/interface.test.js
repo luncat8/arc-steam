@@ -34,13 +34,16 @@ function advance(count) {
 		dom.frame(clock);
 	}
 }
-function row(panel, id, list) {
-	const index = list.findIndex(entry => entry.id === id);
-	assert.ok(index >= 0, 'missing ' + id);
-	return dom.element(panel).children[index];
+function findRow(root, key, id) {
+	if (root.dataset[key] === id) return root;
+	for (const child of root.children) {
+		const found = findRow(child, key, id);
+		if (found) return found;
+	}
+	return null;
 }
-function techRow(id) { return row('research-rows', id, research.nodes); }
-function gearRow(id) { return dom.element('equipment-rows').children[equipment.items.findIndex(item => item.id === id)]; }
+function techRow(id) { return findRow(dom.element('research-rows'), 'technology', id); }
+function gearRow(id) { return findRow(dom.element('research-rows'), 'item', id) || findRow(dom.element('equipment-rows'), 'item', id); }
 function buttonOf(target) { return target.children[1]; }
 function fund(cost) {
 	let guard = 0;
@@ -66,8 +69,12 @@ function study(id) {
 advance(2);
 
 test('the page boots, builds every panel, and reports live telemetry', () => {
-	assert.equal(dom.element('equipment-rows').children.length, equipment.items.length + physics.engines.length + 3);
-	assert.equal(dom.element('research-rows').children.length, research.nodes.length);
+	assert.equal(dom.element('equipment-rows').children.length, 1 + physics.engines.length + 1);
+	assert.ok(research.nodes.every(node => techRow(node.id)));
+	assert.ok(equipment.items.every(item => gearRow(item.id)));
+	assert.equal(gearRow('pad').parentElement.parentElement.children[0], techRow('materials'));
+	assert.equal(techRow('power').parentElement.parentElement.parentElement.children[0], techRow('traction'));
+	assert.match(techRow('power').children[3].textContent, /Traction motors, Heat transfer/);
 	assert.equal(dom.element('platform-spec').children.length, 20);
 	assert.equal(dom.element('inventory-rows').children.length, ceiling.state.mineralNames.length);
 	assert.match(dom.element('battery').textContent, /kJ$/);
@@ -146,7 +153,7 @@ test('locked and unaffordable upgrades say why instead of failing silently', () 
 	assert.equal(ballistics.dataset.state, 'locked');
 	buttonOf(ballistics).dispatch('click');
 	assert.match(dom.element('research-status').textContent, /stays locked until Pulse electromagnetics is researched/);
-	assert.match(ballistics.children[3].textContent, /Needs research: Pulse electromagnetics · unlocks the predicted trajectory overlay/);
+	assert.match(ballistics.children[3].textContent, /Needs research: Pulse electromagnetics/);
 	assert.match(gearRow('flywheel').children[3].textContent, /Needs research: Flywheel storage/);
 });
 
@@ -677,8 +684,8 @@ test('shop engine rows buy/install and offer free owned swaps only while parked 
 	dom.element('reset').dispatch('click');
 	advance(2);
 	const panel = dom.element('equipment-rows');
-	const hand = buttonOf(panel.children[equipment.items.length]);
-	const electric = buttonOf(panel.children[equipment.items.length + 3]);
+	const hand = buttonOf(panel.children[1]);
+	const electric = buttonOf(panel.children[4]);
 	assert.equal(hand.textContent, 'Buy & install');
 	assert.equal(hand.getAttribute('aria-disabled'), 'true');
 	fund(equipment.engineCosts.hand);

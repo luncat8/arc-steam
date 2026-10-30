@@ -263,7 +263,7 @@
 		installedDamageRadiusBonus = 0;
 	}
 
-	const api = { engineCosts, ownsEngine, atShop, buyEngine, items, radiators, radiatorUnlocked, installedRadiator, installRadiator, balls, ballEntry, ballUnlocked, installedBall, installBall, state, find, isInstalled, isUnlocked, install, grant, installAll, reset };
+	const api = { engineCosts, ownsEngine, atShop, buyEngine, items, radiators, ownsRadiator: id => ownedRadiators.has(id), radiatorUnlocked, installedRadiator, installRadiator, balls, ballEntry, ownsBall: id => ownedBalls.has(id), ballUnlocked, installedBall, installBall, state, find, isInstalled, isUnlocked, install, grant, installAll, reset };
 	root.SteamEquipment = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

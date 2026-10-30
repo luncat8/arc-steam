@@ -68,20 +68,14 @@
 			<div class="tool-drawer-head"><div><p class="eyebrow">PROGRESSION</p><h2 id="science-title">SCIENCE + SHOP</h2></div><button id="science-close" class="quiet" type="button" aria-label="Close science and shop">Close ✕</button></div>
 			<div class="tool-drawer-content">
 			<article class="tech-panel panel" data-topic="research">
-				<div class="panel-title"><span>TECHNOLOGY / RESEARCH</span><span class="panel-meta"><span id="research-progress">0 / 10</span><button id="help-research" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: technology research">?</button></span></div>
+				<div class="panel-title"><span>RESEARCH &amp; EQUIPMENT TREE</span><span class="panel-meta"><span id="research-progress">0 / 10</span><button id="help-research" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: technology research">?</button><button id="help-equipment" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: equipment and specification">?</button></span></div>
 				<div class="panel-body">
-					<p class="hint" id="tech-hint">Tree depth follows prerequisites · effects and unlocks are listed on each node.</p>
-					<div id="research-rows"></div>
+					<p class="hint" id="tech-hint">Research unlocks the branches below it. Equipment can be purchased as soon as it is unlocked.</p>
 					<p id="research-status" role="status">Sell cargo at a wall to fund research.</p>
-				</div>
-			</article>
-			<article class="equipment-panel panel" data-topic="equipment">
-				<div class="panel-title"><span>EQUIPMENT / UPGRADES</span><button id="help-equipment" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: equipment and specification">?</button></div>
-				<div class="panel-body">
-					<p class="hint" id="equipment-hint">Purchases install at once; the specification is the live result.</p>
-					<dl class="spec" id="platform-spec"></dl>
-					<div id="equipment-rows"></div>
 					<p id="equipment-status" role="status">Sell cargo at a wall to earn credits.</p>
+					<div id="research-rows" class="progression-tree"></div>
+					<section class="shop-basics"><h3>AVAILABLE WITHOUT RESEARCH</h3><div id="equipment-rows"></div></section>
+					<details class="spec-details"><summary>LIVE PLATFORM SPECIFICATION</summary><p class="hint" id="equipment-hint">Purchases install at once; the specification is the live result.</p><dl class="spec" id="platform-spec"></dl></details>
 				</div>
 			</article>
 			</div>

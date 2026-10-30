@@ -146,8 +146,6 @@ progress { width: 100%; height: 8px; accent-color: var(--amber); margin-top: 8px
 .upgrade-row select { min-width: 0; width: 100%; max-width: 100%; }
 .upgrade-row[data-state="locked"] { opacity: 0.55; }
 .upgrade-row[data-state="installed"] b, .upgrade-row[data-state="researched"] b { color: var(--accent); }
-#research-rows .research-node { position: relative; border-left: 1px solid #43565a; padding-left: 10px; }
-#research-rows .research-node::before { content: ""; position: absolute; top: 17px; left: 0; width: 8px; border-top: 1px solid #43565a; }
 .tech-panel .hint, .equipment-panel .hint { margin-top: 0; margin-bottom: 10px; }
 #research-progress, #credits { color: var(--accent); }
 #research-status, #equipment-status { font-size: 11px; }
@@ -263,3 +261,17 @@ button.help-mark:hover, button.help-mark[aria-expanded="true"] { color: #10191d;
 }
 @media (prefers-reduced-motion: reduce) { .help-drawer { transition: none; } }
 @media (max-width: 400px) { .mass-readouts { grid-template-columns: 1fr 1fr; } .spec { grid-template-columns: minmax(0, 1fr) auto; } .summary strong, .refuel strong { font-size: 16px; } .refuel { flex-wrap: wrap; } .panel-body { padding: 12px; } }
+
+/* Research and the things it unlocks share one branch; cross-branch prerequisites stay on the node. */
+.progression-tree { display: grid; gap: 12px; }
+.tree-branch { min-width: 0; }
+.tree-children { margin-left: 12px; padding-left: 12px; border-left: 1px solid #43565a; }
+.tree-children > .upgrade-row, .tree-children > .tree-branch { position: relative; }
+.tree-children > .upgrade-row::before, .tree-children > .tree-branch::before { content: ""; position: absolute; left: -12px; top: 18px; width: 9px; border-top: 1px solid #43565a; }
+.research-node { background: #1b2d30; padding: 10px; border: 1px solid #40565a; border-radius: 4px; }
+.research-node::after { content: 'RESEARCH'; grid-column: 1 / -1; grid-row: 1; color: var(--accent); font: 9px ui-monospace, monospace; letter-spacing: 1px; }
+.research-node b { grid-row: 2; }
+.research-node button { grid-row: 2; }
+.shop-basics { margin-top: 20px; border-top: 1px solid var(--line); }
+.shop-basics h3 { color: var(--accent); font: 10px ui-monospace, monospace; letter-spacing: 1px; }
+.spec-details { margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--line); }
