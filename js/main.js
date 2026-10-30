@@ -1075,6 +1075,7 @@
 	let helpPressX = 0;
 	let helpPressY = 0;
 	let helpSwipeY = -1;
+	let helpPreview = false;
 
 	function setHelpState() {
 		ui['help-drawer'].dataset.open = helpOpen ? 'true' : 'false';
@@ -1111,6 +1112,7 @@
 	}
 
 	function openHelp(id, takeFocus) {
+		helpPreview = false;
 		const topic = window.SteamHelp.find(id);
 		if (!topic) return;
 		if (helpTopic !== id) { helpTopic = id; helpLast = id; renderHelp(topic); }
@@ -1122,6 +1124,7 @@
 	function closeHelp(restoreFocus) {
 		if (!helpOpen) return;
 		helpOpen = false;
+		helpPreview = false;
 		helpTopic = '';
 		setHelpState();
 		const target = helpReturn;
@@ -1161,10 +1164,21 @@
 			// A hovering pointer has already previewed the topic, so its click pins the
 			// preview instead of closing what the pointer just opened; touch toggles.
 			trigger.addEventListener('click', function () {
-				if (hoverPointer.matches && helpOpen && helpTopic === topic.id) return;
+				if (hoverPointer.matches && helpOpen && helpTopic === topic.id) { helpPreview = false; return; }
 				toggleHelp(topic.id);
 			});
-			trigger.addEventListener('pointerenter', function () { if (hoverPointer.matches) openHelp(topic.id, false); });
+			const openPreview = function () { if (hoverPointer.matches) { openHelp(topic.id, false); helpPreview = true; } };
+			trigger.addEventListener('pointerenter', openPreview);
+			trigger.addEventListener('pointerover', openPreview);
+			const closePreview = function (event) {
+				if (!hoverPointer.matches || !helpPreview || !helpOpen || helpTopic !== topic.id) return;
+				const next = event && event.relatedTarget;
+				if (next && (((next.id && String(next.id).indexOf('help-') === 0) || (typeof next.closest === 'function' && next.closest('.help-mark'))) || (typeof next.closest === 'function' && next.closest('.help-drawer')))) return;
+				helpPreview = false;
+				closeHelp(false);
+			};
+			trigger.addEventListener('pointerout', closePreview);
+			trigger.addEventListener('pointerleave', closePreview);
 			trigger.addEventListener('focus', function () { if (helpOpen) openHelp(topic.id, false); });
 		}
 		for (const topic of helpTopics) {
@@ -1219,6 +1233,15 @@
 		});
 		ui['help-head'].addEventListener('pointerup', function () { helpSwipeY = -1; });
 		ui['help-head'].addEventListener('pointercancel', function () { helpSwipeY = -1; });
+		const closePreviewFromDrawer = function (event) {
+			if (!hoverPointer.matches || !helpPreview || !helpOpen) return;
+			const next = event && event.relatedTarget;
+			if (next && ((typeof next.closest === 'function' && next.closest('.help-drawer')) || (next.id && String(next.id).indexOf('help-') === 0) || (typeof next.closest === 'function' && next.closest('.help-mark')))) return;
+			helpPreview = false;
+			closeHelp(false);
+		};
+		ui['help-drawer'].addEventListener('pointerout', closePreviewFromDrawer);
+		ui['help-drawer'].addEventListener('pointerleave', closePreviewFromDrawer);
 		ui['help-close'].addEventListener('click', function () { closeHelp(true); });
 	}
 	bindHelp();

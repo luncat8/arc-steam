@@ -182,3 +182,15 @@ heat and heat sink radiators balance and install engines
 dropwn to install radiators that has different mass and efficiency
 
 
+## gui
+use help drawer or status bar (short) instead of text near elements.
+help drawer - open on pointer over or click. if opened by over - then out event close (no need to click to close in this case).
+
+implement status bar for constant info and current messages
+
+
+move these text from menu to status bar 
+
+Ball grounded · move over it to collect (orange temp message while ball on the ground)
+
+Park on the centre pad to refill · click low ground to travel (redish temp message while energy low on the ground)
