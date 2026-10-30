@@ -18,7 +18,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 13px 0; 
 .hint { font-size: 11px; line-height: 1.6; }
 
 /* Four rows: system bar, telemetry, play area (research | chamber | controls | inspector), economy (equipment | cargo | market). */
-main { max-width: 1920px; margin: auto; padding: 16px 2vw 24px; display: grid; gap: 12px; }
+main { max-width: 1920px; margin: auto; padding: 8px; display: grid; gap: 8px; }
 .panel { min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: #101a1e; }
 .panel-title { min-height: 44px; padding: 15px 16px; border-bottom: 1px solid var(--line); color: #a7b8ba; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #101a1e; }
 .panel-meta { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
