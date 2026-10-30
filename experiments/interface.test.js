@@ -289,7 +289,7 @@ function chamberPoint(worldX, worldY) {
 	return { clientX: (1000 - viewWidth * scale) / 2 + 1.5 * scale + worldX * scale, clientY: (420 + physics.config.ceiling * scale) / 2 + 9 - worldY * scale };
 }
 
-test('clicking rock inspects a cell and clicking low commands travel, without inspector sliders', () => {
+test('hovering rock shows its tooltip and clicking low commands travel, without inspector sliders', () => {
 	assert.equal(dom.elements.has('mineral-column'), false, 'the column slider is gone');
 	assert.equal(dom.elements.has('mineral-layer'), false, 'the layer slider is gone');
 	world.platform.x = 12; world.platform.vx = 0; world.target = NaN; world.direction = 0;
@@ -298,9 +298,13 @@ test('clicking rock inspects a cell and clicking low commands travel, without in
 	let column = 0;
 	while (column < state.columns - 1 && state.firstRow[column] >= state.rows) column++;
 	const rock = chamberPoint((column + 0.5) * state.cell, state.top - 0.05);
+	dom.element('c').dispatch('pointermove', rock);
+	assert.equal(dom.element('mineral-tooltip').hidden, false, 'the inspector appears only over rock');
 	dom.element('c').dispatch('pointerdown', rock);
 	assert.equal(dom.element('mineral-cell').textContent, 'Column ' + (column + 1) + ' / ' + state.columns + ' · Layer ' + state.rows + ' / ' + state.rows);
 	assert.ok(Number.isNaN(world.target), 'a rock click must not move the platform');
+	dom.element('c').dispatch('pointerleave');
+	assert.equal(dom.element('mineral-tooltip').hidden, true, 'leaving the canvas hides the inspector');
 	const low = chamberPoint(5, 0.5);
 	dom.element('c').dispatch('pointerdown', low);
 	assert.ok(Math.abs(world.target - 5) < 1e-6, 'the low band sets a travel target');
@@ -726,9 +730,26 @@ test('commercial grader button toggles call/dismiss and can cancel a return', ()
 	assert.equal(bot.returning, true);
 });
 
+test('telemetry cards open the market and science drawers', () => {
+	assert.equal(dom.elements.has('help-inspector'), false, 'the inspector help mark is removed');
+	assert.equal(help.find('inspector'), undefined, 'the inspector help topic is removed');
+	assert.equal(dom.element('science-drawer').hidden, true);
+	assert.equal(dom.element('market-drawer').hidden, true);
+	dom.element('science-open').dispatch('click');
+	assert.equal(dom.element('science-drawer').hidden, false, 'funds opens science and shop');
+	assert.equal(dom.element('science-open').getAttribute('aria-expanded'), 'true');
+	dom.element('market-open').dispatch('click');
+	assert.equal(dom.element('science-drawer').hidden, true);
+	assert.equal(dom.element('market-drawer').hidden, false, 'cargo storage opens market and ledger');
+	assert.equal(dom.element('market-open').getAttribute('aria-expanded'), 'true');
+	dom.key('Escape');
+	assert.equal(dom.element('market-drawer').hidden, true);
+	assert.equal(dom.element('market-open').getAttribute('aria-expanded'), 'false');
+});
+
 test('context help lives in one drawer, and the panels keep short lines only', () => {
 	// The explanations moved out of the panels, so the workspace stays compact.
-	assert.ok(dom.element('tech-hint').textContent.length < 60, dom.element('tech-hint').textContent);
+	assert.ok(dom.element('tech-hint').textContent.length < 100, dom.element('tech-hint').textContent);
 	assert.ok(dom.element('equipment-hint').textContent.length < 70, dom.element('equipment-hint').textContent);
 	for (const node of ['research-status', 'equipment-status', 'transaction-status', 'mineral-price']) assert.ok(dom.element(node).textContent.length < 120);
 	// Every topic has one mark, every mark points at the drawer, and the index

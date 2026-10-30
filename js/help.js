@@ -31,9 +31,9 @@
 				['Escape', 'Close this help drawer'],
 				['Wheel over chamber', 'Tilt the piston about 4° a notch'],
 				['Drag in open air', 'Tilt the piston; left or up raises the angle'],
-				['Click rock', 'Inspect that cell'],
+				['Hover over rock', 'Inspect its mix, value and remaining strength'],
 				['Click low ground', 'Set a travel target'],
-				['Hover or tap rock view', 'Change what the rock is coloured by']
+				['Show drawer', 'Change what the rock is coloured by']
 			]
 		},
 		{
@@ -165,16 +165,6 @@
 				'Touching either SELL wall sells the whole load automatically. The panel breaks cargo and lifetime sales down by mineral, and the ledger records every sale with its mix, every purchase, every research payment and every recharge.',
 				'The emergency resupply imports energy instantly at the price shown, buying only what the funds cover; the centre pad remains the free route.',
 				'Sales, spending and imports all move one funds balance, so the ledger and the funds card always agree.'
-			]
-		},
-		{
-			id: 'inspector',
-			label: 'Inspector',
-			title: 'Mineral inspector',
-			text: [
-				'Click visible rock to inspect that cell. The outline marks the selection; the readout names the column and layer, the remaining fracture energy, the mineral mix and the cell value.',
-				'Strength is the fracture energy still needed, in joules, and a depleted cell emits material only once.',
-				'Rock view shows minerals, elemental R/G/B, price or remaining strength; hover a mode, tap it, or use the arrow keys while one has focus.'
 			]
 		},
 		{

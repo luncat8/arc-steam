@@ -14,29 +14,22 @@
 			<button id="reset" class="quiet">New game ↺</button>
 			<div class="system-options"><label for="shape">ROCK SHAPE <select id="shape" autocomplete="off"><option value="smooth" selected>Smooth heightmap</option><option value="square">Square cells</option></select></label><label class="commune-switch" for="commune"><input type="checkbox" id="commune" autocomplete="off"> COMMUNISM MODE <i>ALL FREE · M</i></label><label class="test-switch" for="test-mode"><input type="checkbox" id="test-mode" autocomplete="off"> TEST MODE <i>RESEARCH + INSTALL ALL</i></label><button id="help-modes" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: communism and test mode">?</button><button id="help-keys" class="help-open" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-keyshortcuts="H">HELP <span>H</span></button></div>
 		</header>
-		<section class="telemetry panel" aria-label="System telemetry"><article id="reserve-telemetry"><span>ENERGY RESERVE</span><strong id="battery">—</strong><small id="reserve-note">Centre pad refills free at the source’s reload rate · emergency import in the market</small></article><article id="cargo-telemetry"><span>CARGO STORAGE</span><strong id="cargo">—</strong><small id="cargo-note">100 cells maximum · cargo adds mass</small></article><article><span>PLATFORM MASS</span><strong id="platform-mass">—</strong><small>Dry chassis + cargo + held ball</small></article><article><span>FUNDS / SOLD</span><strong id="funds">—</strong><small id="funds-note">Automatic sale at either wall</small></article><article><span>BALL ENERGY</span><strong id="ball-energy">—</strong><small>Kinetic + gravitational</small></article><article><span>STORED THERMAL ENERGY</span><strong id="heat">—</strong><small>Cooling exported <span id="cooled">—</span></small></article><article id="thermal-telemetry"><span>MACHINERY TEMPERATURE</span><strong id="temperature">—</strong><small id="thermal-status">Drive output 100% · cooling normally</small></article><article><span>ENERGY BALANCE ERROR</span><strong id="error">—</strong><small>Includes heat, cooling, rock & cargo</small></article></section>
+		<section class="telemetry panel" aria-label="System telemetry"><article id="reserve-telemetry"><span>ENERGY RESERVE</span><strong id="battery">—</strong><small id="reserve-note">Centre pad refills free at the source’s reload rate · emergency import in the market</small></article><article id="cargo-telemetry"><button id="market-open" class="telemetry-action" type="button" aria-controls="market-drawer" aria-expanded="false" aria-label="Open Market and Ledger"><span>CARGO STORAGE</span><strong id="cargo">—</strong><small id="cargo-note">100 cells maximum · cargo adds mass · open market</small></button></article><article><span>PLATFORM MASS</span><strong id="platform-mass">—</strong><small>Dry chassis + cargo + held ball</small></article><article><button id="science-open" class="telemetry-action" type="button" aria-controls="science-drawer" aria-expanded="false" aria-label="Open Science and Shop"><span>FUNDS / SOLD</span><strong id="funds">—</strong><small id="funds-note">Automatic sale · open science and shop</small></button></article><article><span>BALL ENERGY</span><strong id="ball-energy">—</strong><small>Kinetic + gravitational</small></article><article><span>STORED THERMAL ENERGY</span><strong id="heat">—</strong><small>Cooling exported <span id="cooled">—</span></small></article><article id="thermal-telemetry"><span>MACHINERY TEMPERATURE</span><strong id="temperature">—</strong><small id="thermal-status">Drive output 100% · cooling normally</small></article><article><span>ENERGY BALANCE ERROR</span><strong id="error">—</strong><small>Includes heat, cooling, rock & cargo</small></article></section>
 		<section class="workspace">
-			<article class="tech-panel panel" data-topic="research">
-				<div class="panel-title"><span>TECHNOLOGY / RESEARCH</span><span class="panel-meta"><span id="research-progress">0 / 6</span><button id="help-research" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: technology research">?</button></span></div>
-				<div class="panel-body">
-					<p class="hint" id="tech-hint">Pay once, effect applies at once.</p>
-					<div id="research-rows"></div>
-					<p id="research-status" role="status">Sell cargo at a wall to fund research.</p>
-				</div>
-			</article>
 			<section class="mine-panel panel" aria-label="Chamber view" data-topic="chamber">
-				<div class="canvas-wrap"><canvas id="c" tabindex="0" aria-label="Side view of a bouncing ball and movable mining platform"></canvas></div>
+				<div class="canvas-wrap"><canvas id="c" tabindex="0" aria-label="Side view of a bouncing ball and movable mining platform"></canvas>
+					<aside id="mineral-tooltip" class="mineral-tooltip" role="tooltip" hidden>
+						<strong id="mineral-cell">—</strong>
+						<strong id="mineral-strength">—</strong>
+						<progress id="strength-meter" max="1" value="1" aria-label="Remaining cell strength"></progress>
+						<p id="mineral-composition">—</p><p id="mineral-price">—</p>
+					</aside>
+				</div>
 				<div class="mine-footer">
 					<span><i class="key-color collector"></i> COLLECTOR · CATCH & STORE</span>
 					<span><i class="key-color reflector"></i> REFLECTOR PISTON · POWERED BOUNCE</span>
 					<span><i class="key-color pad"></i> CHARGE PAD · 3 kW</span>
-					<div class="view-switch"><span id="view-label">ROCK VIEW</span><div id="view-modes" class="view-modes" role="radiogroup" aria-labelledby="view-label">
-						<label><input type="radio" name="rock-view" value="minerals" autocomplete="off" checked>Minerals</label>
-						<label><input type="radio" name="rock-view" value="elements" autocomplete="off">Elements R/G/B</label>
-						<label><input type="radio" name="rock-view" value="price" autocomplete="off">Price</label>
-						<label><input type="radio" name="rock-view" value="strength" autocomplete="off">Remain strength</label>
-					</div></div>
-					<button id="help-chamber" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: the chamber and its markers">?</button>
+					<div class="view-switch"><span id="view-label">ROCK VIEW</span><div id="view-modes" class="view-modes" role="radiogroup" aria-labelledby="view-label"><label><input type="radio" name="rock-view" value="minerals" autocomplete="off" checked>Minerals</label><label><input type="radio" name="rock-view" value="elements" autocomplete="off">Elements R/G/B</label><label><input type="radio" name="rock-view" value="price" autocomplete="off">Price</label><label><input type="radio" name="rock-view" value="strength" autocomplete="off">Remaining strength</label></div><button id="help-chamber" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: the chamber and its markers">?</button></div>
 				</div>
 			</section>
 			<aside class="controls-panel panel" data-topic="autopilot">
@@ -60,29 +53,6 @@
 					<p class="hint">Live recovery advice shows in the status bar below.</p>
 				</div>
 			</aside>
-			<article class="mineral-panel panel" data-topic="inspector">
-				<div class="panel-title"><span>MINERAL INSPECTOR</span><button id="help-inspector" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: mineral inspector">?</button></div>
-				<div class="panel-body">
-					<p class="eyebrow">SELECTED CELL</p>
-					<strong id="mineral-cell">—</strong>
-					<strong id="mineral-strength">—</strong>
-					<progress id="strength-meter" max="1" value="1" aria-label="Remaining cell strength"></progress>
-					<p id="mineral-composition">—</p>
-					<p id="mineral-price">—</p>
-					<p class="hint">Click a rock cell to inspect it.</p>
-				</div>
-			</article>
-		</section>
-		<section class="economy" aria-label="Equipment, cargo and market">
-			<article class="equipment-panel panel" data-topic="equipment">
-				<div class="panel-title"><span>EQUIPMENT / UPGRADES</span><button id="help-equipment" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: equipment and specification">?</button></div>
-				<div class="panel-body">
-					<p class="hint" id="equipment-hint">Purchases install at once; the specification is the live result.</p>
-					<dl class="spec" id="platform-spec"></dl>
-					<div id="equipment-rows"></div>
-					<p id="equipment-status" role="status">Sell cargo at a wall to earn credits.</p>
-				</div>
-			</article>
 			<article class="cargo-panel panel" data-topic="cargo">
 				<div class="panel-title"><span>CARGO / STORAGE</span><button id="help-cargo" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: cargo and storage">?</button></div>
 				<div class="panel-body">
@@ -92,6 +62,33 @@
 					<p class="hint">100 cells maximum · cargo adds mass · sell at a SELL wall</p>
 				</div>
 			</article>
+		</section>
+
+		<aside id="science-drawer" class="tool-drawer science-drawer" aria-labelledby="science-title" hidden>
+			<div class="tool-drawer-head"><div><p class="eyebrow">PROGRESSION</p><h2 id="science-title">SCIENCE + SHOP</h2></div><button id="science-close" class="quiet" type="button" aria-label="Close science and shop">Close ✕</button></div>
+			<div class="tool-drawer-content">
+			<article class="tech-panel panel" data-topic="research">
+				<div class="panel-title"><span>TECHNOLOGY / RESEARCH</span><span class="panel-meta"><span id="research-progress">0 / 10</span><button id="help-research" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: technology research">?</button></span></div>
+				<div class="panel-body">
+					<p class="hint" id="tech-hint">Tree depth follows prerequisites · effects and unlocks are listed on each node.</p>
+					<div id="research-rows"></div>
+					<p id="research-status" role="status">Sell cargo at a wall to fund research.</p>
+				</div>
+			</article>
+			<article class="equipment-panel panel" data-topic="equipment">
+				<div class="panel-title"><span>EQUIPMENT / UPGRADES</span><button id="help-equipment" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: equipment and specification">?</button></div>
+				<div class="panel-body">
+					<p class="hint" id="equipment-hint">Purchases install at once; the specification is the live result.</p>
+					<dl class="spec" id="platform-spec"></dl>
+					<div id="equipment-rows"></div>
+					<p id="equipment-status" role="status">Sell cargo at a wall to earn credits.</p>
+				</div>
+			</article>
+			</div>
+		</aside>
+		<aside id="market-drawer" class="tool-drawer market-drawer" aria-labelledby="market-title" hidden>
+			<div class="tool-drawer-head"><div><p class="eyebrow">CARGO & SALES</p><h2 id="market-title">MARKET / LEDGER</h2></div><button id="market-close" class="quiet" type="button" aria-label="Close market and ledger">Close ✕</button></div>
+			<div class="tool-drawer-content">
 			<article class="market-panel panel" data-topic="market">
 				<div class="panel-title"><span>MARKET / LEDGER</span><span class="panel-meta"><span id="credits">0.0 cr</span><button id="help-market" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: market and ledger">?</button></span></div>
 				<div class="panel-body">
@@ -102,7 +99,9 @@
 					<details open><summary>Transaction ledger <span id="transaction-count">(0)</span></summary><ol id="ledger" reversed aria-label="Latest eight transactions"></ol></details>
 				</div>
 			</article>
-		</section>
+			</div>
+		</aside>
+
 	</main>
 	<footer class="status-bar" id="status-bar" aria-label="Status bar">
 		<div class="status-facts" aria-label="Reserve, cargo and temperature">

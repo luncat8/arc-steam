@@ -40,44 +40,43 @@ async function main() {
 		page.on('pageerror', error => errors.push(error.message));
 		await page.goto(process.env.TEST_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href);
 		await page.waitForFunction(() => document.getElementById('clock').textContent !== '0.0 s');
-		// Four rows: system bar, full-width telemetry, research | chamber | controls | inspector, equipment | cargo | market.
+		// Cargo | chamber | controls share the workspace; telemetry cards lead to drawers.
 		assert.deepEqual(await page.evaluate(() => {
-			const rows = Array.from(document.querySelector('main').children, node => node.className);
-			const centres = ['.tech-panel', '.mine-panel', '.controls-panel', '.mineral-panel', '.equipment-panel', '.cargo-panel', '.market-panel']
-				.map(selector => document.querySelector(selector).getBoundingClientRect());
-			const telemetry = document.querySelector('.telemetry').getBoundingClientRect();
-			const workspace = document.querySelector('.workspace').getBoundingClientRect();
+			const box = selector => document.querySelector(selector).getBoundingClientRect();
+			const cargo = box('.cargo-panel');
+			const chamber = box('.mine-panel');
+			const controls = box('.controls-panel');
+			const telemetry = box('.telemetry');
+			const workspace = box('.workspace');
 			return [
-				rows,
-				centres.slice(0, 4).every((box, i) => i === 0 || (box.left > centres[i - 1].left && Math.abs(box.top - centres[0].top) < 1)),
-				centres.slice(4).every((box, i) => i === 0 || (box.left > centres[i + 3].left && Math.abs(box.top - centres[4].top) < 1)),
-				centres[4].top > centres[1].bottom,
+				cargo.left < chamber.left && Math.abs(cargo.top - chamber.top) < 1,
+				chamber.left < controls.left && Math.abs(controls.top - chamber.top) < 1,
+				document.getElementById('market-drawer').hidden,
 				Math.abs(telemetry.width - workspace.width) < 1,
 				getComputedStyle(document.querySelector('.telemetry strong')).fontSize
 			];
-		}), [['system-bar panel', 'telemetry panel', 'workspace', 'economy'], true, true, true, true, '17px']);
-		// Side columns take the chamber's height and scroll instead of stretching the row.
-		assert.equal(await page.evaluate(() => {
-			const chamber = document.querySelector('.mine-panel').getBoundingClientRect().height;
-			return ['.tech-panel', '.controls-panel', '.mineral-panel'].every(selector => Math.abs(document.querySelector(selector).getBoundingClientRect().height - chamber) < 1);
-		}), true);
-		// View mode: hover with a fine pointer or click; a paused chamber still redraws on change.
+		}), [true, true, true, true, '17px']);
+		// Side panels have independent scroll limits instead of setting canvas height.
+		assert.equal(await page.evaluate(() => ['.cargo-panel', '.controls-panel'].every(selector => getComputedStyle(document.querySelector(selector)).maxHeight !== 'none')), true);
+		// Rock view modes stay visible beneath the canvas and only change display.
 		await page.locator('#pause').click();
 		const pausedImage = await page.locator('#c').evaluate(canvas => canvas.toDataURL());
 		await page.waitForTimeout(100);
 		assert.equal(await page.locator('#c').evaluate(canvas => canvas.toDataURL()), pausedImage, 'a paused chamber is stable');
+		// View mode: hover with a fine pointer or click; a paused chamber still redraws on change.
 		await page.locator('#view-modes label', { hasText: 'Price' }).hover();
 		assert.equal(await page.locator('#view-modes input[value="price"]').isChecked(), true);
 		await page.waitForTimeout(50);
 		const priceImage = await page.locator('#c').evaluate(canvas => canvas.toDataURL());
 		assert.notEqual(priceImage, pausedImage, 'hovering redraws the paused chamber');
-		await page.locator('#view-modes label', { hasText: 'Remain strength' }).click();
+		await page.locator('#view-modes label', { hasText: 'Remaining strength' }).click();
 		assert.equal(await page.locator('#view-modes input[value="strength"]').isChecked(), true);
 		await page.waitForTimeout(50);
 		assert.notEqual(await page.locator('#c').evaluate(canvas => canvas.toDataURL()), priceImage);
 		await page.locator('#view-modes input[value="strength"]').focus();
 		await page.keyboard.press('ArrowRight');
 		assert.equal(await page.locator('#view-modes input[value="minerals"]').isChecked(), true, 'arrow keys cycle the radios');
+		await page.locator('#science-open').click();
 		await page.locator('#pause').click();
 		const nodeCount = await page.evaluate(() => SteamResearch.nodes.length);
 		assert.equal(await page.locator('#research-rows .upgrade-row').count(), nodeCount);
@@ -143,11 +142,8 @@ async function main() {
 		await page.locator('#shape').selectOption('square');
 		assert.equal(await page.locator('#shape').inputValue(), 'square');
 		await page.locator('#shape').selectOption('smooth');
-		// The inspector follows clicks now: sliders are gone, and the low band
-		// commands travel while open air between the zones does nothing.
+		// Mineral data is a hover tooltip, not a permanent inspector panel.
 		assert.equal(await page.locator('#mineral-column, #mineral-layer').count(), 0, 'inspector sliders removed');
-		assert.match(await page.locator('#mineral-cell').textContent(), /^Column \d+ \/ 192 · Layer \d+ \/ 16$/);
-		assert.match(await page.locator('#mineral-strength').textContent(), /J/);
 		assert.equal(await page.locator('#transaction-count').textContent(), '(0)');
 		assert.match(await page.locator('#reserve-note').textContent(), /Centre pad|Reserve full|Charging/);
 		assert.match(await page.locator('.mine-footer').textContent(), /CHARGE PAD · 3 kW/);
@@ -162,10 +158,13 @@ async function main() {
 		// The force-clicks above scrolled the economy row into view, which can
 		// push the chamber's top above the viewport; a chamber point computed
 		// from a bounding box up there clicks nothing. Scroll back first.
+		await page.locator('#science-close').click();
 		await page.locator('#c').scrollIntoViewIfNeeded();
-		const inspected = await page.locator('#mineral-cell').textContent();
-		await chamberClick(page, 12, 14.5);
-		assert.notEqual(await page.locator('#mineral-cell').textContent(), inspected, 'a rock click moves the inspector');
+		const rockPoint = await chamberPoint(page, 12, 14.5);
+		await page.mouse.move(rockPoint.x, rockPoint.y);
+		assert.equal(await page.locator('#mineral-tooltip').isVisible(), true, 'hovering a visible cell shows its tooltip');
+		assert.match(await page.locator('#mineral-cell').textContent(), /^Column \d+ \/ 192 · Layer \d+ \/ 16$/);
+		assert.match(await page.locator('#mineral-strength').textContent(), /J/);
 		await page.waitForTimeout(300);
 		assert.equal(await page.locator('#motion').textContent(), '0.00 m/s', 'a rock click does not command travel');
 		await chamberClick(page, 5, 0.5);
@@ -276,7 +275,7 @@ async function main() {
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.waitForTimeout(100);
 		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-		assert.equal(await page.evaluate(() => ['.tech-panel', '.controls-panel', '.mineral-panel'].every(selector => document.querySelector(selector).getBoundingClientRect().height > 200)), true, 'stacked panels keep their content height');
+		assert.equal(await page.evaluate(() => ['.mine-panel', '.controls-panel', '.cargo-panel'].every(selector => document.querySelector(selector).getBoundingClientRect().height > 200)), true, 'stacked panels keep their content height');
 		assert.deepEqual(errors, []);
 		// Touch-only devices keep the view menu click-only. The touch page must be in
 		// front: a background page throttles its animation frames, and an unthrottled
@@ -309,7 +308,7 @@ async function main() {
 		assert.equal(await touch.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the sheet does not overflow');
 		await touch.locator('#help-close').tap();
 		assert.equal(await touch.evaluate(() => document.getElementById('help-drawer').dataset.open), 'false');
-		console.log('PASS: startup, four-row layout, view-mode hover/click/arrow keys with paused redraw and touch gating, drive on by default and toggling (Space/Q without pressing GUI controls), piston tilt by slider, chamber wheel and an inverted open-air drag, keyboard force, pause/reset, shape selector, inspector click without sliders, rock-versus-low click zones, target travel, centre pad note, research/equipment gating, communism mode with free prices and waived gates, ledger, autopilot checkboxes with X/Z/C shortcuts and manual overrides, context help drawer (hover preview, click pin, H/Escape, touch tap and bottom sheet, held panel), narrow layout; no page errors.');
+		console.log('PASS: startup, cargo/chamber/controls layout, always-visible rock view modes, cargo-to-market and funds-to-science drawers, view-mode hover/click/arrow keys with paused redraw and touch gating, drive on by default and toggling (Space/Q without pressing GUI controls), piston tilt by slider, chamber wheel and an inverted open-air drag, keyboard force, pause/reset, shape selector, rock-hover tooltip without inspector panel, rock-versus-low click zones, target travel, centre pad note, research/equipment gating, communism mode with free prices and waived gates, ledger, autopilot checkboxes with X/Z/C shortcuts and manual overrides, context help drawer (hover preview, click pin, H/Escape, touch tap and bottom sheet, held panel), narrow layout; no page errors.');
 	} finally {
 		await browser.close();
 	}

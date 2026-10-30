@@ -17,7 +17,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 13px 0; 
 .eyebrow { color: var(--accent); }
 .hint { font-size: 11px; line-height: 1.6; }
 
-/* Four rows: system bar, telemetry, play area (research | chamber | controls | inspector), economy (equipment | cargo | market). */
+/* System, telemetry, chamber workspace and market; science and view controls live in drawers. */
 main { max-width: 1920px; margin: auto; padding: 8px; display: grid; gap: 8px; }
 .panel { min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: #101a1e; }
 .panel-title { min-height: 44px; padding: 15px 16px; border-bottom: 1px solid var(--line); color: #a7b8ba; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #101a1e; }
@@ -43,6 +43,12 @@ main { max-width: 1920px; margin: auto; padding: 8px; display: grid; gap: 8px; }
 
 .telemetry { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 1px; overflow: hidden; background: var(--line); }
 .telemetry article { position: relative; min-width: 0; padding: 10px 14px 11px; background: #0c1215; }
+.telemetry article:has(.telemetry-action) { padding: 0; }
+.telemetry-action { display: block; width: 100%; height: 100%; padding: 10px 14px 11px; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.telemetry-action:hover { background: #111d20; }
+#market-open::after, #science-open::after { display: block; margin-top: 4px; color: var(--accent); font: 8px ui-monospace, monospace; letter-spacing: 0.7px; }
+#market-open::after { content: "OPEN MARKET ↗"; }
+#science-open::after { content: "OPEN SCIENCE + SHOP ↗"; }
 .telemetry span { font: 9px ui-monospace, monospace; color: #94a8ac; letter-spacing: 1px; }
 .telemetry strong { display: block; font: 17px ui-monospace, monospace; margin: 6px 0 4px; }
 .telemetry small { font-size: 10px; color: #71868a; }
@@ -75,11 +81,10 @@ main { max-width: 1920px; margin: auto; padding: 8px; display: grid; gap: 8px; }
 .status-message[data-tone="danger"] { color: var(--danger); border-left-color: var(--danger); }
 .status-message[hidden] { display: none; }
 
-.workspace { display: grid; gap: 12px; grid-template-columns: 260px minmax(0, 1fr) 250px 210px; grid-template-areas: "tech mine controls inspector"; }
-.tech-panel { grid-area: tech; }
+.workspace { display: grid; gap: 12px; grid-template-columns: 260px minmax(0, 1fr) 250px; grid-template-areas: "cargo mine controls"; }
+.cargo-panel { grid-area: cargo; }
 .mine-panel { grid-area: mine; display: flex; flex-direction: column; }
 .controls-panel { grid-area: controls; }
-.mineral-panel { grid-area: inspector; }
 /* Ratio matches the chamber's 25.5 × 15 m view plus the renderer's margins, so the canvas wastes little height. */
 .canvas-wrap { position: relative; flex: 1 0 auto; aspect-ratio: 1.5; min-height: 420px; max-height: 74vh; background: #10191d; border-radius: 6px 6px 0 0; overflow: hidden; }
 canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
@@ -89,7 +94,8 @@ canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 .collector { background: var(--amber); }
 .reflector { background: var(--accent); }
 .pad { background: var(--power); }
-.view-switch { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.view-switch { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.drawer-trigger { padding: 7px 10px; font: 9px ui-monospace, monospace; letter-spacing: 0.8px; background: #162226; }
 .view-modes { display: flex; flex-wrap: wrap; border: 1px solid var(--control-line); border-radius: 4px; overflow: hidden; }
 .view-modes label { position: relative; padding: 6px 10px; font: 9px ui-monospace, monospace; letter-spacing: 1px; color: #94a8ac; cursor: pointer; user-select: none; }
 .view-modes label + label { border-left: 1px solid var(--control-line); }
@@ -121,11 +127,12 @@ canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 .eyebrow-row .eyebrow { margin: 0; }
 .controls > .eyebrow-row:first-child { margin-top: 0; }
 
-#mineral-cell { display: block; margin-bottom: 10px; font: 11px ui-monospace, monospace; letter-spacing: 0.4px; color: var(--accent); }
-.mineral-panel .eyebrow { margin: 0 0 5px; }
-#mineral-strength { display: block; font: 14px ui-monospace, monospace; line-height: 1.6; }
-progress { width: 100%; height: 8px; accent-color: var(--amber); margin-top: 12px; }
-#mineral-composition, #mineral-price { font-size: 12px; }
+#mineral-cell { display: block; margin-bottom: 8px; font: 11px ui-monospace, monospace; letter-spacing: 0.4px; color: var(--accent); }
+#mineral-strength { display: block; font: 13px ui-monospace, monospace; line-height: 1.5; }
+progress { width: 100%; height: 8px; accent-color: var(--amber); margin-top: 8px; }
+#mineral-composition, #mineral-price { margin: 7px 0 0; font-size: 11px; line-height: 1.45; }
+.mineral-tooltip { position: absolute; z-index: 4; width: 260px; padding: 12px; border: 1px solid #506166; border-radius: 5px; background: #0b1416f2; box-shadow: 0 8px 24px #0009; pointer-events: none; }
+.mineral-tooltip[hidden] { display: none; }
 
 /* Equipment and research rows share one upgrade-row layout. */
 .upgrade-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
@@ -139,11 +146,13 @@ progress { width: 100%; height: 8px; accent-color: var(--amber); margin-top: 12p
 .upgrade-row select { min-width: 0; width: 100%; max-width: 100%; }
 .upgrade-row[data-state="locked"] { opacity: 0.55; }
 .upgrade-row[data-state="installed"] b, .upgrade-row[data-state="researched"] b { color: var(--accent); }
+#research-rows .research-node { position: relative; border-left: 1px solid #43565a; padding-left: 10px; }
+#research-rows .research-node::before { content: ""; position: absolute; top: 17px; left: 0; width: 8px; border-top: 1px solid #43565a; }
 .tech-panel .hint, .equipment-panel .hint { margin-top: 0; margin-bottom: 10px; }
 #research-progress, #credits { color: var(--accent); }
 #research-status, #equipment-status { font-size: 11px; }
 
-.economy { display: grid; gap: 12px; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+.economy { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); align-items: start; }
 #equipment-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); column-gap: 20px; }
 #equipment-rows .upgrade-row { border-bottom: 1px solid var(--line); }
 .spec { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr) auto); gap: 3px 12px; margin: 0 0 6px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 4px; background: #0c1215; }
@@ -169,6 +178,21 @@ thead { color: var(--muted); }
 details { font-size: 11px; color: var(--muted); line-height: 1.8; }
 summary { cursor: pointer; }
 #ledger { padding-left: 25px; margin: 6px 0 0; }
+
+/* Progress and display drawers keep detailed controls off the active canvas. */
+.tool-drawer {
+	position: fixed; z-index: 25; top: 12px; right: 12px; bottom: 48px; display: flex; flex-direction: column; gap: 12px;
+	width: min(620px, calc(100vw - 24px)); padding: 14px; border: 1px solid var(--line); border-radius: 7px;
+	background: #0e171af5; box-shadow: 0 18px 48px #000a;
+}
+.tool-drawer[hidden] { display: none; }
+.tool-drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.tool-drawer-head .eyebrow { margin: 0 0 4px; }
+.tool-drawer-head h2 { margin: 0; color: #dce6e4; font: 600 14px ui-monospace, monospace; letter-spacing: 1px; }
+.tool-drawer-content { min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 12px; }
+.tool-drawer-content > .panel { overflow: visible; }
+.tool-drawer-content > .panel .panel-title { position: sticky; top: 0; z-index: 1; }
+.science-drawer .tech-panel .panel-body, .science-drawer .equipment-panel .panel-body { padding: 12px; }
 
 /* Context help: the panels keep short status lines and every ? mark, held panel
    or shortcut opens the same drawer with the full explanation. */
@@ -205,15 +229,14 @@ button.help-mark:hover, button.help-mark[aria-expanded="true"] { color: #10191d;
 .help-index button[data-active="true"] { color: var(--accent); border-color: var(--accent); background: #16241c; }
 .help-foot { margin: 0; font: 9px ui-monospace, monospace; letter-spacing: 0.6px; line-height: 1.6; color: #71868a; }
 
-/* Side columns next to the chamber take its height instead of setting it, and scroll inside. */
-@media (min-width: 761px) { .controls-panel { contain: size; overflow-y: auto; } .controls-panel .panel-title { position: sticky; top: 0; z-index: 1; } }
-@media (min-width: 1280px) { .tech-panel, .mineral-panel { contain: size; overflow-y: auto; } .tech-panel .panel-title, .mineral-panel .panel-title { position: sticky; top: 0; z-index: 1; } }
-/* Below the four-column width the chamber keeps the row; research and the inspector move under it. */
+/* Side panels scroll independently and do not dictate the canvas height. */
+@media (min-width: 761px) {
+	.controls-panel, .cargo-panel { max-height: 74vh; overflow-y: auto; }
+	.controls-panel .panel-title, .cargo-panel .panel-title { position: sticky; top: 0; z-index: 1; }
+}
 @media (max-width: 1279px) {
 	.telemetry { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-	.workspace { grid-template-columns: minmax(0, 1fr) 260px; grid-template-areas: "mine controls" "tech inspector"; }
-	.economy { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-	.equipment-panel { grid-column: 1 / -1; }
+	.workspace { grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.8fr); grid-template-areas: "cargo mine" "controls controls"; }
 }
 @media (max-width: 760px) {
 	/* On a phone the messages matter more than the facts, so they wrap under a smaller fact row. */
@@ -227,13 +250,15 @@ button.help-mark:hover, button.help-mark[aria-expanded="true"] { color: #10191d;
 	.system-options select { margin-left: 4px; max-width: 132px; }
 	.telemetry { grid-template-columns: 1fr 1fr; }
 	.telemetry strong { font-size: 13px; }
-	.workspace { grid-template-columns: minmax(0, 1fr); grid-template-areas: "mine" "controls" "inspector" "tech"; }
+	.workspace { grid-template-columns: minmax(0, 1fr); grid-template-areas: "mine" "controls" "cargo"; }
 	.canvas-wrap { aspect-ratio: auto; height: 320px; min-height: 0; }
 	.view-switch { margin-left: 0; }
+	.mine-footer { gap: 8px 12px; }
+	.drawer-trigger { padding: 7px 8px; }
 	.economy { grid-template-columns: minmax(0, 1fr); }
-}
-@media (max-width: 760px) {
-	/* A touch screen gets a bottom sheet, so the chamber and the ? marks stay reachable. */
+	.tool-drawer { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 84vh; border-radius: 10px 10px 0 0; }
+	.mineral-tooltip { width: min(260px, calc(100% - 16px)); }
+	#mineral-price { overflow-wrap: anywhere; }
 	.help-drawer { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 76vh; border-left: 0; border-top: 1px solid var(--line); border-radius: 10px 10px 0 0; box-shadow: 0 -20px 42px #0009; transform: translateY(102%); }
 }
 @media (prefers-reduced-motion: reduce) { .help-drawer { transition: none; } }

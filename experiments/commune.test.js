@@ -155,7 +155,7 @@ test('the M shortcut switches the mode off again', () => {
 	assert.equal(ceiling.state.commune, false);
 	assert.equal(dom.element('commune').checked, false, 'the switch follows the shortcut');
 	assert.match(gearRow('pad').children[0].textContent, /REBOUND PAD · 250 CR/, 'the list price is back');
-	assert.match(dom.element('tech-hint').textContent, /Pay once/, 'the panel introduction is back too');
+	assert.match(dom.element('tech-hint').textContent, /Tree depth follows prerequisites/, 'the research tree introduction is back too');
 	assert.equal(dom.element('credits').textContent, '0.0 cr');
 	dom.key('KeyM');
 	advance(4);

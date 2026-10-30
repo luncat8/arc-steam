@@ -12,7 +12,7 @@
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
 		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger', 'equipment-rows', 'equipment-status', 'equipment-hint',
 		'refuel', 'refuel-cost', 'fuel-price', 'reserve-note', 'cargo-note',
-		'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry'];
+		'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry', 'mineral-tooltip', 'science-drawer', 'market-drawer', 'science-open', 'science-close', 'market-open', 'market-close'];
 	// One mark per help topic, plus the drawer it feeds.
 	for (const topic of window.SteamHelp.topics) ids.push('help-' + topic.id);
 	ids.push('help-drawer', 'help-close', 'help-head', 'help-title', 'help-body', 'help-index');
@@ -110,6 +110,12 @@
 		let names = '';
 		for (const id of node.requires) names += (names ? ', ' : '') + SteamResearch.find(id).name;
 		return names;
+	}
+
+	function researchDepth(node) {
+		let depth = 0;
+		for (const id of node.requires) depth = Math.max(depth, researchDepth(SteamResearch.find(id)) + 1);
+		return depth;
 	}
 
 	function unlockText(node) {
@@ -234,6 +240,9 @@
 			const row = buildRow(ui['research-rows'], node.name, node.cost, 0, 'Research', node.effect, note,
 				function () { buyResearch(node.id); });
 			row.node = node;
+			row.row.className = 'upgrade-row research-node';
+			row.row.dataset.depth = String(researchDepth(node));
+			row.row.style.marginLeft = researchDepth(node) * 18 + 'px';
 			row.freeNote = 'The commons shares every node' + (unlocked ? ' · unlocks ' + unlocked : '');
 			researchRows.push(row);
 		}
@@ -403,7 +412,7 @@
 			? 'All nodes granted · effects already applied'
 			: ceiling.commune
 				? 'Free · no prerequisites · nothing is gated'
-				: 'Pay once, effect applies at once.');
+				: 'Tree depth follows prerequisites · effects and unlocks are listed on each node.');
 		setText(ui['equipment-hint'], testMode
 			? 'Every item granted · specification is live'
 			: ceiling.commune
@@ -702,7 +711,7 @@
 		return credits > 0 ? '−' + credits.toFixed(digits) + ' cr' : 'free';
 	}
 
-	function miningReadout() {
+	function mineralReadout() {
 		const ceiling = window.SteamCeiling.state;
 		const index = selectedLayer * ceiling.columns + selectedColumn;
 		const offset = index * 3;
@@ -714,6 +723,11 @@
 		if (Number(ui['strength-meter'].value) !== strengthRatio) ui['strength-meter'].value = strengthRatio;
 		setText(ui['mineral-composition'], 'Fe ' + (ceiling.minerals[offset] * 100).toFixed(1) + '% · Cu ' + (ceiling.minerals[offset + 1] * 100).toFixed(1) + '% · Cr ' + (ceiling.minerals[offset + 2] * 100).toFixed(1) + '%');
 		setText(ui['mineral-price'], 'Value ' + ceiling.prices[index].toFixed(2) + ' cr/cell · R ' + (ceiling.elements[offset] * 100).toFixed(0) + '% G ' + (ceiling.elements[offset + 1] * 100).toFixed(0) + '% B ' + (ceiling.elements[offset + 2] * 100).toFixed(0) + '%');
+	}
+
+	function miningReadout() {
+		const ceiling = window.SteamCeiling.state;
+		mineralReadout();
 		setText(ui.extracted, ceiling.extractedCells + ' cells');
 		setText(ui.falling, ceiling.airborneCells + ' cells');
 		setText(ui.caught, ceiling.caughtCells + ' cells');
@@ -936,11 +950,42 @@
 		return worldY >= surface ? index : -1;
 	}
 
-	function selectCell(index) {
+	function inspectRockAtPointer(event) {
+		const bounds = canvas.getBoundingClientRect();
+		const worldX = (event.clientX - bounds.left - offsetX) / scale;
+		const worldY = (floorY - (event.clientY - bounds.top)) / scale;
+		const index = rockCellIndex(worldX, worldY);
+		setHidden(ui['mineral-tooltip'], index < 0);
+		if (index < 0) return;
 		const columns = window.SteamCeiling.state.columns;
+		const previousIndex = selectedLayer * columns + selectedColumn;
 		selectedColumn = index % columns;
 		selectedLayer = Math.floor(index / columns);
-		refresh();
+		if (index !== previousIndex) sceneDirty = true;
+		const tip = ui['mineral-tooltip'];
+		const x = event.clientX - bounds.left + 14;
+		const y = event.clientY - bounds.top + 14;
+		const tipWidth = tip.offsetWidth || 260;
+		const tipHeight = tip.offsetHeight || 150;
+		tip.style.left = Math.max(8, Math.min(bounds.width - tipWidth - 8, x)) + 'px';
+		tip.style.top = Math.max(8, Math.min(bounds.height - tipHeight - 8, y)) + 'px';
+		mineralReadout();
+	}
+
+	function setToolDrawer(drawer, trigger, open) {
+		setHidden(ui[drawer], !open);
+		trigger.setAttribute('aria-expanded', String(open));
+	}
+
+	function toggleToolDrawer(drawer, trigger) {
+		const open = ui[drawer].hidden;
+		closeToolDrawers();
+		if (open) setToolDrawer(drawer, trigger, true);
+	}
+
+	function closeToolDrawers() {
+		setToolDrawer('science-drawer', ui['science-open'], false);
+		setToolDrawer('market-drawer', ui['market-open'], false);
 	}
 
 	function updateDirection() {
@@ -1060,7 +1105,7 @@
 		const worldY = (floorY - (event.clientY - bounds.top)) / scale;
 		const cell = rockCellIndex(worldX, worldY);
 		if (cell >= 0) {
-			selectCell(cell);
+			inspectRockAtPointer(event);
 			canvas.focus();
 			return;
 		}
@@ -1081,11 +1126,15 @@
 		canvas.focus();
 	});
 	canvas.addEventListener('pointermove', function (event) {
-		if (!pistonDragActive) return;
-		// The drag aims the reflection: a positive angle sends a falling ball left,
-		// so dragging left (or up) raises it and the bounce follows the pointer.
-		setPistonAngle(pistonDragAngle - ((event.clientX - pistonDragX) + (event.clientY - pistonDragY)) * 0.05);
+		if (pistonDragActive) {
+			// The drag aims the reflection: a positive angle sends a falling ball left,
+			// so dragging left (or up) raises it and the bounce follows the pointer.
+			setPistonAngle(pistonDragAngle - ((event.clientX - pistonDragX) + (event.clientY - pistonDragY)) * 0.05);
+			return;
+		}
+		inspectRockAtPointer(event);
 	});
+	canvas.addEventListener('pointerleave', function () { setHidden(ui['mineral-tooltip'], true); });
 	function endPistonDrag() { pistonDragActive = false; autopilot.hold('angle', false); }
 	canvas.addEventListener('pointerup', endPistonDrag);
 	canvas.addEventListener('pointercancel', endPistonDrag);
@@ -1182,9 +1231,10 @@
 
 	function helpKey(event) {
 		if (event.code === 'Escape') {
-			if (!helpOpen) return false;
+			if (!helpOpen && ui['science-drawer'].hidden && ui['market-drawer'].hidden) return false;
 			event.preventDefault();
-			closeHelp(true);
+			if (helpOpen) closeHelp(true);
+			closeToolDrawers();
 			return true;
 		}
 		if (event.code !== 'F1' && event.code !== 'KeyH') return false;
@@ -1282,6 +1332,10 @@
 		ui['help-drawer'].addEventListener('pointerleave', closePreviewFromDrawer);
 		ui['help-close'].addEventListener('click', function () { closeHelp(true); });
 	}
+	ui['science-open'].addEventListener('click', function () { toggleToolDrawer('science-drawer', ui['science-open']); });
+	ui['market-open'].addEventListener('click', function () { toggleToolDrawer('market-drawer', ui['market-open']); });
+	ui['science-close'].addEventListener('click', closeToolDrawers);
+	ui['market-close'].addEventListener('click', closeToolDrawers);
 	bindHelp();
 	bindHelpGestures();
 

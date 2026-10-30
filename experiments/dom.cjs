@@ -86,6 +86,7 @@ for (const match of html.matchAll(/<([a-z]+)([^>]*)>/g)) {
 	// Attributes are read from the tag, so aria wiring asserted in the markup is
 	// tested as written instead of only after a script writes it.
 	for (const attribute of match[2].matchAll(/([a-z-]+)="([^"]*)"/g)) element.attributes[attribute[1]] = attribute[2];
+	element.hidden = /\bhidden(?:\s|>|$)/.test(match[2]);
 	if (match[1] === 'canvas') element.context = createContext();
 	elements.set(id[1], element);
 }
