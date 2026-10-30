@@ -194,3 +194,12 @@ move these text from menu to status bar
 Ball grounded · move over it to collect (orange temp message while ball on the ground)
 
 Park on the centre pad to refill · click low ground to travel (redish temp message while energy low on the ground)
+
+
+MINERAL INSPECTOR - tooltip - show while over rock.
+
+move show and science to drawers
+
+move CARGO / STORAGE to left of canvas (where currently science)
+
+plan to make single sci+shop drawer to represent as tree and possible research and easy see what it unlock
