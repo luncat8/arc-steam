@@ -123,7 +123,8 @@
 			text: [
 				'Ground contact dissipates all ball energy. Move over the ball to collect it, then release it; the drive is already on unless you switched it off.',
 				'Park on the centre strip of the ground to refill the reserve at 3 kW — 4 s from empty to full, free of charge.',
-				'Out of reach? The market’s emergency import buys energy at 25 cr/kJ up to the full 12 kJ, limited by the funds at hand. An empty reserve still hand-cranks at 0.8 m/s: movement only, no launch.'
+				'Out of reach? The market’s emergency import buys energy at 25 cr/kJ up to the full 12 kJ, limited by the funds at hand. An empty reserve still hand-cranks at 0.8 m/s: movement only, no launch.',
+				'While the reserve is low and the platform is on the ground, the status bar at the foot of the page repeats both ways out; a grounded ball is announced there in orange until it is collected.'
 			]
 		},
 		{

@@ -17,6 +17,8 @@ class Element {
 		this.attributes = {};
 		this.listeners = {};
 		this.textContent = '';
+		this.style = {};
+		this.offsetHeight = 0;
 		this.hidden = false;
 		this.disabled = false;
 		this.type = '';
@@ -112,7 +114,7 @@ document.body.addEventListener = document.addEventListener;
 document.body.dispatch = document.dispatch;
 
 let frameCallback = null;
-let resizeCallback = null;
+const resizeCallbacks = [];
 
 function install() {
 	globalThis.document = document;
@@ -124,7 +126,7 @@ function install() {
 	globalThis.matchMedia = function () { return pointerMedia; };
 	globalThis.requestAnimationFrame = function (callback) { frameCallback = callback; return 1; };
 	globalThis.ResizeObserver = class {
-		constructor(callback) { resizeCallback = callback; }
+		constructor(callback) { resizeCallbacks.push(callback); }
 		observe() {}
 	};
 	document.activeElement = document.body;
@@ -142,7 +144,7 @@ const api = {
 		if (!element) throw new Error('missing #' + id);
 		return element;
 	},
-	resize() { if (resizeCallback) resizeCallback(); },
+	resize() { for (const callback of resizeCallbacks) callback(); },
 	// Frames run only when asked, so a test controls simulated time exactly.
 	frame(now) {
 		if (!frameCallback) throw new Error('no frame scheduled');

@@ -45,7 +45,6 @@
 					<div class="eyebrow-row"><p class="eyebrow">BOUNCE ASSIST</p><button id="help-drive" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: bounce drive">?</button></div>
 					<button id="drive" class="drive" aria-pressed="true">Drive on <span>SPACE / Q</span></button>
 					<button id="launch" disabled>Release held ball <span>E</span></button>
-					<p id="status" role="status">Ball in flight</p>
 					<p id="prediction-status" class="hint" hidden></p>
 					<div class="eyebrow-row"><p class="eyebrow">MOVEMENT</p><button id="help-movement" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: movement and force">?</button></div>
 					<label for="force">Movement force <output id="force-value">60%</output></label>
@@ -58,7 +57,7 @@
 					<div class="autopilot" id="autopilot"><label><input type="checkbox" id="auto-move" autocomplete="off"><span>Chase the predicted landing</span><i>X</i></label><label><input type="checkbox" id="auto-smart" autocomplete="off"><span>Timed intercept · economy brake</span><i>⇧X</i></label><label><input type="checkbox" id="auto-drive" autocomplete="off"><span>Drive keeper · reach the top, no more</span><i>Z</i></label><label><input type="checkbox" id="auto-angle" autocomplete="off"><span>Level bounce · reflect straight up</span><i>C</i></label></div>
 					<p id="autopilot-status" class="hint" role="status" hidden></p>
 					<div class="eyebrow-row"><p class="eyebrow">RECOVERY · CHARGE</p><button id="help-charge" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: recovery and charge">?</button></div>
-					<p class="hint">Park on the centre pad to refill · click low ground to travel</p>
+					<p class="hint">Live recovery advice shows in the status bar below.</p>
 				</div>
 			</aside>
 			<article class="mineral-panel panel" data-topic="inspector">
@@ -105,6 +104,17 @@
 			</article>
 		</section>
 	</main>
+	<footer class="status-bar" id="status-bar" aria-label="Status bar">
+		<div class="status-facts" aria-label="Reserve, cargo and temperature">
+			<span><i>RESERVE</i><b id="fact-reserve">—</b></span>
+			<span><i>CARGO</i><b id="fact-cargo">—</b></span>
+			<span><i>TEMP</i><b id="fact-temp">—</b></span>
+		</div>
+		<div class="status-messages" role="status" aria-live="polite">
+			<p class="status-message" id="status-ball" data-tone="info" hidden></p>
+			<p class="status-message" id="status-energy" data-tone="danger" hidden></p>
+		</div>
+	</footer>
 	<aside id="help-drawer" class="help-drawer" role="dialog" aria-modal="false" aria-labelledby="help-title" aria-hidden="true" data-open="false">
 		<div class="help-head" id="help-head"><span class="eyebrow">CONTEXT HELP</span><button id="help-close" class="quiet" type="button">Close ✕</button></div>
 		<h2 id="help-title">Controls</h2>

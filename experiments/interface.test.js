@@ -3,6 +3,8 @@
 // against experiments/dom.cjs, so panel building, gating, shortcuts, purchases,
 // research and the ballistic overlay are all exercised end to end.
 const assert = require('node:assert/strict');
+const path = require('node:path');
+const fs = require('node:fs');
 const { test } = require('node:test');
 const dom = require('./dom.cjs');
 
@@ -106,7 +108,8 @@ test('settled readouts do not rewrite buttons, status or control state', () => {
 		});
 	}
 	countText(dom.element('drive').firstChild);
-	countText(dom.element('status'));
+	countText(dom.element('status-ball'));
+	countText(dom.element('fact-reserve'));
 	countText(dom.element('refuel'));
 	countText(dom.element('piston-value'));
 	countText(buttonOf(gearRow('pad')));
@@ -475,6 +478,50 @@ test('telemetry highlights an empty reserve, a full cargo and overheating', () =
 	assert.equal(dom.element('cargo').textContent, '100 / 100');
 	assert.equal(dom.element('cargo-telemetry').dataset.warning, 'FULL');
 	assert.match(dom.element('cargo-note').textContent, /^Full/);
+});
+
+test('the status bar keeps the facts and only the messages that apply now', () => {
+	world.platform.x = 3; world.platform.vx = 0; world.target = NaN; world.direction = 0;
+	world.ball.state = 'held'; world.drive = true;
+	world.battery = physics.config.battery;
+	advance(8);
+	const ball = dom.element('status-ball');
+	const energy = dom.element('status-energy');
+	assert.equal(dom.element('fact-reserve').textContent, (world.battery / 1000).toFixed(2) + ' kJ');
+	assert.equal(dom.element('fact-cargo').textContent, ceiling.state.cargoCells + '/' + ceiling.state.storageLimit);
+	assert.match(dom.element('fact-temp').textContent, /^-?\d+ °C$/);
+	assert.equal(energy.hidden, true, 'a full reserve says nothing');
+	assert.match(ball.textContent, /^Ball held · press E to release/);
+	assert.equal(ball.dataset.tone, 'info');
+
+	// A grounded ball is collected when it rests under the platform, so it lies elsewhere.
+	world.ball.state = 'grounded';
+	world.ball.x = 20;
+	advance(8);
+	assert.equal(ball.textContent, 'Ball grounded · move over it to collect');
+	assert.equal(ball.dataset.tone, 'warn', 'the grounded ball is an orange message');
+
+	// A low reserve on the ground adds the red message with both ways out ...
+	world.battery = physics.config.battery * 0.05;
+	advance(8);
+	assert.equal(dom.element('fact-reserve').dataset.tone, 'warn');
+	assert.equal(energy.hidden, false);
+	assert.equal(energy.textContent, 'Park on the centre pad to refill · click low ground to travel');
+	assert.equal(energy.dataset.tone, 'danger');
+	// ... and standing on the pad ends it, because the advice is being followed.
+	world.platform.x = physics.config.width * 0.5;
+	advance(8);
+	assert.equal(energy.hidden, true, 'the pad already refills, so the bar stops asking');
+
+	world.battery = physics.config.battery;
+	world.ball.state = 'held';
+	advance(8);
+	assert.equal(energy.hidden, true);
+	// Both hints moved out of the menu, where the drive panel used to carry them.
+	const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+	assert.ok(html.includes('id="status-ball"'), 'the bar carries the ball message');
+	assert.doesNotMatch(html, /id="status"/);
+	assert.doesNotMatch(html, /click low ground to travel<\/p>/);
 });
 
 test('the centre pad is read as charging and uses the selected source reload rate', () => {

@@ -1,6 +1,7 @@
 :root { color-scheme: dark; font-family: system-ui, sans-serif; color: #dce6e4; background: #0c1215; --line: #29363a; --muted: #82959a; --accent: #b9ed91; --amber: #e6b66e; --power: #7fb6d9; --danger: #e0775e; --control-line: #3a4c50; }
 * { box-sizing: border-box; }
-body { margin: 0; }
+/* The fixed status bar sits over the foot of the page, so the flow keeps room for it. */
+body { margin: 0; padding-bottom: 36px; }
 small { display: block; }
 p { color: var(--muted); line-height: 1.65; font-size: 13px; }
 label { font-size: 11px; color: #a7b8ba; }
@@ -54,6 +55,26 @@ main { max-width: 1920px; margin: auto; padding: 16px 2vw 24px; display: grid; g
 .telemetry article[data-warning="EMPTY"] strong, .telemetry article[data-warning="CUTOFF"] strong { color: var(--danger); }
 .telemetry article[data-warning="EMPTY"]::after, .telemetry article[data-warning="CUTOFF"]::after { background: var(--danger); color: #1b0f0c; }
 
+/* Status bar: one fixed strip at the foot of the viewport while the page
+   scrolls. The facts on the left stay true all session; the messages on the
+   right only exist while the condition behind them does. */
+.status-bar {
+	position: fixed; inset: auto 0 0 0; z-index: 20; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 24px;
+	padding: 6px 2vw; border-top: 1px solid var(--line); background: #0a1114f2; backdrop-filter: blur(6px);
+	font: 10px ui-monospace, monospace; letter-spacing: 1.1px;
+}
+.status-facts { display: flex; flex-wrap: wrap; gap: 2px 18px; }
+.status-facts span { display: flex; align-items: baseline; gap: 6px; }
+.status-facts i { font-style: normal; color: #6d8286; }
+.status-facts b { font-weight: 400; color: #dce6e4; }
+.status-facts b[data-tone="warn"] { color: var(--amber); }
+.status-facts b[data-tone="danger"] { color: var(--danger); }
+.status-messages { margin-left: auto; display: flex; flex-wrap: wrap; gap: 2px 20px; }
+.status-message { margin: 0; padding-left: 7px; border-left: 2px solid var(--control-line); font: inherit; letter-spacing: 0.7px; color: #a9babc; }
+.status-message[data-tone="warn"] { color: var(--amber); border-left-color: var(--amber); }
+.status-message[data-tone="danger"] { color: var(--danger); border-left-color: var(--danger); }
+.status-message[hidden] { display: none; }
+
 .workspace { display: grid; gap: 12px; grid-template-columns: 260px minmax(0, 1fr) 250px 210px; grid-template-areas: "tech mine controls inspector"; }
 .tech-panel { grid-area: tech; }
 .mine-panel { grid-area: mine; display: flex; flex-direction: column; }
@@ -82,7 +103,6 @@ canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 .controls button { width: 100%; text-align: left; font-size: 12px; }
 .controls button span { float: right; color: #7d9094; font-size: 10px; }
 .drive[aria-pressed="true"] { color: var(--accent); background: #25392a; border-color: #6a9757; }
-#status { color: var(--amber); font-size: 11px; min-height: 18px; }
 #motion { color: var(--accent); white-space: nowrap; }
 #prediction-status, #autopilot-status { color: #9fd3b0; }
 #prediction-status[hidden], #autopilot-status[hidden] { display: none; }
@@ -196,6 +216,10 @@ button.help-mark:hover, button.help-mark[aria-expanded="true"] { color: #10191d;
 	.equipment-panel { grid-column: 1 / -1; }
 }
 @media (max-width: 760px) {
+	/* On a phone the messages matter more than the facts, so they wrap under a smaller fact row. */
+	body { padding-bottom: 76px; }
+	.status-bar { padding: 5px 12px; font-size: 9px; gap: 2px 14px; }
+	.status-messages { margin-left: 0; }
 	main { padding: 12px; }
 	.system-bar { gap: 6px 14px; }
 	.system-options { margin-left: 0; }

@@ -5,7 +5,7 @@
 	const config = physics.config;
 	const canvas = document.getElementById('c');
 	const context = canvas.getContext('2d');
-	const ids = ['clock', 'drive', 'launch', 'status', 'prediction-status', 'force', 'force-value', 'piston-angle', 'piston-value',
+	const ids = ['clock', 'drive', 'launch', 'status-bar', 'status-ball', 'status-energy', 'fact-reserve', 'fact-cargo', 'fact-temp', 'prediction-status', 'force', 'force-value', 'piston-angle', 'piston-value',
 		'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'commune', 'test-mode', 'view-modes',
 		'platform-spec', 'research-rows', 'research-status', 'research-progress', 'tech-hint',
 		'mineral-cell', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
@@ -28,6 +28,15 @@
 	function setDisabled(node, disabled) { if (node.disabled !== disabled) node.disabled = disabled; }
 	function setHidden(node, hidden) { if (node.hidden !== hidden) node.hidden = hidden; }
 	function setChecked(node, checked) { if (node.checked !== checked) node.checked = checked; }
+	// A status-bar message is one preallocated node: empty text hides it, and the
+	// tone attribute only moves when the severity really changed.
+	function setMessage(node, text, tone) {
+		setHidden(node, !text);
+		if (!text) return;
+		setText(node, text);
+		setTone(node, tone);
+	}
+	function setTone(node, tone) { if (node.dataset.tone !== tone) node.dataset.tone = tone; }
 	let selectedColumn = 95;
 	let selectedLayer = 0;
 	let renderedSales = -1;
@@ -497,6 +506,8 @@
 		else delete ui[id].dataset.warning;
 	}
 
+	function fitStatusBar() { document.body.style.paddingBottom = ui['status-bar'].offsetHeight + 12 + 'px'; }
+
 	function resize() {
 		const bounds = canvas.getBoundingClientRect();
 		width = bounds.width;
@@ -788,13 +799,40 @@
 		const pressed = String(world.drive);
 		if (ui.drive.getAttribute('aria-pressed') !== pressed) ui.drive.setAttribute('aria-pressed', pressed);
 		setText(ui.drive.firstChild, world.drive ? 'Drive on ' : 'Drive off ');
-		setDisabled(ui.launch, !physics.canLaunch(world));
+		const canLaunch = physics.canLaunch(world);
+		setDisabled(ui.launch, !canLaunch);
+		statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch);
+	}
+
+	// The platform rests on the terrain and only leaves it where the ground drops
+	// away, so the base height under it says whether it is on the ground now.
+	function platformGrounded() {
+		const platform = world.platform;
+		return platform.y <= physics.platformBaseAt(platform.x, platform.angle) + 0.02;
+	}
+
+	// The status bar: three facts that stay true all session, then the messages
+	// that exist only while their condition does. Each message keeps its own
+	// tone, so the ball's advice and the reserve warning stand side by side.
+	function statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch) {
+		const ceiling = window.SteamCeiling.state;
+		setText(ui['fact-reserve'], (world.battery / 1000).toFixed(2) + ' kJ');
+		setTone(ui['fact-reserve'], reserveWarning === 'EMPTY' ? 'danger' : reserveWarning ? 'warn' : '');
+		setText(ui['fact-cargo'], ceiling.cargoCells + '/' + ceiling.storageLimit);
+		setTone(ui['fact-cargo'], cargoFull ? 'warn' : '');
+		setText(ui['fact-temp'], temperature.toFixed(0) + ' °C');
+		setTone(ui['fact-temp'], thermalFactor === 0 ? 'danger' : thermalFactor < 1 ? 'warn' : '');
 		if (world.ball.state === 'held') {
-			if (!world.drive) setText(ui.status, 'Ball held · enable drive to release');
-			else if (!physics.canLaunch(world)) setText(ui.status, thermalFactor === 0 ? 'Overheated · wait for cooling' : 'Insufficient energy to lift ball');
-			else setText(ui.status, 'Ball held · press E to release' + (thermalFactor < 1 ? ' · drive derated' : ''));
-		} else if (world.ball.state === 'grounded') setText(ui.status, 'Ball grounded · move over it to collect');
-		else setText(ui.status, 'Ball in flight · ' + world.pushes + ' powered pushes' + (thermalFactor < 1 ? ' · drive derated' : ''));
+			if (!world.drive) setMessage(ui['status-ball'], 'Ball held · enable drive to release', 'warn');
+			else if (!canLaunch) setMessage(ui['status-ball'], thermalFactor === 0 ? 'Overheated · wait for cooling' : 'Insufficient energy to lift ball', 'warn');
+			else setMessage(ui['status-ball'], 'Ball held · press E to release' + (thermalFactor < 1 ? ' · drive derated' : ''), 'info');
+		} else if (world.ball.state === 'grounded') setMessage(ui['status-ball'], 'Ball grounded · move over it to collect', 'warn');
+		else setMessage(ui['status-ball'], 'Ball in flight · ' + world.pushes + ' powered pushes' + (thermalFactor < 1 ? ' · drive derated' : ''), 'info');
+		// The two ways out of a short reserve, said only while both apply: the
+		// reserve is low and the platform is on the ground to act on it. Standing
+		// on the pad already grants the first one, so it stops there.
+		setMessage(ui['status-energy'], reserveWarning && !onPad && platformGrounded()
+			? 'Park on the centre pad to refill · click low ground to travel' : '', 'danger');
 	}
 
 	// Event-driven readouts also mark the scene, so a paused chamber reflects the change.
@@ -1253,5 +1291,9 @@
 	document.addEventListener('visibilitychange', function () { accumulator = 0; previous = 0; sceneDirty = true; clearInput(); endPistonDrag(); });
 	bindDirection('left', -1); bindDirection('right', 1);
 	new ResizeObserver(resize).observe(canvas);
+	// The bar is fixed over the page, so the flow keeps exactly the room it needs
+	// at this width and with this many messages.
+	new ResizeObserver(fitStatusBar).observe(ui['status-bar']);
+	fitStatusBar();
 	resize(); refresh(); requestAnimationFrame(frame);
 })();
