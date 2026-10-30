@@ -73,6 +73,9 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	assert.ok(Math.abs(parseFloat(dom.element('error').textContent)) < 1e-5);
 	assert.equal(dom.element('drive').getAttribute('aria-pressed'), 'true', 'the bounce drive is enabled by default');
 	assert.equal(dom.element('drive').firstChild.textContent, 'Drive on ');
+	const graderButton = dom.element('equipment-rows').children.find(child => child.id === 'commercial-grader');
+	assert.ok(graderButton, 'the commercial grader button is built');
+	assert.equal(graderButton.disabled, false, 'the grader hire button is always available');
 	assert.equal(dom.element('research-progress').textContent, '0 / ' + research.nodes.length);
 	assert.equal(dom.element('prediction-status').hidden, true, 'the overlay stays hidden before its research');
 	// The installed specification starts at base tuning.

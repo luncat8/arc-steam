@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { physics, prediction, ceiling, c, balanced, sync } = require('./harness.cjs');
 const autopilot = require('../js/autopilot.js');
+const research = require('../js/research.js');
 const all = ['move', 'smart', 'drive', 'angle'];
 
 function engage(...channels) {
@@ -94,6 +95,32 @@ test('both intercepts meet the same mark, and the timed one gets there slower an
 	assert.ok(runs.smart.draw < runs.move.draw * 0.6,
 		`timed draw ${runs.smart.draw.toFixed(1)} J against the chase's ${runs.move.draw.toFixed(1)} J`);
 	assert.ok(runs.smart.heat < runs.move.heat, `timed heat ${runs.smart.heat.toFixed(1)} J against the chase's ${runs.move.heat.toFixed(1)} J`);
+});
+
+test('tier II starts a low-speed intercept before rock contact and keeps replanning after a bounce', () => {
+	const world = flight(physics.createWorld(), 13, 12, 8);
+	world.ball.vx = 1;
+	world.ball.vy = 5;
+	research.grant('ballistics2', world);
+	sync(world);
+	engage('move');
+	autopilot.update(world, c.step);
+	const firstPlan = autopilot.state;
+	assert.ok(firstPlan.contactIn > 0, 'the rock contact is predicted while the ball is still in flight');
+	assert.ok(Number.isFinite(firstPlan.interceptX), 'the contact mark is available before impact');
+	assert.ok(Number.isNaN(world.target), 'tier II uses timed movement rather than the full-throttle chase');
+	assert.notEqual(world.direction, 0, 'the platform starts moving before the predicted contact');
+	let bounced = false;
+	for (let i = 0; i < 240 * 4; i++) {
+		autopilot.update(world, c.step);
+		physics.step(world, c.step);
+		if (world.bounces > 0) { bounced = true; break; }
+	}
+	assert.ok(bounced, 'the real ball reaches a piston bounce after the rock trajectory');
+	autopilot.update(world, c.step);
+	assert.ok(autopilot.state.contactIn > 0, 'the new trajectory is planned immediately after the bounce');
+	assert.ok(Number.isNaN(world.target), 'the post-bounce intercept remains in low-speed travel mode');
+	balanced(world);
 });
 
 test('the timed intercept rolls through a mark it is already passing instead of stopping on it', () => {

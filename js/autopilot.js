@@ -218,16 +218,19 @@
 	}
 
 	function commandTravel(world) {
-		if (moveOn) {
+		const tierTwo = root.SteamResearch.state.predictionBounces && contactIn > 0;
+		if (moveOn && !tierTwo) {
 			// The plain chase hands the mark to the platform's own target following:
 			// full thrust to it, then a brake to a standstill on it.
 			world.direction = 0;
 			world.target = interceptX;
 			return;
 		}
-		// The timed intercept owns the direction and never asks for a standstill it
-		// does not need: a travel target would brake to zero and dump what is left
-		// of the run as heat, whether or not a flywheel can take it back.
+		// A known tier-II contact gets the same just-in-time, low-speed run as the
+		// economy intercept, even when the player selected plain chase. Replanning
+		// after each bounce gives the next predicted contact a fresh deadline.
+		// Timed travel owns direction and does not brake to a standstill it does
+		// not need, avoiding needless reserve draw and heat.
 		world.target = NaN;
 		const platform = world.platform;
 		const distance = interceptX - platform.x;

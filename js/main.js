@@ -163,9 +163,10 @@
 			radiatorRows.push({ select, button, note, options, selectedIndex: -1 });
 		})();
 		const botButton = document.createElement('button');
+		botButton.id = 'commercial-grader';
 		botButton.textContent = 'Hire grader · shuttles wall to wall · 50% of each sweep';
 		botButton.addEventListener('click', () => {
-			ui['equipment-status'].textContent = window.SteamCeiling.hireGrader(world) ? 'Grader dispatched: shuttles wall to wall · 50% share of each sweep.' : 'Park at the left shop; only one grader can run at a time.';
+			ui['equipment-status'].textContent = window.SteamCeiling.hireGrader(world) ? 'Grader dispatched from its garage: shuttles wall to wall · 50% share of each sweep.' : 'The commercial grader is already on its wall-to-wall route.';
 		});
 		ui['equipment-rows'].append(botButton);
 		for (const node of SteamResearch.nodes) {
@@ -445,7 +446,6 @@
 		context.fillRect(-pocketDepth, -0.35, config.width + pocketDepth, 0.35);
 		// Fallen rubble first, so the charge pad plate stays visible on top of it.
 		if (window.SteamCeiling) window.SteamCeiling.drawFloor(context);
-		window.SteamCeiling.drawGraderBot(context);
 		const padMin = physics.chargePadMin();
 		const padMax = physics.chargePadMax();
 		const chargingNow = physics.charging(world);
@@ -463,6 +463,7 @@
 	context.fillRect(config.width, garageHeight, 0.3, config.ceiling - garageHeight);
 	context.fillStyle = '#0a0f11';
 	context.fillRect(config.width, 0, 0.3, garageHeight);
+	window.SteamCeiling.drawGraderBot(context);
 	context.fillRect(-pocketDepth, 0, pocketDepth, pocketTop);
 		if (window.SteamCeiling) window.SteamCeiling.draw(context, viewMode);
 		if (window.SteamCeiling) {

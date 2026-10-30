@@ -46,14 +46,13 @@ test('held brake stops without reversal or fuel and recuperates with flywheel', 
 	balanced(w);
 });
 
-test('commercial grader shuttles wall to wall and settles 50% at each sweep', () => {
+test('commercial grader can be dispatched from anywhere, shuttles and settles 50% per sweep', () => {
 	const w = p.createWorld();
-	assert.equal(c.hireGrader(w), false);
-	w.platform.x = p.platformMin(); w.platform.vx = 0;
+	w.platform.x = p.platformMax() - 1; w.platform.vx = 2;
 	const s = c.state;
 	s.floorPiles.fill(s.floorCellHeight * 3);
 	s.floorValues.fill(12);
-	assert.ok(c.hireGrader(w));
+	assert.ok(c.hireGrader(w), 'hiring does not require parking at the left shop');
 	assert.equal(c.hireGrader(w), false);
 	const funds = s.funds;
 	// One full crossing takes 16 s at 1.5 m/s; one settlement at the far wall,
@@ -75,8 +74,13 @@ test('commercial grader shuttles wall to wall and settles 50% at each sweep', ()
 	assert.equal(c.state.graderBot.active, false);
 });
 
-test('low rounded grader lifts a wheel, not the belly after passing between wheels', () => {
+test('the inactive grader remains drawn in its low garage and the active bot lifts a wheel', () => {
 	const w = p.createWorld();
+	const arcs = [];
+	const context = { beginPath() {}, arc(x, y, radius) { arcs.push({ x, y, radius }); }, closePath() {}, fill() {} };
+	c.drawGraderBot(context);
+	near(arcs[0].x, p.config.width);
+	near(arcs[0].radius, 0.7);
 	w.platform.x = p.platformMin();
 	assert.ok(c.hireGrader(w));
 	c.state.graderBot.x = 12;

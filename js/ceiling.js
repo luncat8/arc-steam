@@ -51,8 +51,7 @@ const graderCutMark = new Uint8Array(columns);
 	const botRadius = 0.7;
 	const botHeight = 0.12;
 function hireGrader(world) {
-	const physics = root.SteamPhysics;
-	if (!world || graderBot.active || world.platform.x > physics.platformMin() + 0.2 || Math.abs(world.platform.vx) > 0.1) return false;
+	if (!world || graderBot.active) return false;
 	graderBot.active = true;
 	graderBot.x = width;
 	graderBot.direction = -1;
@@ -108,12 +107,14 @@ function stepGraderBot(world, dt) {
 }
 
 	function drawGraderBot(context) {
-		if (!graderBot.active) return;
-		const base = floorAt(graderBot.x);
+		// The same bot stays visible in its low garage before hiring and at every
+		// wall turnaround; it is never removed from the scene between sweeps.
+		const x = graderBot.active ? graderBot.x : width;
+		const base = floorAt(x);
 		const halfAngle = Math.acos((botRadius - botHeight) / botRadius);
 		context.fillStyle = '#dfac52';
 		context.beginPath();
-		context.arc(graderBot.x, base - botRadius + botHeight, botRadius, Math.PI / 2 - halfAngle, Math.PI / 2 + halfAngle);
+		context.arc(x, base - botRadius + botHeight, botRadius, Math.PI / 2 - halfAngle, Math.PI / 2 + halfAngle);
 		context.closePath();
 		context.fill();
 	}
