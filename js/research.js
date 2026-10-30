@@ -7,49 +7,49 @@
 		Object.freeze({
 			id: 'materials', name: 'Rebound materials', cost: 180, requires: Object.freeze([]),
 			retentionBonus: 0.01,
-			effect: 'Impact surfaces keep 91% of normal kinetic energy instead of 90%, on the deck and on passive rock contacts.'
+			effect: 'Passive surfaces keep 91% of normal bounce energy (up from 90% on deck and rock).'
 		}),
 		Object.freeze({
 			id: 'alloys', name: 'Light alloys', cost: 240, requires: Object.freeze([]),
 			massDelta: -4,
-			effect: 'Lighter framing cuts dry platform mass by 4 kg, raising acceleration under the same engine force.'
+			effect: 'Lighter framing cuts dry platform mass by 4 kg for stronger acceleration.'
 		}),
 		Object.freeze({
 			id: 'electromagnetics', name: 'Pulse electromagnetics', cost: 300, requires: Object.freeze(['materials']),
 			pulseBonus: 4,
-			effect: 'Bounce drive pulse rises to 46 J per contact, still paid from the shared reserve at 80% efficiency.'
+			effect: 'Bounce drive pulse rises +4 J to 46 J per contact (80% reserve efficiency).'
 		}),
 		Object.freeze({
 			id: 'traction', name: 'Traction motors', cost: 380, requires: Object.freeze(['electromagnetics']),
 			forceBonus: 240, speedBonus: 3,
-			effect: 'Engine force rises by 240 N and top speed by 3 m/s. Unlocks the high-torque motor.'
+			effect: 'Engine force +240 N and top speed +3 m/s.'
 		}),
 		Object.freeze({
 			id: 'thermodynamics', name: 'Heat transfer', cost: 340, requires: Object.freeze(['alloys']),
 			coolingBonus: 0.5,
-			effect: 'Ducting and surface treatment add 0.5 W/K of convective cooling on top of the bare chassis.'
+			effect: 'Ducting and surface treatment add +0.5 W/K of chassis convective cooling.'
 		}),
 		Object.freeze({
 			id: 'storage', name: 'Flywheel storage', cost: 460, requires: Object.freeze(['thermodynamics']),
-			effect: 'Unlocks the brake flywheel, which returns part of every braking manoeuvre to the reserve instead of heat.'
+			effect: 'Kinetic recovery coupling to route braking energy back into the reserve.'
 		}),
 		Object.freeze({
 			id: 'power', name: 'Power electronics', cost: 640, requires: Object.freeze(['traction', 'thermodynamics']),
 			forceBonus: 360, speedBonus: 3,
-			effect: 'Engine force rises by a further 360 N and top speed by 3 m/s. Unlocks the overdrive unit.'
+			effect: 'Engine force +360 N and top speed +3 m/s.'
 		}),
 		Object.freeze({
 			id: 'impact', name: 'Impact forging', cost: 320, requires: Object.freeze(['materials']),
-			effect: 'Hardened tips shatter more rock per joule at the cost of more bounce energy lost on rock. Unlocks the hardened and spiked ball upgrades (higher damage, higher rock loss).'
+			effect: 'Strike-head metallurgy: trade rock bounce retention for deeper fracture.'
 		}),
 		Object.freeze({
 			id: 'ballistics', name: 'Ballistic computer', cost: 520, requires: Object.freeze(['electromagnetics']),
 			capability: 'prediction',
-			effect: 'Unlocks the predicted flight path, landing mark, intercept ghost and reachability warning on the chamber view.'
+			effect: 'Draws predicted flight path, landing mark, coasting ghost and reachability.'
 		}),
 		Object.freeze({
 			id: 'ballistics2', name: 'Trajectory computer II', cost: 700, requires: Object.freeze(['ballistics', 'power']),
-			effect: 'Extends the drawn trajectory through rock and powered piston bounces over three flight horizons. Marks the next deck or ground landing for early economical intercepts. Assumes current terrain and a coasting platform; rock destruction and future controls remain uncertain.'
+			effect: '3-bounce forecast through rock and piston contacts; early economy intercepts.'
 		})
 	]);
 	const LOCKED = 'locked';

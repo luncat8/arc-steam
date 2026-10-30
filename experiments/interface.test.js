@@ -42,9 +42,25 @@ function findRow(root, key, id) {
 	}
 	return null;
 }
-function techRow(id) { return findRow(dom.element('research-rows'), 'technology', id); }
-function gearRow(id) { return findRow(dom.element('research-rows'), 'item', id) || findRow(dom.element('equipment-rows'), 'item', id); }
+function findById(root, id) {
+	if (root.id === id) return root;
+	for (const child of root.children) {
+		const found = findById(child, id);
+		if (found) return found;
+	}
+	return null;
+}
+function countRows(root, key) {
+	let total = key in root.dataset ? 1 : 0;
+	for (const child of root.children) total += countRows(child, key);
+	return total;
+}
+function nodeCard(id) { return findRow(dom.element('progression-tree'), 'node', id); }
+function techRow(id) { return findRow(dom.element('progression-tree'), 'technology', id); }
+function gearRow(id) { return findRow(dom.element('progression-tree'), 'item', id); }
+function tierRow(family) { return findRow(dom.element('progression-tree'), 'family', family); }
 function buttonOf(target) { return target.children[1]; }
+function selectOf(target) { return target.children[2]; }
 function fund(cost) {
 	let guard = 0;
 	while (ceiling.state.funds < cost) {
@@ -69,12 +85,28 @@ function study(id) {
 advance(2);
 
 test('the page boots, builds every panel, and reports live telemetry', () => {
-	assert.equal(dom.element('equipment-rows').children.length, 1 + physics.engines.length + 1);
-	assert.ok(research.nodes.every(node => techRow(node.id)));
+	const tree = dom.element('progression-tree');
+	assert.equal(dom.elements.has('research-rows'), false, 'split research list is gone');
+	assert.equal(dom.elements.has('equipment-rows'), false, 'split shop list is gone');
+	assert.equal(dom.element('tree-links').children.length, 12, 'twelve prerequisite edges connect the tree');
+	assert.equal(countRows(tree, 'node'), research.nodes.length, 'each technology has one node card');
+	assert.equal(countRows(tree, 'technology'), research.nodes.length, 'no duplicate research rows');
+	assert.equal(countRows(tree, 'item'), equipment.items.length, 'no duplicate equipment rows');
+	assert.equal(countRows(tree, 'family'), 3, 'engines, radiators and strike balls each get one tier bay');
+	assert.ok(research.nodes.every(node => techRow(node.id) && nodeCard(node.id)));
 	assert.ok(equipment.items.every(item => gearRow(item.id)));
-	assert.equal(gearRow('pad').parentElement.parentElement.children[0], techRow('materials'));
-	assert.equal(techRow('power').parentElement.parentElement.parentElement.children[0], techRow('traction'));
-	assert.match(techRow('power').children[3].textContent, /Traction motors, Heat transfer/);
+	assert.equal(gearRow('pad').parentElement, nodeCard('materials'), 'unlocked gear lives inside its research node');
+	assert.equal(tierRow('radiators').parentElement, nodeCard('thermodynamics'));
+	assert.equal(tierRow('balls').parentElement, nodeCard('impact'));
+	assert.match(techRow('power').children[3].textContent, /Needs: Traction motors, Heat transfer/);
+	// Hovering a node highlights its connected prerequisite and dependent edges.
+	nodeCard('power').dispatch('pointerenter');
+	assert.equal(dom.element('tree-links').children.filter(edge => edge.dataset.focus === 'true').length, 3);
+	assert.equal(nodeCard('traction').dataset.linked, 'true');
+	assert.equal(nodeCard('thermodynamics').dataset.linked, 'true');
+	assert.equal(nodeCard('ballistics2').dataset.linked, 'true');
+	nodeCard('power').dispatch('pointerleave');
+	assert.equal(dom.element('tree-links').children.filter(edge => edge.dataset.focus === 'true').length, 0);
 	assert.equal(dom.element('platform-spec').children.length, 20);
 	assert.equal(dom.element('inventory-rows').children.length, ceiling.state.mineralNames.length);
 	assert.match(dom.element('battery').textContent, /kJ$/);
@@ -83,10 +115,11 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	assert.ok(Math.abs(parseFloat(dom.element('error').textContent)) < 1e-5);
 	assert.equal(dom.element('drive').getAttribute('aria-pressed'), 'true', 'the bounce drive is enabled by default');
 	assert.equal(dom.element('drive').firstChild.textContent, 'Drive on ');
-	const graderButton = dom.element('equipment-rows').children.find(child => child.id === 'commercial-grader');
-	assert.ok(graderButton, 'the commercial grader button is built');
+	const graderButton = findById(tree, 'commercial-grader');
+	assert.ok(graderButton, 'the commercial grader button is built in the base chassis root');
 	assert.equal(graderButton.disabled, false, 'the grader hire button is always available');
 	assert.equal(dom.element('research-progress').textContent, '0 / ' + research.nodes.length);
+	assert.equal(dom.element('science-funds').textContent, '0.0 cr');
 	assert.equal(dom.element('prediction-status').hidden, true, 'the overlay stays hidden before its research');
 	// The installed specification starts at base tuning.
 	const spec = dom.element('platform-spec').children;
@@ -142,19 +175,22 @@ test('locked and unaffordable upgrades say why instead of failing silently', () 
 	assert.equal(buttonOf(pad).textContent, 'Locked');
 	assert.equal(buttonOf(pad).getAttribute('aria-disabled'), 'true', 'blocked but still clickable, so the refusal is explained');
 	buttonOf(pad).dispatch('click');
-	assert.match(dom.element('equipment-status').textContent, /needs the Rebound materials research first/);
+	assert.match(dom.element('progression-status').textContent, /needs the Rebound materials research first/);
 	const materials = techRow('materials');
 	assert.equal(materials.dataset.state, 'available');
 	assert.equal(buttonOf(materials).textContent, 'Research');
 	assert.equal(buttonOf(materials).getAttribute('aria-disabled'), 'true', 'available but not funded yet');
 	buttonOf(materials).dispatch('click');
-	assert.match(dom.element('research-status').textContent, /Not enough funds for Rebound materials \(180 cr needed\)/);
+	assert.match(dom.element('progression-status').textContent, /Not enough funds for Rebound materials \(180 cr needed\)/);
 	const ballistics = techRow('ballistics');
 	assert.equal(ballistics.dataset.state, 'locked');
 	buttonOf(ballistics).dispatch('click');
-	assert.match(dom.element('research-status').textContent, /stays locked until Pulse electromagnetics is researched/);
-	assert.match(ballistics.children[3].textContent, /Needs research: Pulse electromagnetics/);
-	assert.match(gearRow('flywheel').children[3].textContent, /Needs research: Flywheel storage/);
+	assert.match(dom.element('progression-status').textContent, /stays locked until Pulse electromagnetics is researched/);
+	assert.match(ballistics.children[3].textContent, /Needs: Pulse electromagnetics/);
+	buttonOf(tierRow('radiators')).dispatch('click');
+	assert.match(dom.element('progression-status').textContent, /need the Heat transfer research first/);
+	buttonOf(tierRow('balls')).dispatch('click');
+	assert.match(dom.element('progression-status').textContent, /need the Impact forging research first/);
 });
 
 test('shortcuts drive the simulation without re-triggering focused controls', () => {
@@ -194,15 +230,17 @@ test('measured sales fund research, which unlocks equipment and the overlay', ()
 	assert.ok(world, 'the page owns the stepped world');
 	study('materials');
 	assert.equal(techRow('materials').dataset.state, 'researched');
+	assert.equal(nodeCard('materials').dataset.state, 'researched');
 	assert.equal(buttonOf(techRow('materials')).textContent, 'Done');
 	assert.equal(dom.element('research-progress').textContent, '1 / ' + research.nodes.length);
-	assert.match(dom.element('research-status').textContent, /^Researched Rebound materials at /);
+	assert.match(dom.element('progression-status').textContent, /^Researched Rebound materials at /);
 	const pad = gearRow('pad');
 	assert.equal(pad.dataset.state, 'available');
 	assert.equal(buttonOf(pad).textContent, 'Buy');
 	fund(equipment.find('pad').cost);
+	assert.equal(dom.element('science-funds').textContent, ceiling.state.funds.toFixed(1) + ' cr');
 	buttonOf(pad).dispatch('click');
-	assert.match(dom.element('equipment-status').textContent, /^Installed Rebound pad at /);
+	assert.match(dom.element('progression-status').textContent, /^Installed Rebound pad at /);
 	assert.equal(pad.dataset.state, 'installed');
 	const spec = dom.element('platform-spec').children;
 	assert.equal(spec[1].textContent, physics.dryMass().toFixed(1) + ' kg');
@@ -562,7 +600,7 @@ test('reset clears research, equipment and the overlay together', () => {
 	assert.equal(gearRow('pad').dataset.state, 'locked');
 	assert.equal(dom.element('platform-spec').children[1].textContent, physics.config.platformMass.toFixed(1) + ' kg');
 	assert.equal(dom.element('prediction-status').hidden, true);
-	assert.equal(dom.element('research-status').textContent, 'Sell cargo at a wall to fund research.');
+	assert.equal(dom.element('progression-status').textContent, 'Sell cargo at a wall to fund research and shop gear.');
 	assert.equal(dom.element('transaction-count').textContent, '(0)');
 	assert.ok(Math.abs(parseFloat(dom.element('error').textContent)) < 1e-5);
 });
@@ -638,8 +676,7 @@ test('test mode grants all upgrades, preserves credits, and reapplies them on Ne
 	assert.equal(dom.element('research-progress').textContent, research.nodes.length + ' / ' + research.nodes.length);
 	assert.ok(research.nodes.every(node => techRow(node.id).dataset.state === 'researched'));
 	assert.ok(equipment.items.every(item => gearRow(item.id).dataset.state === 'installed'));
-	assert.match(dom.element('equipment-status').textContent, /all \d+ equipment items installed/);
-	assert.match(dom.element('research-status').textContent, /all \d+ technologies researched/);
+	assert.match(dom.element('progression-status').textContent, /all 10 technologies researched and all 7 equipment items installed/);
 	assert.ok(ceiling.state.ledger.filter(entry => entry.source === 'test').length >= research.nodes.length + equipment.items.length);
 	assert.match(dom.element('ledger').children[0].textContent, /Test installed /);
 	assert.match(dom.element('transaction-status').textContent, /Test mode installed /);
@@ -653,7 +690,7 @@ test('test mode grants all upgrades, preserves credits, and reapplies them on Ne
 	toggle.checked = false;
 	toggle.dispatch('change');
 	assert.equal(research.state.completed, research.nodes.length, 'turning the mode off does not revoke grants');
-	assert.match(dom.element('research-status').textContent, /remains active until New game/);
+	assert.match(dom.element('progression-status').textContent, /remain active until New game/);
 	dom.element('reset').dispatch('click');
 	assert.equal(research.state.completed, 0, 'a fresh non-test game clears research');
 	assert.ok(equipment.items.every(item => !equipment.isInstalled(item.id)));
@@ -680,59 +717,90 @@ test('B and Shift+B hold braking, override travel, and release cleanly', () => {
 	assert.equal(world.brake, false);
 });
 
-test('shop engine rows buy/install and offer free owned swaps only while parked left', () => {
+test('tier selector bays buy/install engines at left shop and swap owned tiers free', () => {
 	dom.element('reset').dispatch('click');
 	advance(2);
-	const panel = dom.element('equipment-rows');
-	const hand = buttonOf(panel.children[1]);
-	const electric = buttonOf(panel.children[4]);
-	assert.equal(hand.textContent, 'Buy & install');
-	assert.equal(hand.getAttribute('aria-disabled'), 'true');
+	const engines = tierRow('engines');
+	const engineSelect = selectOf(engines);
+	const engineButton = buttonOf(engines);
+	assert.equal(engineSelect.value, 'electric');
+	assert.equal(engineButton.textContent, 'Installed');
+	engineSelect.value = 'hand';
+	engineSelect.dispatch('change');
+	assert.equal(engineButton.textContent, 'Buy & install');
+	assert.equal(engineButton.getAttribute('aria-disabled'), 'true');
+	engineButton.dispatch('click');
+	assert.match(dom.element('progression-status').textContent, /Park at the left shop/);
 	fund(equipment.engineCosts.hand);
 	world.platform.x = physics.platformMin(); world.platform.vx = 0;
 	world.direction = 0; world.target = NaN;
 	harness.sync(world);
 	advance(8);
-	assert.equal(hand.getAttribute('aria-disabled'), 'false');
-	hand.dispatch('click');
+	assert.equal(engineButton.getAttribute('aria-disabled'), 'false');
+	engineButton.dispatch('click');
 	assert.equal(physics.engineNow().id, 'hand');
-	assert.equal(hand.textContent, 'Installed');
-	assert.equal(electric.textContent, 'Install free');
+	assert.equal(engineButton.textContent, 'Installed');
+	engineSelect.value = 'electric';
+	engineSelect.dispatch('change');
+	assert.equal(engineButton.textContent, 'Install free');
 	const funds = ceiling.state.funds;
-	electric.dispatch('click');
+	engineButton.dispatch('click');
 	assert.equal(physics.engineNow().id, 'electric');
-	assert.equal(hand.textContent, 'Install free');
+	assert.equal(engineButton.textContent, 'Installed');
 	assert.equal(ceiling.state.funds, funds);
+
+	// Radiators and strike balls unlock inside their research node cards and swap owned tiers free.
+	study('thermodynamics');
+	const radiators = tierRow('radiators');
+	assert.equal(selectOf(radiators).value, 'vent');
+	assert.equal(buttonOf(radiators).textContent, 'Buy & install');
+	fund(300);
+	buttonOf(radiators).dispatch('click');
+	assert.equal(equipment.installedRadiator(), 'vent');
+	assert.equal(buttonOf(radiators).textContent, 'Installed');
+
+	study('impact');
+	const balls = tierRow('balls');
+	assert.equal(selectOf(balls).value, 'hardened');
+	assert.equal(buttonOf(balls).textContent, 'Buy & install');
+	fund(380);
+	buttonOf(balls).dispatch('click');
+	assert.equal(equipment.installedBall(), 'hardened');
+	selectOf(balls).value = 'standard';
+	selectOf(balls).dispatch('change');
+	assert.equal(buttonOf(balls).textContent, 'Install free');
+	buttonOf(balls).dispatch('click');
+	assert.equal(equipment.installedBall(), 'standard');
 });
 
 test('commercial grader button toggles call/dismiss and can cancel a return', () => {
 	dom.element('reset').dispatch('click');
 	advance(2);
-	const button = dom.element('equipment-rows').children.find(child => child.id === 'commercial-grader');
+	const button = findById(dom.element('progression-tree'), 'commercial-grader');
 	const bot = ceiling.state.graderBot;
-	assert.match(button.textContent, /^Call grader/);
+	assert.match(button.textContent, /^Call · 50% share/);
 	assert.equal(button.getAttribute('aria-pressed'), 'false');
 	assert.equal(bot.x, ceiling.state.garageParkX);
 	button.dispatch('click');
 	assert.equal(bot.active, true);
-	assert.match(button.textContent, /^Dismiss grader/);
+	assert.match(button.textContent, /^Dismiss · return/);
 	assert.equal(button.getAttribute('aria-pressed'), 'true');
-	assert.match(dom.element('equipment-status').textContent, /^Grader called/);
+	assert.match(dom.element('progression-status').textContent, /^Grader called/);
 	const dispatchX = bot.x;
 	advance(120);
 	assert.ok(bot.x < dispatchX, 'the called grader physically leaves its bay');
 	button.dispatch('click');
 	assert.equal(bot.active, false);
 	assert.equal(bot.returning, true);
-	assert.match(button.textContent, /^Call grader · cancel return/);
-	assert.match(dom.element('equipment-status').textContent, /^Grader dismissed · returning/);
+	assert.match(button.textContent, /^Call · cancel return/);
+	assert.match(dom.element('progression-status').textContent, /^Grader dismissed · returning/);
 	const returnX = bot.x;
 	advance(30);
 	assert.ok(bot.x > returnX, 'dismissal returns the vehicle instead of despawning it');
 	button.dispatch('click');
 	assert.equal(bot.active, true);
 	assert.equal(bot.returning, false);
-	assert.match(dom.element('equipment-status').textContent, /^Grader return cancelled/);
+	assert.match(dom.element('progression-status').textContent, /^Grader return cancelled/);
 	button.dispatch('click');
 	assert.equal(bot.returning, true);
 });
@@ -745,6 +813,7 @@ test('telemetry cards open the market and science drawers', () => {
 	dom.element('science-open').dispatch('click');
 	assert.equal(dom.element('science-drawer').hidden, false, 'funds opens science and shop');
 	assert.equal(dom.element('science-open').getAttribute('aria-expanded'), 'true');
+	assert.ok(dom.element('tree-links').children.every(edge => edge.getAttribute('d')), 'opening the drawer lays out SVG connector paths');
 	dom.element('market-open').dispatch('click');
 	assert.equal(dom.element('science-drawer').hidden, true);
 	assert.equal(dom.element('market-drawer').hidden, false, 'cargo storage opens market and ledger');
@@ -756,9 +825,10 @@ test('telemetry cards open the market and science drawers', () => {
 
 test('context help lives in one drawer, and the panels keep short lines only', () => {
 	// The explanations moved out of the panels, so the workspace stays compact.
-	assert.ok(dom.element('tech-hint').textContent.length < 100, dom.element('tech-hint').textContent);
-	assert.ok(dom.element('equipment-hint').textContent.length < 70, dom.element('equipment-hint').textContent);
-	for (const node of ['research-status', 'equipment-status', 'transaction-status', 'mineral-price']) assert.ok(dom.element(node).textContent.length < 120);
+	assert.ok(help.find('progression'), 'one unified Sci+Shop progression topic replaces split topics');
+	assert.equal(help.find('research'), undefined);
+	assert.equal(help.find('equipment'), undefined);
+	for (const node of ['progression-status', 'transaction-status', 'mineral-price']) assert.ok(dom.element(node).textContent.length < 120);
 	// Every topic has one mark, every mark points at the drawer, and the index
 	// lists all of them.
 	for (const topic of help.topics) {

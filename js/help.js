@@ -33,7 +33,7 @@
 				['Drag in open air', 'Tilt the piston; left or up raises the angle'],
 				['Hover over rock', 'Inspect its mix, value and remaining strength'],
 				['Click low ground', 'Set a travel target'],
-				['Show drawer', 'Change what the rock is coloured by']
+				['Rock view bar', 'Change what the rock is coloured by']
 			]
 		},
 		{
@@ -128,23 +128,13 @@
 			]
 		},
 		{
-			id: 'research',
-			label: 'Research',
-			title: 'Technology',
+			id: 'progression',
+			label: 'Sci+Shop',
+			title: 'Science and shop tree',
 			text: [
-				'Research debits funds once, applies its measured effect immediately, and unlocks the equipment that needs it. A node stays locked until every prerequisite is researched.',
-				'A refused purchase always says why: a missing prerequisite reads Locked, an unaffordable node stays Research and is marked blocked.',
-				'Communism mode makes every node free and drops the gates; test mode grants the whole tree at once.'
-			]
-		},
-		{
-			id: 'equipment',
-			label: 'Equipment',
-			title: 'Equipment and specification',
-			text: [
-				'Purchases debit funds and install at once. Each row states what buying it changes, and the installed specification above them is the live sum of base tuning plus every research and equipment delta.',
-				'Radiator and ball tiers share one installed unit: fitting a tier swaps the previous one together with its mass and its cooling or damage change. Engines are bought at the left garage.',
-				'Mass is real: dry mass sets acceleration, so a heavier platform reaches the same force more slowly.'
+				'One tree combines technology research and the equipment each node unlocks. Base chassis gear — the road grader, engine powertrain bay and commercial grader bot — sits at the root and needs no research.',
+				'Researching a node debits funds once, applies its measured bonus immediately, and unlocks the shop slot attached inside that node. Tiered families (engines, cooling radiators and strike balls) fit one unit at a time and swap owned tiers for free; engines are fitted while parked at the left shop.',
+				'Blocked controls stay clickable and explain why in the status bar above the tree. Live platform specifications update in place as deltas stack. Communism mode drops every price and prerequisite; test mode grants the whole tree and shop at once.'
 			]
 		},
 		{

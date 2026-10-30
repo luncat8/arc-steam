@@ -6,38 +6,38 @@
 	const items = Object.freeze([
 		Object.freeze({
 			id: 'grader', name: 'Road grader', cost: 300, mass: 10,
-			effect: 'Grades a 1.5 m swath under the centre while moving at 0.03 m/s, shaving and smoothing the top without digging beneath the platform or below the original ground. Adds 10 kg and rolling resistance when working.'
+			effect: '1.5 m under-chassis blade smooths floor rubble while moving; adds rolling resistance.'
 		}),
 		Object.freeze({
 			id: 'pad', name: 'Rebound pad', cost: 250, mass: 6, requires: 'materials',
 			retentionBonus: 0.03,
-			effect: 'Reflector keeps 93% of normal kinetic energy per bounce (up from the 90% base). Denser pad adds 6 kg.'
+			effect: 'Reflector bounce retention +3% (93% over stock).'
 		}),
 		Object.freeze({
 			id: 'coil', name: 'Drive coil', cost: 400, mass: 12, requires: 'electromagnetics',
 			pulseBonus: 12,
-			effect: 'Bounce drive pulse rises by 12 J per contact. Coil adds 12 kg.'
+			effect: 'Bounce drive pulse +12 J per contact.'
 		}),
 		Object.freeze({
 			id: 'motor', name: 'High-torque motor', cost: 550, mass: 6, requires: 'traction',
 			forceBonus: 360, speedBonus: 6,
-			effect: 'Replaces the stock motor: engine force rises by 360 N and top speed by 6 m/s, for 6 kg net.'
+			effect: 'Engine force +360 N and top speed +6 m/s.'
 		}),
 		Object.freeze({
 			id: 'overdrive', name: 'Overdrive unit', cost: 950, mass: 8, requires: 'power',
 			forceBonus: 480, speedBonus: 6,
-			effect: 'Engine force rises by a further 480 N and top speed by 6 m/s. Adds 8 kg. Full-speed runs spend the reserve fast and brake hot.'
+			effect: 'Engine force +480 N and top speed +6 m/s; burns reserve and brakes hot.'
 		}),
-	Object.freeze({
-		id: 'chassis', name: 'Lightweight chassis', cost: 350, mass: -12, requires: 'alloys',
-		effect: 'Cuts dry platform mass by 12 kg for stronger acceleration under load.'
-	}),
-	Object.freeze({
-		id: 'flywheel', name: 'Brake flywheel', cost: 480, mass: 14, requires: 'storage',
+		Object.freeze({
+			id: 'chassis', name: 'Lightweight chassis', cost: 350, mass: -12, requires: 'alloys',
+			effect: 'Cuts dry platform mass by 12 kg for faster acceleration under load.'
+		}),
+		Object.freeze({
+			id: 'flywheel', name: 'Brake flywheel', cost: 480, mass: 14, requires: 'storage',
 			recoveryFraction: 0.55,
-			effect: 'Stores 55% of braking energy and returns it to the reserve at 90% round-trip efficiency; the rest still becomes heat. Wall stops stay unrecovered. Adds 14 kg.'
-	})
-]);
+			effect: 'Returns 55% of braking energy to reserve at 90% efficiency (wall stops unrecovered).'
+		})
+	]);
 	// Radiator tiers share one installed unit: fitting a tier swaps the previous
 	// one, so mass and exposed cooling area move with it instead of stacking.
 	// Heat transfer research unlocks the family; every tier is purchasable once,

@@ -103,8 +103,8 @@ function findRow(root, key, id) {
 	}
 	return null;
 }
-function techRow(id) { return findRow(dom.element('research-rows'), 'technology', id); }
-function gearRow(id) { return findRow(dom.element('research-rows'), 'item', id) || findRow(dom.element('equipment-rows'), 'item', id); }
+function techRow(id) { return findRow(dom.element('progression-tree'), 'technology', id); }
+function gearRow(id) { return findRow(dom.element('progression-tree'), 'item', id); }
 
 test('the system-bar switch turns the commons on and the panels follow', () => {
 	const box = dom.element('commune');
@@ -120,11 +120,9 @@ test('the system-bar switch turns the commons on and the panels follow', () => {
 	assert.match(techRow('materials').children[0].textContent, /REBOUND MATERIALS · FREE/);
 	assert.equal(gearRow('pad').children[1].getAttribute('aria-disabled'), 'false', 'a research gate is waived');
 	assert.equal(techRow('ballistics').children[1].getAttribute('aria-disabled'), 'false', 'a prerequisite is waived');
-	assert.match(gearRow('pad').children[3].textContent, /The commons shares it/, 'the note stops asking for research');
-	assert.match(techRow('ballistics').children[3].textContent, /The commons shares every node/);
-	assert.match(dom.element('tech-hint').textContent, /Free · no prerequisites/, 'the panel introduction is short and still names the mode');
-	assert.match(dom.element('equipment-hint').textContent, /Free · installs at once/);
+	assert.match(dom.element('progression-status').textContent, /The commons shares every technology and machine · nothing costs credits\./);
 	assert.equal(dom.element('credits').textContent, 'commons');
+	assert.equal(dom.element('science-funds').textContent, 'commons');
 	assert.equal(dom.element('funds').textContent, 'commons');
 	assert.match(dom.element('funds-note').textContent, /Nothing costs/);
 	// The market imports energy without a purse.
@@ -151,7 +149,7 @@ test('a free purchase installs and is booked as free', () => {
 	pad.children[1].dispatch('click');
 	advance(4);
 	assert.equal(equipment.isInstalled('pad'), true);
-	assert.match(dom.element('equipment-status').textContent, /^Installed Rebound pad at /);
+	assert.match(dom.element('progression-status').textContent, /^Installed Rebound pad at /);
 	assert.match(dom.element('ledger').children[0].textContent, /Bought Rebound pad · free/);
 	assert.match(dom.element('transaction-status').textContent, /^Bought Rebound pad for free at /);
 	assert.equal(ceiling.state.funds, 0, 'nothing was paid');
@@ -163,8 +161,9 @@ test('the M shortcut switches the mode off again', () => {
 	assert.equal(ceiling.state.commune, false);
 	assert.equal(dom.element('commune').checked, false, 'the switch follows the shortcut');
 	assert.match(gearRow('pad').children[0].textContent, /REBOUND PAD · 250 CR/, 'the list price is back');
-	assert.match(dom.element('tech-hint').textContent, /Research unlocks the branches/, 'the research tree introduction is back too');
+	assert.match(dom.element('progression-status').textContent, /Sell cargo at a wall to fund research and shop gear\./);
 	assert.equal(dom.element('credits').textContent, '0.0 cr');
+	assert.equal(dom.element('science-funds').textContent, '0.0 cr');
 	dom.key('KeyM');
 	advance(4);
 	assert.equal(ceiling.state.commune, true);

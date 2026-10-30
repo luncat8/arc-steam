@@ -8,9 +8,12 @@ const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
 // Mirror the renderer's chamber transform to point at a known world point.
 async function chamberTransform(page) {
 	const box = await page.locator('#c').boundingBox();
-	const chamberHeight = await page.evaluate(() => SteamPhysics.config.ceiling);
-	const scale = Math.min((box.width - 32) / 25.5, (box.height - 80) / chamberHeight);
-	const offsetX = (box.width - 25.5 * scale) / 2 + 1.5 * scale;
+	const [chamberHeight, viewWidth] = await page.evaluate(() => [
+		SteamPhysics.config.ceiling,
+		25.8 + SteamCeiling.state.garageDepth
+	]);
+	const scale = Math.min((box.width - 32) / viewWidth, (box.height - 80) / chamberHeight);
+	const offsetX = (box.width - viewWidth * scale) / 2 + 1.5 * scale;
 	const floorY = (box.height + chamberHeight * scale) / 2 + 9;
 	return { x: box.x + offsetX, y: box.y + floorY, scale };
 }
@@ -79,12 +82,21 @@ async function main() {
 		await page.locator('#science-open').click();
 		await page.locator('#pause').click();
 		const nodeCount = await page.evaluate(() => SteamResearch.nodes.length);
-		assert.equal(await page.locator('#research-rows .upgrade-row').count(), nodeCount);
-		// Items, engines, and the radiator and ball tier selectors share the row layout.
-		assert.equal(await page.locator('#equipment-rows .upgrade-row').count(), await page.evaluate(() => SteamEquipment.items.length + SteamPhysics.engines.length + 2));
+		assert.equal(await page.locator('#research-rows, #equipment-rows').count(), 0, 'separate split sections are gone');
+		assert.equal(await page.locator('#progression-tree .tree-node').count(), nodeCount);
+		assert.equal(await page.locator('#progression-tree [data-technology]').count(), nodeCount, 'each research node appears once');
+		assert.equal(await page.locator('#progression-tree [data-item]').count(), await page.evaluate(() => SteamEquipment.items.length), 'each equipment item appears once');
+		assert.equal(await page.locator('#progression-tree .tier-slot').count(), 3, 'engines, radiators and strike balls each have one tier slot');
+		assert.equal(await page.locator('#tree-links path').count(), 12, 'twelve SVG prerequisite edges connect the tree');
+		assert.equal(await page.evaluate(() => Array.from(document.querySelectorAll('#tree-links path')).every(path => Boolean(path.getAttribute('d')))), true, 'every SVG edge is laid out');
+		assert.equal(await page.evaluate(() => {
+			const content = document.querySelector('#science-drawer .tool-drawer-content');
+			return content.scrollWidth <= content.clientWidth && content.scrollHeight <= content.clientHeight;
+		}), true, 'the whole progression tree fits inside 1440x1000 without overflow');
 		assert.equal(await page.locator('#commercial-grader').count(), 1);
 		assert.equal(await page.locator('#research-progress').textContent(), '0 / ' + nodeCount);
 		assert.equal(await page.locator('#platform-spec').evaluate(node => node.children.length), 20, 'ten specification labels with their values');
+		await page.locator('#science-close').click();
 		assert.equal(await page.locator('#refuel').isDisabled(), true, 'a full reserve needs no recharge');
 		assert.equal(await page.locator('#prediction-status').isHidden(), true, 'the overlay waits for its research');
 		assert.match(await page.locator('#temperature').textContent(), /°C/);
@@ -149,15 +161,13 @@ async function main() {
 		assert.match(await page.locator('.mine-footer').textContent(), /CHARGE PAD · 3 kW/);
 		// Locked upgrades explain themselves instead of failing silently: blocked buttons are
 		// aria-disabled, so the click reaches the handler (force skips Playwright's enabled check).
-		await page.locator('#research-rows .upgrade-row').last().locator('button').click({ force: true });
-		assert.match(await page.locator('#research-status').textContent(), /stays locked until/);
-		// The road grader sits first and needs no research, so the pad row is the
-		// one that must explain its research prerequisite.
-		await page.locator('#equipment-rows .upgrade-row', { hasText: 'REBOUND PAD' }).locator('button').click({ force: true });
-		assert.match(await page.locator('#equipment-status').textContent(), /needs the .* research first/);
-		// The force-clicks above scrolled the economy row into view, which can
-		// push the chamber's top above the viewport; a chamber point computed
-		// from a bounding box up there clicks nothing. Scroll back first.
+		await page.locator('#science-open').click();
+		await page.locator('[data-technology="ballistics2"] button').click({ force: true });
+		assert.match(await page.locator('#progression-status').textContent(), /stays locked until/);
+		// The road grader sits in the base chassis root and needs no research, so the
+		// pad slot inside Rebound materials explains its research prerequisite.
+		await page.locator('[data-item="pad"] button').click({ force: true });
+		assert.match(await page.locator('#progression-status').textContent(), /needs the .* research first/);
 		await page.locator('#science-close').click();
 		await page.locator('#c').scrollIntoViewIfNeeded();
 		const rockPoint = await chamberPoint(page, 12, 14.5);
@@ -175,33 +185,36 @@ async function main() {
 		assert.ok(Math.abs(parseFloat(await page.locator('#error').textContent())) < 0.00001);
 		// Communism mode: the system-bar switch zeroes every price, waives the
 		// research gates and books the handouts as free.
+		await page.locator('#science-open').click();
 		await page.locator('#commune').click();
 		assert.equal(await page.evaluate(() => SteamCeiling.state.commune), true);
 		assert.equal(await page.locator('#credits').textContent(), 'commons');
+		assert.equal(await page.locator('#science-funds').textContent(), 'commons');
 		assert.equal(await page.locator('#refuel-cost').textContent(), 'free');
-		assert.match(await page.locator('#equipment-rows .upgrade-row').first().locator('b').textContent(), /ROAD GRADER · FREE/);
-		assert.equal(await page.locator('#research-rows .upgrade-row').last().locator('button').getAttribute('aria-disabled'), 'false', 'a gated node is open in the commons');
-		await page.locator('#equipment-rows .upgrade-row', { hasText: 'BRAKE FLYWHEEL' }).locator('button').click({ force: true });
-		assert.match(await page.locator('#equipment-status').textContent(), /^Installed Brake flywheel at /);
+		assert.match(await page.locator('[data-item="grader"] b').textContent(), /ROAD GRADER · FREE/);
+		assert.equal(await page.locator('[data-technology="ballistics2"] button').getAttribute('aria-disabled'), 'false', 'a gated node is open in the commons');
+		await page.locator('[data-item="flywheel"] button').click({ force: true });
+		assert.match(await page.locator('#progression-status').textContent(), /^Installed Brake flywheel at /);
 		assert.match(await page.locator('#ledger').locator('li').first().textContent(), /Bought Brake flywheel · free/);
 		assert.equal(await page.evaluate(() => SteamCeiling.state.funds), 0, 'the commons charges nothing');
 		await page.keyboard.press('KeyM');
 		assert.equal(await page.evaluate(() => SteamCeiling.state.commune), false);
-			assert.match(await page.locator('#equipment-rows .upgrade-row').first().locator('b').textContent(), /ROAD GRADER · 300 CR/);
-			assert.equal(await page.locator('#credits').textContent(), '0.0 cr');
-			// Test mode grants the whole tree and shop for free, persists as a mode
-			// across New game, and leaves those grants in place when turned off.
-			await page.locator('#test-mode').click();
-			assert.equal(await page.locator('#research-progress').textContent(), nodeCount + ' / ' + nodeCount);
-			assert.equal(await page.locator('#equipment-rows .upgrade-row[data-state="installed"]').count(), await page.evaluate(() => SteamEquipment.items.length));
-			assert.match(await page.locator('#ledger li').first().textContent(), /Test installed /);
-			await page.locator('#reset').click();
-			assert.equal(await page.locator('#test-mode').isChecked(), true);
-			assert.equal(await page.locator('#research-progress').textContent(), nodeCount + ' / ' + nodeCount);
-			await page.locator('#test-mode').click();
-			assert.equal(await page.locator('#research-progress').textContent(), nodeCount + ' / ' + nodeCount, 'test grants are not revoked by switching the mode off');
-			await page.locator('#reset').click();
-			assert.equal(await page.locator('#research-progress').textContent(), '0 / ' + nodeCount);
+		assert.match(await page.locator('[data-item="grader"] b').textContent(), /ROAD GRADER · 300 CR/);
+		assert.equal(await page.locator('#credits').textContent(), '0.0 cr');
+		// Test mode grants the whole tree and shop for free, persists as a mode
+		// across New game, and leaves those grants in place when turned off.
+		await page.locator('#test-mode').click();
+		assert.equal(await page.locator('#research-progress').textContent(), nodeCount + ' / ' + nodeCount);
+		assert.equal(await page.locator('#progression-tree [data-item][data-state="installed"]').count(), await page.evaluate(() => SteamEquipment.items.length));
+		assert.match(await page.locator('#ledger li').first().textContent(), /Test installed /);
+		await page.locator('#reset').click();
+		assert.equal(await page.locator('#test-mode').isChecked(), true);
+		assert.equal(await page.locator('#research-progress').textContent(), nodeCount + ' / ' + nodeCount);
+		await page.locator('#test-mode').click();
+		assert.equal(await page.locator('#research-progress').textContent(), nodeCount + ' / ' + nodeCount, 'test grants are not revoked by switching the mode off');
+		await page.locator('#reset').click();
+		assert.equal(await page.locator('#research-progress').textContent(), '0 / ' + nodeCount);
+		await page.locator('#science-close').click();
 			// Autopilot: one checkbox per duty, the same duty on a shortcut, and each one
 		// temporarily yields to the manual command that does the same job.
 		assert.equal(await page.locator('#autopilot input[type="checkbox"]').count(), 4);

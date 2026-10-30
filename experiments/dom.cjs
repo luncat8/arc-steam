@@ -34,6 +34,13 @@ class Element {
 	set value(next) { this.raw = next === null || next === undefined ? '' : String(next); }
 	get firstChild() { return this.textNode; }
 	appendChild(child) { this.children.push(child); child.parentElement = this; return child; }
+	insertBefore(child, reference) {
+		child.parentElement = this;
+		const index = this.children.indexOf(reference);
+		if (index < 0) this.children.push(child);
+		else this.children.splice(index, 0, child);
+		return child;
+	}
 	append(...children) { for (const child of children) this.appendChild(child); }
 	replaceChildren(...children) { this.children = children; }
 	setAttribute(name, value) { this.attributes[name] = String(value); }
@@ -101,6 +108,7 @@ const document = {
 	elements,
 	getElementById(id) { return elements.get(id) || null; },
 	createElement(tagName) { return new Element(tagName); },
+	createElementNS(_ns, tagName) { return new Element(tagName); },
 	addEventListener(type, handler) {
 		if (!listeners[type]) listeners[type] = [];
 		listeners[type].push(handler);
