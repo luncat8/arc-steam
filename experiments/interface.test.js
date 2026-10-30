@@ -280,8 +280,9 @@ function fillCargo(count) {
 
 // The shim canvas is 1000 × 420, matching the page's own view and margins.
 function chamberPoint(worldX, worldY) {
-	const scale = Math.min((1000 - 32) / 25.5, (420 - 80) / physics.config.ceiling);
-	return { clientX: (1000 - 25.5 * scale) / 2 + 1.5 * scale + worldX * scale, clientY: (420 + physics.config.ceiling * scale) / 2 + 9 - worldY * scale };
+	const viewWidth = 25.8 + ceiling.state.garageDepth;
+	const scale = Math.min((1000 - 32) / viewWidth, (420 - 80) / physics.config.ceiling);
+	return { clientX: (1000 - viewWidth * scale) / 2 + 1.5 * scale + worldX * scale, clientY: (420 + physics.config.ceiling * scale) / 2 + 9 - worldY * scale };
 }
 
 test('clicking rock inspects a cell and clicking low commands travel, without inspector sliders', () => {
@@ -643,4 +644,36 @@ test('shop engine rows buy/install and offer free owned swaps only while parked 
 	assert.equal(physics.engineNow().id, 'electric');
 	assert.equal(hand.textContent, 'Install free');
 	assert.equal(ceiling.state.funds, funds);
+});
+
+test('commercial grader button toggles call/dismiss and can cancel a return', () => {
+	dom.element('reset').dispatch('click');
+	advance(2);
+	const button = dom.element('equipment-rows').children.find(child => child.id === 'commercial-grader');
+	const bot = ceiling.state.graderBot;
+	assert.match(button.textContent, /^Call grader/);
+	assert.equal(button.getAttribute('aria-pressed'), 'false');
+	assert.equal(bot.x, ceiling.state.garageParkX);
+	button.dispatch('click');
+	assert.equal(bot.active, true);
+	assert.match(button.textContent, /^Dismiss grader/);
+	assert.equal(button.getAttribute('aria-pressed'), 'true');
+	assert.match(dom.element('equipment-status').textContent, /^Grader called/);
+	const dispatchX = bot.x;
+	advance(120);
+	assert.ok(bot.x < dispatchX, 'the called grader physically leaves its bay');
+	button.dispatch('click');
+	assert.equal(bot.active, false);
+	assert.equal(bot.returning, true);
+	assert.match(button.textContent, /^Call grader · cancel return/);
+	assert.match(dom.element('equipment-status').textContent, /^Grader dismissed · returning/);
+	const returnX = bot.x;
+	advance(30);
+	assert.ok(bot.x > returnX, 'dismissal returns the vehicle instead of despawning it');
+	button.dispatch('click');
+	assert.equal(bot.active, true);
+	assert.equal(bot.returning, false);
+	assert.match(dom.element('equipment-status').textContent, /^Grader return cancelled/);
+	button.dispatch('click');
+	assert.equal(bot.returning, true);
 });

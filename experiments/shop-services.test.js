@@ -55,10 +55,11 @@ test('commercial grader can be dispatched from anywhere, shuttles and settles 50
 	assert.ok(c.hireGrader(w), 'hiring does not require parking at the left shop');
 	assert.equal(c.hireGrader(w), false);
 	const funds = s.funds;
-	// One full crossing takes 16 s at 1.5 m/s; one settlement at the far wall,
-	// then the bot keeps running (shuttles back and forth instead of respawning).
-	for (let i = 0; i < 240 * 16; i++) c.step(w, p.config.step, p.platformMass(w));
+	// The bot first drives 0.75 m out of its bay, then makes the 16 s crossing.
+	// Wait for the actual turnaround rather than assuming it starts at the wall.
+	for (let i = 0; i < 240 * 20 && s.graderBot.direction === -1; i++) c.step(w, p.config.step, p.platformMass(w));
 	assert.equal(s.graderBot.active, true);
+	assert.equal(s.graderBot.x, 0);
 	assert.equal(s.graderBot.direction, 1);
 	near(s.funds - funds, s.columns * 2);
 	for (let i = 0; i < s.columns; i++) near(s.floorPiles[i], s.floorCellHeight * 2);
@@ -76,10 +77,13 @@ test('commercial grader can be dispatched from anywhere, shuttles and settles 50
 
 test('the inactive grader remains drawn in its low garage and the active bot lifts a wheel', () => {
 	const w = p.createWorld();
+	const s = c.state;
 	const arcs = [];
 	const context = { beginPath() {}, arc(x, y, radius) { arcs.push({ x, y, radius }); }, closePath() {}, fill() {} };
 	c.drawGraderBot(context);
-	near(arcs[0].x, p.config.width);
+	near(arcs[0].x, s.garageParkX);
+	assert.ok(arcs[0].x > p.config.width, 'the parked grader is inside the recessed bay, not clipped by the door');
+	assert.ok(s.garageHeight > 0.12 && s.garageHeight < p.config.deck, 'the garage has a deliberately low opening');
 	near(arcs[0].radius, 0.7);
 	w.platform.x = p.platformMin();
 	assert.ok(c.hireGrader(w));
@@ -90,6 +94,38 @@ test('the inactive grader remains drawn in its low garage and the active bot lif
 	near(p.platformBaseAt(12, 0), 0);
 	p.createWorld();
 	assert.equal(c.state.graderBot.active, false);
+});
+
+test('dismissed commercial grader returns with its load and stays drawn in its parking bay', () => {
+	const w = p.createWorld();
+	const s = c.state;
+	s.floorPiles.fill(s.floorCellHeight * 3);
+	s.floorValues.fill(12);
+	assert.ok(c.toggleGrader(w));
+	for (let i = 0; i < 240 * 2; i++) c.step(w, p.config.step, p.platformMass(w));
+	assert.ok(s.graderBot.value > 0, 'the working grader has a load to bring home');
+	const loadValue = s.graderBot.value;
+	const funds = s.funds;
+	const piles = Array.from(s.floorPiles);
+	assert.ok(c.dismissGrader(w));
+	assert.equal(s.graderBot.active, false);
+	assert.equal(s.graderBot.returning, true);
+	assert.equal(c.dismissGrader(w), false, 'dismiss is not a second hire or a despawn');
+	const arcs = [];
+	const context = { beginPath() {}, arc(x, y, radius) { arcs.push({ x, y, radius }); }, closePath() {}, fill() {} };
+	c.drawGraderBot(context);
+	near(arcs[0].x, s.graderBot.x, 1e-9);
+	for (let i = 0; i < 240 * 20 && s.graderBot.returning; i++) c.step(w, p.config.step, p.platformMass(w));
+	assert.equal(s.graderBot.returning, false);
+	assert.equal(s.graderBot.active, false);
+	near(s.graderBot.x, s.garageParkX);
+	assert.deepEqual(Array.from(s.floorPiles), piles, 'the dismissed blade does not grade on its trip home');
+	near(s.funds - funds, loadValue * 0.5, 1e-6, 'the returning load is settled on arrival');
+	c.drawGraderBot(context);
+	near(arcs[1].x, s.garageParkX, 1e-9);
+	assert.ok(c.toggleGrader(w), 'the same parked grader can be called again');
+	assert.equal(s.graderBot.active, true);
+	p.createWorld();
 });
 
 test('tier II extends piston bounces without changing first-contact intercept or live world', () => {

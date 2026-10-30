@@ -106,10 +106,17 @@ test('tier II starts a low-speed intercept before rock contact and keeps replann
 	engage('move');
 	autopilot.update(world, c.step);
 	const firstPlan = autopilot.state;
-	assert.ok(firstPlan.contactIn > 0, 'the rock contact is predicted while the ball is still in flight');
+	assert.ok(firstPlan.contactIn > 0, 'the landing beyond the rock contact is predicted while the ball is still in flight');
 	assert.ok(Number.isFinite(firstPlan.interceptX), 'the contact mark is available before impact');
+	assert.notEqual(prediction.state.kind, prediction.kinds.ROCK, 'a rock strike is not mistaken for a landing');
+	assert.ok(Math.abs(firstPlan.interceptX + c.pistonCentre - prediction.state.endX) < 1e-9,
+		'the automatic face target is the landing marker drawn by the computer');
 	assert.ok(Number.isNaN(world.target), 'tier II uses timed movement rather than the full-throttle chase');
 	assert.notEqual(world.direction, 0, 'the platform starts moving before the predicted contact');
+	const startX = world.platform.x;
+	physics.step(world, c.step);
+	assert.ok(world.ball.vy > 0, 'movement starts during the ascent, without waiting for the ball to fall');
+	assert.ok(world.platform.x > startX);
 	let bounced = false;
 	for (let i = 0; i < 240 * 4; i++) {
 		autopilot.update(world, c.step);
@@ -119,8 +126,46 @@ test('tier II starts a low-speed intercept before rock contact and keeps replann
 	assert.ok(bounced, 'the real ball reaches a piston bounce after the rock trajectory');
 	autopilot.update(world, c.step);
 	assert.ok(autopilot.state.contactIn > 0, 'the new trajectory is planned immediately after the bounce');
+	const wantedCentre = Math.max(physics.platformMin(), Math.min(physics.platformMax(), prediction.state.endX - c.pistonCentre));
+	assert.ok(Math.abs(autopilot.state.interceptX - wantedCentre) < 1e-9,
+		'the post-bounce target follows the visible landing marker up to the travel limit');
 	assert.ok(Number.isNaN(world.target), 'the post-bounce intercept remains in low-speed travel mode');
 	balanced(world);
+});
+
+function tierTwoTrip(rush) {
+	const world = flight(physics.createWorld(), 13, 12, 8);
+	world.ball.vx = 1;
+	world.ball.vy = 5;
+	research.grant('ballistics2', world);
+	sync(world);
+	engage('move');
+	let peakSpeed = 0;
+	let steps = 0;
+	while (world.bounces < 2 && steps++ < 240 * 15) {
+		autopilot.update(world, c.step);
+		if (rush) {
+			// Same tier-II marks and deadlines, but replace economical tracking with
+			// the platform's full-throttle target follower for the comparison.
+			world.target = autopilot.state.interceptX;
+			world.direction = 0;
+		}
+		physics.step(world, c.step);
+		peakSpeed = Math.max(peakSpeed, Math.abs(world.platform.vx));
+	}
+	assert.equal(world.bounces, 2);
+	assert.equal(world.groundings, 0);
+	balanced(world);
+	return { draw: drawn(world), peakSpeed };
+}
+
+test('tier II keeps economy travel after bounces instead of buying a rush-and-brake run', () => {
+	const economy = tierTwoTrip(false);
+	const rush = tierTwoTrip(true);
+	assert.ok(economy.peakSpeed < rush.peakSpeed * 0.8,
+		`economy peak ${economy.peakSpeed.toFixed(2)} m/s against rush ${rush.peakSpeed.toFixed(2)} m/s`);
+	assert.ok(economy.draw < rush.draw * 0.5,
+		`economy draw ${economy.draw.toFixed(1)} J against rush ${rush.draw.toFixed(1)} J`);
 });
 
 test('the timed intercept rolls through a mark it is already passing instead of stopping on it', () => {

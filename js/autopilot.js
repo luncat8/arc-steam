@@ -178,24 +178,14 @@
 		const computer = root.SteamPrediction;
 		const path = computer.predict(world);
 		const kinds = computer.kinds;
-	if (path.kind !== kinds.DECK && path.kind !== kinds.GROUND) {
-		// The trajectory computer II traces the rock contact and the rebounds past
-		// it, so the strike point is known while the ball is still falling: move
-		// under it during the descent instead of waiting to see where the rebound
-		// comes down. Without it the mark tracks the ball itself, which is what a
-		// driver watching an uncertain rebound does.
-		if (root.SteamResearch.state.predictionBounces && path.kind === kinds.ROCK) {
-			interceptX = platformCentreForPiston(path.endX);
-			contactVx = path.endVx;
-			contactVy = path.endVy;
-			contactY = path.endY;
-			contactIn = path.time;
-			contactOnPiston = false;
+		if (path.kind !== kinds.DECK && path.kind !== kinds.GROUND) {
+			// An uncertain or unfinished trajectory has no landing to meet. Track
+			// the visible ball until the computer finds one; a rock strike itself is
+			// not a platform target. Tier II normally continues through that strike
+			// and supplies the later landing while the ball is still rising.
+			interceptX = clampTravel(ball.x - config.pistonCentre);
 			return;
 		}
-		interceptX = clampTravel(ball.x - config.pistonCentre);
-		return;
-	}
 		// The reflector, not the collector, is what keeps the ball in play, so the
 		// platform is commanded to put its face centre under the mark.
 		interceptX = platformCentreForPiston(path.endX);
@@ -218,7 +208,7 @@
 	}
 
 	function commandTravel(world) {
-		const tierTwo = root.SteamResearch.state.predictionBounces && contactIn > 0;
+		const tierTwo = root.SteamResearch.state.predictionBounces;
 		if (moveOn && !tierTwo) {
 			// The plain chase hands the mark to the platform's own target following:
 			// full thrust to it, then a brake to a standstill on it.
@@ -226,11 +216,11 @@
 			world.target = interceptX;
 			return;
 		}
-		// A known tier-II contact gets the same just-in-time, low-speed run as the
-		// economy intercept, even when the player selected plain chase. Replanning
-		// after each bounce gives the next predicted contact a fresh deadline.
-		// Timed travel owns direction and does not brake to a standstill it does
-		// not need, avoiding needless reserve draw and heat.
+		// Tier II always uses the economical controller, including uncertain
+		// approaches and the new plan immediately after a bounce. A known contact
+		// gets a just-in-time run; timed travel owns direction and never buys an
+		// unnecessary full-throttle stop. Replanning gives every bounce a fresh
+		// deadline and keeps the platform target tied to the visible landing mark.
 		world.target = NaN;
 		const platform = world.platform;
 		const distance = interceptX - platform.x;

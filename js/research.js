@@ -45,7 +45,7 @@
 		}),
 		Object.freeze({
 			id: 'ballistics2', name: 'Trajectory computer II', cost: 700, requires: Object.freeze(['ballistics', 'power']),
-			effect: 'Extends the trajectory through rock and powered piston bounces over three flight horizons. Assumes the current terrain and a coasting platform; rock destruction and future controls remain uncertain.'
+			effect: 'Extends the drawn trajectory through rock and powered piston bounces over three flight horizons. Marks the next deck or ground landing for early economical intercepts. Assumes current terrain and a coasting platform; rock destruction and future controls remain uncertain.'
 		})
 	]);
 	const LOCKED = 'locked';

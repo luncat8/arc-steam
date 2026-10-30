@@ -112,7 +112,9 @@
 		}
 		const extended = Boolean(root.SteamResearch && root.SteamResearch.state.predictionBounces);
 		const limit = extended ? horizon * 3 : horizon;
-		let firstKind = NONE, firstX = 0, firstY = 0, firstVx = 0, firstVy = 0, firstTime = 0, firstSurface = NO_SURFACE;
+		let crossedRock = false;
+		let landingKind = NONE, landingX = 0, landingY = 0, landingVx = 0, landingVy = 0, landingTime = 0, landingSurface = NO_SURFACE;
+		let landingUncertain = false;
 		let available = world.battery * physics.engineNow().efficiency;
 		const gravity = config.ballGravity;
 		const retention = Math.sqrt(physics.retentionNow());
@@ -186,10 +188,12 @@
 				// Rock contacts end at the trace's own separated contact point, which
 				// is where the simulation snaps the ball, so the mark and the impact agree.
 				if (event === ROCK) { x = contactX; y = contactY; }
-				if (!firstKind) {
-					firstKind = event; firstX = x; firstY = y; firstVx = vx; firstVy = vy; firstTime = time; firstSurface = surface;
-				}
 				kind = event;
+				if (event === ROCK) crossedRock = true;
+				if (!landingKind && (event === GROUND || event === DECK)) {
+					landingKind = event; landingX = x; landingY = y; landingVx = vx; landingVy = vy;
+					landingTime = time; landingSurface = surface; landingUncertain = crossedRock;
+				}
 				if (!extended || event === GROUND || event === DECK && surface === COLLECTOR) break;
 				pathX[samples] = x; pathY[samples] = y; samples++;
 				if (event === ROCK) {
@@ -214,7 +218,7 @@
 		if (kind === NONE) kind = TIMEOUT;
 		// Rock damage and an exhausted horizon both leave the outcome unknown, so
 		// the overlay is flagged instead of promising a trajectory.
-		uncertain = kind === ROCK || kind === TIMEOUT;
+		uncertain = crossedRock || kind === ROCK || kind === TIMEOUT;
 		endX = x;
 		endY = y;
 		endVx = vx;
@@ -223,10 +227,14 @@
 		pathX[samples] = x;
 		pathY[samples] = y;
 		samples++;
-		if (extended && firstKind) {
-			kind = firstKind; endX = firstX; endY = firstY; endVx = firstVx; endVy = firstVy;
-			endTime = firstTime; surface = firstSurface; time = firstTime;
-			uncertain = firstKind === ROCK;
+		if (extended && landingKind) {
+			// The next deck/ground contact is the actionable landing. Rock strikes
+			// before it add warning time without becoming bogus platform targets;
+			// later simulated piston bounces stay in the drawn path but cannot feed
+			// the autopilot's own future movement back into its current target.
+			kind = landingKind; endX = landingX; endY = landingY; endVx = landingVx; endVy = landingVy;
+			endTime = landingTime; surface = landingSurface; time = landingTime;
+			uncertain = landingUncertain;
 		}
 		projectedPlatformPose(physics, platform, time, platformPose);
 		ghostX = platformPose.x;

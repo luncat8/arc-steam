@@ -21,14 +21,17 @@
 	// The grader treats only the travel-side swath: neighbours flow toward their
 	// mean and the blade shaves the top, clamped at the original floor so it
 	// cannot dig pits beneath the chassis.
-const graderCut = 0.15;
-const graderSmooth = 2;
-const graderClearance = 0.5;
-const graderSwath = 1.5;
-// The commercial grader's garage: a low-height door in the right wall, like the
-// left pocket but only tall enough for the low bot. The grader shuttles out of
-// it, grades a sweep, and turns around at the far wall instead of despawning.
-const garageHeight = 0.25;
+	const graderCut = 0.15;
+	const graderSmooth = 2;
+	const graderClearance = 0.5;
+	const graderSwath = 1.5;
+	// The commercial grader lives in a recessed low bay outside the right wall.
+	// Calling and dismissing change its route, never its existence: a dismissed
+	// bot drives back to this same visible parking place before becoming idle.
+	const garageHeight = 0.25;
+	const garageDepth = 1.5;
+	const garageParkX = width + (garageDepth - 0.12) * 0.5;
+	const graderSpeed = 1.5;
 	// Impact tuning: hit point receives 2x impact energy in strength removal,
 	// falling linearly to zero across a 4.5-cell radius (1.5x of the base 3-cell radius).
 	const damageRadius = 4.5;
@@ -44,73 +47,110 @@ const garageHeight = 0.25;
 	const floorPiles = new Float64Array(columns);
 	const floorHeight = new Float64Array(columns + 1);
 	const floorValues = new Float64Array(columns);
-	const graderBot = { active: false, x: 0, direction: -1, value: 0, cells: 0 };
-// Columns the blade has already cut in the current sweep; cleared at each
-// wall turnaround so the return pass grades the floor again.
-const graderCutMark = new Uint8Array(columns);
+	const graderBot = { active: false, returning: false, x: garageParkX, direction: -1, value: 0, cells: 0 };
+	// Columns the blade has already cut in the current sweep; cleared at each
+	// settlement so the next pass grades the floor again.
+	const graderCutMark = new Uint8Array(columns);
 	const botRadius = 0.7;
 	const botHeight = 0.12;
-function hireGrader(world) {
-	if (!world || graderBot.active) return false;
-	graderBot.active = true;
-	graderBot.x = width;
-	graderBot.direction = -1;
-	graderBot.value = 0;
-	graderBot.cells = 0;
-	return true;
-}
+
+	function hireGrader(world) {
+		if (!world || graderBot.active) return false;
+		if (!graderBot.returning) {
+			graderBot.x = garageParkX;
+			graderBot.direction = -1;
+			graderBot.value = 0;
+			graderBot.cells = 0;
+			graderCutMark.fill(0);
+		} else {
+			// A call during dismissal resumes work where the bot is, rather than
+			// teleporting it back to the garage or losing the load it carries.
+			graderBot.direction = graderBot.x >= width ? -1 : 1;
+		}
+		graderBot.active = true;
+		graderBot.returning = false;
+		return true;
+	}
+
+	function dismissGrader(world) {
+		if (!world || !graderBot.active) return false;
+		graderBot.active = false;
+		graderBot.returning = true;
+		graderBot.direction = 1;
+		return true;
+	}
+
+	function toggleGrader(world) {
+		if (graderBot.active) {
+			dismissGrader(world);
+			return false;
+		}
+		return hireGrader(world);
+	}
+
 	function botSurfaceAt(x) {
-		if (!graderBot.active) return 0;
+		if ((!graderBot.active && !graderBot.returning) || graderBot.x > width) return 0;
 		const dx = x - graderBot.x;
 		if (Math.abs(dx) >= botRadius) return 0;
 		const height = Math.sqrt(botRadius * botRadius - dx * dx) - (botRadius - botHeight);
 		return height > 0 ? floorAt(graderBot.x) + height : 0;
 	}
-function stepGraderBot(world, dt) {
-	if (!graderBot.active) return;
-	const previousX = graderBot.x;
-	graderBot.x = Math.min(width, Math.max(0, graderBot.x + 1.5 * dt * graderBot.direction));
-	// Grade each column once per sweep: cut it when the blade passes its
-	// centre, in either direction. Cut marks clear at the wall turnaround so
-	// the return pass grades the floor again instead of respawning.
-	const from = Math.min(previousX, graderBot.x);
-	const to = Math.max(previousX, graderBot.x);
-	const first = Math.max(0, Math.floor(from / cell));
-	const last = Math.min(columns - 1, Math.floor(to / cell));
-	let changed = false;
-	for (let column = first; column <= last; column++) {
-		const centre = (column + 0.5) * cell;
-		if (centre < from || centre > to) continue;
-		if (graderCutMark[column]) continue;
-		const height = floorPiles[column];
-		if (height <= 0) continue;
-		const cut = Math.min(height, floorCellHeight);
-		const value = floorValues[column] * cut / height;
-		floorValues[column] -= value;
-		floorPiles[column] -= cut;
-		graderBot.value += value;
-		graderBot.cells += cut / floorCellHeight;
-		graderCutMark[column] = 1;
-		changed = true;
-	}
-	if (changed) updateFloor();
-	if (graderBot.x <= 0 || graderBot.x >= width) {
+
+	function settleGrader(world) {
 		const credits = price(graderBot.value * 0.5);
 		funds += credits;
 		ledger.push(Object.freeze({ id: ledger.length + 1, type: 'grader', time: world.time, label: 'Commercial grader', credits, cells: graderBot.cells }));
 		graderBot.value = 0;
 		graderBot.cells = 0;
 		graderCutMark.fill(0);
-		graderBot.direction *= -1;
-		graderBot.x = Math.min(width, Math.max(0, graderBot.x));
 	}
-}
+
+	function stepGraderBot(world, dt) {
+		if (!graderBot.active && !graderBot.returning) return;
+		const previousX = graderBot.x;
+		if (graderBot.returning) {
+			graderBot.x = Math.min(garageParkX, graderBot.x + graderSpeed * dt);
+			if (graderBot.x < garageParkX) return;
+			settleGrader(world);
+			graderBot.returning = false;
+			graderBot.direction = -1;
+			return;
+		}
+		graderBot.x += graderSpeed * dt * graderBot.direction;
+		if (graderBot.x <= 0) graderBot.x = 0;
+		if (graderBot.direction > 0 && graderBot.x >= width) graderBot.x = width;
+		// Grade each column once per sweep when the blade passes its centre.
+		// The approach from and return to the outside bay do not cut the floor.
+		const from = Math.max(0, Math.min(previousX, graderBot.x));
+		const to = Math.min(width, Math.max(previousX, graderBot.x));
+		const first = Math.max(0, Math.floor(from / cell));
+		const last = Math.min(columns - 1, Math.floor(to / cell));
+		let changed = false;
+		if (from <= to) for (let column = first; column <= last; column++) {
+			const centre = (column + 0.5) * cell;
+			if (centre < from || centre > to) continue;
+			if (graderCutMark[column]) continue;
+			const height = floorPiles[column];
+			if (height <= 0) continue;
+			const cut = Math.min(height, floorCellHeight);
+			const value = floorValues[column] * cut / height;
+			floorValues[column] -= value;
+			floorPiles[column] -= cut;
+			graderBot.value += value;
+			graderBot.cells += cut / floorCellHeight;
+			graderCutMark[column] = 1;
+			changed = true;
+		}
+		if (changed) updateFloor();
+		if (graderBot.x > 0 && (graderBot.x < width || graderBot.direction < 0)) return;
+		settleGrader(world);
+		graderBot.direction *= -1;
+	}
 
 	function drawGraderBot(context) {
-		// The same bot stays visible in its low garage before hiring and at every
-		// wall turnaround; it is never removed from the scene between sweeps.
-		const x = graderBot.active ? graderBot.x : width;
-		const base = floorAt(x);
+		// Parked, working and returning all draw this same persistent vehicle.
+		const x = graderBot.x;
+		const base = x > width ? 0 : floorAt(x);
 		const halfAngle = Math.acos((botRadius - botHeight) / botRadius);
 		context.fillStyle = '#dfac52';
 		context.beginPath();
@@ -250,9 +290,12 @@ function stepGraderBot(world, dt) {
 		debrisMinerals.fill(0);
 		floorPiles.fill(0);
 		floorValues.fill(0);
-	graderBot.active = false;
-	graderBot.x = graderBot.value = graderBot.cells = 0;
-	graderBot.direction = -1;
+		graderBot.active = false;
+		graderBot.returning = false;
+		graderBot.x = garageParkX;
+		graderBot.value = graderBot.cells = 0;
+		graderBot.direction = -1;
+		graderCutMark.fill(0);
 		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
 			const index = row * columns + column;
 			const x = column * 0.075;
@@ -980,7 +1023,7 @@ function stepGraderBot(world, dt) {
 		damageRadius, damageMultiplier, pileLimit, graderCut, graderSmooth, graderClearance, graderSwath,
 		graderBot, floorValues,
 		get shape() { return rockShape; }, heightmap, firstRow, floorPiles, floorHeight,
-		garageHeight,
+		garageHeight, garageDepth, garageParkX, graderSpeed,
 		mineralNames, mineralPrices, fuelPrice,
 		strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
 		cargoMinerals, soldMinerals,
@@ -1004,7 +1047,7 @@ function stepGraderBot(world, dt) {
 
 	reset(1);
 
-	const api = { hireGrader, botSurfaceAt, drawGraderBot, reset, damage, trace, step, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape };
+	const api = { hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, trace, step, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape };
 	root.SteamCeiling = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

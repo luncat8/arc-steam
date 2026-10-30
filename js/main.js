@@ -56,6 +56,7 @@
 	const engineRows = [];
 	const radiatorRows = [];
 	const researchRows = [];
+	let commercialGraderButton = null;
 	const specValues = [];
 	const specLabels = ['Dry mass', 'Engine force', 'Top speed', 'Bounce pulse', 'Retention', 'Convective cooling', 'Brake recovery'];
 
@@ -162,13 +163,19 @@
 			});
 			radiatorRows.push({ select, button, note, options, selectedIndex: -1 });
 		})();
-		const botButton = document.createElement('button');
-		botButton.id = 'commercial-grader';
-		botButton.textContent = 'Hire grader · shuttles wall to wall · 50% of each sweep';
-		botButton.addEventListener('click', () => {
-			ui['equipment-status'].textContent = window.SteamCeiling.hireGrader(world) ? 'Grader dispatched from its garage: shuttles wall to wall · 50% share of each sweep.' : 'The commercial grader is already on its wall-to-wall route.';
+		commercialGraderButton = document.createElement('button');
+		commercialGraderButton.id = 'commercial-grader';
+		commercialGraderButton.type = 'button';
+		commercialGraderButton.setAttribute('aria-pressed', 'false');
+		commercialGraderButton.addEventListener('click', () => {
+			const wasReturning = window.SteamCeiling.state.graderBot.returning;
+			const called = window.SteamCeiling.toggleGrader(world);
+			refresh();
+			setText(ui['equipment-status'], called
+				? wasReturning ? 'Grader return cancelled · working from its current position.' : 'Grader called from its garage · 50% share of each sweep.'
+				: 'Grader dismissed · returning to its garage with the current load.');
 		});
-		ui['equipment-rows'].append(botButton);
+		ui['equipment-rows'].append(commercialGraderButton);
 		for (const node of SteamResearch.nodes) {
 			const unlocked = unlockText(node);
 			const note = (node.requires.length ? 'Needs research: ' + prerequisiteNames(node) : 'No prerequisites') + (unlocked ? ' · unlocks ' + unlocked : '');
@@ -260,11 +267,21 @@
 	}
 	function setRowState(row, state) { if (row.dataset.state !== state) row.dataset.state = state; }
 
+	function refreshGrader() {
+		const bot = window.SteamCeiling.state.graderBot;
+		setText(commercialGraderButton, bot.active
+			? 'Dismiss grader · return to garage'
+			: bot.returning ? 'Call grader · cancel return' : 'Call grader · 50% share of each sweep');
+		const pressed = String(bot.active);
+		if (commercialGraderButton.getAttribute('aria-pressed') !== pressed) commercialGraderButton.setAttribute('aria-pressed', pressed);
+	}
+
 	// Locked, available and researched states drive both the button and the row
 	// styling, so the panel shows progression without relying on colour alone.
 	function refreshUpgrades() {
 		const ceiling = window.SteamCeiling.state;
 		const funds = ceiling.funds;
+		refreshGrader();
 		// In communism mode nothing is short of credits, so the price is the only
 		// thing that changes: the buttons stay open and the titles read FREE.
 		for (const row of equipmentRows) {
@@ -400,7 +417,7 @@
 	// Hover switching is for precise hovering pointers only; touch and stylus stay click-only.
 	const hoverPointer = window.matchMedia('(hover: hover) and (pointer: fine)');
 	const viewMinX = -1.5;
-	const viewWidth = 25.5;
+	const viewWidth = 25.8 + window.SteamCeiling.state.garageDepth;
 	// Clicks below this height are travel commands; rock clicks inspect instead.
 	// The target marker is drawn to the same height, so the zones are visible.
 	const moveClickHeight = 1.7;
@@ -455,16 +472,23 @@
 		for (let x = padMin + 0.25; x < padMax; x += 0.5) context.fillRect(x, -0.35, 0.08, 0.35);
 		context.fillRect(-pocketDepth - 0.3, 0, 0.3, pocketTop);
 		context.fillRect(-0.3, pocketTop, 0.3, config.ceiling - pocketTop);
-	context.fillRect(0, config.ceiling, config.width, 0.35);
-	// The right wall keeps a low garage door for the commercial grader: like
-	// the left pocket, but only as tall as the low bot, so the grader shuttles
-	// in and out instead of respawning after a single pass.
-	const garageHeight = window.SteamCeiling ? window.SteamCeiling.state.garageHeight : 0;
-	context.fillRect(config.width, garageHeight, 0.3, config.ceiling - garageHeight);
-	context.fillStyle = '#0a0f11';
-	context.fillRect(config.width, 0, 0.3, garageHeight);
-	window.SteamCeiling.drawGraderBot(context);
-	context.fillRect(-pocketDepth, 0, pocketDepth, pocketTop);
+		context.fillRect(0, config.ceiling, config.width, 0.35);
+		// A recessed, low roof and back wall make the right-side bay read as a
+		// garage. The parked bot is drawn inside it, while the same vehicle remains
+		// visible throughout dispatch, work, dismissal and the return home.
+		const garageHeight = window.SteamCeiling.state.garageHeight;
+		const garageDepth = window.SteamCeiling.state.garageDepth;
+		context.fillStyle = '#29383d';
+		context.fillRect(config.width, garageHeight, 0.3, config.ceiling - garageHeight);
+		context.fillStyle = '#0a0f11';
+		context.fillRect(config.width, 0, garageDepth, garageHeight);
+		context.fillStyle = '#29383d';
+		context.fillRect(config.width, -0.08, garageDepth, 0.08);
+		context.fillRect(config.width, garageHeight, garageDepth, 0.08);
+		context.fillRect(config.width + garageDepth - 0.12, 0, 0.12, garageHeight + 0.08);
+		window.SteamCeiling.drawGraderBot(context);
+		context.fillStyle = '#29383d';
+		context.fillRect(-pocketDepth, 0, pocketDepth, pocketTop);
 		if (window.SteamCeiling) window.SteamCeiling.draw(context, viewMode);
 		if (window.SteamCeiling) {
 			const ceiling = window.SteamCeiling.state;
