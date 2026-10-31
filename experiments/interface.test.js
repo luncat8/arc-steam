@@ -342,7 +342,8 @@ test('hovering rock shows its tooltip and clicking low commands travel, without 
 	const state = ceiling.state;
 	let column = 0;
 	while (column < state.columns - 1 && state.firstRow[column] >= state.rows) column++;
-	const rock = chamberPoint((column + 0.5) * state.cell, state.top - 0.05);
+	const rockTop = (state.drawnRowY[state.rows - 1] + state.drawnRowY[state.rows]) * 0.5;
+	const rock = chamberPoint((column + 0.5) * state.cell, rockTop);
 	dom.element('c').dispatch('pointermove', rock);
 	assert.equal(dom.element('mineral-tooltip').hidden, false, 'the inspector appears only over rock');
 	dom.element('c').dispatch('pointerdown', rock);

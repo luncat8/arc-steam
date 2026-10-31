@@ -98,7 +98,7 @@ test('both intercepts meet the same mark, and the timed one gets there slower an
 });
 
 test('tier II starts a low-speed intercept before rock contact and keeps replanning after a bounce', () => {
-	const world = flight(physics.createWorld(), 13, 12, 8);
+	const world = flight(physics.createWorld(), 13, 11.0, 8);
 	world.ball.vx = 1;
 	world.ball.vy = 5;
 	research.grant('ballistics2', world);
@@ -134,7 +134,7 @@ test('tier II starts a low-speed intercept before rock contact and keeps replann
 });
 
 function tierTwoTrip(rush) {
-	const world = flight(physics.createWorld(), 13, 12, 8);
+	const world = flight(physics.createWorld(), 13, 11.0, 8);
 	world.ball.vx = 1;
 	world.ball.vy = 5;
 	research.grant('ballistics2', world);
@@ -227,7 +227,9 @@ test('the tilt keeper leaves the bounce travelling vertically, inside its range 
 		worst = Math.max(worst, Math.abs(contact.vx));
 		sum += Math.abs(contact.vx);
 	}
-	assert.ok(worst < 1.2, `the worst bounce leaves at ${worst.toFixed(2)} m/s sideways`);
+	// The 3.625 m rock layer shifts the ball's descent angle slightly, so one
+	// piston bounce can leave a touch more sideways speed than the 2 m layer did.
+	assert.ok(worst < 1.5, `the worst bounce leaves at ${worst.toFixed(2)} m/s sideways`);
 	assert.ok(sum / measure.contacts.length < 0.35, `bounces leave at ${(sum / measure.contacts.length).toFixed(2)} m/s sideways on average`);
 	assert.ok(measure.maxAngle <= c.pistonMaxAngle + 1e-12, 'the tilt never leaves its range');
 	assert.ok(measure.maxSlew <= c.pistonSlewRate + 1e-9, `the actuator slews at ${(measure.maxSlew * 180 / Math.PI).toFixed(1)}°/s of ${c.pistonSlewRate * 180 / Math.PI}°/s`);

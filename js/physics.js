@@ -375,7 +375,7 @@
 			initialEnergy: 0,
 			brake: false, drive: true, forceSetting: 0.6, direction: 0, target: NaN,
 			pistonAngle: 0, pistonOffset: 0, pistonVelocity: 0, pistonImpact: 0,
-			platform: { x: 12, y: 0, vx: 0, vy: 0, angle: 0, omega: 0, previousX: 12, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0 },
+			platform: { x: 12, y: 0, vx: 0, vy: 0, angle: 0, omega: 0, spin: 0, previousX: 12, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0 },
 			ball: { x: 12.8, y: 5, vx: 1.2 * config.ballSpeedScale, vy: 0, state: 'flying' },
 			bounces: 0, pushes: 0, lastPush: 0, groundings: 0, sales: 0, lastSale: 0
 		};
@@ -593,6 +593,9 @@ function spend(world, useful) {
 			world.heat += 0.5 * mass * finalVelocity * finalVelocity;
 			platform.vx = 0;
 		}
+		// Wheels roll with the distance actually travelled, so the drawn spokes
+		// match the ground contact rather than the commanded velocity.
+		platform.spin += (platform.x - platform.previousX) / config.platformWheelRadius;
 		updatePlatformTerrain(world, dt);
 	}
 

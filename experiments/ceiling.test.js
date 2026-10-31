@@ -27,7 +27,7 @@ test('seeded 2D element and mineral fields repeat and normalize', () => {
 	ceiling.reset(42);
 	const state = ceiling.state;
 	assert.equal(state.columns, 192);
-	assert.equal(state.rows, 16);
+	assert.equal(state.rows, 29);
 	assert.equal(state.defaultPixelSize, 4);
 	assert.equal(state.shape, 'smooth');
 	const first = Array.from(state.strength);

@@ -32,7 +32,7 @@ test('ball response is another 1.2x slower while platform force and top speed st
 	const w = physics.createWorld();
 	near(c.ceiling, 15);
 	near(ceiling.state.top, c.ceiling);
-	near(ceiling.state.bottom, c.ceiling - 2);
+	near(ceiling.state.bottom, c.ceiling - 3.625);
 	near(c.ballSpeedScale, 1 / (1.5 * 1.2));
 	near(c.ballMass * c.ballGravity, c.gravity);
 	near(w.ball.vx, 1.2 / (1.5 * 1.2));

@@ -1,7 +1,7 @@
 (function (root) {
 	'use strict';
 	const width = 24;
-	const bottom = 13;
+	const bottom = 11.375;
 	const top = 15;
 	const cell = 0.125;
 	const floorCellHeight = cell / 4;
@@ -972,12 +972,65 @@
 		return mineralStyles[index];
 	}
 
+	// The rock layer is drawn with a vertical perspective: the near (bottom)
+	// edge keeps a larger pixel scale and the far (top) edge is compressed, so
+	// the ceiling reads as receding. The mapping keeps the layer's footprint
+	// (bottom..top) and grades the cell heights from 1x at the bottom (same as
+	// the plain grid) to 0.25x (4x smaller) at the top through a concave curve.
+	// Fallen debris is deliberately left unwarped.
+	const rockSpan = top - bottom;
+	// Cell heights solve h(0)=cell, h(rows-1)=cell/4 and sum=rockSpan.
+	const cellHeights = new Float64Array(rows);
+	{
+		const a = cell;
+		const b = cell * 0.25;
+		const dn = rows - 1;
+		const sumR = rows * dn / 2;
+		const sumR2 = dn * rows * (2 * rows - 1) / 6;
+		const rhs1 = b - a;
+		const rhs2 = rockSpan - rows * a;
+		const det = dn * sumR2 - dn * dn * sumR;
+		const B = (rhs1 * sumR2 - dn * dn * rhs2) / det;
+		const C = (dn * rhs2 - rhs1 * sumR) / det;
+		for (let r = 0; r < rows; r++) cellHeights[r] = a + B * r + C * r * r;
+	}
+	// Row boundaries in drawn space, precomputed once (the layer never moves).
+	const drawnRowY = new Float64Array(rows + 1);
+	drawnRowY[0] = bottom;
+	for (let r = 0; r < rows; r++) drawnRowY[r + 1] = drawnRowY[r] + cellHeights[r];
+	function rockRowAt(y) {
+		const r = Math.floor((y - bottom) / cell);
+		return r < 0 ? 0 : (r >= rows ? rows - 1 : r);
+	}
+	function rockDrawnY(y) {
+		if (y <= bottom) return bottom;
+		if (y >= top) return top;
+		const r = rockRowAt(y);
+		const fraction = (y - (bottom + r * cell)) / cell;
+		return drawnRowY[r] + fraction * cellHeights[r];
+	}
+	function rockWorldY(drawnY) {
+		if (drawnY <= bottom) return bottom;
+		if (drawnY >= top) return top;
+		let r = 0;
+		while (r < rows - 1 && drawnRowY[r + 1] <= drawnY) r++;
+		const fraction = (drawnY - drawnRowY[r]) / cellHeights[r];
+		return bottom + r * cell + fraction * cell;
+	}
+	// Local vertical pixel scale of the perspective at a world height.
+	function rockScale(y) {
+		return cellHeights[rockRowAt(y)] / cell;
+	}
+
 	function draw(context, mode) {
 		if (rockShape === 'square') {
 			for (let index = 0; index < count; index++) {
 				if (strength[index] <= 0) continue;
+				const row = Math.floor(index / columns);
+				const y0 = drawnRowY[row];
+				const y1 = drawnRowY[row + 1];
 				context.fillStyle = colorFor(index, mode);
-				context.fillRect(index % columns * cell, bottom + Math.floor(index / columns) * cell, cell + 0.002, cell + 0.002);
+				context.fillRect(index % columns * cell, y0, cell + 0.002, y1 - y0 + 0.002);
 			}
 		} else {
 			updateHeightmap();
@@ -988,6 +1041,8 @@
 				const x1 = x0 + cell + 0.002;
 				const yL = heightmap[c];
 				const yR = heightmap[c + 1];
+				const dL = rockDrawnY(yL);
+				const dR = rockDrawnY(yR);
 				for (let row = startRow; row < rows; row++) {
 					const index = row * columns + c;
 					if (strength[index] <= 0) continue;
@@ -996,15 +1051,19 @@
 					const bL = row === startRow ? yL : Math.max(cellBottom, yL);
 					const bR = row === startRow ? yR : Math.max(cellBottom, yR);
 					if (bL >= cellTop && bR >= cellTop) continue;
+					const dBottom = drawnRowY[row];
+					const dTop = drawnRowY[row + 1];
+					const eL = row === startRow ? dL : dBottom;
+					const eR = row === startRow ? dR : dBottom;
 					context.fillStyle = colorFor(index, mode);
 					if (bL === cellBottom && bR === cellBottom) {
-						context.fillRect(x0, cellBottom, cell + 0.002, cell + 0.002);
+						context.fillRect(x0, dBottom, cell + 0.002, dTop - dBottom + 0.002);
 					} else {
 						context.beginPath();
-						context.moveTo(x0, bL);
-						context.lineTo(x1, bR);
-						context.lineTo(x1, Math.max(bR, cellTop));
-						context.lineTo(x0, Math.max(bL, cellTop));
+						context.moveTo(x0, eL);
+						context.lineTo(x1, eR);
+						context.lineTo(x1, dTop);
+						context.lineTo(x0, dTop);
 						context.closePath();
 						context.fill();
 					}
@@ -1039,6 +1098,7 @@
 	// Stable live view: reading simulation state allocates nothing and invokes no command.
 	const state = Object.freeze({
 		columns, rows, cell, floorCellHeight, bottom, top, defaultPixelSize, storageLimit, cellMass,
+		rockDrawnY, rockWorldY, rockScale, drawnRowY,
 		get damageRadius() { return damageRadiusNow(); },
 		get baseDamageRadius() { return baseDamageRadius; },
 		get damageMultiplier() { return damageMultiplierNow(); },
@@ -1071,7 +1131,7 @@
 
 	reset(1);
 
-	const api = { hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, trace, step, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape };
+	const api = { hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, trace, step, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape, rockDrawnY, rockWorldY, rockScale };
 	root.SteamCeiling = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

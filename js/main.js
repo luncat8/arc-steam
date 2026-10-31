@@ -37,6 +37,23 @@
 		setTone(node, tone);
 	}
 	function setTone(node, tone) { if (node.dataset.tone !== tone) node.dataset.tone = tone; }
+	// Platform indicator ramps: index by a 0..1 ratio without allocating a new
+	// string on every frame. Fuel runs green (full) to red (empty); the
+	// thermometer runs blue (cold) through green and amber to red (cutoff).
+	const fuelRamp = ['#b9ed91', '#b9ed91', '#e6b66e', '#e6b66e', '#e0775e', '#e0775e'];
+	const tempRamp = ['#7fb6d9', '#7fb6d9', '#b9ed91', '#e6b66e', '#e0775e', '#e0775e'];
+	function rampColor(ramp, ratio) {
+		const steps = ramp.length - 1;
+		const pos = Math.max(0, Math.min(steps, ratio * steps));
+		return ramp[Math.floor(pos)];
+	}
+	// World height to drawn height through the rock layer's vertical perspective;
+	// outside the layer the mapping is the identity.
+	function rockWarpY(y) {
+		const rock = window.SteamCeiling.state;
+		if (y < rock.bottom || y > rock.top) return y;
+		return rock.rockDrawnY(y);
+	}
 	let selectedColumn = 95;
 	let selectedLayer = 0;
 	let renderedSales = -1;
@@ -757,9 +774,11 @@
 		if (window.SteamCeiling) window.SteamCeiling.draw(context, viewMode);
 		if (window.SteamCeiling) {
 			const ceiling = window.SteamCeiling.state;
+			const cellY0 = ceiling.rockDrawnY(ceiling.bottom + selectedLayer * ceiling.cell);
+			const cellY1 = ceiling.rockDrawnY(ceiling.bottom + (selectedLayer + 1) * ceiling.cell);
 			context.strokeStyle = '#edf6f1';
 			context.lineWidth = 1.5 / scale;
-			context.strokeRect(selectedColumn * ceiling.cell, ceiling.bottom + selectedLayer * ceiling.cell, ceiling.cell, ceiling.cell);
+			context.strokeRect(selectedColumn * ceiling.cell, cellY0, ceiling.cell, cellY1 - cellY0);
 			context.lineWidth = 1 / scale;
 		}
 		context.strokeStyle = '#657578';
@@ -778,6 +797,42 @@
 		context.rotate(platform.angle);
 		context.fillStyle = '#35454b';
 		context.fillRect(left, 0.2, config.platformWidth, 0.4);
+		// Fuel and temperature ride on the chassis as horizontal and vertical
+		// bars, so the platform's state reads at a glance without the telemetry.
+		const fuelRatio = Math.max(0, Math.min(1, world.battery / config.battery));
+		const tempRatio = Math.max(0, Math.min(1, (physics.temperature(world) - config.ambientTemperature) / (config.thermalCutoff - config.ambientTemperature)));
+		const fuelX = left + 0.12;
+		const fuelW = config.platformWidth - 0.60;
+		const fuelY = 0.46;
+		const fuelH = 0.045;
+		context.fillStyle = '#0f1618';
+		context.fillRect(fuelX, fuelY, fuelW, fuelH);
+		context.fillStyle = rampColor(fuelRamp, fuelRatio);
+		context.fillRect(fuelX, fuelY, fuelW * fuelRatio, fuelH);
+		context.strokeStyle = '#3a4a50';
+		context.lineWidth = 0.012;
+		context.strokeRect(fuelX, fuelY, fuelW, fuelH);
+		// Thermometer on the right end: bulb at the base, stem rising with heat.
+		const tempX = left + config.platformWidth - 0.28;
+		const tempW = 0.12;
+		const tempTop = 0.34;
+		const tempBot = 0.58;
+		const bulbY = tempTop - 0.047;
+		const bulbR = 0.085;
+		context.fillStyle = '#0f1618';
+		context.fillRect(tempX, tempTop, tempW, tempBot - tempTop);
+		context.beginPath();
+		context.arc(tempX + tempW * 0.5, bulbY, bulbR, 0, Math.PI * 2);
+		context.fill();
+		const fillTop = tempBot - tempRatio * (tempBot - tempTop);
+		context.fillStyle = rampColor(tempRamp, tempRatio);
+		context.fillRect(tempX, fillTop, tempW, tempBot - fillTop);
+		context.beginPath();
+		context.arc(tempX + tempW * 0.5, bulbY, bulbR * 0.82, 0, Math.PI * 2);
+		context.fill();
+		context.strokeStyle = '#3a4a50';
+		context.lineWidth = 0.012;
+		context.strokeRect(tempX, tempTop, tempW, tempBot - tempTop);
 		context.fillStyle = '#e6b66e';
 		context.fillRect(left, 0.55, collectorWidth, 0.15);
 		// The chassis pitch follows the land; piston tilt stays relative to it.
@@ -802,17 +857,52 @@
 		context.lineTo(pistonCentreX - pistonTx * config.pistonHalf - pistonNx * 0.15, pistonCentreY - pistonTy * config.pistonHalf - pistonNy * 0.15);
 		context.closePath();
 		context.fill();
+		// Wheels: dark tyre, then a rotating cross of spokes and a hub so the
+		// rolling is visible. The spin accumulates from the distance travelled
+		// in physics, so a rolling platform shows moving spokes.
+		const wheelX = [left + 0.5, left + config.platformWidth - 0.5];
+		const wheelR = config.platformWheelRadius;
+		const wheelY = wheelR;
 		context.fillStyle = '#10191d';
-		context.beginPath();
-		context.arc(left + 0.5, config.platformWheelRadius, config.platformWheelRadius, 0, Math.PI * 2);
-		context.arc(left + config.platformWidth - 0.5, config.platformWheelRadius, config.platformWheelRadius, 0, Math.PI * 2);
-		context.fill();
+		for (let w = 0; w < wheelX.length; w++) {
+			context.beginPath();
+			context.arc(wheelX[w], wheelY, wheelR, 0, Math.PI * 2);
+			context.fill();
+		}
+		context.strokeStyle = '#39494e';
+		context.lineWidth = 0.035;
+		for (let w = 0; w < wheelX.length; w++) {
+			context.save();
+			context.translate(wheelX[w], wheelY);
+			context.rotate(-platform.spin);
+			context.beginPath();
+			for (let s = 0; s < 4; s++) {
+				const angle = s * Math.PI * 0.5;
+				context.moveTo(0, 0);
+				context.lineTo(Math.cos(angle) * wheelR * 0.84, Math.sin(angle) * wheelR * 0.84);
+			}
+			context.stroke();
+			context.restore();
+		}
+		context.fillStyle = '#596a70';
+		for (let w = 0; w < wheelX.length; w++) {
+			context.beginPath();
+			context.arc(wheelX[w], wheelY, wheelR * 0.2, 0, Math.PI * 2);
+			context.fill();
+		}
 		context.restore();
 		const ball = world.ball;
+		// The rock layer is drawn through a vertical perspective, so the ball
+		// is warped with it while it is inside the layer; otherwise it stays
+		// on the linear world axis.
+		const rock = window.SteamCeiling.state;
+		const inRock = ball.y >= rock.bottom && ball.y <= rock.top;
+		const ballY = inRock ? rock.rockDrawnY(ball.y) : ball.y;
+		const ballScale = inRock ? rock.rockScale(ball.y) : 1;
 		context.fillStyle = ball.state === 'grounded' ? '#e6b66e' : '#edf6f1';
-		context.beginPath(); context.arc(ball.x, ball.y, config.radius, 0, Math.PI * 2); context.fill();
+		context.beginPath(); context.ellipse(ball.x, ballY, config.radius, config.radius * ballScale, 0, 0, Math.PI * 2); context.fill();
 		context.strokeStyle = '#a9c7bc';
-		context.beginPath(); context.arc(ball.x, ball.y, config.radius + 0.13, 0, Math.PI * 2); context.stroke();
+		context.beginPath(); context.ellipse(ball.x, ballY, config.radius + 0.13, (config.radius + 0.13) * ballScale, 0, 0, Math.PI * 2); context.stroke();
 		context.restore();
 		drawSellLabel(offsetX + 8, floorY - scale * 1.4, -Math.PI * 0.5);
 		drawSellLabel(offsetX + config.width * scale - 8, floorY - scale * 1.4, Math.PI * 0.5);
@@ -831,11 +921,11 @@
 		context.lineWidth = 1.2 / scale;
 		context.setLineDash([0.1, 0.13]);
 		context.beginPath();
-		context.moveTo(path.pathX[0], path.pathY[0]);
-		for (let i = 1; i < path.samples; i++) context.lineTo(path.pathX[i], path.pathY[i]);
+		context.moveTo(path.pathX[0], rockWarpY(path.pathY[0]));
+		for (let i = 1; i < path.samples; i++) context.lineTo(path.pathX[i], rockWarpY(path.pathY[i]));
 		context.stroke();
 		context.setLineDash([]);
-		context.beginPath(); context.arc(path.endX, path.endY, 0.26, 0, Math.PI * 2); context.stroke();
+		context.beginPath(); context.arc(path.endX, rockWarpY(path.endY), 0.26, 0, Math.PI * 2); context.stroke();
 		context.strokeStyle = path.reachable ? '#b9ed91' : '#e6b66e';
 		const ghostAngle = path.ghostAngle;
 		const ghostY = path.ghostY;
@@ -1120,14 +1210,17 @@
 	function rockCellIndex(worldX, worldY) {
 		const ceiling = window.SteamCeiling.state;
 		if (worldX < 0 || worldX > config.width || worldY < ceiling.bottom || worldY > ceiling.top) return -1;
+		// The layer is drawn through a vertical perspective, so the pointer's
+		// screen height maps back to the cell's world height before the lookup.
+		const cellY = ceiling.rockWorldY(worldY);
 		const column = Math.min(ceiling.columns - 1, Math.floor(worldX / ceiling.cell));
-		const row = Math.min(ceiling.rows - 1, Math.floor((worldY - ceiling.bottom) / ceiling.cell));
+		const row = Math.min(ceiling.rows - 1, Math.floor((cellY - ceiling.bottom) / ceiling.cell));
 		const index = row * ceiling.columns + column;
 		if (ceiling.shape === 'square') return ceiling.strength[index] > 0 ? index : -1;
 		// The smooth surface is drawn as a linear profile between column vertices.
 		const fraction = (worldX - column * ceiling.cell) / ceiling.cell;
 		const surface = ceiling.heightmap[column] + (ceiling.heightmap[column + 1] - ceiling.heightmap[column]) * fraction;
-		return worldY >= surface ? index : -1;
+		return cellY >= surface ? index : -1;
 	}
 
 	function inspectRockAtPointer(event) {
