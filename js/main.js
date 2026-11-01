@@ -803,18 +803,16 @@
 	const hoverPointer = window.matchMedia('(hover: hover) and (pointer: fine)');
 	const viewMinX = -1.5;
 	const viewWidth = 25.8 + window.SteamCeiling.state.garageDepth;
-	// The chamber fills the canvas. Both 0.35 m boundary strips are part of the
-	// scene, so the fit spends its room on the roof strip, the chamber and the
-	// floor strip, and reserves only what the SELL marks and the charge-pad label
-	// need outside them. On a width-limited canvas the leftover is split evenly.
+	// The chamber fills the canvas. Both 0.35 m boundary strips belong to the
+	// scene, so the fit is the roof strip, the chamber and the floor strip; the
+	// only room outside it is 2 px above the roof strip and the line the
+	// charge-pad label is drawn on under the floor.
 	const chamberRoofPad = 2;
 	const boundaryStrip = 0.35;
-	// The charge-pad label is drawn under the floor strip, so the fit keeps that
-	// line inside the canvas along with the marks beside the walls.
 	const padLabelDrop = 14;
-	// A width-limited canvas has room left over; the chamber keeps to the top of
-	// it, so only a quarter of that slack can open above the roof strip and the
-	// rest stays under the floor, where it is only backdrop.
+	// A canvas taller than that scene keeps the chamber near its top: at most a
+	// quarter of the leftover room, and never more than 18 px, may open above the
+	// roof strip, so the rest stays under the floor, where it is only backdrop.
 	const chamberTopShare = 0.25;
 	const chamberTopMax = 18;
 	// The fit itself, published so a harness can map a world point to a page
