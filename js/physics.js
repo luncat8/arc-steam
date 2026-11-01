@@ -134,8 +134,16 @@
 		out.angle = baseAngle + relativeAngle;
 	}
 
-	function platformSurfaceAt(world, elapsed, dt, localX, localY, relativeAngle, out) {
-		const platform = world.platform;
+	// A body's pose is prescribed by the terrain under it, so a boulder shoulder
+	// can lift the deck by more in one step than any rate limit allows. That is
+	// a pose correction, not motion: a ball must see the surface moving at most
+	// at the body's own limits, or the contact solve injects unbounded energy.
+	function clamp(value, limit) {
+		return Math.max(-limit, Math.min(limit, value));
+	}
+
+	function bodySurfaceAt(body, elapsed, dt, localX, localY, relativeAngle, out) {
+		const platform = body;
 		const fraction = Math.max(0, Math.min(1, elapsed / dt));
 		const x = platform.previousX + (platform.x - platform.previousX) * fraction;
 		const y = platform.previousY + (platform.y - platform.previousY) * fraction;
@@ -144,11 +152,18 @@
 		const sine = Math.sin(angle);
 		const offsetX = cosine * localX - sine * localY;
 		const offsetY = sine * localX + cosine * localY;
+		const stepVx = clamp(platform.stepVx, speedNow());
+		const stepVy = clamp(platform.stepVy, config.platformDropRate);
+		const stepOmega = clamp(platform.stepOmega, config.platformPitchRate);
 		out.x = x + offsetX;
 		out.y = y + offsetY;
-		out.vx = platform.stepVx - platform.stepOmega * offsetY;
-		out.vy = platform.stepVy + platform.stepOmega * offsetX;
+		out.vx = stepVx - stepOmega * offsetY;
+		out.vy = stepVy + stepOmega * offsetX;
 		out.angle = angle + relativeAngle;
+	}
+
+	function platformSurfaceAt(world, elapsed, dt, localX, localY, relativeAngle, out) {
+		return bodySurfaceAt(world.platform, elapsed, dt, localX, localY, relativeAngle, out);
 	}
 
 	function planeContactTime(x, y, vx, vy, centerX, centerY, centerVx, centerVy, angle, limit, halfExtent) {
@@ -279,6 +294,7 @@
 	const contact = contactResult();
 	const pistonSurfaceScratch = { x: 0, y: 0, vx: 0, vy: 0, angle: 0 };
 	const collectorSurfaceScratch = { x: 0, y: 0, vx: 0, vy: 0, angle: 0 };
+	const bodySurfaceScratch = { x: 0, y: 0, vx: 0, vy: 0, angle: 0 };
 
 	// The charge pad is a strip of ground at the chamber centre. Standing still
 	// on it hands the installed engine its fuel; a moving platform cannot
@@ -372,6 +388,99 @@
 		world.heat += energy - returned;
 	}
 
+	// ---------------------------------------------------------------- balls
+	// A ball is either shared (no owner) or owned by one platform. Ownership is
+	// the only rule that decides which platform may push it, so a platform never
+	// sees a ball it may not touch.
+	function makeBall(owner, x, y, vx, vy) {
+		return { owner, x, y, vx, vy, state: 'flying' };
+	}
+
+	function isRigBall(ball) { return !ball.owner || ball.owner === 'rig'; }
+
+	function mayPush(ball, id) { return !ball.owner || ball.owner === id; }
+
+	function rivalBodies() {
+		return root.SteamPlayers && root.SteamPlayers.state ? root.SteamPlayers.state.rivals : [];
+	}
+
+	// Rebuilds the chamber's balls for the chosen arrangement. The rig keeps its
+	// machinery on every ball it may push; a competitor owns its own ball and is
+	// handed it here, at its current position.
+	function setBallMode(world, mode, anchors) {
+		const list = [];
+		const speed = 1.2 * config.ballSpeedScale;
+		if (mode === 'each') {
+			list.push(makeBall('rig', 12.8, 5, speed, 0));
+			const placed = anchors || [];
+			for (let i = 0; i < placed.length; i++) {
+				const x = Math.max(config.radius, Math.min(config.width - config.radius, placed[i].x + 1.4));
+				list.push(makeBall(placed[i].id, x, 6, -speed, 0));
+			}
+		} else if (mode === 'shared2') {
+			list.push(makeBall(null, 12.8, 5, speed, 0));
+			list.push(makeBall(null, 7, 7, -speed, 0));
+		} else {
+			mode = 'shared1';
+			list.push(makeBall(null, 12.8, 5, speed, 0));
+		}
+		world.balls = list;
+		world.ballMode = mode;
+		world.bounces = 0;
+		world.pushes = 0;
+		world.groundings = 0;
+		// world.ball stays the rig's ball of the moment, so prediction, the
+		// autopilot and the readouts keep reading one ball in every mode.
+		if (!Object.getOwnPropertyDescriptor(world, 'ball')) {
+			Object.defineProperty(world, 'ball', {
+				enumerable: true,
+				configurable: true,
+				get: function () { return focusBall(this); }
+			});
+		}
+		return list;
+	}
+
+	// When the ball next descends to a height, from its current flight.
+	function ballLandingTime(ball, height) {
+		const discriminant = ball.vy * ball.vy + 2 * config.ballGravity * (ball.y - height);
+		if (discriminant < 0) return Infinity;
+		const time = (ball.vy + Math.sqrt(discriminant)) / config.ballGravity;
+		return time >= 0 ? time : Infinity;
+	}
+
+	// The rig holds at most one ball at a time.
+	function heldBall(world) {
+		const balls = world.balls || [];
+		for (let i = 0; i < balls.length; i++) if (balls[i].state === 'held') return balls[i];
+		return null;
+	}
+
+	// The rig's ball of the moment: the one it holds, else the one whose landing
+	// is soonest, so a two-ball game never splits the plan.
+	function focusBall(world) {
+		const balls = world.balls || [];
+		let best = null;
+		let bestTime = Infinity;
+		for (let i = 0; i < balls.length; i++) {
+			const ball = balls[i];
+			if (!isRigBall(ball)) continue;
+			if (ball.state === 'held') return ball;
+			if (!best) best = ball;
+			if (ball.state !== 'flying') continue;
+			const time = ballLandingTime(ball, config.deck);
+			if (time < bestTime) { bestTime = time; best = ball; }
+		}
+		return best;
+	}
+
+	function heldBallMass(world) {
+		const balls = world.balls || [];
+		let mass = 0;
+		for (let i = 0; i < balls.length; i++) if (balls[i].state === 'held') mass += ballMassNow();
+		return mass;
+	}
+
 	function createWorld() {
 		engine = engines[3];
 		if (root.SteamCeiling) root.SteamCeiling.reset(1);
@@ -383,9 +492,10 @@
 			brake: false, drive: true, forceSetting: 0.6, direction: 0, target: NaN,
 			pistonAngle: 0, pistonOffset: 0, pistonVelocity: 0, pistonImpact: 0,
 			platform: { id: 'rig', x: 12, y: 0, vx: 0, vy: 0, angle: 0, omega: 0, spin: 0, previousX: 12, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0 },
-			ball: { x: 12.8, y: 5, vx: 1.2 * config.ballSpeedScale, vy: 0, state: 'flying' },
+			balls: [], ballMode: 'shared1',
 			bounces: 0, pushes: 0, lastPush: 0, groundings: 0, sales: 0, lastSale: 0
 		};
+		setBallMode(world, 'shared1', []);
 		world.initialEnergy = totalEnergy(world);
 		return world;
 	}
@@ -400,14 +510,19 @@
 	}
 
 	function platformMass(world) {
-		return dryMass() + cargoMass() + (world.ball.state === 'held' ? ballMassNow() : 0);
+		return dryMass() + cargoMass() + heldBallMass(world);
 	}
 
 	// Imported (bought) energy is subtracted and exported (sold, cooled) energy is
 	// added, so the balance stays exact across both directions of trade.
 	function totalEnergy(world) {
 		const ceilingEnergy = root.SteamCeiling ? root.SteamCeiling.state.energy : 0;
-		return world.battery + world.heat + world.cooledEnergy + world.fractureEnergy - world.importedEnergy - world.terrainWork + ceilingEnergy + ballEnergy(world.ball) + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
+		// Only the rig's own balls are in the rig's ledger: a competitor's ball is
+		// outside it exactly like the commercial grader's blade.
+		const balls = world.balls || [];
+		let ballEnergyTotal = 0;
+		for (let i = 0; i < balls.length; i++) if (isRigBall(balls[i])) ballEnergyTotal += ballEnergy(balls[i]);
+		return world.battery + world.heat + world.cooledEnergy + world.fractureEnergy - world.importedEnergy - world.terrainWork + ceilingEnergy + ballEnergyTotal + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
 	}
 
 	function temperature(world) {
@@ -450,18 +565,17 @@ function spend(world, useful) {
 	return delivered;
 }
 
-	function setHeldBallPose(world) {
+	function setHeldBallPose(world, ball) {
 		const platform = world.platform;
 		const localX = -config.platformWidth * 0.32;
 		const localY = config.deck + config.radius;
 		const cosine = Math.cos(platform.angle);
 		const sine = Math.sin(platform.angle);
-		world.ball.x = platform.x + cosine * localX - sine * localY;
-		world.ball.y = platform.y + sine * localX + cosine * localY;
+		ball.x = platform.x + cosine * localX - sine * localY;
+		ball.y = platform.y + sine * localX + cosine * localY;
 	}
 
-	function capture(world) {
-		const ball = world.ball;
+	function capture(world, ball) {
 		const platform = world.platform;
 		const carriedMass = dryMass() + cargoMass();
 		const before = ballEnergy(ball) + 0.5 * carriedMass * platform.vx * platform.vx;
@@ -469,7 +583,7 @@ function spend(world, useful) {
 		ball.state = 'held';
 		ball.vx = 0;
 		ball.vy = 0;
-		setHeldBallPose(world);
+		setHeldBallPose(world, ball);
 		world.heat += before - 0.5 * platformMass(world) * platform.vx * platform.vx;
 	}
 
@@ -488,14 +602,15 @@ function spend(world, useful) {
 		return centreY + Math.sin(faceAngle) * along + Math.cos(faceAngle) * config.radius - config.radius;
 	}
 
-	function canLaunch(world) {
-		if (world.ball.state !== 'held' || !world.drive) return false;
+	function canLaunch(world, target) {
+		const ball = target || world.ball;
+		if (!ball || ball.state !== 'held' || !world.drive) return false;
 		return launchCapacity(world) > ballMassNow() * config.ballGravity * launchHeight(world);
 	}
 
-	function launch(world) {
-		if (!canLaunch(world)) return false;
-		const ball = world.ball;
+	function launch(world, target) {
+		if (!canLaunch(world, target)) return false;
+		const ball = target || world.ball;
 		const energy = spend(world, pulseNow() * thermalFactor(world));
 		const height = launchHeight(world);
 		const platform = world.platform;
@@ -613,37 +728,95 @@ function spend(world, useful) {
 		return time >= -1e-10 ? Math.max(0, time) : Infinity;
 	}
 
-	function passiveImpact(world, nx, ny, fracture) {
-		const ball = world.ball;
+	function passiveImpact(world, ball, nx, ny, fracture) {
 		const normalVelocity = ball.vx * nx + ball.vy * ny;
 		if (normalVelocity >= 0) return;
 		const retention = retentionNow();
 		const lost = 0.5 * ballMassNow() * normalVelocity * normalVelocity * (1 - retention);
 		const spentOnRock = Math.min(lost, fracture || 0);
 		const impulseVelocity = (1 + Math.sqrt(retention)) * normalVelocity;
-		world.fractureEnergy += spentOnRock;
-		world.heat += lost - spentOnRock;
+		// A competitor's ball is outside the rig's ledger, so only a rig ball has
+		// its losses booked; the velocity change applies to every ball.
+		if (isRigBall(ball)) {
+			world.fractureEnergy += spentOnRock;
+			world.heat += lost - spentOnRock;
+		}
 		ball.vx -= impulseVelocity * nx;
 		ball.vy -= impulseVelocity * ny;
 	}
-	function rockPassiveImpact(world, nx, ny, fracture) {
-		const ball = world.ball;
+	function rockPassiveImpact(world, ball, nx, ny, fracture) {
 		const normalVelocity = ball.vx * nx + ball.vy * ny;
 		if (normalVelocity >= 0) return;
 		const retention = rockRetentionNow();
 		const lost = 0.5 * ballMassNow() * normalVelocity * normalVelocity * (1 - retention);
 		const spentOnRock = Math.min(lost, fracture || 0);
 		const impulseVelocity = (1 + Math.sqrt(retention)) * normalVelocity;
-		world.fractureEnergy += spentOnRock;
-		world.heat += lost - spentOnRock;
+		if (isRigBall(ball)) {
+			world.fractureEnergy += spentOnRock;
+			world.heat += lost - spentOnRock;
+		}
 		ball.vx -= impulseVelocity * nx;
 		ball.vy -= impulseVelocity * ny;
 	}
 
-	function advanceBall(world, dt) {
-		const ball = world.ball;
+	// A ball bouncing off a competitor's deck: passive retention, a share of the
+	// deck's tangential motion, and that competitor's own pulse when it wants
+	// one. The competitor is outside the rig's ledger, so only the energy a
+	// rig-pushable ball gains or loses is booked.
+	function bounceOnDeck(world, ball, angle, surfaceVx, surfaceVy, pulse) {
+		const nx = -Math.sin(angle);
+		const ny = Math.cos(angle);
+		const relativeVx = ball.vx - surfaceVx;
+		const relativeVy = ball.vy - surfaceVy;
+		const impact = -(relativeVx * nx + relativeVy * ny);
+		if (impact <= 0) return false;
+		const before = 0.5 * ballMassNow() * (ball.vx * ball.vx + ball.vy * ball.vy);
+		const restitution = Math.sqrt(retentionNow());
+		ball.vx += (1 + restitution) * impact * nx;
+		ball.vy += (1 + restitution) * impact * ny;
+		// The deck carries the ball a little: a third of the relative tangent.
+		const tx = ny;
+		const ty = -nx;
+		const tangent = relativeVx * tx + relativeVy * ty;
+		ball.vx -= tangent * 0.35 * tx;
+		ball.vy -= tangent * 0.35 * ty;
+		const after = 0.5 * ballMassNow() * (ball.vx * ball.vx + ball.vy * ball.vy);
+		if (isRigBall(ball)) {
+			if (after < before) world.heat += before - after;
+			else world.importedEnergy += after - before;
+		}
+		if (pulse > 0 && impact > 0.05) {
+			const normal = ball.vx * nx + ball.vy * ny;
+			const boosted = Math.sqrt(normal * normal + 2 * pulse / ballMassNow());
+			ball.vx += (boosted - normal) * nx;
+			ball.vy += (boosted - normal) * ny;
+		}
+		return true;
+	}
+
+	// A grounded ball under a competitor is scooped back up with one pulse: the
+	// competitor's version of the rig's catch, without a collector.
+	function scoop(world, ball) {
+		const rivals = rivalBodies();
+		for (let i = 0; i < rivals.length; i++) {
+			const rival = rivals[i];
+			if (!mayPush(ball, rival.id)) continue;
+			if (Math.abs(ball.x - rival.x) > config.platformWidth * 0.5) continue;
+			if (!rival.pulse) continue;
+			ball.state = 'flying';
+			ball.x = rival.x;
+			ball.y = rival.y + config.deck + config.radius + 0.01;
+			ball.vx = rival.vx;
+			ball.vy = Math.sqrt(2 * config.pulse / ballMassNow());
+			return true;
+		}
+		return false;
+	}
+
+	function advanceBall(world, ball, dt) {
+		const rigBall = isRigBall(ball);
 		if (ball.state === 'held') {
-			setHeldBallPose(world);
+			setHeldBallPose(world, ball);
 			return;
 		}
 		if (ball.state === 'grounded') {
@@ -652,14 +825,19 @@ function spend(world, useful) {
 			// buried nor left floating. Settling down dissipates as heat;
 			// being lifted is work by the prescribed terrain.
 			const rest = terrainHeight(ball.x) + config.radius;
-				const delta = ballMassNow() * config.ballGravity * (rest - ball.y);
+			const delta = ballMassNow() * config.ballGravity * (rest - ball.y);
+			if (rigBall) {
 				if (delta > 0) world.terrainWork += delta;
 				else world.heat -= delta;
-				ball.y = rest;
-				if (Math.abs(ball.x - world.platform.x) <= config.platformWidth * 0.5) capture(world);
-				return;
 			}
-			let remaining = dt;
+			ball.y = rest;
+			// The rig catches a ball it lies under unless it already holds one; a
+			// competitor pushes its ball back up by driving over it.
+			if (rigBall && !heldBall(world) && Math.abs(ball.x - world.platform.x) <= config.platformWidth * 0.5) capture(world, ball);
+			else scoop(world, ball);
+			return;
+		}
+		let remaining = dt;
 		let elapsed = 0;
 		let rockImpulse = false;
 		for (let event = 0; event < 12 && remaining > 1e-10; event++) {
@@ -669,6 +847,10 @@ function spend(world, useful) {
 			let rockNy = 0;
 			let rockX = 0;
 			let rockY = 0;
+			let deckAngle = 0;
+			let deckVx = 0;
+			let deckVy = 0;
+			let deckPulse = 0;
 			const wall = ball.vx > 0 ? config.width - config.radius : config.radius;
 			const wallTime = ball.vx ? (wall - ball.x) / ball.vx : Infinity;
 			if (wallTime >= 0 && wallTime <= time) { time = wallTime; type = 1; }
@@ -692,21 +874,42 @@ function spend(world, useful) {
 					rockY = rockHit.y;
 				}
 			}
-			const collectorWidth = config.platformWidth * config.collectorFraction;
-			const collectorCentre = -config.platformWidth * 0.5 + collectorWidth * 0.5;
-			platformSurfaceAt(world, elapsed, dt, collectorCentre, config.deck, 0, collectorSurfaceScratch);
-			const deckTime = planeContactTime(ball.x, ball.y, ball.vx, ball.vy, collectorSurfaceScratch.x, collectorSurfaceScratch.y,
-				collectorSurfaceScratch.vx, collectorSurfaceScratch.vy, collectorSurfaceScratch.angle, remaining, collectorWidth * 0.5);
-			if (deckTime <= time) { time = deckTime; type = 4; }
-			platformSurfaceAt(world, elapsed, dt, config.pistonCentre, config.deck, world.pistonAngle, pistonSurfaceScratch);
-			const pistonTime = pistonContactTime(ball.x, ball.y, ball.vx, ball.vy, pistonSurfaceScratch.x, pistonSurfaceScratch.y,
-				pistonSurfaceScratch.vx, pistonSurfaceScratch.vy, pistonSurfaceScratch.angle, remaining);
+			// The rig's own machinery only answers balls it may push; a ball it may
+			// not push passes through it instead of being caught or pulsed.
+			if (rigBall) {
+				const collectorWidth = config.platformWidth * config.collectorFraction;
+				const collectorCentre = -config.platformWidth * 0.5 + collectorWidth * 0.5;
+				platformSurfaceAt(world, elapsed, dt, collectorCentre, config.deck, 0, collectorSurfaceScratch);
+				const deckTime = planeContactTime(ball.x, ball.y, ball.vx, ball.vy, collectorSurfaceScratch.x, collectorSurfaceScratch.y,
+					collectorSurfaceScratch.vx, collectorSurfaceScratch.vy, collectorSurfaceScratch.angle, remaining, collectorWidth * 0.5);
+				if (deckTime <= time) { time = deckTime; type = 4; }
+				platformSurfaceAt(world, elapsed, dt, config.pistonCentre, config.deck, world.pistonAngle, pistonSurfaceScratch);
+				const pistonTime = pistonContactTime(ball.x, ball.y, ball.vx, ball.vy, pistonSurfaceScratch.x, pistonSurfaceScratch.y,
+					pistonSurfaceScratch.vx, pistonSurfaceScratch.vy, pistonSurfaceScratch.angle, remaining);
+				if (pistonTime <= time) { time = pistonTime; type = 6; }
+			}
+			// Every competitor the ball may be pushed by presents its deck as one
+			// bounce plane, and only the owner's deck adds the competitor's pulse.
+			const rivals = rivalBodies();
+			for (let i = 0; i < rivals.length; i++) {
+				const rival = rivals[i];
+				if (!mayPush(ball, rival.id)) continue;
+				bodySurfaceAt(rival, elapsed, dt, 0, config.deck, 0, bodySurfaceScratch);
+				const deckTime = planeContactTime(ball.x, ball.y, ball.vx, ball.vy, bodySurfaceScratch.x, bodySurfaceScratch.y,
+					bodySurfaceScratch.vx, bodySurfaceScratch.vy, bodySurfaceScratch.angle, remaining, config.platformWidth * 0.5);
+				if (deckTime <= time) {
+					time = deckTime;
+					type = 7;
+					deckAngle = bodySurfaceScratch.angle;
+					deckVx = bodySurfaceScratch.vx;
+					deckVy = bodySurfaceScratch.vy;
+					deckPulse = ball.owner === rival.id && rival.pulse ? config.pulse : 0;
+				}
+			}
 			let pistonAngleAtContact = 0;
 			let pistonVxAtContact = 0;
 			let pistonVyAtContact = 0;
-			if (pistonTime <= time) {
-				time = pistonTime;
-				type = 6;
+			if (type === 6) {
 				pistonAngleAtContact = pistonSurfaceScratch.angle - world.platform.angle;
 				pistonVxAtContact = pistonSurfaceScratch.vx;
 				pistonVyAtContact = pistonSurfaceScratch.vy;
@@ -722,23 +925,23 @@ function spend(world, useful) {
 				// The ball settles on the rubble surface and keeps the potential
 				// energy of its resting height; only the remainder becomes heat.
 				const rest = root.SteamCeiling ? root.SteamCeiling.floorAt(ball.x) : 0;
-				world.heat += ballEnergy(ball) - ballMassNow() * config.ballGravity * rest;
+				if (rigBall) world.heat += ballEnergy(ball) - ballMassNow() * config.ballGravity * rest;
 				ball.y = rest + config.radius;
 				ball.vx = 0;
 				ball.vy = 0;
 				ball.state = 'grounded';
-				world.groundings++;
+				if (rigBall) world.groundings++;
 				return;
 			}
 			if (type === 3) {
-				passiveImpact(world, 0, -1, 0);
+				passiveImpact(world, ball, 0, -1, 0);
 				continue;
 			}
 			if (type === 5) {
 				// Contact position is exact (separated to radius), so the ball
 				// cannot sit inside the surface between events. The snap's
 				// potential change is booked so the energy ledger stays exact.
-				world.heat += ballMassNow() * config.ballGravity * (ball.y - rockY);
+				if (rigBall) world.heat += ballMassNow() * config.ballGravity * (ball.y - rockY);
 				ball.x = rockX;
 				ball.y = rockY;
 				const normalVelocity = ball.vx * rockNx + ball.vy * rockNy;
@@ -750,7 +953,7 @@ function spend(world, useful) {
 					const contactX = ball.x - rockNx * config.radius;
 					const contactY = ball.y - rockNy * config.radius;
 					const fracture = root.SteamCeiling.damage(contactX, contactY, damageBudget);
-					rockPassiveImpact(world, rockNx, rockNy, fracture);
+					rockPassiveImpact(world, ball, rockNx, rockNy, fracture);
 					rockImpulse = true;
 				}
 				continue;
@@ -776,22 +979,32 @@ function spend(world, useful) {
 				world.bounces++;
 				world.lastPush = push;
 				if (push > 0) world.pushes++;
-				if (contact.captured) { capture(world); return; }
+				if (contact.captured) { capture(world, ball); return; }
 				continue;
 			}
-			// Type 4 is the flat collector only: it catches and holds the ball.
-			capture(world);
+			if (type === 7) {
+				bounceOnDeck(world, ball, deckAngle, deckVx, deckVy, deckPulse);
+				continue;
+			}
+			// Type 4 is the flat collector only: it catches and holds the ball,
+			// unless another ball is already held — then it bounces like a deck.
+			if (heldBall(world)) {
+				bounceOnDeck(world, ball, collectorSurfaceScratch.angle, collectorSurfaceScratch.vx, collectorSurfaceScratch.vy, 0);
+				continue;
+			}
+			capture(world, ball);
 			return;
 		}
 	}
 
 	function step(world, dt) {
 		movePlatform(world, dt);
-		advanceBall(world, dt);
+		const balls = world.balls;
+		for (let i = 0; i < balls.length; i++) advanceBall(world, balls[i], dt);
 		advancePiston(world, dt);
 		charge(world, dt);
 		if (root.SteamCeiling) {
-			const heldMass = world.ball.state === 'held' ? ballMassNow() : 0;
+			const heldMass = heldBallMass(world);
 			root.SteamCeiling.step(world, dt, dryMass() + heldMass);
 			const minX = platformMin();
 			const maxX = platformMax();
@@ -811,7 +1024,8 @@ function spend(world, useful) {
 		platformPitchAt, platformBaseAt, platformPointAt, platformSurfaceAt, planeContactTime,
 		chargePadMin, chargePadMax, onChargePad, charging,
 		retentionNow, rockRetentionNow, ballMassNow, damageBonusNow, damageRadiusBonusNow, pulseNow, forceNow, speedNow, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
-		setPistonAngle, pistonContactTime, solvePiston, contactResult
+		setPistonAngle, pistonContactTime, solvePiston, contactResult,
+		setBallMode, mayPush, isRigBall, ballLandingTime, focusBall, heldBall, heldBallMass
 	};
 	root.SteamPhysics = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;

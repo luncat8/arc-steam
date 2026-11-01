@@ -65,6 +65,7 @@
 
 	// Cached plan, mutated in place.
 	let planAge = planInterval;
+	let seenBall = null;
 	let seenState = '';
 	let seenBounces = -1;
 	let seenPushes = -1;
@@ -119,6 +120,7 @@
 		overrides.move = overrides.drive = overrides.angle = 0;
 		held.move = held.drive = held.angle = false;
 		planAge = planInterval;
+		seenBall = null;
 		interceptX = NaN;
 		contactIn = 0;
 		contactY = 0;
@@ -137,7 +139,10 @@
 	}
 
 	function stale(world) {
-		return planAge >= planInterval || world.ball.state !== seenState
+		// A different ball is a different flight: with two shared balls the plan
+		// belongs to the one it was made for, so a focus change replans at once.
+		return planAge >= planInterval || world.ball !== seenBall
+			|| world.ball.state !== seenState
 			|| world.bounces !== seenBounces || world.pushes !== seenPushes;
 	}
 
@@ -162,6 +167,7 @@
 
 	function replan(world) {
 		planAge = 0;
+		seenBall = world.ball;
 		seenState = world.ball.state;
 		seenBounces = world.bounces;
 		seenPushes = world.pushes;

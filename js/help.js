@@ -37,6 +37,23 @@
 			]
 		},
 		{
+			id: 'balls',
+			label: 'Balls',
+			title: 'Shared and owned balls',
+			text: [
+				'BALLS in the system bar sets what is in the chamber. One shared ball is the classic game: a single ball both platforms may push, and only the rig can catch it in its collector and pulse it with its reflector.',
+				'Two shared balls put two balls in flight at once and both platforms may push either of them. The rig still holds one at a time, and its autopilot, ballistic overlay and ball readouts follow the ball that will reach the platform sooner, so the second ball never splits the plan.',
+				'One per platform gives every platform its own ball. Ownership is the collision rule: a platform cannot see, catch, bounce or pulse a ball it does not own, so the rig’s collector passes straight through a competitor’s ball and that competitor’s deck passes straight through the rig’s.',
+				'A competitor keeps its own ball alive with its bounce drive — the deck returns the ball and a pulse of the rig’s base size is added while the ball is coming down — and scoops a grounded ball back up by driving over it. Its ball breaks the same ceiling rock, the debris lands as floor rubble, and its blade harvests that rubble into its own purse. Competitor balls and pulses are outside the rig’s energy ledger, exactly like the commercial grader.'
+			],
+			keys: [
+				['1 shared', 'One ball, both platforms push it, the rig catches it'],
+				['2 shared', 'Two balls in play, the autopilot plans for the sooner one'],
+				['1 per platform', 'Each platform pushes only its own ball'],
+				['Competitor ball', 'Mines rock, leaves rubble, pays its owner only']
+			]
+		},
+		{
 			id: 'chamber',
 			label: 'Chamber',
 			title: 'The chamber',

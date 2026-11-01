@@ -182,6 +182,39 @@ test('the player strip lists every player with money, a BOT switch and a control
 	rivalBox.dispatch('change');
 });
 
+test('the BALLS setting changes the chamber between shared and owned balls', () => {
+	const select = dom.element('balls');
+	assert.equal(select.value, 'shared1');
+	assert.equal(world.balls.length, 1, 'one shared ball by default');
+	assert.equal(world.balls[0].owner, null);
+	// A competitor ball is drawn and owned; the rig still reads its own ball.
+	select.value = 'each';
+	select.dispatch('change');
+	assert.equal(players.state.ballMode, 'each');
+	assert.equal(world.balls.length, 2);
+	assert.deepEqual(world.balls.map(ball => ball.owner).sort(), ['rig', 'rival-1']);
+	assert.equal(world.ball.owner, 'rig');
+	// The change handler refreshes the panel, so the readout is right at once.
+	assert.equal(dom.element('ball-energy').textContent.includes('balls'), false, 'one rig ball, no count');
+	// Two shared balls are both the rig's, and the readout says so.
+	select.value = 'shared2';
+	select.dispatch('change');
+	assert.equal(world.balls.length, 2);
+	assert.deepEqual(world.balls.map(ball => ball.owner), [null, null]);
+	assert.match(dom.element('ball-energy').textContent, /\u00b7 2 balls$/);
+	assert.equal(select.value, 'shared2');
+	// The help mark carries the new topic.
+	const trigger = dom.element('help-balls');
+	assert.equal(trigger.getAttribute('aria-controls'), 'help-drawer');
+	assert.match(trigger.getAttribute('aria-label'), /^Help: /);
+	assert.ok(help.find('balls'), 'the arrangement has a topic');
+	// The drawer itself is left closed: the help test below opens it first.
+	// Back to the default arrangement for the remaining tests.
+	select.value = 'shared1';
+	select.dispatch('change');
+	assert.equal(world.balls.length, 1);
+});
+
 test('the controls and their readouts belong to the selected platform, not the rig', () => {
 	const list = dom.element('player-list');
 	// The rig drives at 60%; the competitor is switched in and given its own 90%.
@@ -996,7 +1029,7 @@ test('context help lives in one drawer, and the panels keep short lines only', (
 	assert.equal(dom.element('help-drawer').dataset.open, 'false', 'H closes the open drawer');
 	dom.key('KeyH');
 	assert.equal(dom.element('help-drawer').dataset.open, 'true');
-	assert.equal(dom.element('help-title').textContent, help.topics[3].title, 'H reopens the last topic read');
+	assert.equal(dom.element('help-title').textContent, help.find('movement').title, 'H reopens the last topic read');
 	dom.key('F1');
 	assert.equal(dom.element('help-drawer').dataset.open, 'false', 'F1 does the same');
 	assert.equal(help.find('nope'), undefined);

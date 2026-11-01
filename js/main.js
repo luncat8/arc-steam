@@ -7,7 +7,7 @@
 	const canvas = document.getElementById('c');
 	const context = canvas.getContext('2d');
 	const ids = ['clock', 'drive', 'launch', 'status-bar', 'status-ball', 'status-energy', 'fact-reserve', 'fact-cargo', 'fact-temp', 'prediction-status', 'force', 'force-value', 'piston-angle', 'piston-value',
-		'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'commune', 'test-mode', 'view-modes',
+		'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'balls', 'commune', 'test-mode', 'view-modes',
 		'platform-spec', 'spec-card', 'progression-tree', 'tree-links', 'progression-status', 'research-progress', 'science-funds',
 		'mineral-cell', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
@@ -963,18 +963,23 @@
 		// One body pass draws every platform, the riding one last. The rig's
 		// machinery rides inside its body so a competitor on top covers it.
 		playerApi.draw(context, drawRigMachinery);
-		const ball = world.ball;
-		// The rock layer is drawn through a vertical perspective, so the ball
-		// is warped with it while it is inside the layer; otherwise it stays
-		// on the linear world axis.
+		// Every ball is drawn where it flies. The rock layer is drawn through a
+		// vertical perspective, so a ball inside the layer is warped with it;
+		// otherwise it stays on the linear world axis. A ball owned by a
+		// competitor carries that player's colour, so ownership needs no label.
 		const rock = window.SteamCeiling.state;
-		const inRock = ball.y >= rock.bottom && ball.y <= rock.top;
-		const ballY = inRock ? rock.rockDrawnY(ball.y) : ball.y;
-		const ballScale = inRock ? rock.rockScale(ball.y) : 1;
-		context.fillStyle = ball.state === 'grounded' ? '#e6b66e' : '#edf6f1';
-		context.beginPath(); context.ellipse(ball.x, ballY, config.radius, config.radius * ballScale, 0, 0, Math.PI * 2); context.fill();
-		context.strokeStyle = '#a9c7bc';
-		context.beginPath(); context.ellipse(ball.x, ballY, config.radius + 0.13, (config.radius + 0.13) * ballScale, 0, 0, Math.PI * 2); context.stroke();
+		const balls = world.balls || [];
+		for (let i = 0; i < balls.length; i++) {
+			const ball = balls[i];
+			const owner = ball.owner ? playerById(ball.owner) : null;
+			const inRock = ball.y >= rock.bottom && ball.y <= rock.top;
+			const ballY = inRock ? rock.rockDrawnY(ball.y) : ball.y;
+			const ballScale = inRock ? rock.rockScale(ball.y) : 1;
+			context.fillStyle = owner ? owner.colour : (ball.state === 'grounded' ? '#e6b66e' : '#edf6f1');
+			context.beginPath(); context.ellipse(ball.x, ballY, config.radius, config.radius * ballScale, 0, 0, Math.PI * 2); context.fill();
+			context.strokeStyle = owner ? '#6f5a44' : '#a9c7bc';
+			context.beginPath(); context.ellipse(ball.x, ballY, config.radius + 0.13, (config.radius + 0.13) * ballScale, 0, 0, Math.PI * 2); context.stroke();
+		}
 		context.restore();
 		drawSellLabel(offsetX + 8, floorY - scale * 1.4, -Math.PI * 0.5);
 		drawSellLabel(offsetX + config.width * scale - 8, floorY - scale * 1.4, Math.PI * 0.5);
@@ -1110,6 +1115,14 @@
 		}
 	}
 
+	// The platform a ball belongs to, for its colour. A plain loop keeps the
+	// draw pass free of a per-ball closure.
+	function playerById(id) {
+		const list = playerApi.state.players;
+		for (let i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+		return null;
+	}
+
 	function readout() {
 		miningReadout();
 		refreshUpgrades();
@@ -1134,7 +1147,7 @@
 		else if (reserveWarning === 'EMPTY') setText(ui['reserve-note'], 'Empty · hand-crank crawl to the centre pad, or market import');
 		else if (reserveWarning) setText(ui['reserve-note'], 'Low reserve · park on the centre pad');
 		else setText(ui['reserve-note'], 'Centre pad refills free in ' + config.chargeSeconds + ' s · emergency import in the market');
-		const heldMass = world.ball.state === 'held' ? config.ballMass : 0;
+		const heldMass = physics.heldBallMass(world);
 		const cargoFull = ceiling.cargoCells >= ceiling.storageLimit;
 		setWarning('cargo-telemetry', cargoFull ? 'FULL' : '');
 		setText(ui['cargo-note'], cargoFull ? 'Full · extra fragments are refused until you sell at a wall' : '100 cells maximum · cargo adds mass');
@@ -1142,7 +1155,10 @@
 		ui['platform-mass'].textContent = (physics.dryMass() + ceiling.cargoMass + heldMass).toFixed(1) + ' kg';
 		ui.funds.textContent = ceiling.commune ? 'commons' : ceiling.funds.toFixed(1) + ' cr';
 		setText(ui['funds-note'], ceiling.commune ? 'Nothing costs · sales still measured' : 'Automatic sale at either wall');
-		ui['ball-energy'].textContent = physics.ballEnergy(world.ball).toFixed(1) + ' J';
+		const balls = world.balls || [];
+		let rigBallCount = 0;
+		for (let i = 0; i < balls.length; i++) if (physics.isRigBall(balls[i])) rigBallCount++;
+		ui['ball-energy'].textContent = physics.ballEnergy(world.ball).toFixed(1) + ' J' + (rigBallCount > 1 ? ' · ' + rigBallCount + ' balls' : '');
 		ui.heat.textContent = world.heat.toFixed(1) + ' J';
 		const temperature = physics.temperature(world);
 		const thermalFactor = physics.thermalFactor(world);
@@ -1437,7 +1453,7 @@
 	}
 
 	document.getElementById('reset').addEventListener('click', function () {
-		world = physics.createWorld(); playerApi.init(world); window.SteamCeiling.setShape(ui.shape.value); renderedSales = -1; clearInput(); endPistonDrag(); setForce(world.forceSetting); autopilot.reset(); accumulator = 0;
+		world = physics.createWorld(); playerApi.init(world); window.SteamCeiling.setShape(ui.shape.value); ui.balls.value = playerApi.state.ballMode; renderedSales = -1; clearInput(); endPistonDrag(); setForce(world.forceSetting); autopilot.reset(); accumulator = 0;
 		syncActiveControls();
 		for (const row of tierRows) row.selectedIndex = -1;
 		if (testMode) grantTestState();
@@ -1459,6 +1475,14 @@
 	ui.launch.addEventListener('click', releaseBall);
 	ui.pause.addEventListener('click', togglePause);
 	ui.shape.addEventListener('change', function () { window.SteamCeiling.setShape(ui.shape.value); sceneDirty = true; });
+	// The ball arrangement re-seats the balls, so the autopilot plan is dropped
+	// with the old set instead of being carried across a new one.
+	ui.balls.addEventListener('change', function () {
+		playerApi.setBallMode(ui.balls.value);
+		autopilot.reset();
+		clearInput();
+		refresh();
+	});
 	ui['view-modes'].addEventListener('change', viewModeChanged);
 	ui.autopilot.addEventListener('change', autopilotChanged);
 	ui['view-modes'].addEventListener('pointerover', viewModeHovered);

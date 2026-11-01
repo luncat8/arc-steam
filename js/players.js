@@ -37,6 +37,12 @@
 	let rigWorld = null;
 	let active = 0;
 	let selling = false;
+	let ballMode = 'shared1';
+	// How soon a competitor comes back under its own ball, in seconds, and how
+	// low the ball has to be before it does: a ball at the top is not a ball to
+	// catch, so the competitor keeps working the floor until it comes down.
+	const ballChaseSeconds = 2.4;
+	const ballChaseHeight = 4;
 
 	function halfWidth() {
 		return (root.SteamPhysics ? root.SteamPhysics.config.platformWidth : 3.6) * 0.5;
@@ -148,9 +154,16 @@
 			direction: 0, botDirection: -1, target: NaN, braking: false, manual: 0,
 			cargoCells: 0, cargoValue: 0, money: 0, soldValue: 0,
 			tailLeft: 0, tailRight: 0,
+			pulse: false, ballTarget: NaN,
+			previousX: 0, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0,
 			body: colours.body, tail: colours.tail, deck: colours.deck
 		};
 		settle(rival);
+		// The ball solves a deck contact against this body between steps, so the
+		// body starts with its own pose as the previous one, never at the origin.
+		rival.previousX = rival.x;
+		rival.previousY = rival.y;
+		rival.previousAngle = rival.angle;
 		return rival;
 	}
 
@@ -171,7 +184,27 @@
 		}
 		active = 0;
 		selling = false;
+		applyBalls(world);
 		return players;
+	}
+
+	// The chamber's balls follow the chosen arrangement: one shared ball, two
+	// shared balls, or one ball per platform, which only its owner may push.
+	function applyBalls(world) {
+		const physics = root.SteamPhysics;
+		if (!physics || !world || !physics.setBallMode) return;
+		const anchors = [];
+		for (let i = 0; i < rivals.length; i++) anchors.push({ id: rivals[i].id, x: rivals[i].x });
+		physics.setBallMode(world, ballMode, anchors);
+		// Changing the arrangement re-seats the balls, so the rig's ledger is
+		// re-based on the new set instead of chasing a teleported ball.
+		world.initialEnergy = physics.totalEnergy(world);
+	}
+
+	function setBallMode(mode) {
+		ballMode = mode === 'shared2' || mode === 'each' ? mode : 'shared1';
+		if (rigWorld) applyBalls(rigWorld);
+		return ballMode;
 	}
 
 	function money(index) {
@@ -340,6 +373,13 @@
 		// two-second manual window only decides when the bot may take over again.
 		if (rival.braking) return 0;
 		if (rival.direction) return rival.direction * speedLimit;
+		// Its own ball comes before the sweep: a missed ball is a lost shift.
+		if (Number.isFinite(rival.ballTarget)) {
+			const distance = rival.ballTarget - rival.x;
+			if (Math.abs(distance) < 0.12) return 0;
+			const approach = Math.sqrt(2 * brakeAcceleration * Math.abs(distance));
+			return Math.sign(distance) * Math.min(speedLimit, approach);
+		}
 		if (rival.bot && rival.manual <= 0) {
 			if (!rival.botDirection) rival.botDirection = 1;
 			return rival.botDirection * speedLimit;
@@ -369,10 +409,50 @@
 		return physics.config.maxSpeed * forceValue;
 	}
 
+	// The ball a competitor owns, if it has one in this arrangement.
+	function ownBall(rival) {
+		const balls = rigWorld ? rigWorld.balls : null;
+		if (!balls) return null;
+		for (let i = 0; i < balls.length; i++) if (balls[i].owner === rival.id) return balls[i];
+		return null;
+	}
+
+	// Keep the ball in play and keep it climbing. The pulse stays on while the
+	// ball's apex would fall short of the rock and stops once it is already
+	// reaching the top, which is the rig's drive-keeper rule at the
+	// competitor's fixed pulse size. The chase aims at the ball's landing point
+	// when it is coming down soon, at the grounded ball itself, and at nothing
+	// while the ball is still high — then the floor comes first again.
+	function stepBallPolicy(rival) {
+		rival.pulse = false;
+		rival.ballTarget = NaN;
+		const ball = ownBall(rival);
+		if (!ball) return;
+		const physics = root.SteamPhysics;
+		const gravity = physics ? physics.config.ballGravity : 3.03;
+		const ceiling = physics ? physics.config.ceiling : 15;
+		const apex = ball.y + ball.vy * ball.vy / (2 * gravity);
+		rival.pulse = apex < ceiling - 0.5;
+		if (!rival.bot || rival.manual > 0 || rival.braking || rival.direction) return;
+		if (ball.state === 'grounded') {
+			rival.ballTarget = ball.x;
+			return;
+		}
+		if (ball.state !== 'flying') return;
+		const landing = physics && physics.ballLandingTime ? physics.ballLandingTime(ball, rival.y + 0.7) : Infinity;
+		if (!(landing < ballChaseSeconds) && ball.y >= ballChaseHeight) return;
+		const landingX = Number.isFinite(landing) ? ball.x + ball.vx * landing : ball.x;
+		rival.ballTarget = Math.max(0, Math.min(physics ? physics.config.width : 24, landingX));
+	}
+
 	function stepRival(rival, dt) {
 		const physics = root.SteamPhysics;
 		if (!physics) return;
 		if (rival.manual > 0) rival.manual = Math.max(0, rival.manual - dt);
+		stepBallPolicy(rival);
+		rival.previousX = rival.x;
+		rival.previousY = rival.y;
+		rival.previousAngle = rival.angle;
 		const power = Math.max(0.1, rival.force);
 		const acceleration = engineAcceleration(power);
 		const limit = engineSpeed(power);
@@ -392,11 +472,17 @@
 		if (rival.x > maxX) { rival.x = maxX; rival.vx = 0; }
 		rival.spin += (rival.x - previousX) / physics.config.platformWheelRadius;
 		settle(rival);
+		// The ball solves a deck contact against this body between steps, so the
+		// body reports where it came from exactly like the rig's platform.
+		rival.stepVx = (rival.x - rival.previousX) / dt;
+		rival.stepVy = (rival.y - rival.previousY) / dt;
+		rival.stepOmega = (rival.angle - rival.previousAngle) / dt;
 		if (Math.abs(rival.vx) > 0.05) grade(rival, dt);
 		const atWall = rival.x <= minX + 1e-3 || rival.x >= maxX - 1e-3;
 		if (atWall && rival.cargoCells > 0) sell(rival);
-		// The bot turns around at each wall and works the opposite direction.
-		if (atWall && rival.bot && rival.manual <= 0) {
+		// The bot turns around at each wall and works the opposite direction, but
+		// only while it is sweeping: a ball chase reverses through its own target.
+		if (atWall && rival.bot && rival.manual <= 0 && !Number.isFinite(rival.ballTarget)) {
 			rival.botDirection = rival.x <= minX + 1e-3 ? 1 : -1;
 			rival.target = NaN;
 		}
@@ -593,13 +679,14 @@
 		get rig() { return players[0]; },
 		get selling() { return selling; },
 		get force() { return players[active] ? forceOf(players[active]) : 0; },
+		get ballMode() { return ballMode; },
 		get halfWidth() { return halfWidth(); },
 		bodyTop, bodyBottom, tailAngle, tailPlate, tailReach, tailFullGap, bladeSwath, bladeCut
 	});
 
 	const api = {
 		init, update, surfaceAt, draw, profileAt, money, load, force, activeSpeed, activeTarget, rigActive,
-		setActive, setBot, syncRigBot, command, commandTarget, commandBrake, clearCommand, setForce,
+		setActive, setBot, syncRigBot, command, commandTarget, commandBrake, clearCommand, setForce, setBallMode,
 		state, bodyTop, bodyBottom, tailAngle, tailReach, tailFullGap, bladeSwath, bladeCut,
 		get halfWidth() { return halfWidth(); }
 	};
