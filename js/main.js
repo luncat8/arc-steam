@@ -2,6 +2,7 @@
 	'use strict';
 	const physics = SteamPhysics;
 	const autopilot = SteamAutopilot;
+	const playerApi = SteamPlayers;
 	const config = physics.config;
 	const canvas = document.getElementById('c');
 	const context = canvas.getContext('2d');
@@ -12,7 +13,8 @@
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
 		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger',
 		'refuel', 'refuel-cost', 'fuel-price', 'reserve-note', 'cargo-note',
-		'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry', 'mineral-tooltip', 'science-drawer', 'market-drawer', 'science-open', 'science-close', 'market-open', 'market-close'];
+		'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry', 'mineral-tooltip', 'science-drawer', 'market-drawer', 'science-open', 'science-close', 'market-open', 'market-close',
+		'player-list', 'control-title', 'player-focus', 'competitor-note'];
 	// One mark per help topic, plus the drawer it feeds.
 	for (const topic of window.SteamHelp.topics) ids.push('help-' + topic.id);
 	ids.push('help-drawer', 'help-close', 'help-head', 'help-title', 'help-body', 'help-index');
@@ -79,6 +81,7 @@
 		}
 	})();
 	let world = physics.createWorld();
+	playerApi.init(world);
 	let testMode = false;
 	let showPrediction = false;
 	const equipmentRows = [];
@@ -546,6 +549,103 @@
 		if (commercialGraderButton.getAttribute('aria-pressed') !== pressed) commercialGraderButton.setAttribute('aria-pressed', pressed);
 	}
 
+	// One line per player: colour, name and purse, plus that player's policy
+	// switch. The line itself is the control switch; the checkbox is the only
+	// nested control and keeps its own click target.
+	const playerRows = [];
+
+	function buildPlayers() {
+		const list = playerApi.state.players;
+		for (let index = 0; index < list.length; index++) {
+			const player = list[index];
+			const row = document.createElement('li');
+			row.className = 'player-row';
+			const select = document.createElement('button');
+			select.type = 'button';
+			select.className = 'player-select';
+			select.setAttribute('aria-label', 'Take control of ' + player.name);
+			const dot = document.createElement('i');
+			dot.className = 'player-dot';
+			dot.style.background = player.colour;
+			const name = document.createElement('span');
+			name.className = 'player-name';
+			name.textContent = player.name;
+			const purse = document.createElement('span');
+			purse.className = 'player-money';
+			purse.textContent = '0.0 cr';
+			select.append(dot, name, purse);
+			const label = document.createElement('label');
+			label.className = 'player-bot';
+			const box = document.createElement('input');
+			box.type = 'checkbox';
+			box.setAttribute('aria-label', 'Bot controls ' + player.name);
+			const botText = document.createElement('span');
+			botText.textContent = 'BOT';
+			label.append(box, botText);
+			row.append(select, label);
+			select.addEventListener('click', function () { setActivePlayer(index); });
+			box.addEventListener('change', function () {
+				playerApi.setBot(index, box.checked);
+				refresh();
+			});
+			row.addEventListener('click', function (event) {
+				const target = event.target;
+				if (target === box || target === label || (target && target.parentElement === label)) return;
+				setActivePlayer(index);
+			});
+			ui['player-list'].appendChild(row);
+			playerRows.push({ row, select, box, name, purse });
+		}
+	}
+
+	function refreshPlayers() {
+		playerApi.syncRigBot();
+		syncAutopilot();
+		const list = playerApi.state.players;
+		for (let index = 0; index < playerRows.length && index < list.length; index++) {
+			const entry = playerRows[index];
+			const player = list[index];
+			setText(entry.purse, playerApi.money(index).toFixed(1) + ' cr');
+			setChecked(entry.box, player.bot);
+			const activeFlag = String(index === playerApi.state.active);
+			if (entry.row.dataset.active !== activeFlag) entry.row.dataset.active = activeFlag;
+			if (entry.select.getAttribute('aria-pressed') !== activeFlag) entry.select.setAttribute('aria-pressed', activeFlag);
+			const title = player.name + ' · ' + Math.round(playerApi.load(index)) + ' cells carried · click to take the controls';
+			if (entry.row.title !== title) entry.row.title = title;
+		}
+		// The panel names the platform whose controls it now holds, with that
+		// platform's own force setting, load and policy, so a switch is visible
+		// in the controls themselves and not only in the highlighted row.
+		const focused = playerApi.state.players[playerApi.state.active];
+		if (focused) {
+			setText(ui['player-focus'], 'DRIVING ' + focused.name + ' · FORCE ' + Math.round(playerApi.force(playerApi.state.active) * 100)
+				+ '% · LOAD ' + Math.round(playerApi.load(playerApi.state.active)) + ' CELLS · ' + (focused.bot ? 'BOT' : 'MANUAL'));
+		}
+	}
+
+	// The rig's machinery controls have no meaning on a competitor: disable them
+	// rather than let Space or the tilt slider edit the rig while another player
+	// is being driven.
+	function syncActiveControls() {
+		const active = playerApi.state.players[playerApi.state.active];
+		const rigActive = active.kind === 'rig';
+		setText(ui['control-title'], rigActive ? 'PLATFORM / LOW-TIER DRIVE' : active.name + ' / PLATFORM DRIVE');
+		setText(ui['competitor-note'], 'Ball, piston, autopilot and telemetry stay with the rig · force, movement, brake and travel drive ' + active.name + ' now.');
+		setHidden(ui['competitor-note'], rigActive);
+		syncForceControl();
+		setDisabled(ui.drive, !rigActive);
+		setDisabled(ui['piston-angle'], !rigActive);
+		for (const row of autopilotRows) setDisabled(ui[row.id], !rigActive);
+	}
+
+	function setActivePlayer(index) {
+		if (!playerApi.setActive(index)) return;
+		clearInput();
+		endPistonDrag();
+		syncActiveControls();
+		refresh();
+	}
+
 	function refreshTierSlot(record, funds, commune) {
 		const spec = record.spec;
 		const installed = spec.installed();
@@ -728,75 +828,13 @@
 		sceneDirty = true;
 	}
 
-	function draw() {
-		context.clearRect(0, 0, width, height);
-		context.save();
-		context.translate(offsetX, floorY);
-		context.scale(scale, -scale);
-		context.lineWidth = 1 / scale;
-		const pocketDepth = config.pocketDepth;
-		const pocketTop = config.deck;
-		context.strokeStyle = '#1e2c32';
-		context.beginPath();
-		for (let x = 0; x <= config.width; x += 2) { context.moveTo(x, 0); context.lineTo(x, config.ceiling); }
-		for (let y = 0; y <= config.ceiling; y += 2) { context.moveTo(0, y); context.lineTo(config.width, y); }
-		context.stroke();
-		context.fillStyle = '#29383d';
-		context.fillRect(-pocketDepth, -0.35, config.width + pocketDepth, 0.35);
-		// Fallen rubble first, so the charge pad plate stays visible on top of it.
-		if (window.SteamCeiling) window.SteamCeiling.drawFloor(context);
-		const padMin = physics.chargePadMin();
-		const padMax = physics.chargePadMax();
-		const chargingNow = physics.charging(world);
-		context.fillStyle = chargingNow ? '#2a4a3b' : '#1b3038';
-		context.fillRect(padMin, -0.35, padMax - padMin, 0.35);
-		context.fillStyle = chargingNow ? '#b9ed91' : '#7fb6d9';
-		for (let x = padMin + 0.25; x < padMax; x += 0.5) context.fillRect(x, -0.35, 0.08, 0.35);
-		context.fillRect(-pocketDepth - 0.3, 0, 0.3, pocketTop);
-		context.fillRect(-0.3, pocketTop, 0.3, config.ceiling - pocketTop);
-		context.fillRect(0, config.ceiling, config.width, 0.35);
-		// A recessed, low roof and back wall make the right-side bay read as a
-		// garage. The parked bot is drawn inside it, while the same vehicle remains
-		// visible throughout dispatch, work, dismissal and the return home.
-		const garageHeight = window.SteamCeiling.state.garageHeight;
-		const garageDepth = window.SteamCeiling.state.garageDepth;
-		context.fillStyle = '#29383d';
-		context.fillRect(config.width, garageHeight, 0.3, config.ceiling - garageHeight);
-		context.fillStyle = '#0a0f11';
-		context.fillRect(config.width, 0, garageDepth, garageHeight);
-		context.fillStyle = '#29383d';
-		context.fillRect(config.width, -0.08, garageDepth, 0.08);
-		context.fillRect(config.width, garageHeight, garageDepth, 0.08);
-		context.fillRect(config.width + garageDepth - 0.12, 0, 0.12, garageHeight + 0.08);
-		window.SteamCeiling.drawGraderBot(context);
-		context.fillStyle = '#29383d';
-		context.fillRect(-pocketDepth, 0, pocketDepth, pocketTop);
-		if (window.SteamCeiling) window.SteamCeiling.draw(context, viewMode);
-		if (window.SteamCeiling) {
-			const ceiling = window.SteamCeiling.state;
-			const cellY0 = ceiling.rockDrawnY(ceiling.bottom + selectedLayer * ceiling.cell);
-			const cellY1 = ceiling.rockDrawnY(ceiling.bottom + (selectedLayer + 1) * ceiling.cell);
-			context.strokeStyle = '#edf6f1';
-			context.lineWidth = 1.5 / scale;
-			context.strokeRect(selectedColumn * ceiling.cell, cellY0, ceiling.cell, cellY1 - cellY0);
-			context.lineWidth = 1 / scale;
-		}
-		context.strokeStyle = '#657578';
-		context.beginPath(); context.moveTo(-pocketDepth, 0); context.lineTo(config.width, 0); context.stroke();
-		if (Number.isFinite(world.target)) {
-			const targetGround = window.SteamCeiling.floorAt(world.target);
-			context.strokeStyle = '#627765';
-			context.beginPath(); context.moveTo(world.target, targetGround); context.lineTo(world.target, targetGround + 1.7); context.stroke();
-		}
-		if (showPrediction) drawPrediction();
+	// The rig's own machinery — fuel and heat bars, collector strip, reflector
+	// piston — drawn inside the shared body so it moves, pitches and gets covered
+	// exactly like the chassis it sits on.
+	function drawRigMachinery(context) {
 		const platform = world.platform;
 		const left = -config.platformWidth * 0.5;
 		const collectorWidth = config.platformWidth * config.collectorFraction;
-		context.save();
-		context.translate(platform.x, platform.y);
-		context.rotate(platform.angle);
-		context.fillStyle = '#35454b';
-		context.fillRect(left, 0.2, config.platformWidth, 0.4);
 		// Fuel and temperature ride on the chassis as horizontal and vertical
 		// bars, so the platform's state reads at a glance without the telemetry.
 		const fuelRatio = Math.max(0, Math.min(1, world.battery / config.battery));
@@ -857,40 +895,74 @@
 		context.lineTo(pistonCentreX - pistonTx * config.pistonHalf - pistonNx * 0.15, pistonCentreY - pistonTy * config.pistonHalf - pistonNy * 0.15);
 		context.closePath();
 		context.fill();
-		// Wheels: dark tyre, then a rotating cross of spokes and a hub so the
-		// rolling is visible. The spin accumulates from the distance travelled
-		// in physics, so a rolling platform shows moving spokes.
-		const wheelX = [left + 0.5, left + config.platformWidth - 0.5];
-		const wheelR = config.platformWheelRadius;
-		const wheelY = wheelR;
-		context.fillStyle = '#10191d';
-		for (let w = 0; w < wheelX.length; w++) {
-			context.beginPath();
-			context.arc(wheelX[w], wheelY, wheelR, 0, Math.PI * 2);
-			context.fill();
+		context.lineWidth = 1 / scale;
+	}
+
+	function draw() {
+		context.clearRect(0, 0, width, height);
+		context.save();
+		context.translate(offsetX, floorY);
+		context.scale(scale, -scale);
+		context.lineWidth = 1 / scale;
+		const pocketDepth = config.pocketDepth;
+		const pocketTop = config.deck;
+		context.strokeStyle = '#1e2c32';
+		context.beginPath();
+		for (let x = 0; x <= config.width; x += 2) { context.moveTo(x, 0); context.lineTo(x, config.ceiling); }
+		for (let y = 0; y <= config.ceiling; y += 2) { context.moveTo(0, y); context.lineTo(config.width, y); }
+		context.stroke();
+		context.fillStyle = '#29383d';
+		context.fillRect(-pocketDepth, -0.35, config.width + pocketDepth, 0.35);
+		// Fallen rubble first, so the charge pad plate stays visible on top of it.
+		if (window.SteamCeiling) window.SteamCeiling.drawFloor(context);
+		const padMin = physics.chargePadMin();
+		const padMax = physics.chargePadMax();
+		const chargingNow = physics.charging(world);
+		context.fillStyle = chargingNow ? '#2a4a3b' : '#1b3038';
+		context.fillRect(padMin, -0.35, padMax - padMin, 0.35);
+		context.fillStyle = chargingNow ? '#b9ed91' : '#7fb6d9';
+		for (let x = padMin + 0.25; x < padMax; x += 0.5) context.fillRect(x, -0.35, 0.08, 0.35);
+		context.fillRect(-pocketDepth - 0.3, 0, 0.3, pocketTop);
+		context.fillRect(-0.3, pocketTop, 0.3, config.ceiling - pocketTop);
+		context.fillRect(0, config.ceiling, config.width, 0.35);
+		// A recessed, low roof and back wall make the right-side bay read as a
+		// garage. The parked bot is drawn inside it, while the same vehicle remains
+		// visible throughout dispatch, work, dismissal and the return home.
+		const garageHeight = window.SteamCeiling.state.garageHeight;
+		const garageDepth = window.SteamCeiling.state.garageDepth;
+		context.fillStyle = '#29383d';
+		context.fillRect(config.width, garageHeight, 0.3, config.ceiling - garageHeight);
+		context.fillStyle = '#0a0f11';
+		context.fillRect(config.width, 0, garageDepth, garageHeight);
+		context.fillStyle = '#29383d';
+		context.fillRect(config.width, -0.08, garageDepth, 0.08);
+		context.fillRect(config.width, garageHeight, garageDepth, 0.08);
+		context.fillRect(config.width + garageDepth - 0.12, 0, 0.12, garageHeight + 0.08);
+		window.SteamCeiling.drawGraderBot(context);
+		context.fillStyle = '#29383d';
+		context.fillRect(-pocketDepth, 0, pocketDepth, pocketTop);
+		if (window.SteamCeiling) window.SteamCeiling.draw(context, viewMode);
+		if (window.SteamCeiling) {
+			const ceiling = window.SteamCeiling.state;
+			const cellY0 = ceiling.rockDrawnY(ceiling.bottom + selectedLayer * ceiling.cell);
+			const cellY1 = ceiling.rockDrawnY(ceiling.bottom + (selectedLayer + 1) * ceiling.cell);
+			context.strokeStyle = '#edf6f1';
+			context.lineWidth = 1.5 / scale;
+			context.strokeRect(selectedColumn * ceiling.cell, cellY0, ceiling.cell, cellY1 - cellY0);
+			context.lineWidth = 1 / scale;
 		}
-		context.strokeStyle = '#39494e';
-		context.lineWidth = 0.035;
-		for (let w = 0; w < wheelX.length; w++) {
-			context.save();
-			context.translate(wheelX[w], wheelY);
-			context.rotate(-platform.spin);
-			context.beginPath();
-			for (let s = 0; s < 4; s++) {
-				const angle = s * Math.PI * 0.5;
-				context.moveTo(0, 0);
-				context.lineTo(Math.cos(angle) * wheelR * 0.84, Math.sin(angle) * wheelR * 0.84);
-			}
-			context.stroke();
-			context.restore();
+		context.strokeStyle = '#657578';
+		context.beginPath(); context.moveTo(-pocketDepth, 0); context.lineTo(config.width, 0); context.stroke();
+		const activeTarget = playerApi.activeTarget();
+		if (Number.isFinite(activeTarget)) {
+			const targetGround = window.SteamCeiling.floorAt(activeTarget);
+			context.strokeStyle = '#627765';
+			context.beginPath(); context.moveTo(activeTarget, targetGround); context.lineTo(activeTarget, targetGround + 1.7); context.stroke();
 		}
-		context.fillStyle = '#596a70';
-		for (let w = 0; w < wheelX.length; w++) {
-			context.beginPath();
-			context.arc(wheelX[w], wheelY, wheelR * 0.2, 0, Math.PI * 2);
-			context.fill();
-		}
-		context.restore();
+		if (showPrediction) drawPrediction();
+		// One body pass draws every platform, the riding one last. The rig's
+		// machinery rides inside its body so a competitor on top covers it.
+		playerApi.draw(context, drawRigMachinery);
 		const ball = world.ball;
 		// The rock layer is drawn through a vertical perspective, so the ball
 		// is warped with it while it is inside the layer; otherwise it stays
@@ -1046,6 +1118,8 @@
 		// follow the world angle on the readout cadence instead of only on input.
 		syncPistonControl();
 		autopilotReadout();
+		refreshPlayers();
+		syncActiveControls();
 		showPrediction = predictionReadout();
 		ui.clock.textContent = world.time.toFixed(1) + ' s';
 		ui.battery.textContent = (world.battery / 1000).toFixed(2) + ' kJ';
@@ -1079,12 +1153,12 @@
 			: 'Cutoff · cool before powering');
 		ui.cooled.textContent = world.cooledEnergy.toFixed(1) + ' J';
 		ui.error.textContent = (physics.totalEnergy(world) - world.initialEnergy).toFixed(6) + ' J';
-		ui.motion.textContent = world.platform.vx.toFixed(2) + ' m/s';
+		ui.motion.textContent = playerApi.activeSpeed().toFixed(2) + ' m/s';
 		const pressed = String(world.drive);
 		if (ui.drive.getAttribute('aria-pressed') !== pressed) ui.drive.setAttribute('aria-pressed', pressed);
 		setText(ui.drive.firstChild, world.drive ? 'Drive on ' : 'Drive off ');
 		const canLaunch = physics.canLaunch(world);
-		setDisabled(ui.launch, !canLaunch);
+		setDisabled(ui.launch, !playerApi.rigActive() || !canLaunch);
 		statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch);
 	}
 
@@ -1135,7 +1209,7 @@
 	// Manual tilt is the one writer the tilt keeper yields to, so taking the slider,
 	// the wheel or a drag temporarily pauses that duty, not its enabled switch.
 	function setPistonAngle(degrees) {
-		if (!Number.isFinite(degrees)) return;
+		if (!Number.isFinite(degrees) || !playerApi.rigActive()) return;
 		autopilot.override('angle');
 		const before = world.pistonAngle;
 		physics.setPistonAngle(world, Math.max(-10, Math.min(10, degrees)) * Math.PI / 180);
@@ -1157,6 +1231,7 @@
 	}
 
 	function setChannel(channel, on) {
+		if (!playerApi.rigActive()) return;
 		autopilot.set(channel, on);
 		syncAutopilot();
 		refresh();
@@ -1263,19 +1338,33 @@
 	}
 
 	function updateDirection() {
-		world.direction = Number(rightHeld) - Number(leftHeld);
+		const direction = Number(rightHeld) - Number(leftHeld);
+		if (!playerApi.rigActive()) { playerApi.command(direction); sceneDirty = true; return; }
+		world.direction = direction;
 		autopilot.hold('move', world.brake || leftHeld || rightHeld);
 		if (leftHeld || rightHeld) world.target = NaN;
 		sceneDirty = true;
 	}
 
-	function clearInput() { world.brake = false; leftHeld = false; rightHeld = false; updateDirection(); }
-	function toggleDrive() { world.drive = !world.drive; autopilot.override('drive'); refresh(); }
-	function releaseBall() { physics.launch(world); refresh(); }
+	function clearInput() { world.brake = false; leftHeld = false; rightHeld = false; playerApi.clearCommand(); updateDirection(); }
+	function toggleDrive() { if (!playerApi.rigActive()) return; world.drive = !world.drive; autopilot.override('drive'); refresh(); }
+	function releaseBall() { if (!playerApi.rigActive()) return; physics.launch(world); refresh(); }
 	function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }
+	// One force setting per player: the slider and W/S edit the platform being
+	// driven, and switching players reads that player's setting back into the
+	// control instead of leaving the rig's value on screen.
 	function setForce(value) {
-		world.forceSetting = Math.max(0.1, Math.min(1, value));
-		const percent = Math.round(world.forceSetting * 100);
+		const forceValue = playerApi.setForce(value);
+		if (playerApi.rigActive()) world.forceSetting = forceValue;
+		syncForceControl(forceValue);
+		// The panel's summary line names that player's force, so it moves with
+		// the slider instead of waiting for the next readout.
+		refreshPlayers();
+	}
+
+	function syncForceControl(value) {
+		const forceValue = value === undefined ? playerApi.force(playerApi.state.active) : value;
+		const percent = Math.round(forceValue * 100);
 		if (Number(ui.force.value) !== percent) ui.force.value = percent;
 		setText(ui['force-value'], percent + '%');
 	}
@@ -1295,12 +1384,15 @@
 		if (document.activeElement && document.activeElement !== canvas && document.activeElement !== document.body) {
 			document.activeElement.blur();
 		}
-		if (key === 'KeyB') { world.brake = true; world.target = NaN; autopilot.hold('move', true); }
+		if (key === 'KeyB') {
+			if (playerApi.rigActive()) { world.brake = true; world.target = NaN; autopilot.hold('move', true); }
+			else playerApi.commandBrake(true);
+		}
 		if (key === 'KeyA') leftHeld = true;
 		if (key === 'KeyD') rightHeld = true;
 		if (key === 'KeyA' || key === 'KeyD') updateDirection();
-		if (key === 'KeyW') setForce(world.forceSetting + 0.1);
-		if (key === 'KeyS') setForce(world.forceSetting - 0.1);
+		if (key === 'KeyW') setForce(playerApi.force(playerApi.state.active) + 0.1);
+		if (key === 'KeyS') setForce(playerApi.force(playerApi.state.active) - 0.1);
 		if (event.repeat) return;
 		if (key === 'Space' || key === 'KeyQ') toggleDrive();
 		if (key === 'KeyE') releaseBall();
@@ -1312,7 +1404,10 @@
 	function keyup(event) {
 		const key = event.code;
 		if (key === 'Space' || key === 'KeyQ') event.preventDefault();
-		if (key === 'KeyB') { world.brake = false; updateDirection(); }
+		if (key === 'KeyB') {
+			if (playerApi.rigActive()) { world.brake = false; updateDirection(); }
+			else playerApi.commandBrake(false);
+		}
 		if (key === 'KeyA') leftHeld = false;
 		if (key === 'KeyD') rightHeld = false;
 		if (key === 'KeyA' || key === 'KeyD') updateDirection();
@@ -1335,14 +1430,15 @@
 		const elapsed = previous ? Math.min((now - previous) / 1000, 0.1) : 0;
 		previous = now;
 		if (!paused && !document.hidden) accumulator += elapsed * Number(ui.speed.value);
-		while (accumulator >= config.step) { autopilot.update(world, config.step); physics.step(world, config.step); accumulator -= config.step; sceneDirty = true; }
+		while (accumulator >= config.step) { autopilot.update(world, config.step); playerApi.update(world, config.step); physics.step(world, config.step); accumulator -= config.step; sceneDirty = true; }
 		if (sceneDirty) { draw(); sceneDirty = false; }
 		if (now - lastReadout > 100) { readout(); lastReadout = now; }
 		requestAnimationFrame(frame);
 	}
 
 	document.getElementById('reset').addEventListener('click', function () {
-		world = physics.createWorld(); window.SteamCeiling.setShape(ui.shape.value); renderedSales = -1; clearInput(); endPistonDrag(); setForce(world.forceSetting); autopilot.reset(); accumulator = 0;
+		world = physics.createWorld(); playerApi.init(world); window.SteamCeiling.setShape(ui.shape.value); renderedSales = -1; clearInput(); endPistonDrag(); setForce(world.forceSetting); autopilot.reset(); accumulator = 0;
+		syncActiveControls();
 		for (const row of tierRows) row.selectedIndex = -1;
 		if (testMode) grantTestState();
 		setModeStatus();
@@ -1372,6 +1468,7 @@
 	// up (negative delta) raises the angle, a standard notch steps about 4°.
 	canvas.addEventListener('wheel', function (event) {
 		event.preventDefault();
+		if (!playerApi.rigActive()) return;
 		setPistonAngle(pistonDegrees() - Math.max(-100, Math.min(100, event.deltaY)) * 0.04);
 	}, { passive: false });
 	canvas.addEventListener('pointerdown', function (event) {
@@ -1385,11 +1482,13 @@
 			return;
 		}
 		if (worldY <= moveClickHeight && worldX >= 0 && worldX <= config.width) {
-			world.direction = 0;
-			world.target = Math.max(physics.platformMin(), Math.min(physics.platformMax(), worldX));
-			autopilot.override('move');
+			if (playerApi.rigActive()) {
+				world.direction = 0;
+				world.target = Math.max(physics.platformMin(), Math.min(physics.platformMax(), worldX));
+				autopilot.override('move');
+			} else playerApi.commandTarget(worldX);
 			sceneDirty = true;
-		} else if (worldX >= 0 && worldX <= config.width && worldY <= config.ceiling) {
+		} else if (worldX >= 0 && worldX <= config.width && worldY <= config.ceiling && playerApi.rigActive()) {
 			// Open air starts a piston drag; dragging left or up raises the angle.
 			pistonDragActive = true;
 			autopilot.hold('angle', true);
@@ -1625,5 +1724,6 @@
 	// at this width and with this many messages.
 	new ResizeObserver(fitStatusBar).observe(ui['status-bar']);
 	fitStatusBar();
+	buildPlayers();
 	resize(); refresh(); requestAnimationFrame(frame);
 })();

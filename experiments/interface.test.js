@@ -17,6 +17,7 @@ const harness = require('./harness.cjs');
 require('../js/prediction.js');
 const help = require('../js/help.js');
 const autopilot = require('../js/autopilot.js');
+const players = require('../js/players.js');
 
 // Capture the world the page owns so measured cargo sales can fund it.
 let world = null;
@@ -26,6 +27,22 @@ physics.step = function (stepped, dt) {
 	return simulate(stepped, dt);
 };
 require('../js/main.js');
+
+// The competitor sweeps the floor while the page runs, so the trajectory tests
+// pin it at the far wall first: what they measure and assert is the rig's own
+// motion, not where a passing rival happens to have lifted it.
+function parkRival() {
+	const rival = players.state.rivals[0];
+	rival.x = physics.platformMax();
+	rival.vx = 0;
+	rival.bot = false;
+	rival.manual = 0;
+	rival.target = NaN;
+	rival.direction = 0;
+	rival.braking = false;
+	rival.tailLeft = 0;
+	rival.tailRight = 0;
+}
 
 let clock = 0;
 function advance(count) {
@@ -129,6 +146,81 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	assert.equal(spec[7].textContent, '42 J');
 	assert.equal(spec[9].textContent, '90%');
 	assert.equal(spec[19].textContent, '0%');
+});
+
+test('the player strip lists every player with money, a BOT switch and a control switch', () => {
+	const list = dom.element('player-list');
+	assert.equal(list.children.length, 2, 'the rig and its competitor each get a line');
+	const rigRow = list.children[0];
+	const rivalRow = list.children[1];
+	assert.equal(rigRow.dataset.active, 'true');
+	assert.equal(rigRow.children[0].children[1].textContent, 'YOU');
+	assert.equal(rigRow.children[0].children[2].textContent, ceiling.state.funds.toFixed(1) + ' cr');
+	const rivalBox = rivalRow.children[1].children[0];
+	assert.equal(rivalBox.checked, true, 'the competitor starts bot controlled');
+	// The line is the control switch: it hands the movement keys, travel click
+	// and force slider to that platform.
+	rivalRow.children[0].dispatch('click');
+	assert.equal(players.state.active, 1);
+	assert.equal(rivalRow.dataset.active, 'true');
+	assert.equal(rigRow.dataset.active, 'false');
+	assert.equal(dom.element('drive').disabled, true, 'the ball controls belong to the rig');
+	assert.equal(dom.element('competitor-note').hidden, false);
+	assert.match(dom.element('control-title').textContent, /RIVAL 1/);
+	// The checkbox is the policy switch and does not change the controlled player.
+	rivalBox.checked = false;
+	rivalBox.dispatch('change');
+	assert.equal(players.state.players[1].bot, false);
+	assert.equal(players.state.active, 1);
+	rigRow.children[0].dispatch('click');
+	assert.equal(players.state.active, 0);
+	assert.equal(dom.element('drive').disabled, false);
+	assert.equal(dom.element('competitor-note').hidden, true);
+	assert.equal(dom.element('control-title').textContent, 'PLATFORM / LOW-TIER DRIVE');
+	// Restore the default policy for the remaining interface tests.
+	rivalBox.checked = true;
+	rivalBox.dispatch('change');
+});
+
+test('the controls and their readouts belong to the selected platform, not the rig', () => {
+	const list = dom.element('player-list');
+	// The rig drives at 60%; the competitor is switched in and given its own 90%.
+	assert.equal(dom.element('force').value, '60');
+	list.children[1].children[0].dispatch('click');
+	assert.match(dom.element('player-focus').textContent, /^DRIVING RIVAL 1 · FORCE 60% · LOAD 0 CELLS · BOT$/);
+	dom.element('force').value = '90';
+	dom.element('force').dispatch('input');
+	assert.equal(dom.element('force-value').textContent, '90%');
+	assert.match(dom.element('player-focus').textContent, /RIVAL 1 · FORCE 90%/);
+	assert.equal(players.force(1), 0.9);
+	assert.equal(players.force(0), 0.6, 'the rig keeps its own force setting');
+	// Switching back restores the rig's own number instead of leaving the
+	// competitor's value on the slider.
+	list.children[0].children[0].dispatch('click');
+	assert.equal(dom.element('force').value, '60');
+	assert.match(dom.element('player-focus').textContent, /^DRIVING YOU · FORCE 60%/);
+	assert.equal(dom.element('drive').disabled, false);
+	// A travel click while a competitor is selected commands that competitor.
+	const rival = players.state.rivals[0];
+	rival.bot = false;
+	rival.manual = 0;
+	rival.x = 18;
+	rival.vx = 0;
+	world.platform.x = 6;
+	world.platform.vx = 0;
+	world.target = NaN;
+	list.children[1].children[0].dispatch('click');
+	dom.element('c').dispatch('pointerdown', Object.assign(chamberPoint(14, 0.5), { pointerType: 'mouse', button: 0, preventDefault() {} }));
+	assert.ok(Math.abs(rival.target - 14) < 0.4, 'the competitor takes the travel target');
+	assert.ok(Number.isNaN(world.target), 'the rig is left alone');
+	list.children[0].children[0].dispatch('click');
+	world.platform.x = 12;
+	world.platform.vx = 0;
+	rival.x = 5;
+	rival.bot = true;
+	rival.target = NaN;
+	rival.manual = 0;
+	assert.equal(players.state.active, 0);
 });
 
 test('settled readouts do not rewrite buttons, status or control state', () => {
@@ -400,6 +492,7 @@ test('the piston angle is set by the slider, the chamber wheel and an air drag',
 });
 
 test('the autopilot switches, shortcuts and manual overrides share one writer', () => {
+	parkRival();
 	const panel = dom.element('autopilot');
 	const status = dom.element('autopilot-status');
 	const boxes = { move: 'auto-move', smart: 'auto-smart', drive: 'auto-drive', angle: 'auto-angle' };
@@ -417,6 +510,7 @@ test('the autopilot switches, shortcuts and manual overrides share one writer', 
 	check('move', true);
 	assert.equal(autopilot.enabled('move'), true);
 	advance(8);
+	console.error('DIAG', JSON.stringify({ p: [world.platform.x, world.platform.y, world.platform.vx, world.platform.angle], b: [world.ball.x, world.ball.y, world.ball.vx, world.ball.vy], t: world.time, contact: autopilot.plan ? 1 : 0 }));
 	assert.equal(status.hidden, false);
 	assert.match(status.textContent, /^Intercept · 11\.4 m in /);
 	assert.ok(Number.isFinite(world.target), 'the chase commands travel instead of leaving the platform alone');

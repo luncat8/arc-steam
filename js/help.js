@@ -148,6 +148,23 @@
 			]
 		},
 		{
+			id: 'players',
+			label: 'Players',
+			title: 'Competitors and the scoreboard',
+			text: [
+				'The strip under the telemetry lists every platform at the mine, one line per player. The rig is YOU; the others are competitors that work the same floor rubble with a blade and keep their own credits. Every player drives the same machine — only the colour and the policy differ, and an idle platform is drawn dim.',
+				'Click a line to take that platform’s controls. The force setting, A/D, the brake and the low-ground travel click all move to it, the panel retitles itself and its summary line names the player, its force, its load and its policy. The ball, piston and autopilot belong to the rig and disable while a competitor is being driven; the reserve, heat and shop cards always describe the rig.',
+				'BOT hands a platform to its policy. A bot competitor sweeps wall to wall, shaves rubble into its load and sells at either wall. A bot rig runs the autopilot duties and, with a full hopper, makes a selling trip to the nearer wall before resuming the intercept.',
+				'Two platforms that meet do not collide like walls. Each body has a retractable 45° plate at both ends: folded while the other platform is far or moving away, swinging down at a limited rate as the gap closes, and clipped at the floor so the plate and the ramp the wheels follow are the same line. The platform applying more drive power is the one that rides on top; the other stays on the floor and is driven over. Their credits never enter the rig’s ledger.'
+			],
+			keys: [
+				['Click a player line', 'Take that platform’s controls and its force setting'],
+				['BOT checkbox', 'Let that player’s policy drive it'],
+				['45° plate', 'Unfolds as a platform closes in, folds when it leaves'],
+				['Higher force', 'The platform that climbs over the other']
+			]
+		},
+		{
 			id: 'market',
 			label: 'Market',
 			title: 'Market and ledger',

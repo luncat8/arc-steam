@@ -15,6 +15,12 @@
 			<div class="system-options"><label for="shape">ROCK SHAPE <select id="shape" autocomplete="off"><option value="smooth" selected>Smooth heightmap</option><option value="square">Square cells</option></select></label><label class="commune-switch" for="commune"><input type="checkbox" id="commune" autocomplete="off"> COMMUNISM MODE <i>ALL FREE · M</i></label><label class="test-switch" for="test-mode"><input type="checkbox" id="test-mode" autocomplete="off"> TEST MODE <i>RESEARCH + INSTALL ALL</i></label><button id="help-modes" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: communism and test mode">?</button><button id="help-keys" class="help-open" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-keyshortcuts="H">HELP <span>H</span></button></div>
 		</header>
 		<section class="telemetry panel" aria-label="System telemetry"><article id="reserve-telemetry"><span>ENERGY RESERVE</span><strong id="battery">—</strong><small id="reserve-note">Centre pad refills free at the source’s reload rate · emergency import in the market</small></article><article id="cargo-telemetry"><button id="market-open" class="telemetry-action" type="button" aria-controls="market-drawer" aria-expanded="false" aria-label="Open Market and Ledger"><span>CARGO STORAGE</span><strong id="cargo">—</strong><small id="cargo-note">100 cells maximum · cargo adds mass · open market</small></button></article><article><span>PLATFORM MASS</span><strong id="platform-mass">—</strong><small>Dry chassis + cargo + held ball</small></article><article><button id="science-open" class="telemetry-action" type="button" aria-controls="science-drawer" aria-expanded="false" aria-label="Open Science and Shop"><span>FUNDS / SOLD</span><strong id="funds">—</strong><small id="funds-note">Automatic sale · open science and shop</small></button></article><article><span>BALL ENERGY</span><strong id="ball-energy">—</strong><small>Kinetic + gravitational</small></article><article><span>STORED THERMAL ENERGY</span><strong id="heat">—</strong><small>Cooling exported <span id="cooled">—</span></small></article><article id="thermal-telemetry"><span>MACHINERY TEMPERATURE</span><strong id="temperature">—</strong><small id="thermal-status">Drive output 100% · cooling normally</small></article><article><span>ENERGY BALANCE ERROR</span><strong id="error">—</strong><small>Includes heat, cooling, rock & cargo</small></article></section>
+		<section class="scoreboard panel" aria-label="Players">
+			<span class="eyebrow">PLAYERS</span>
+			<ol id="player-list" class="player-list" aria-label="Players at this mine"></ol>
+			<span class="scoreboard-hint">click a player to take its controls · BOT hands it to its policy</span>
+			<button id="help-players" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: players and competitors">?</button>
+		</section>
 		<section class="workspace">
 			<section class="mine-panel panel" aria-label="Chamber view" data-topic="chamber">
 				<div class="canvas-wrap"><canvas id="c" tabindex="0" aria-label="Side view of a bouncing ball and movable mining platform"></canvas>
@@ -33,8 +39,10 @@
 				</div>
 			</section>
 			<aside class="controls-panel panel" data-topic="autopilot">
-				<div class="panel-title"><span>PLATFORM / LOW-TIER DRIVE</span><span id="motion">0.00 m/s</span></div>
+				<div class="panel-title"><span id="control-title">PLATFORM / LOW-TIER DRIVE</span><span id="motion">0.00 m/s</span></div>
 				<div class="controls">
+					<p id="player-focus" class="hint" role="status">DRIVING YOU · FORCE 60% · LOAD 0 CELLS · MANUAL</p>
+					<p id="competitor-note" class="hint" hidden>Ball, piston and autopilot belong to the rig · force, movement, brake and travel drive the selected platform now.</p>
 					<div class="eyebrow-row"><p class="eyebrow">BOUNCE ASSIST</p><button id="help-drive" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: bounce drive">?</button></div>
 					<button id="drive" class="drive" aria-pressed="true">Drive on <span>SPACE / Q</span></button>
 					<button id="launch" disabled>Release held ball <span>E</span></button>
@@ -124,6 +132,7 @@
 	<script src="js/physics.js"></script>
 	<script src="js/prediction.js"></script>
 	<script src="js/autopilot.js"></script>
+	<script src="js/players.js"></script>
 	<script src="js/main.js"></script>
 </body>
 </html>

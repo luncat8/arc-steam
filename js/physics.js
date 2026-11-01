@@ -67,19 +67,26 @@
 		return root.SteamCeiling ? root.SteamCeiling.floorAt(x) : 0;
 	}
 
-	function platformGroundAt(x) {
-		return Math.max(terrainHeight(x), root.SteamCeiling ? root.SteamCeiling.botSurfaceAt(x) : 0);
+	// The ground under a platform is the rock-and-rubble floor, the commercial
+	// grader's low dome and every competitor platform's trapezoid body. Competitors
+	// pass their own id so they never stand on their own 45° tails; the rig passes
+	// 'rig', which no competitor uses.
+	function platformGroundAt(x, exceptId) {
+		let height = terrainHeight(x);
+		if (root.SteamCeiling) height = Math.max(height, root.SteamCeiling.botSurfaceAt(x));
+		if (root.SteamPlayers) height = Math.max(height, root.SteamPlayers.surfaceAt(x, exceptId));
+		return height;
 	}
-	function platformPitchAt(x) {
+	function platformPitchAt(x, exceptId) {
 		const span = config.platformWheelHalfSpan;
-		const rise = platformGroundAt(x + span) - platformGroundAt(x - span);
+		const rise = platformGroundAt(x + span, exceptId) - platformGroundAt(x - span, exceptId);
 		return Math.max(-config.platformMaxPitch, Math.min(config.platformMaxPitch, Math.atan2(rise, span * 2)));
 	}
 
 	// The chassis origin follows the highest surface under its wheels and belly.
 	// Sampling the full footprint lets a mound lift the platform instead of
 	// letting the body tunnel through it.
-	function platformBaseAt(x, angle) {
+	function platformBaseAt(x, angle, exceptId) {
 		const cosine = Math.cos(angle);
 		const sine = Math.sin(angle);
 		const halfWidth = config.platformWidth * 0.5;
@@ -89,17 +96,17 @@
 		const sampleStep = Math.min(config.platformWheelRadius, cell * 0.5);
 		for (let localX = -halfWidth; localX < halfWidth; localX += sampleStep) {
 			const groundX = x + localX * cosine - bodyBottom * sine;
-			const required = platformGroundAt(groundX) - localX * sine - bodyBottom * cosine;
+			const required = platformGroundAt(groundX, exceptId) - localX * sine - bodyBottom * cosine;
 			height = Math.max(height, required);
 		}
 		const groundX = x + halfWidth * cosine - bodyBottom * sine;
-		height = Math.max(height, platformGroundAt(groundX) - halfWidth * sine - bodyBottom * cosine);
+		height = Math.max(height, platformGroundAt(groundX, exceptId) - halfWidth * sine - bodyBottom * cosine);
 		const radius = config.platformWheelRadius;
 		const span = config.platformWheelHalfSpan;
 		for (let sign = -1; sign <= 1; sign += 2) {
 			const localX = sign * span;
 			const groundX = x + localX * cosine - radius * sine;
-			const required = platformGroundAt(groundX) - localX * sine + radius - radius * cosine;
+			const required = platformGroundAt(groundX, exceptId) - localX * sine + radius - radius * cosine;
 			height = Math.max(height, required);
 		}
 		return Math.max(0, height);
@@ -107,10 +114,10 @@
 
 	function updatePlatformTerrain(world, dt) {
 		const platform = world.platform;
-		const wantedAngle = platformPitchAt(platform.x);
+		const wantedAngle = platformPitchAt(platform.x, platform.id);
 		const turn = config.platformPitchRate * dt;
 		platform.angle += Math.max(-turn, Math.min(turn, wantedAngle - platform.angle));
-		const wantedHeight = platformBaseAt(platform.x, platform.angle);
+		const wantedHeight = platformBaseAt(platform.x, platform.angle, platform.id);
 		platform.y = Math.max(wantedHeight, platform.previousY - config.platformDropRate * dt);
 		platform.stepVx = (platform.x - platform.previousX) / dt;
 		platform.stepVy = (platform.y - platform.previousY) / dt;
@@ -375,7 +382,7 @@
 			initialEnergy: 0,
 			brake: false, drive: true, forceSetting: 0.6, direction: 0, target: NaN,
 			pistonAngle: 0, pistonOffset: 0, pistonVelocity: 0, pistonImpact: 0,
-			platform: { x: 12, y: 0, vx: 0, vy: 0, angle: 0, omega: 0, spin: 0, previousX: 12, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0 },
+			platform: { id: 'rig', x: 12, y: 0, vx: 0, vy: 0, angle: 0, omega: 0, spin: 0, previousX: 12, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0 },
 			ball: { x: 12.8, y: 5, vx: 1.2 * config.ballSpeedScale, vy: 0, state: 'flying' },
 			bounces: 0, pushes: 0, lastPush: 0, groundings: 0, sales: 0, lastSale: 0
 		};

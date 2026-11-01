@@ -15,6 +15,7 @@ const harness = require('./harness.cjs');
 require('../js/prediction.js');
 require('../js/help.js');
 require('../js/autopilot.js');
+require('../js/players.js');
 
 const near = harness.near;
 

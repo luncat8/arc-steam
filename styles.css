@@ -61,6 +61,27 @@ main { max-width: 1920px; margin: auto; padding: 8px; display: grid; gap: 8px; }
 .telemetry article[data-warning="EMPTY"] strong, .telemetry article[data-warning="CUTOFF"] strong { color: var(--danger); }
 .telemetry article[data-warning="EMPTY"]::after, .telemetry article[data-warning="CUTOFF"]::after { background: var(--danger); color: #1b0f0c; }
 
+/* Players: one compact line per platform. The row is the switch; the BOT
+   checkbox is the only nested control and keeps its own click target. */
+.scoreboard { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 6px 14px; }
+.scoreboard .eyebrow { margin: 0; }
+.player-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.player-row { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--line); border-radius: 5px; background: #0b1316; overflow: hidden; }
+.player-row[data-active="true"] { border-color: var(--accent); background: #14201a; box-shadow: inset 0 0 0 1px #b9ed9133; }
+.player-select { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border: 0; border-radius: 0; background: transparent; text-align: left; }
+.player-select:hover:not(:disabled) { border-color: transparent; background: #18262a; }
+.player-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.player-row[data-active="true"] .player-dot { box-shadow: 0 0 0 3px #b9ed9133; }
+.player-name { font: 10px ui-monospace, monospace; letter-spacing: 1px; color: #a7b8ba; }
+.player-row[data-active="true"] .player-name { color: #dce6e4; }
+.player-money { font: 11px ui-monospace, monospace; color: var(--accent); white-space: nowrap; }
+.player-bot { display: flex; align-items: center; gap: 5px; padding: 0 9px; border-left: 1px solid var(--line); font: 9px ui-monospace, monospace; letter-spacing: 1px; color: #94a8ac; cursor: pointer; user-select: none; }
+.player-bot:hover { color: #dce6e4; }
+.player-bot:has(:checked) { color: var(--amber); background: #241d12; }
+.player-bot input { margin: 0; accent-color: var(--amber); }
+.scoreboard-hint { font-size: 10px; color: #71868a; }
+.scoreboard button.help-mark { margin-left: auto; }
+
 /* Status bar: one fixed strip at the foot of the viewport while the page
    scrolls. The facts on the left stay true all session; the messages on the
    right only exist while the condition behind them does. */

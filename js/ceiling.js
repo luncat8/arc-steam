@@ -799,6 +799,44 @@
 		updateFloor();
 	}
 
+	// A competitor blade shaves a thin layer from the rubble under its body and
+	// takes the value with it. The pile it removes is priced at the pile's own
+	// value density, so the floor and the purse can never disagree; the caller
+	// supplies the capacity left in its hopper.
+	function harvest(x, halfWidth, cut, maxCells, out) {
+		out.value = 0;
+		out.cells = 0;
+		if (!(cut > 0) || !(maxCells > 0)) return out;
+		const first = Math.max(0, Math.floor((x - halfWidth) / cell));
+		const last = Math.min(columns - 1, Math.floor((x + halfWidth) / cell));
+		let cells = 0;
+		let value = 0;
+		let changed = false;
+		for (let column = first; column <= last; column++) {
+			const height = floorPiles[column];
+			if (height <= 0) continue;
+			const density = floorValues[column] / height;
+			let amount = Math.min(height, cut);
+			let take = amount / floorCellHeight;
+			if (cells + take > maxCells) {
+				take = maxCells - cells;
+				amount = take * floorCellHeight;
+			}
+			if (take <= 0) break;
+			const taken = density * amount;
+			floorPiles[column] = height - amount;
+			floorValues[column] = Math.max(0, floorValues[column] - taken);
+			cells += take;
+			value += taken;
+			changed = true;
+			if (cells >= maxCells) break;
+		}
+		if (changed) updateFloor();
+		out.cells = cells;
+		out.value = value;
+		return out;
+	}
+
 	function step(world, dt, carriedMass) {
 		for (let i = 0; i < maxDebris; i++) {
 			if (!active[i]) continue;
@@ -1131,7 +1169,7 @@
 
 	reset(1);
 
-	const api = { hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, trace, step, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape, rockDrawnY, rockWorldY, rockScale };
+	const api = { hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, trace, step, harvest, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape, rockDrawnY, rockWorldY, rockScale };
 	root.SteamCeiling = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
