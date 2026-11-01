@@ -1,7 +1,7 @@
 'use strict';
 // Competitor platforms: one body for every player, the retractable 45° tails,
 // the power ranking that decides who rides over whom, the floor harvest and
-// both policies (the competitor sweep and the rig's selling trip).
+// both policies (the competitor's ball play and the rig's selling trip).
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const harness = require('./harness.cjs');
@@ -211,7 +211,25 @@ test('a competitor blade takes floor value into its own load and honours capacit
 	assert.ok(out.cells <= 0.001 + 1e-12, 'the hopper capacity caps the cut');
 });
 
-test('the competitor bot sweeps rubble and sells it at a wall for its own credits', () => {
+test('the competitor bot holds station when there is nothing it may play', () => {
+	const world = fresh();
+	// The rig's collector holds the only ball, so the competitor cannot act on
+	// anything: it used to pace wall to wall in this state.
+	const ball = world.balls[0];
+	ball.state = 'held';
+	ball.x = world.platform.x - 1.15;
+	const rival = players.state.rivals[0];
+	rival.x = 4;
+	rival.vx = 0;
+	players.setActive(1);
+	for (let i = 0; i < 240 * 6; i++) players.update(world, c.step);
+	assert.ok(!Number.isFinite(rival.mark), 'no mark without a ball in play');
+	assert.equal(rival.commanded, false);
+	assert.ok(Math.abs(rival.vx) < 0.05, 'the platform is stopped');
+	assert.ok(Math.abs(rival.x - 4) < 0.5, 'and it stayed put instead of sweeping');
+});
+
+test('the competitor bot banks rubble it drives over at a wall, for its own credits', () => {
 	const world = fresh();
 	fillFloor(0.18, 10);
 	const rival = players.state.rivals[0];
@@ -224,32 +242,73 @@ test('the competitor bot sweeps rubble and sells it at a wall for its own credit
 	assert.equal(ceiling.state.funds, 0, 'the rig was not paid for the competitor sale');
 });
 
-test('a manual travel click silences the competitor bot, then the sweep resumes', () => {
+test('a full competitor hopper makes its own selling trip and then resumes the ball', () => {
+	const world = fresh();
+	const state = ceiling.state;
+	fillFloor(0.18, 10);
+	const rival = players.state.rivals[0];
+	rival.bot = true;
+	// A load at the limit is what sends the platform to the wall on purpose,
+	// exactly like the rig's own selling trip.
+	rival.cargoCells = state.storageLimit;
+	rival.cargoValue = 40;
+	const ball = world.balls[0];
+	ball.state = 'grounded';
+	ball.x = 20;
+	ball.y = c.radius + ceiling.floorAt(20);
+	ball.vx = 0;
+	ball.vy = 0;
+	players.update(world, c.step);
+	assert.ok(rival.mark > physics.platformMax(), 'a full hopper aims through the nearer wall');
+	for (let i = 0; i < 240 * 12 && rival.money === 0; i++) players.update(world, c.step);
+	assert.ok(rival.money > 0, 'the trip sold the load');
+	near(rival.soldValue, rival.money);
+	// With the hopper empty the ball is the mark again, so the trip is not a
+	// one-way exit from the policy.
+	for (let i = 0; i < 240 * 2; i++) players.update(world, c.step);
+	assert.ok(Number.isFinite(rival.mark) && rival.mark < physics.platformMax(), 'the ball is played again after the sale');
+});
+
+test('a manual travel click silences the competitor bot, then its ball policy resumes', () => {
 	const world = fresh();
 	const rival = players.state.rivals[0];
+	const ball = world.balls[0];
+	ball.state = 'grounded';
+	ball.x = 6;
+	ball.y = c.radius + ceiling.floorAt(6);
+	ball.vx = 0;
+	ball.vy = 0;
 	players.setActive(1);
 	const start = rival.x;
-	players.commandTarget(rival.x + 2);
+	players.commandTarget(rival.x - 2);
 	for (let i = 0; i < 180; i++) players.update(world, c.step);
-	assert.ok(rival.x > start + 0.5, 'the manual target steers against the bot direction');
+	assert.ok(rival.x < start - 0.5, 'the manual target steers against the ball mark');
 	assert.ok(rival.manual > 0);
 	for (let i = 0; i < 240 * 3; i++) players.update(world, c.step);
-	assert.ok(rival.vx < 0, 'the bot resumes its leftward sweep after the manual pause');
+	assert.ok(Number.isFinite(rival.mark), 'the ball is its mark again after the manual pause');
+	assert.ok(rival.x < start - 1, 'and it drove toward it');
 });
 
 test('a held direction key outranks the competitor bot until it is released', () => {
 	const world = fresh();
 	const rival = players.state.rivals[0];
+	const ball = world.balls[0];
+	ball.state = 'grounded';
+	ball.x = 6;
+	ball.y = c.radius + ceiling.floorAt(6);
+	ball.vx = 0;
+	ball.vy = 0;
 	rival.x = 12;
 	rival.vx = 0;
 	players.setActive(1);
 	players.command(1);
 	for (let i = 0; i < 240 * 1.5; i++) players.update(world, c.step);
 	assert.ok(rival.vx > 0, 'the held key still steers after the manual window');
-	assert.ok(rival.x > 13, 'the platform moved right against the bot direction');
+	assert.ok(rival.x > 13, 'the platform moved right against the ball mark');
 	players.command(0);
 	for (let i = 0; i < 240 * 3; i++) players.update(world, c.step);
-	assert.ok(rival.vx < 0, 'the bot sweeps again once the key is released');
+	assert.ok(Number.isFinite(rival.mark) && rival.mark < rival.x, 'the ball policy takes over once the key is released');
+	assert.ok(rival.vx < 0, 'and it drives back toward the ball');
 });
 
 test('the rig bot engages the autopilot and sells a full hopper at the wall', () => {

@@ -37,6 +37,10 @@
 		// 15.1 m at 42 J) while the first two stay short of it. One pulse adds
 		// P/(m·g) = 4.28 m of height; rounding up from the 41.2 J solution.
 		retention: 0.9, pulse: 42, get efficiency() { return engine.efficiency; }, get battery() { return reserveNow(); }, step: 1 / 240,
+		// Travel tuning shared by both bots: a mark with no deadline is approached
+		// at this speed, and a mark met while rolling slower than the second is
+		// passed through rather than stopped on.
+		approachSpeed: 2.5, rollingArrival: 0.5,
 		// Centre ground charge pad: a refuelling surface, not a consumable. It
 		// fills the installed source pack at its reload rate while parked, so
 		// the cost of energy is position and downtime rather than credits.
@@ -336,6 +340,24 @@
 	function speedNow() { return (config.maxSpeed + installed('speedBonus')) * engine.speed; }
 	function packMass() { return reserveNow() / engine.density; }
 	function dryMass() { return config.platformMass + engine.mass - 18 + installed('massDelta') + packMass() - basePackMass; }
+	// The speed a platform commands to cover `reach` metres: the slowest run
+	// that still arrives in `time` seconds, or a gentle approach when no
+	// deadline is due. The rig's travel controller and a competitor's own policy
+	// both brake into their mark with this rule, so neither rushes a mark it
+	// cannot stop on. Rolling through the mark costs least, but a moving deck
+	// drags the ball sideways with it, so rolling is only chosen while it is slow
+	// enough to steer; otherwise the run spends the whole flight time on the peak
+	// speed of an accelerate-coast-brake profile that stands still on arrival.
+	function arrivalSpeed(reach, time, acceleration) {
+		const brake = Math.sqrt(2 * acceleration * reach);
+		if (!(time > 0)) return Math.min(config.approachSpeed, brake);
+		const roll = reach / time;
+		if (roll <= config.rollingArrival) return Math.min(roll, brake);
+		const discriminant = acceleration * acceleration * time * time - 4 * acceleration * reach;
+		if (discriminant <= 0) return Math.min(roll, brake);
+		return (acceleration * time - Math.sqrt(discriminant)) * 0.5;
+	}
+
 	function reserveNow() {
 		// Four full-throttle, wall-to-wall starts; acceleration distance caps
 		// the kinetic cost when the map is too short to attain rated speed.
@@ -780,22 +802,26 @@ function spend(world, useful) {
 		const tangent = relativeVx * tx + relativeVy * ty;
 		ball.vx -= tangent * 0.35 * tx;
 		ball.vy -= tangent * 0.35 * ty;
-		const after = 0.5 * ballMassNow() * (ball.vx * ball.vx + ball.vy * ball.vy);
-		if (isRigBall(ball)) {
-			if (after < before) world.heat += before - after;
-			else world.importedEnergy += after - before;
-		}
 		if (pulse > 0 && impact > 0.05) {
 			const normal = ball.vx * nx + ball.vy * ny;
 			const boosted = Math.sqrt(normal * normal + 2 * pulse / ballMassNow());
 			ball.vx += (boosted - normal) * nx;
 			ball.vy += (boosted - normal) * ny;
 		}
+		// Booked after the pulse: a deck's drive spends real energy too, and a
+		// shared ball is in the rig's ledger whichever deck kept it up.
+		const after = 0.5 * ballMassNow() * (ball.vx * ball.vx + ball.vy * ball.vy);
+		if (isRigBall(ball)) {
+			if (after < before) world.heat += before - after;
+			else world.importedEnergy += after - before;
+		}
 		return true;
 	}
 
 	// A grounded ball under a competitor is scooped back up with one pulse: the
-	// competitor's version of the rig's catch, without a collector.
+	// competitor's version of the rig's catch, without a collector. The lift and
+	// the pulse come from outside the rig, so a ball that is in the rig's ledger
+	// books them as imported energy, exactly like the deck pulses above.
 	function scoop(world, ball) {
 		const rivals = rivalBodies();
 		for (let i = 0; i < rivals.length; i++) {
@@ -803,11 +829,13 @@ function spend(world, useful) {
 			if (!mayPush(ball, rival.id)) continue;
 			if (Math.abs(ball.x - rival.x) > config.platformWidth * 0.5) continue;
 			if (!rival.pulse) continue;
+			const before = ballEnergy(ball);
 			ball.state = 'flying';
 			ball.x = rival.x;
 			ball.y = rival.y + config.deck + config.radius + 0.01;
 			ball.vx = rival.vx;
 			ball.vy = Math.sqrt(2 * config.pulse / ballMassNow());
+			if (isRigBall(ball)) world.importedEnergy += ballEnergy(ball) - before;
 			return true;
 		}
 		return false;
@@ -889,7 +917,9 @@ function spend(world, useful) {
 				if (pistonTime <= time) { time = pistonTime; type = 6; }
 			}
 			// Every competitor the ball may be pushed by presents its deck as one
-			// bounce plane, and only the owner's deck adds the competitor's pulse.
+			// bounce plane and its own bounce drive as the pulse: the ownership
+			// rule already said this platform may push the ball, so a shared ball
+			// is kept up by either deck.
 			const rivals = rivalBodies();
 			for (let i = 0; i < rivals.length; i++) {
 				const rival = rivals[i];
@@ -903,7 +933,7 @@ function spend(world, useful) {
 					deckAngle = bodySurfaceScratch.angle;
 					deckVx = bodySurfaceScratch.vx;
 					deckVy = bodySurfaceScratch.vy;
-					deckPulse = ball.owner === rival.id && rival.pulse ? config.pulse : 0;
+					deckPulse = rival.pulse ? config.pulse : 0;
 				}
 			}
 			let pistonAngleAtContact = 0;
@@ -1023,7 +1053,7 @@ function spend(world, useful) {
 		thermalFactor, coolingPower, platformMass, platformMin, platformMax, dryMass,
 		platformPitchAt, platformBaseAt, platformPointAt, platformSurfaceAt, planeContactTime,
 		chargePadMin, chargePadMax, onChargePad, charging,
-		retentionNow, rockRetentionNow, ballMassNow, damageBonusNow, damageRadiusBonusNow, pulseNow, forceNow, speedNow, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
+		retentionNow, rockRetentionNow, ballMassNow, damageBonusNow, damageRadiusBonusNow, pulseNow, forceNow, speedNow, arrivalSpeed, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
 		setPistonAngle, pistonContactTime, solvePiston, contactResult,
 		setBallMode, mayPush, isRigBall, ballLandingTime, focusBall, heldBall, heldBallMass
 	};

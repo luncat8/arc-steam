@@ -121,6 +121,39 @@ test('the rig cannot catch or bounce a competitor ball, and vice versa', () => {
 	assert.ok(Math.max(...rivalVy) <= 1e-9, 'the competitor deck does not bounce the rig ball');
 });
 
+test('a deck pulse lifts a shared ball, not only one it owns', () => {
+	const world = fresh('shared1');
+	const rival = players.state.rivals[0];
+	const ball = world.balls[0];
+	// A shared ball is pushable by either platform, so the competitor's drive is
+	// part of the game for it too: only the ledger booking differs.
+	rival.bot = false;
+	rival.x = 12;
+	rival.vx = 0;
+	players.update(world, c.step);
+	function drop(pulse) {
+		ball.state = 'flying';
+		ball.x = rival.x;
+		ball.y = rival.y + c.deck + c.radius + 0.4;
+		ball.vx = 0;
+		ball.vy = -2;
+		world.initialEnergy = physics.totalEnergy(world);
+		rival.pulse = pulse;
+		let peak = -Infinity;
+		for (let i = 0; i < 240; i++) {
+			physics.step(world, c.step);
+			if (ball.vy > peak) peak = ball.vy;
+		}
+		return peak;
+	}
+	const passive = drop(false);
+	const boosted = drop(true);
+	assert.ok(passive > 0, 'the deck returns the ball on retention alone');
+	assert.ok(boosted > passive + 1, 'the drive adds its pulse to a shared ball');
+	// The gain is real energy from outside the rig, and it is booked as such.
+	near(balance(world), 0, 1e-6);
+});
+
 test('a competitor ball bounces off its deck, takes pulses and is scooped when grounded', () => {
 	const world = fresh('each');
 	const rival = players.state.rivals[0];
@@ -181,7 +214,63 @@ test('a competitor ball mines the ceiling and the competitor banks the rubble', 
 	near(balance(world), 0, 1e-6);
 });
 
-test('the competitor comes back under its own ball but never chases the rig ball', () => {
+test('a competitor plays a shared ball on the floor instead of walking past it', () => {
+	const world = fresh('shared1');
+	const rival = players.state.rivals[0];
+	const ball = world.balls[0];
+	// The ball lies on the floor in front of the competitor, which used to sweep
+	// straight over it: it could only see a ball it owned.
+	ball.state = 'grounded';
+	ball.x = 10;
+	ball.y = c.radius + ceiling.floorAt(10);
+	ball.vx = 0;
+	ball.vy = 0;
+	rival.x = 19;
+	rival.vx = 0;
+	players.setBot(1, true);
+	world.initialEnergy = physics.totalEnergy(world);
+	players.update(world, c.step);
+	assert.ok(Math.abs(rival.mark - 10) < 1e-9, 'the floor ball is its mark');
+	let scooped = false;
+	let closest = Infinity;
+	for (let i = 0; i < 240 * 6 && !scooped; i++) {
+		players.update(world, c.step);
+		physics.step(world, c.step);
+		closest = Math.min(closest, Math.abs(ball.x - rival.x));
+		scooped = ball.state === 'flying' && ball.vy > 0 && Math.abs(ball.x - rival.x) < c.platformWidth * 0.5;
+	}
+	assert.ok(scooped, 'the competitor drove onto the ball and scooped it');
+	assert.ok(closest < c.platformWidth * 0.5, 'it went to the ball, not past it');
+	// The scoop lifts and pulses the ball with the competitor's own energy, and a
+	// shared ball is in the rig's ledger, so the gift is booked rather than lost.
+	near(balance(world), 0, 1e-6);
+});
+
+test('a competitor keeps a shared ball in play on its own', () => {
+	const world = fresh('shared1');
+	const rival = players.state.rivals[0];
+	const ball = world.balls[0];
+	// The rig is parked out of the rally, so this measures the competitor alone.
+	world.platform.x = 1;
+	rival.x = 19;
+	players.setBot(1, true);
+	world.initialEnergy = physics.totalEnergy(world);
+	let grounded = 0;
+	let bounces = 0;
+	let previous = ball.vy;
+	for (let i = 0; i < 240 * 20; i++) {
+		players.update(world, c.step);
+		physics.step(world, c.step);
+		if (ball.state === 'grounded') grounded++;
+		if (previous <= 0 && ball.vy > 0) bounces++;
+		previous = ball.vy;
+	}
+	assert.ok(bounces >= 5, 'the deck returns the ball again and again');
+	assert.ok(grounded < 240, 'the ball spends under a second on the floor');
+	near(balance(world), 0, 1e-6);
+});
+
+test('a competitor plans for the flight it may push, from any height, and for nothing else', () => {
 	const world = fresh('each');
 	const rival = players.state.rivals[0];
 	const ball = world.balls.find(b => b.owner === rival.id);
@@ -194,26 +283,34 @@ test('the competitor comes back under its own ball but never chases the rig ball
 	ball.vy = -2;
 	ball.state = 'flying';
 	players.update(world, c.step);
-	assert.ok(Math.abs(rival.ballTarget - 12) < 2, 'the landing point is the target');
+	assert.ok(Math.abs(rival.mark - 12) < 2, 'the landing point is the mark');
 	const start = rival.x;
 	for (let i = 0; i < 240 * 2; i++) players.update(world, c.step);
 	assert.ok(rival.x > start + 1, 'the competitor drove toward its ball');
-	// A high ball is not a chase: it keeps sweeping the floor meanwhile.
+	// A high ball is still its ball: the mark follows the landing, not the
+	// height, so there is no altitude at which it stops playing.
 	ball.y = 10;
 	ball.vy = 3;
+	ball.vx = 0;
 	ball.state = 'flying';
 	rival.x = 4;
 	players.update(world, c.step);
-	assert.ok(!Number.isFinite(rival.ballTarget), 'a ball at the top is not chased');
-	// And the rig's ball is never its business.
+	assert.ok(Number.isFinite(rival.mark), 'a ball at the top is still planned for');
+	assert.ok(rival.markTime > 1, 'the plan is pinned to the landing time');
+	// The rig's ball is never its business, even while that ball is in play.
 	const rigBall = world.balls.find(b => b.owner === 'rig');
 	rigBall.y = 1.5;
 	rigBall.vy = -1;
 	rigBall.state = 'flying';
 	rigBall.x = 18;
+	ball.state = 'held';
 	rival.x = 4;
 	players.update(world, c.step);
-	assert.ok(!Number.isFinite(rival.ballTarget));
+	assert.ok(!Number.isFinite(rival.mark), 'a ball it may not push is not a mark');
+	assert.equal(rival.commanded, false, 'and it does not drive after one');
+	for (let i = 0; i < 240 * 2; i++) players.update(world, c.step);
+	assert.ok(Math.abs(rival.vx) < 0.05, 'it coasts to a stop instead of pacing');
+	assert.ok(Math.abs(rival.x - 4) < 1, 'and stays where it was');
 });
 
 test('the autopilot plans for the rig ball that lands sooner', () => {

@@ -39,12 +39,6 @@
 	// The reflector face is 2.34 m wide, so an offset under a third of it does not
 	// change the outcome; correcting it would cost more than it saves.
 	const interceptTolerance = 0.4;
-	// Arrival speed below which rolling through the mark is cheaper than stopping:
-	// a reflector rolling this slowly still leaves the bounce to the tilt.
-	const rollingArrival = 0.5;
-	// Approach speed when there is no deadline to meet (a grounded ball, or a
-	// rebound the ballistic computer will not promise): get there, stop there.
-	const approachSpeed = 2.5;
 	// Speed error the timed intercept leaves alone. Braking with a flywheel is
 	// recuperated, so tracking is tight; without one every correction becomes
 	// heat, so the platform is allowed to drift further before it pays for one.
@@ -240,31 +234,13 @@
 		const reach = Math.abs(distance) - interceptTolerance;
 		if (reach <= 0) { world.direction = 0; return; }
 		const sign = Math.sign(distance);
-		const speed = contactIn > 0 ? timedSpeed(reach, contactIn, acceleration)
-			: Math.min(approachSpeed, Math.sqrt(2 * acceleration * reach));
+		const speed = physics.arrivalSpeed(reach, contactIn, acceleration);
 		// Braking with a flywheel is recuperated, so tracking is tight; without one
 		// every correction becomes heat and the platform is allowed to drift further
 		// before it pays for one.
 		const deadband = physics.recoveryNow() > 0 ? trackedDeadband : coastingDeadband;
 		const demand = Math.max(-physics.speedNow(), Math.min(physics.speedNow(), sign * speed));
 		world.direction = platform.vx < demand - deadband ? 1 : platform.vx > demand + deadband ? -1 : 0;
-	}
-
-	// The slowest run that is still on time. Rolling through the mark costs least,
-	// but a moving reflector drags the ball sideways with it, so rolling is only
-	// chosen while it is slow enough for the tilt keeper to hold the bounce
-	// vertical. Otherwise the run spends the whole flight time: the peak speed of
-	// an accelerate-coast-brake profile that stands still on the mark exactly when
-	// the ball arrives, which is a fraction of the speed a rush-and-brake needs.
-	// A mark that cannot be met and stopped for is met as fast as it can still be
-	// braked out of, because being there beats arriving gently.
-	function timedSpeed(reach, time, acceleration) {
-		const roll = reach / time;
-		const brake = Math.sqrt(2 * acceleration * reach);
-		if (roll <= rollingArrival) return Math.min(roll, brake);
-		const discriminant = acceleration * acceleration * time * time - 4 * acceleration * reach;
-		if (discriminant <= 0) return Math.min(roll, brake);
-		return (acceleration * time - Math.sqrt(discriminant)) * 0.5;
 	}
 
 	// Enough energy to reach the top of the chamber and no more. The pulse is a

@@ -38,11 +38,17 @@
 	let active = 0;
 	let selling = false;
 	let ballMode = 'shared1';
-	// How soon a competitor comes back under its own ball, in seconds, and how
-	// low the ball has to be before it does: a ball at the top is not a ball to
-	// catch, so the competitor keeps working the floor until it comes down.
-	const ballChaseSeconds = 2.4;
-	const ballChaseHeight = 4;
+	// Half the flat deck less a margin: a landing inside this of the platform
+	// centre arrives on the deck, and inside it the mark is left alone instead
+	// of chattering on it.
+	const deckSlack = 0.9;
+	// Close enough to a travel click to call it reached; a policy mark keeps the
+	// wider deck slack instead.
+	const approachSlack = 0.05;
+	// A ball already being played keeps the competitor's attention unless another
+	// one lands this much sooner, so two shared balls never make it dither
+	// between landing points.
+	const ballCommit = 0.6;
 
 	function halfWidth() {
 		return (root.SteamPhysics ? root.SteamPhysics.config.platformWidth : 3.6) * 0.5;
@@ -78,7 +84,7 @@
 			return pushing ? forceOf(player) : 0;
 		}
 		if (player.braking) return 0;
-		const pushing = player.direction !== 0 || Number.isFinite(player.target) || (player.bot && player.manual <= 0);
+		const pushing = player.direction !== 0 || Number.isFinite(player.target) || player.commanded;
 		return pushing ? forceOf(player) : 0;
 	}
 
@@ -151,10 +157,10 @@
 			index: index + 1, id: 'rival-' + (index + 1), name: 'RIVAL ' + (index + 1),
 			colour: index % 2 ? '#8f86c9' : '#c98c5a', kind: 'rival', bot: true,
 			force: 0.6, x: startSlots[index % startSlots.length], y: 0, angle: 0, vx: 0, spin: 0,
-			direction: 0, botDirection: -1, target: NaN, braking: false, manual: 0,
+			direction: 0, target: NaN, braking: false, manual: 0,
 			cargoCells: 0, cargoValue: 0, money: 0, soldValue: 0,
 			tailLeft: 0, tailRight: 0,
-			pulse: false, ballTarget: NaN,
+			pulse: false, playing: null, mark: NaN, markTime: 0, commanded: false,
 			previousX: 0, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0,
 			body: colours.body, tail: colours.tail, deck: colours.deck
 		};
@@ -194,7 +200,11 @@
 		const physics = root.SteamPhysics;
 		if (!physics || !world || !physics.setBallMode) return;
 		const anchors = [];
-		for (let i = 0; i < rivals.length; i++) anchors.push({ id: rivals[i].id, x: rivals[i].x });
+		for (let i = 0; i < rivals.length; i++) {
+			anchors.push({ id: rivals[i].id, x: rivals[i].x });
+			// The set is rebuilt, so a remembered ball is a dead object.
+			rivals[i].playing = null;
+		}
 		physics.setBallMode(world, ballMode, anchors);
 		// Changing the arrangement re-seats the balls, so the rig's ledger is
 		// re-based on the new set instead of chasing a teleported ball.
@@ -368,31 +378,32 @@
 		return value;
 	}
 
+	// One mark either way: the platform's own policy mark while its bot is on,
+	// the travel click otherwise. A bot's mark is where the ball comes down and
+	// is met at the speed the autopilot's own arrival rule allows; a travel click
+	// is followed at full speed until its braking distance and cleared when met.
 	function steerWanted(rival, speedLimit, brakeAcceleration) {
 		// A held key or brake outranks the policy, however long it is held; the
 		// two-second manual window only decides when the bot may take over again.
 		if (rival.braking) return 0;
 		if (rival.direction) return rival.direction * speedLimit;
-		// Its own ball comes before the sweep: a missed ball is a lost shift.
-		if (Number.isFinite(rival.ballTarget)) {
-			const distance = rival.ballTarget - rival.x;
-			if (Math.abs(distance) < 0.12) return 0;
-			const approach = Math.sqrt(2 * brakeAcceleration * Math.abs(distance));
-			return Math.sign(distance) * Math.min(speedLimit, approach);
-		}
-		if (rival.bot && rival.manual <= 0) {
-			if (!rival.botDirection) rival.botDirection = 1;
-			return rival.botDirection * speedLimit;
-		}
-		if (!Number.isFinite(rival.target)) return 0;
-		const distance = rival.target - rival.x;
-		if (Math.abs(distance) < 0.05 && Math.abs(rival.vx) < 0.1) {
-			rival.target = NaN;
+		const bot = rival.bot && rival.manual <= 0;
+		const mark = bot ? rival.mark : rival.target;
+		if (!Number.isFinite(mark)) return 0;
+		const distance = mark - rival.x;
+		const reach = Math.abs(distance) - (bot ? deckSlack : approachSlack);
+		if (reach <= 0) {
+			if (!bot) rival.target = NaN;
 			return 0;
 		}
-		// Never arrive faster than the remaining distance can brake from.
-		const approach = Math.sqrt(2 * brakeAcceleration * Math.abs(distance));
-		return Math.sign(distance) * Math.min(speedLimit, approach);
+		// A bot meets the ball with the same arrival rule the rig's autopilot
+		// uses; a travel click is followed at full speed until its braking
+		// distance instead.
+		const physics = root.SteamPhysics;
+		const speed = bot
+			? physics.arrivalSpeed(reach, rival.markTime, brakeAcceleration)
+			: Math.min(speedLimit, Math.sqrt(2 * brakeAcceleration * reach));
+		return Math.sign(distance) * Math.min(speedLimit, speed);
 	}
 
 	// A competitor drives the same engine as the rig: force per mass, speed per
@@ -409,40 +420,88 @@
 		return physics.config.maxSpeed * forceValue;
 	}
 
-	// The ball a competitor owns, if it has one in this arrangement.
-	function ownBall(rival) {
+	// The ball this competitor works. Any ball it may push is playable, shared
+	// ones included; a ball on the floor comes first because it can be recovered
+	// at once, then the flight that lands soonest. A ball another platform holds
+	// is out of play: it cannot be taken from a collector, and the release that
+	// follows is a new flight.
+	function playBall(rival) {
 		const balls = rigWorld ? rigWorld.balls : null;
-		if (!balls) return null;
-		for (let i = 0; i < balls.length; i++) if (balls[i].owner === rival.id) return balls[i];
-		return null;
+		const physics = root.SteamPhysics;
+		if (!balls || !physics) return null;
+		const deck = rival.y + physics.config.deck + physics.config.radius;
+		let floor = null;
+		let flying = null;
+		let soonest = Infinity;
+		for (let i = 0; i < balls.length; i++) {
+			const ball = balls[i];
+			if (!physics.mayPush(ball, rival.id)) continue;
+			if (ball.state === 'held') continue;
+			if (ball.state !== 'flying') { if (!floor) floor = ball; continue; }
+			const landing = physics.ballLandingTime(ball, deck);
+			if (landing < soonest) { soonest = landing; flying = ball; }
+		}
+		const best = floor || flying;
+		// The ball already being played keeps its attention unless the other one
+		// lands clearly sooner, so two shared balls never make the competitor
+		// dither between landing points.
+		const current = rival.playing;
+		if (current && current !== best && physics.mayPush(current, rival.id) && current.state !== 'held') {
+			const currentTime = current.state === 'flying' ? physics.ballLandingTime(current, deck) : 0;
+			if (currentTime <= (floor ? 0 : soonest) + ballCommit) return current;
+		}
+		return best;
 	}
 
-	// Keep the ball in play and keep it climbing. The pulse stays on while the
-	// ball's apex would fall short of the rock and stops once it is already
-	// reaching the top, which is the rig's drive-keeper rule at the
-	// competitor's fixed pulse size. The chase aims at the ball's landing point
-	// when it is coming down soon, at the grounded ball itself, and at nothing
-	// while the ball is still high — then the floor comes first again.
-	function stepBallPolicy(rival) {
-		rival.pulse = false;
-		rival.ballTarget = NaN;
-		const ball = ownBall(rival);
-		if (!ball) return;
+	// The wall a full hopper is taken to: through the SELL face, so target
+	// following presses the chassis against it instead of stopping short.
+	function sellingMark(x) {
 		const physics = root.SteamPhysics;
-		const gravity = physics ? physics.config.ballGravity : 3.03;
-		const ceiling = physics ? physics.config.ceiling : 15;
-		const apex = ball.y + ball.vy * ball.vy / (2 * gravity);
-		rival.pulse = apex < ceiling - 0.5;
+		return x < physics.config.width * 0.5 ? physics.platformMin() - 1 : physics.platformMax() + 1;
+	}
+
+	// A competitor plays the ball the way the rig's bot does, with a flat deck
+	// in place of the collector and piston: it stands where the flight comes
+	// down and meets it there, drives over a ball on the floor to scoop it, and
+	// spends a pulse only while the passive bounce would fall short of the rock.
+	// A full hopper sends it to the nearer wall first, exactly like the rig's
+	// selling trip. With no ball in play it holds station instead of wandering.
+	function stepBallPolicy(rival) {
+		rival.mark = NaN;
+		rival.markTime = 0;
+		const physics = root.SteamPhysics;
+		if (!physics) return;
+		const config = physics.config;
+		// The drive belongs to the platform, not to one ball: it stays armed while
+		// any ball this deck may bounce would still fall short of the rock, which
+		// is the rig's drive-keeper rule at the platform's fixed pulse size.
+		const balls = rigWorld ? rigWorld.balls : null;
+		rival.pulse = false;
+		if (balls) {
+			for (let i = 0; i < balls.length; i++) {
+				const other = balls[i];
+				if (!physics.mayPush(other, rival.id) || other.state === 'held') continue;
+				const apex = other.y + other.vy * other.vy / (2 * config.ballGravity);
+				if (apex < config.ceiling - config.radius) { rival.pulse = true; break; }
+			}
+		}
+		const ball = playBall(rival);
+		rival.playing = ball;
+		if (!ball) return;
 		if (!rival.bot || rival.manual > 0 || rival.braking || rival.direction) return;
-		if (ball.state === 'grounded') {
-			rival.ballTarget = ball.x;
+		if (rival.cargoCells >= (root.SteamCeiling ? root.SteamCeiling.state.storageLimit : loadLimitDefault)) {
+			rival.mark = sellingMark(rival.x);
 			return;
 		}
+		// A ball on the floor is a recovery: stand over it.
+		rival.mark = ball.x;
 		if (ball.state !== 'flying') return;
-		const landing = physics && physics.ballLandingTime ? physics.ballLandingTime(ball, rival.y + 0.7) : Infinity;
-		if (!(landing < ballChaseSeconds) && ball.y >= ballChaseHeight) return;
-		const landingX = Number.isFinite(landing) ? ball.x + ball.vx * landing : ball.x;
-		rival.ballTarget = Math.max(0, Math.min(physics ? physics.config.width : 24, landingX));
+		// A flight is met at the deck height, one radius off the deck, so the
+		// landing mark is where a deck bounce would happen.
+		const landing = physics.ballLandingTime(ball, rival.y + config.deck + config.radius);
+		if (!Number.isFinite(landing)) return;
+		rival.mark = Math.max(0, Math.min(config.width, ball.x + ball.vx * landing));
+		rival.markTime = landing;
 	}
 
 	function stepRival(rival, dt) {
@@ -458,6 +517,9 @@
 		const limit = engineSpeed(power);
 		const previousX = rival.x;
 		const wanted = steerWanted(rival, limit, acceleration * 1.5);
+		// Drive power for the ride-over rule is the platform's own command: a
+		// chasing competitor pushes, a competitor standing on its mark does not.
+		rival.commanded = wanted !== 0;
 		const delta = wanted - rival.vx;
 		if (delta !== 0) {
 			const speedingUp = wanted !== 0 && Math.abs(wanted) > Math.abs(rival.vx) && wanted * rival.vx >= 0;
@@ -480,12 +542,6 @@
 		if (Math.abs(rival.vx) > 0.05) grade(rival, dt);
 		const atWall = rival.x <= minX + 1e-3 || rival.x >= maxX - 1e-3;
 		if (atWall && rival.cargoCells > 0) sell(rival);
-		// The bot turns around at each wall and works the opposite direction, but
-		// only while it is sweeping: a ball chase reverses through its own target.
-		if (atWall && rival.bot && rival.manual <= 0 && !Number.isFinite(rival.ballTarget)) {
-			rival.botDirection = rival.x <= minX + 1e-3 ? 1 : -1;
-			rival.target = NaN;
-		}
 	}
 
 	// Deployment follows the gap to the nearest platform on that side: folded at
@@ -546,9 +602,7 @@
 		autopilot.override('move');
 		world.direction = 0;
 		if (!full) { selling = false; return; }
-		// Aim through the wall so target following presses the chassis against the
-		// SELL face instead of stopping a few centimetres short of it.
-		world.target = world.platform.x < physics.config.width * 0.5 ? physics.platformMin() - 1 : physics.platformMax() + 1;
+		world.target = sellingMark(world.platform.x);
 	}
 
 	function update(world, dt) {

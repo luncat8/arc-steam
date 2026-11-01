@@ -28,9 +28,9 @@ physics.step = function (stepped, dt) {
 };
 require('../js/main.js');
 
-// The competitor sweeps the floor while the page runs, so the trajectory tests
+// The competitor plays its ball while the page runs, so the trajectory tests
 // pin it at the far wall first: what they measure and assert is the rig's own
-// motion, not where a passing rival happens to have lifted it.
+// motion, not where a rival chasing the same ball happens to have lifted it.
 function parkRival() {
 	const rival = players.state.rivals[0];
 	rival.x = physics.platformMax();
