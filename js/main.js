@@ -808,12 +808,15 @@
 	// floor strip, and reserves only what the SELL marks and the charge-pad label
 	// need outside them. On a width-limited canvas the leftover is split evenly.
 	const chamberRoofPad = 2;
-	const chamberFootPad = 26;
 	const boundaryStrip = 0.35;
-	// On a width-limited canvas the chamber keeps to the top instead of floating
-	// in the middle: the leftover room stays under the floor, where it is only
-	// backdrop, and at most a small gap may open above the roof strip.
-	const chamberTopSlack = 24;
+	// The charge-pad label is drawn under the floor strip, so the fit keeps that
+	// line inside the canvas along with the marks beside the walls.
+	const padLabelDrop = 14;
+	// A width-limited canvas has room left over; the chamber keeps to the top of
+	// it, so only a quarter of that slack can open above the roof strip and the
+	// rest stays under the floor, where it is only backdrop.
+	const chamberTopShare = 0.25;
+	const chamberTopMax = 18;
 	// The fit itself, published so a harness can map a world point to a page
 	// point instead of copying the arithmetic.
 	const view = { scale: 1, offsetX: 0, floorY: 0 };
@@ -842,9 +845,9 @@
 		canvas.height = Math.round(height * ratio);
 		context.setTransform(ratio, 0, 0, ratio, 0, 0);
 		const sceneHeight = config.ceiling + boundaryStrip * 2;
-		scale = Math.min((width - 32) / viewWidth, (height - chamberRoofPad - chamberFootPad) / sceneHeight);
-		const slack = height - chamberRoofPad - chamberFootPad - sceneHeight * scale;
-		const topPad = chamberRoofPad + (slack > 0 ? Math.min(slack * 0.5, chamberTopSlack) : 0);
+		scale = Math.min((width - 32) / viewWidth, (height - chamberRoofPad - padLabelDrop) / sceneHeight);
+		const slack = height - chamberRoofPad - padLabelDrop - sceneHeight * scale;
+		const topPad = chamberRoofPad + (slack > 0 ? Math.min(slack * chamberTopShare, chamberTopMax) : 0);
 		offsetX = (width - viewWidth * scale) / 2 - viewMinX * scale;
 		floorY = topPad + boundaryStrip * scale + config.ceiling * scale;
 		view.scale = scale;

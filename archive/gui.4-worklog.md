@@ -43,12 +43,23 @@
 - No fading: the `globalAlpha = 0.55` for the inactive platform is gone, and the
   accent outline on the selected chassis is what marks the selection.
 - Chamber fit rewritten. The scene is roof strip + 15 m chamber + floor strip;
-  `scale` reserves 2 px above the roof strip and 26 px under the floor for the
-  SELL marks and the pad label; on a width-limited canvas the chamber stays near
-  the top (slack above capped at 24 px) and the leftover height falls under the
-  floor. Measured at 1386 × 666: empty canvas above the roof strip **49 px → 2 px**,
-  scale **39.07 → 40.64 px/m**, chamber **88% → 96%** of the box height. At a
-  900 × 500 box it goes 49 px → 2 px; at a 360 × 320 phone box 70 px → 26 px.
+  `scale` reserves only 2 px above the roof strip and one 14 px label line under
+  the floor strip for the charge-pad label. A canvas taller than the fitted
+  scene keeps the chamber near the top: at most a quarter of the leftover room —
+  18 px — may open above the roof strip, and the rest stays under the floor,
+  where it is only backdrop.
+- The canvas ratio now matches the scene. `.canvas-wrap` was 1.5 while the scene
+  is 27.3 × 15.7 m, so at 1440 × 1000 the box was 888 × 591 with 58 px of empty
+  canvas above the roof strip (the old fit reserved a flat 80 px of the box and
+  centred the scene). At 1.71 the width-limited box is 888 × 519 and the empty
+  band above the roof strip is **58 px → 2 px**, with no change to the chamber
+  itself (scale 31.4 px/m either way, the scene now 95% of the box instead of
+  83%).
+- Measured with the real renderer through `window.SteamView`:
+  1370 × 740 and 1920 × 1080 → **2 px** above the roof strip, scene **98–99%**
+  of the box; 888 × 519 → 5 px (the canvas ratio now matches the scene, so this
+  is the normal desktop case); 674 × 420 → 11 px; a 344 × 320 phone → 20 px. The
+  pad label line stays inside the canvas in every case.
 - The fit publishes `window.SteamView` (`scale`, `offsetX`, `floorY`);
   `experiments/interface.test.js` and `experiments/browser-smoke.cjs` map world
   points through it instead of copying the arithmetic (both copies had to be

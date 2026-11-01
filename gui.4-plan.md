@@ -63,10 +63,12 @@ bloat from the layout and the empty band above the chamber.
   equally solid.
 - **The fit spends its room on the scene, not on margins.** The scene is the
   roof strip, the 15 m chamber and the floor strip; the fit keeps 2 px above the
-  roof strip and the room the SELL marks and pad label need below the floor.
-  On a width-limited canvas the chamber stays near the top — at most 24 px of
-  slack above the roof strip — and the leftover height falls under the floor,
-  where it is backdrop.
+  roof strip and one label line below the floor for the charge-pad label. A box
+  taller than the scene keeps the chamber near the top: at most a quarter of the
+  leftover room (18 px) above the roof strip, the rest under the floor.
+- **The canvas ratio matches the scene** (27.3 × 15.7 m plus the renderer's
+  margins, 1.71), so a width-limited page does not leave an empty band inside a
+  too-tall canvas.
 - **One geometry owner.** The fit publishes `window.SteamView`
   (`scale`, `offsetX`, `floorY`), and the harnesses map world points with it
   instead of copying the arithmetic.
