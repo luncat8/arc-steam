@@ -18,7 +18,6 @@
 		<section class="scoreboard panel" aria-label="Players">
 			<span class="eyebrow">PLAYERS</span>
 			<ol id="player-list" class="player-list" aria-label="Players at this mine"></ol>
-			<span class="scoreboard-hint">click a player to take its controls · BOT hands it to its policy</span>
 			<button id="help-players" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: players and competitors">?</button>
 		</section>
 		<section class="workspace">
@@ -35,30 +34,29 @@
 					<span><i class="key-color collector"></i> COLLECTOR · CATCH & STORE</span>
 					<span><i class="key-color reflector"></i> REFLECTOR PISTON · POWERED BOUNCE</span>
 					<span><i class="key-color pad"></i> CHARGE PAD · 3 kW</span>
+					<span><i class="key-color blade"></i> BLADE · COMPETITOR GRADING</span>
 					<div class="view-switch"><span id="view-label">ROCK VIEW</span><div id="view-modes" class="view-modes" role="radiogroup" aria-labelledby="view-label"><label><input type="radio" name="rock-view" value="minerals" autocomplete="off" checked>Minerals</label><label><input type="radio" name="rock-view" value="elements" autocomplete="off">Elements R/G/B</label><label><input type="radio" name="rock-view" value="price" autocomplete="off">Price</label><label><input type="radio" name="rock-view" value="strength" autocomplete="off">Remaining strength</label></div><button id="help-chamber" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: the chamber and its markers">?</button></div>
 				</div>
 			</section>
-			<aside class="controls-panel panel" data-topic="autopilot">
-				<div class="panel-title"><span id="control-title">PLATFORM / LOW-TIER DRIVE</span><span id="motion">0.00 m/s</span></div>
+			<aside class="controls-panel panel" data-topic="movement">
+				<div class="panel-title"><span id="control-title">YOU · MANUAL</span><span id="motion">0.00 m/s</span></div>
 				<div class="controls">
-					<p id="player-focus" class="hint" role="status">DRIVING YOU · FORCE 60% · LOAD 0 CELLS · MANUAL</p>
-					<p id="competitor-note" class="hint" hidden>Ball, piston and autopilot belong to the rig · force, movement, brake and travel drive the selected platform now.</p>
-					<div class="eyebrow-row"><p class="eyebrow">BOUNCE ASSIST</p><button id="help-drive" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: bounce drive">?</button></div>
-					<button id="drive" class="drive" aria-pressed="true">Drive on <span>SPACE / Q</span></button>
-					<button id="launch" disabled>Release held ball <span>E</span></button>
-					<p id="prediction-status" class="hint" hidden></p>
 					<div class="eyebrow-row"><p class="eyebrow">MOVEMENT</p><button id="help-movement" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: movement and force">?</button></div>
 					<label for="force">Movement force <output id="force-value">60%</output></label>
 					<input id="force" type="range" min="10" max="100" value="60">
 					<div class="control-row"><button id="left" aria-label="Move left">← A</button><button id="right" aria-label="Move right">D →</button></div>
-					<div class="eyebrow-row"><p class="eyebrow">PISTON TILT</p><button id="help-tilt" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: reflector tilt">?</button></div>
-					<label for="piston-angle">Reflector angle <output id="piston-value">0.0°</output></label>
-					<input id="piston-angle" type="range" min="-10" max="10" step="0.5" value="0">
-					<div class="eyebrow-row"><p class="eyebrow">AUTOPILOT</p><button id="help-autopilot" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: autopilot duties">?</button></div>
-					<div class="autopilot" id="autopilot"><label><input type="checkbox" id="auto-move" autocomplete="off"><span>Chase the predicted landing</span><i>X</i></label><label><input type="checkbox" id="auto-smart" autocomplete="off"><span>Timed intercept · economy brake</span><i>⇧X</i></label><label><input type="checkbox" id="auto-drive" autocomplete="off"><span>Drive keeper · reach the top, no more</span><i>Z</i></label><label><input type="checkbox" id="auto-angle" autocomplete="off"><span>Level bounce · reflect straight up</span><i>C</i></label></div>
-					<p id="autopilot-status" class="hint" role="status" hidden></p>
-					<div class="eyebrow-row"><p class="eyebrow">RECOVERY · CHARGE</p><button id="help-charge" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: recovery and charge">?</button></div>
-					<p class="hint">Live recovery advice shows in the status bar below.</p>
+					<div id="rig-drive">
+						<div class="eyebrow-row"><p class="eyebrow">BOUNCE ASSIST</p><button id="help-drive" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: bounce drive">?</button></div>
+						<button id="drive" class="drive" aria-pressed="true">Drive on <span>SPACE / Q</span></button>
+						<button id="launch" disabled>Release held ball <span>E</span></button>
+						<p id="prediction-status" class="hint" hidden></p>
+						<div class="eyebrow-row"><p class="eyebrow">PISTON TILT</p><button id="help-tilt" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: reflector tilt">?</button></div>
+						<label for="piston-angle">Reflector angle <output id="piston-value">0.0°</output></label>
+						<input id="piston-angle" type="range" min="-10" max="10" step="0.5" value="0">
+						<div class="eyebrow-row"><p class="eyebrow">AUTOPILOT</p><button id="help-autopilot" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: autopilot duties">?</button></div>
+						<div class="autopilot" id="autopilot"><label><input type="checkbox" id="auto-move" autocomplete="off"><span>Chase the predicted landing</span><i>X</i></label><label><input type="checkbox" id="auto-smart" autocomplete="off"><span>Timed intercept · economy brake</span><i>⇧X</i></label><label><input type="checkbox" id="auto-drive" autocomplete="off"><span>Drive keeper · reach the top, no more</span><i>Z</i></label><label><input type="checkbox" id="auto-angle" autocomplete="off"><span>Level bounce · reflect straight up</span><i>C</i></label></div>
+						<p id="autopilot-status" class="hint" role="status" hidden></p>
+					</div>
 				</div>
 			</aside>
 			<article class="cargo-panel panel" data-topic="cargo">
@@ -67,7 +65,6 @@
 					<div class="summary"><div><span>Cargo</span><strong id="cargo-mass">—</strong><small id="cargo-value">—</small></div></div>
 					<dl class="mass-readouts"><div><dt>Extracted</dt><dd id="extracted">—</dd></div><div><dt>Falling</dt><dd id="falling">—</dd></div><div><dt>Caught · lifetime</dt><dd id="caught">—</dd></div><div><dt>Lost</dt><dd id="lost">—</dd></div></dl>
 					<div class="table-wrap"><table><caption>Material quantities in kg; prices in credits per cell (0.6 kg)</caption><thead><tr><th>Material</th><th>cr/cell</th><th>Cargo</th><th>Sold</th></tr></thead><tbody id="inventory-rows"></tbody></table></div>
-					<p class="hint">100 cells maximum · cargo adds mass · sell at a SELL wall</p>
 				</div>
 			</article>
 		</section>
@@ -91,14 +88,19 @@
 			</div>
 		</aside>
 		<aside id="market-drawer" class="tool-drawer market-drawer" aria-labelledby="market-title" hidden>
-			<div class="tool-drawer-head"><div><p class="eyebrow">CARGO & SALES</p><h2 id="market-title">MARKET / LEDGER</h2></div><button id="market-close" class="quiet" type="button" aria-label="Close market and ledger">Close ✕</button></div>
+			<div class="tool-drawer-head">
+				<div><p class="eyebrow">CARGO & SALES</p><h2 id="market-title">MARKET / LEDGER</h2></div>
+				<div class="drawer-meta">
+					<span class="meta-pill"><i>CREDITS</i><b id="credits">0.0 cr</b></span>
+					<button id="help-market" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: market and ledger">?</button>
+					<button id="market-close" class="quiet" type="button" aria-label="Close market and ledger">Close ✕</button>
+				</div>
+			</div>
 			<div class="tool-drawer-content">
 			<article class="market-panel panel" data-topic="market">
-				<div class="panel-title"><span>MARKET / LEDGER</span><span class="panel-meta"><span id="credits">0.0 cr</span><button id="help-market" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: market and ledger">?</button></span></div>
 				<div class="panel-body">
 					<div class="summary"><div><span>Sold · lifetime</span><strong id="sold-mass">—</strong><small id="sold-value">—</small></div><div><span>Ledger</span><strong id="sale-count">—</strong><small>Sales, purchases, research, fuel</small></div></div>
 					<div class="refuel"><div><span>Emergency resupply</span><strong id="refuel-cost">—</strong><small>Instant import at <span id="fuel-price">—</span> cr/kJ · the centre pad is free</small></div><button id="refuel" disabled>Recharge</button></div>
-					<p class="hint">Touch a SELL wall with a load aboard to sell it all.</p>
 					<p id="transaction-status" role="status">Catch fragments in the amber collector, then touch a SELL wall.</p>
 					<details open><summary>Transaction ledger <span id="transaction-count">(0)</span></summary><ol id="ledger" reversed aria-label="Latest eight transactions"></ol></details>
 				</div>
@@ -108,10 +110,11 @@
 
 	</main>
 	<footer class="status-bar" id="status-bar" aria-label="Status bar">
-		<div class="status-facts" aria-label="Reserve, cargo and temperature">
+		<div class="status-facts" aria-label="Reserve, cargo, temperature and their help">
 			<span><i>RESERVE</i><b id="fact-reserve">—</b></span>
 			<span><i>CARGO</i><b id="fact-cargo">—</b></span>
 			<span><i>TEMP</i><b id="fact-temp">—</b></span>
+			<button id="help-charge" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: recovery and charge">?</button>
 		</div>
 		<div class="status-messages" role="status" aria-live="polite">
 			<p class="status-message" id="status-ball" data-tone="info" hidden></p>

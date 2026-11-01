@@ -5,17 +5,12 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
 
-// Mirror the renderer's chamber transform to point at a known world point.
+// The page publishes its chamber fit, so a world point maps to a page point
+// exactly as the renderer does it.
 async function chamberTransform(page) {
 	const box = await page.locator('#c').boundingBox();
-	const [chamberHeight, viewWidth] = await page.evaluate(() => [
-		SteamPhysics.config.ceiling,
-		25.8 + SteamCeiling.state.garageDepth
-	]);
-	const scale = Math.min((box.width - 32) / viewWidth, (box.height - 80) / chamberHeight);
-	const offsetX = (box.width - viewWidth * scale) / 2 + 1.5 * scale;
-	const floorY = (box.height + chamberHeight * scale) / 2 + 9;
-	return { x: box.x + offsetX, y: box.y + floorY, scale };
+	const view = await page.evaluate(() => ({ scale: SteamView.scale, offsetX: SteamView.offsetX, floorY: SteamView.floorY }));
+	return { x: box.x + view.offsetX, y: box.y + view.floorY, scale: view.scale };
 }
 
 async function chamberPoint(page, worldX, worldY) {

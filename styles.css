@@ -21,7 +21,6 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 13px 0; 
 main { max-width: 1920px; margin: auto; padding: 8px; display: grid; gap: 8px; }
 .panel { min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: #101a1e; }
 .panel-title { min-height: 44px; padding: 15px 16px; border-bottom: 1px solid var(--line); color: #a7b8ba; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #101a1e; }
-.panel-meta { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .panel-body { padding: 16px; }
 
 .system-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; padding: 7px 16px; color: #a7b8ba; }
@@ -79,7 +78,6 @@ main { max-width: 1920px; margin: auto; padding: 8px; display: grid; gap: 8px; }
 .player-bot:hover { color: #dce6e4; }
 .player-bot:has(:checked) { color: var(--amber); background: #241d12; }
 .player-bot input { margin: 0; accent-color: var(--amber); }
-.scoreboard-hint { font-size: 10px; color: #71868a; }
 .scoreboard button.help-mark { margin-left: auto; }
 
 /* Status bar: one fixed strip at the foot of the viewport while the page
@@ -92,6 +90,7 @@ main { max-width: 1920px; margin: auto; padding: 8px; display: grid; gap: 8px; }
 }
 .status-facts { display: flex; flex-wrap: wrap; gap: 2px 18px; }
 .status-facts span { display: flex; align-items: baseline; gap: 6px; }
+.status-facts .help-mark { align-self: center; }
 .status-facts i { font-style: normal; color: #6d8286; }
 .status-facts b { font-weight: 400; color: #dce6e4; }
 .status-facts b[data-tone="warn"] { color: var(--amber); }
@@ -106,7 +105,8 @@ main { max-width: 1920px; margin: auto; padding: 8px; display: grid; gap: 8px; }
 .cargo-panel { grid-area: cargo; }
 .mine-panel { grid-area: mine; display: flex; flex-direction: column; }
 .controls-panel { grid-area: controls; }
-/* Ratio matches the chamber's 25.5 × 15 m view plus the renderer's margins, so the canvas wastes little height. */
+/* The renderer fits the chamber to the canvas height, so the ratio only decides
+   how wide the side margins are; the panel caps the height on a short window. */
 .canvas-wrap { position: relative; flex: 1 0 auto; aspect-ratio: 1.5; min-height: 420px; max-height: 74vh; background: #10191d; border-radius: 6px 6px 0 0; overflow: hidden; }
 canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 
@@ -115,8 +115,8 @@ canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 .collector { background: var(--amber); }
 .reflector { background: var(--accent); }
 .pad { background: var(--power); }
+.blade { background: #7d6a4f; }
 .view-switch { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.drawer-trigger { padding: 7px 10px; font: 9px ui-monospace, monospace; letter-spacing: 0.8px; background: #162226; }
 .view-modes { display: flex; flex-wrap: wrap; border: 1px solid var(--control-line); border-radius: 4px; overflow: hidden; }
 .view-modes label { position: relative; padding: 6px 10px; font: 9px ui-monospace, monospace; letter-spacing: 1px; color: #94a8ac; cursor: pointer; user-select: none; }
 .view-modes label + label { border-left: 1px solid var(--control-line); }
@@ -127,6 +127,9 @@ canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 .view-modes input { position: absolute; inset: 0; margin: 0; opacity: 0; pointer-events: none; }
 
 .controls { padding: 14px 16px; }
+/* The rig's machinery leaves the panel while a competitor is driven: its keys
+   would address the other platform. */
+#rig-drive[hidden] { display: none; }
 .controls button { width: 100%; text-align: left; font-size: 12px; }
 .controls button span { float: right; color: #7d9094; font-size: 10px; }
 .drive[aria-pressed="true"] { color: var(--accent); background: #25392a; border-color: #6a9757; }
@@ -315,7 +318,6 @@ button.help-mark:hover, button.help-mark[aria-expanded="true"] { color: #10191d;
 	.canvas-wrap { aspect-ratio: auto; height: 320px; min-height: 0; }
 	.view-switch { margin-left: 0; }
 	.mine-footer { gap: 8px 12px; }
-	.drawer-trigger { padding: 7px 8px; }
 	.tool-drawer, .science-drawer { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 85vh; border-radius: 10px 10px 0 0; }
 	.progression-tree { grid-template-columns: minmax(0, 1fr); gap: 10px; }
 	.tree-links { display: none; }

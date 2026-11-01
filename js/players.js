@@ -24,10 +24,12 @@
 	// A hand command silences the platform's own policy for the same two seconds
 	// the autopilot uses, so taking the wheel never fights the bot.
 	const manualSeconds = 2;
-	// The competitor is the rig's platform in a dimmer colour.
+	// The competitor is the rig's platform in its own palette: warm brass for the
+	// first, cool slate for the second. The body is dark enough that the load
+	// heap and the cutting edge read against it.
 	const rivalBodies = [
-		{ body: '#4a443c', tail: '#37332d', deck: '#5c554b' },
-		{ body: '#45404a', tail: '#332f37', deck: '#57505d' }
+		{ body: '#3f3a31', tail: '#2f2b25', deck: '#7d6a4f' },
+		{ body: '#38343d', tail: '#292630', deck: '#6a6276' }
 	];
 	const startSlots = [19, 5, 22, 2];
 	const players = [];
@@ -253,8 +255,19 @@
 		return active === 0;
 	}
 
+	// A command belongs to the platform it was given to, so the one left behind
+	// stands down at once: a held key or a travel click never keeps driving a
+	// platform you are no longer looking at. The platform you take keeps its own
+	// policy live until a key or a click actually addresses it.
 	function setActive(index) {
 		if (index < 0 || index >= players.length || index === active) return false;
+		const outgoing = players[active];
+		if (outgoing.kind === 'rival') {
+			outgoing.direction = 0;
+			outgoing.braking = false;
+			outgoing.target = NaN;
+			outgoing.manual = 0;
+		}
 		active = index;
 		const player = players[active];
 		if (player.kind === 'rival') player.manual = 0;
@@ -331,9 +344,13 @@
 		return true;
 	}
 
+	// Only a platform that actually holds a command is stood down, so releasing a
+	// pointer, a window blur or a reset cannot put a manual window on a platform
+	// that its own policy was driving.
 	function clearCommand() {
 		const player = players[active];
 		if (!player || player.kind !== 'rival') return false;
+		if (!player.direction && !player.braking && !Number.isFinite(player.target)) return false;
 		player.manual = manualSeconds;
 		player.direction = 0;
 		player.braking = false;
@@ -675,6 +692,27 @@
 		}
 	}
 
+	// The competitor works the floor with a scraper blade instead of the rig's
+	// collector and piston: a wedge between the wheels that reaches the ground
+	// over the 1.6 m swath it grades, its cutting edge lit while the deck drive
+	// is armed. The rig's machinery never appears on this body.
+	const bladeTip = 0.12;
+	function drawBlade(context, player) {
+		const half = bladeSwath * 0.5;
+		context.fillStyle = player.deck;
+		context.beginPath();
+		context.moveTo(-half + bladeTip, 0);
+		context.lineTo(-half, 0.09);
+		context.lineTo(-half + 0.34, bodyBottom + 0.02);
+		context.lineTo(half - 0.34, bodyBottom + 0.02);
+		context.lineTo(half, 0.09);
+		context.lineTo(half - bladeTip, 0);
+		context.closePath();
+		context.fill();
+		context.fillStyle = player.pulse ? '#b9ed91' : player.deck;
+		context.fillRect(-half + bladeTip, 0, bladeSwath - bladeTip * 2, 0.03);
+	}
+
 	function drawLoad(context, player) {
 		const limit = root.SteamCeiling ? root.SteamCeiling.state.storageLimit : loadLimitDefault;
 		const ratio = Math.min(1, player.cargoCells / limit);
@@ -685,23 +723,26 @@
 
 	// One body routine for every player: chassis, deck, tails, wheels and load.
 	// The rig passes its machinery as an overlay so it stays inside this pass and
-	// is covered by a competitor that is riding on top of it.
-	function drawBody(context, player, extras) {
+	// is covered by a competitor that is riding on top of it; the overlay belongs
+	// to the rig alone, so a competitor is never drawn with the rig's fuel bar,
+	// thermometer, collector and piston. Nothing is faded: the selected platform
+	// is marked by the accent outline instead of washing the other one out.
+	function drawBody(context, player, rigMachinery) {
 		const body = posOf(player);
 		const isActive = players[active] === player;
 		const half = halfWidth();
 		context.save();
-		context.globalAlpha = isActive ? 1 : 0.55;
 		context.translate(body.x, body.y);
 		context.rotate(body.angle);
 		drawTails(context, player, body);
+		if (player.kind === 'rival') drawBlade(context, player);
 		context.fillStyle = player.body;
 		context.fillRect(-half, bodyBottom, half * 2, bodyTop - bodyBottom);
 		context.fillStyle = player.deck;
 		context.fillRect(-half, bodyTop - 0.05, half * 2, 0.05);
 		if (player.kind === 'rival') drawLoad(context, player);
 		drawWheels(context, player);
-		if (extras) extras(context, player);
+		if (rigMachinery && player.kind === 'rig') rigMachinery(context, player);
 		if (isActive) {
 			context.strokeStyle = '#b9ed91';
 			context.lineWidth = 0.03;
@@ -710,7 +751,7 @@
 		context.restore();
 	}
 
-	function draw(context, extras) {
+	function draw(context, rigMachinery) {
 		drawOrder.length = 0;
 		for (let i = 0; i < players.length; i++) drawOrder.push(players[i]);
 		// The platform riding on top is drawn last, matching the collision order.
@@ -723,7 +764,7 @@
 			}
 			drawOrder[j + 1] = player;
 		}
-		for (let i = 0; i < drawOrder.length; i++) drawBody(context, drawOrder[i], extras);
+		for (let i = 0; i < drawOrder.length; i++) drawBody(context, drawOrder[i], rigMachinery);
 	}
 
 	const state = Object.freeze({

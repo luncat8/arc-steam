@@ -12,7 +12,7 @@
 			label: 'Keys',
 			title: 'Controls',
 			text: [
-				'Game keys work anywhere on the page; pressing one releases the focused button or slider first, so Space never double-fires a control.',
+				'Game keys work anywhere on the page; pressing one releases the focused button or slider first, so Space never double-fires a control. A and D, the brake and the force keys address the platform selected in PLAYERS; the ball, piston and autopilot keys belong to the rig and are ignored while a competitor is driven.',
 				'Help itself: hover a ? mark (or tap it on touch), press and hold a panel for that panel’s topic, press H or F1 to toggle this drawer, Escape to close it.'
 			],
 			keys: [
@@ -169,16 +169,18 @@
 			label: 'Players',
 			title: 'Competitors and the scoreboard',
 			text: [
-				'The strip under the telemetry lists every platform at the mine, one line per player. The rig is YOU; the others are competitors that work the same floor rubble with a blade and keep their own credits. Every player drives the same machine — only the colour and the policy differ, and an idle platform is drawn dim.',
-				'Click a line to take that platform’s controls. The force setting, A/D, the brake and the low-ground travel click all move to it, the panel retitles itself and its summary line names the player, its force, its load and its policy. The ball, piston and autopilot belong to the rig and disable while a competitor is being driven; the reserve, heat and shop cards always describe the rig.',
+				'The strip under the telemetry lists every platform at the mine, one line per player. The rig is YOU; the others are competitors that work the same floor rubble with a blade and keep their own credits. Every player drives the same machine, told apart by its colour, its blade and the rule that only the selected platform is outlined — no body is drawn faded.',
+				'Click a line to take that platform’s controls. The force setting, A/D, the brake and the low-ground travel click all move to it, and the panel title names the platform and its policy. The ball, piston and autopilot keys belong to the rig, so their controls and shortcut labels leave the panel while a competitor is being driven — nothing on screen claims a key that drives the other platform. A command stays with the platform it was given to: switching lines drops the one you left, and taking a competitor’s controls leaves its policy running until a key or a click addresses it. The reserve, heat and shop cards always describe the rig.',
 				'BOT hands a platform to its policy, and both platforms play the ball the same way. A bot competitor stands where the ball it may push is coming down, meets it on its flat deck, drives over a ball on the floor to scoop it up, and spends a pulse only while the passive bounce would still fall short of the rock. A bot rig runs the autopilot duties — the intercept, the drive keeper and the level bounce. Both make a selling trip to the nearer wall once their hopper is full, and both bank whatever their blade or collector took on the way. A ball the competitor may not push, and a ball already held in the rig’s collector, are not in its world at all, so it holds station instead of wandering.',
 				'Two platforms that meet do not collide like walls. Each body has a retractable 45° plate at both ends: folded while the other platform is far or moving away, swinging down at a limited rate as the gap closes, and clipped at the floor so the plate and the ramp the wheels follow are the same line. The platform applying more drive power is the one that rides on top; the other stays on the floor and is driven over. Their credits never enter the rig’s ledger.'
 			],
 			keys: [
 				['Click a player line', 'Take that platform’s controls and its force setting'],
+				['Selected platform', 'The outlined body; the panel shows only its controls'],
 				['BOT checkbox', 'Let that player’s policy drive it'],
 				['45° plate', 'Unfolds as a platform closes in, folds when it leaves'],
-				['Higher force', 'The platform that climbs over the other']
+				['Higher force', 'The platform that climbs over the other'],
+				['Blade', 'Competitor chassis: grades the floor, edge lit while its pulse is armed']
 			]
 		},
 		{

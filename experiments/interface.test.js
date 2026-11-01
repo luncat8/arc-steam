@@ -158,25 +158,40 @@ test('the player strip lists every player with money, a BOT switch and a control
 	assert.equal(rigRow.children[0].children[2].textContent, ceiling.state.funds.toFixed(1) + ' cr');
 	const rivalBox = rivalRow.children[1].children[0];
 	assert.equal(rivalBox.checked, true, 'the competitor starts bot controlled');
+	// The rig's machinery rides inside the rig's own body pass: a competitor is a
+	// chassis, a blade and its load, never a second fuel bar, thermometer,
+	// collector strip and reflector piston.
+	const machinery = [];
+	players.draw(dom.element('c').context, function (_context, player) { machinery.push(player.kind); });
+	assert.deepEqual(machinery, ['rig']);
+	// A command stays with the platform it was given to: the rig's travel target
+	// is dropped when the competitor takes the keys.
+	world.direction = 1;
+	world.target = 8;
 	// The line is the control switch: it hands the movement keys, travel click
 	// and force slider to that platform.
 	rivalRow.children[0].dispatch('click');
 	assert.equal(players.state.active, 1);
 	assert.equal(rivalRow.dataset.active, 'true');
 	assert.equal(rigRow.dataset.active, 'false');
-	assert.equal(dom.element('drive').disabled, true, 'the ball controls belong to the rig');
-	assert.equal(dom.element('competitor-note').hidden, false);
-	assert.match(dom.element('control-title').textContent, /RIVAL 1/);
+	// The panel keeps only what drives the selected platform: the rig machinery
+	// and its Space/E/X/Z/C labels leave instead of sitting there disabled.
+	assert.equal(dom.element('rig-drive').hidden, true, 'the ball controls belong to the rig');
+	assert.equal(dom.element('control-title').textContent, 'RIVAL 1 · BOT');
+	// Taking the controls does not silence the policy: its BOT switch owns that.
+	assert.equal(players.state.rivals[0].manual, 0, 'the competitor keeps its policy until a key is pressed');
+	assert.equal(world.direction, 0, 'the rig stands down when the competitor takes the keys');
+	assert.ok(Number.isNaN(world.target), 'and its travel target is dropped');
 	// The checkbox is the policy switch and does not change the controlled player.
 	rivalBox.checked = false;
 	rivalBox.dispatch('change');
 	assert.equal(players.state.players[1].bot, false);
 	assert.equal(players.state.active, 1);
+	assert.equal(dom.element('control-title').textContent, 'RIVAL 1 · MANUAL');
 	rigRow.children[0].dispatch('click');
 	assert.equal(players.state.active, 0);
-	assert.equal(dom.element('drive').disabled, false);
-	assert.equal(dom.element('competitor-note').hidden, true);
-	assert.equal(dom.element('control-title').textContent, 'PLATFORM / LOW-TIER DRIVE');
+	assert.equal(dom.element('rig-drive').hidden, false);
+	assert.equal(dom.element('control-title').textContent, 'YOU · MANUAL');
 	// Restore the default policy for the remaining interface tests.
 	rivalBox.checked = true;
 	rivalBox.dispatch('change');
@@ -220,19 +235,18 @@ test('the controls and their readouts belong to the selected platform, not the r
 	// The rig drives at 60%; the competitor is switched in and given its own 90%.
 	assert.equal(dom.element('force').value, '60');
 	list.children[1].children[0].dispatch('click');
-	assert.match(dom.element('player-focus').textContent, /^DRIVING RIVAL 1 · FORCE 60% · LOAD 0 CELLS · BOT$/);
+	assert.equal(dom.element('control-title').textContent, 'RIVAL 1 · BOT');
 	dom.element('force').value = '90';
 	dom.element('force').dispatch('input');
 	assert.equal(dom.element('force-value').textContent, '90%');
-	assert.match(dom.element('player-focus').textContent, /RIVAL 1 · FORCE 90%/);
 	assert.equal(players.force(1), 0.9);
 	assert.equal(players.force(0), 0.6, 'the rig keeps its own force setting');
 	// Switching back restores the rig's own number instead of leaving the
 	// competitor's value on the slider.
 	list.children[0].children[0].dispatch('click');
 	assert.equal(dom.element('force').value, '60');
-	assert.match(dom.element('player-focus').textContent, /^DRIVING YOU · FORCE 60%/);
-	assert.equal(dom.element('drive').disabled, false);
+	assert.equal(dom.element('control-title').textContent, 'YOU · MANUAL');
+	assert.equal(dom.element('rig-drive').hidden, false);
 	// A travel click while a competitor is selected commands that competitor.
 	const rival = players.state.rivals[0];
 	rival.bot = false;
@@ -253,6 +267,39 @@ test('the controls and their readouts belong to the selected platform, not the r
 	rival.bot = true;
 	rival.target = NaN;
 	rival.manual = 0;
+	assert.equal(players.state.active, 0);
+});
+
+test('the rig shortcuts do nothing while a competitor is driven', () => {
+	// The keys follow the selected platform: A/D, W/S and the brake address the
+	// competitor, and the rig's own duty keys do not reach the rig behind it.
+	const list = dom.element('player-list');
+	list.children[1].children[0].dispatch('click');
+	assert.equal(players.state.active, 1, 'the competitor takes the keys');
+	dom.element('force').value = '50';
+	dom.element('force').dispatch('input');
+	const driveBefore = dom.element('drive').getAttribute('aria-pressed');
+	const rigDirection = world.direction;
+	const rigTarget = world.target;
+	dom.key('Space');
+	dom.key('KeyQ');
+	assert.equal(dom.element('drive').getAttribute('aria-pressed'), driveBefore, 'Space leaves the rig drive alone');
+	dom.key('KeyX');
+	dom.key('KeyZ');
+	dom.key('KeyC');
+	assert.equal(autopilot.enabled('move'), false, 'the intercept stays off');
+	assert.equal(autopilot.enabled('drive'), false, 'the drive keeper stays off');
+	assert.equal(autopilot.enabled('angle'), false, 'the level bounce stays off');
+	assert.equal(world.direction, rigDirection, 'the rig command is untouched');
+	assert.equal(world.target, rigTarget);
+	// The force keys edit the selected platform's own setting.
+	const rigForce = world.forceSetting;
+	dom.key('KeyW');
+	assert.equal(players.force(1), 0.6, 'the competitor takes the force step');
+	assert.equal(world.forceSetting, rigForce, 'the rig keeps its own force');
+	dom.element('force').value = '60';
+	dom.element('force').dispatch('input');
+	list.children[0].children[0].dispatch('click');
 	assert.equal(players.state.active, 0);
 });
 
@@ -453,10 +500,11 @@ function fillCargo(count) {
 }
 
 // The shim canvas is 1000 × 420, matching the page's own view and margins.
+// The page publishes its chamber fit, so a world point maps to a page point
+// exactly as the renderer does it.
 function chamberPoint(worldX, worldY) {
-	const viewWidth = 25.8 + ceiling.state.garageDepth;
-	const scale = Math.min((1000 - 32) / viewWidth, (420 - 80) / physics.config.ceiling);
-	return { clientX: (1000 - viewWidth * scale) / 2 + 1.5 * scale + worldX * scale, clientY: (420 + physics.config.ceiling * scale) / 2 + 9 - worldY * scale };
+	const view = globalThis.SteamView;
+	return { clientX: view.offsetX + worldX * view.scale, clientY: view.floorY - worldY * view.scale };
 }
 
 test('hovering rock shows its tooltip and clicking low commands travel, without inspector sliders', () => {
@@ -543,7 +591,6 @@ test('the autopilot switches, shortcuts and manual overrides share one writer', 
 	check('move', true);
 	assert.equal(autopilot.enabled('move'), true);
 	advance(8);
-	console.error('DIAG', JSON.stringify({ p: [world.platform.x, world.platform.y, world.platform.vx, world.platform.angle], b: [world.ball.x, world.ball.y, world.ball.vx, world.ball.vy], t: world.time, contact: autopilot.plan ? 1 : 0 }));
 	assert.equal(status.hidden, false);
 	assert.match(status.textContent, /^Intercept · 11\.4 m in /);
 	assert.ok(Number.isFinite(world.target), 'the chase commands travel instead of leaving the platform alone');

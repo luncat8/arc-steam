@@ -340,6 +340,24 @@ test('the rig bot engages the autopilot and sells a full hopper at the wall', ()
 	assert.equal(autopilot.state.move, false);
 });
 
+test('a command stays with the platform it was given to', () => {
+	fresh();
+	const rival = players.state.rivals[0];
+	assert.equal(players.setActive(1), true);
+	players.command(1);
+	assert.equal(rival.direction, 1);
+	assert.ok(rival.manual > 0);
+	// The rig takes the keys: the competitor left behind stands down at once and
+	// its own policy is live again, instead of coasting on the old command.
+	assert.equal(players.setActive(0), true);
+	assert.equal(rival.direction, 0);
+	assert.ok(Number.isNaN(rival.target));
+	assert.equal(rival.manual, 0);
+	// Taking a running competitor's controls does not silence its policy either.
+	assert.equal(players.setActive(1), true);
+	assert.equal(rival.manual, 0);
+});
+
 test('switching players moves the controls and the force setting with them', () => {
 	const world = fresh();
 	assert.equal(players.setForce(0.6), 0.6);

@@ -14,7 +14,7 @@
 		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger',
 		'refuel', 'refuel-cost', 'fuel-price', 'reserve-note', 'cargo-note',
 		'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry', 'mineral-tooltip', 'science-drawer', 'market-drawer', 'science-open', 'science-close', 'market-open', 'market-close',
-		'player-list', 'control-title', 'player-focus', 'competitor-note'];
+		'player-list', 'control-title', 'rig-drive'];
 	// One mark per help topic, plus the drawer it feeds.
 	for (const topic of window.SteamHelp.topics) ids.push('help-' + topic.id);
 	ids.push('help-drawer', 'help-close', 'help-head', 'help-title', 'help-body', 'help-index');
@@ -613,34 +613,39 @@
 			const title = player.name + ' · ' + Math.round(playerApi.load(index)) + ' cells carried · click to take the controls';
 			if (entry.row.title !== title) entry.row.title = title;
 		}
-		// The panel names the platform whose controls it now holds, with that
-		// platform's own force setting, load and policy, so a switch is visible
-		// in the controls themselves and not only in the highlighted row.
-		const focused = playerApi.state.players[playerApi.state.active];
-		if (focused) {
-			setText(ui['player-focus'], 'DRIVING ' + focused.name + ' · FORCE ' + Math.round(playerApi.force(playerApi.state.active) * 100)
-				+ '% · LOAD ' + Math.round(playerApi.load(playerApi.state.active)) + ' CELLS · ' + (focused.bot ? 'BOT' : 'MANUAL'));
-		}
 	}
 
-	// The rig's machinery controls have no meaning on a competitor: disable them
-	// rather than let Space or the tilt slider edit the rig while another player
-	// is being driven.
+	// The panel is the selected platform's drive, named with the policy it runs
+	// under. The rig's own machinery — bounce assist, piston tilt and autopilot —
+	// has no meaning on a competitor, so it leaves the panel instead of sitting
+	// there disabled with shortcut labels that would drive the other platform.
+	let titleIndex = -1;
+	let titleBot = null;
 	function syncActiveControls() {
-		const active = playerApi.state.players[playerApi.state.active];
+		const index = playerApi.state.active;
+		const active = playerApi.state.players[index];
 		const rigActive = active.kind === 'rig';
-		setText(ui['control-title'], rigActive ? 'PLATFORM / LOW-TIER DRIVE' : active.name + ' / PLATFORM DRIVE');
-		setText(ui['competitor-note'], 'Ball, piston, autopilot and telemetry stay with the rig · force, movement, brake and travel drive ' + active.name + ' now.');
-		setHidden(ui['competitor-note'], rigActive);
+		if (index !== titleIndex || active.bot !== titleBot) {
+			titleIndex = index;
+			titleBot = active.bot;
+			setText(ui['control-title'], active.name + ' · ' + (active.bot ? 'BOT' : 'MANUAL'));
+		}
+		setHidden(ui['rig-drive'], !rigActive);
 		syncForceControl();
-		setDisabled(ui.drive, !rigActive);
-		setDisabled(ui['piston-angle'], !rigActive);
-		for (const row of autopilotRows) setDisabled(ui[row.id], !rigActive);
 	}
 
+	// Taking a platform's controls also drops the command left with the platform
+	// you were driving, so a held key, a brake or a travel click never keeps
+	// steering one platform while the keys drive another.
 	function setActivePlayer(index) {
 		if (!playerApi.setActive(index)) return;
-		clearInput();
+		leftHeld = false;
+		rightHeld = false;
+		commandedDirection = 0;
+		world.brake = false;
+		world.direction = 0;
+		world.target = NaN;
+		autopilot.hold('move', false);
 		endPistonDrag();
 		syncActiveControls();
 		refresh();
@@ -798,6 +803,20 @@
 	const hoverPointer = window.matchMedia('(hover: hover) and (pointer: fine)');
 	const viewMinX = -1.5;
 	const viewWidth = 25.8 + window.SteamCeiling.state.garageDepth;
+	// The chamber fills the canvas. Both 0.35 m boundary strips are part of the
+	// scene, so the fit spends its room on the roof strip, the chamber and the
+	// floor strip, and reserves only what the SELL marks and the charge-pad label
+	// need outside them. On a width-limited canvas the leftover is split evenly.
+	const chamberRoofPad = 2;
+	const chamberFootPad = 26;
+	const boundaryStrip = 0.35;
+	// On a width-limited canvas the chamber keeps to the top instead of floating
+	// in the middle: the leftover room stays under the floor, where it is only
+	// backdrop, and at most a small gap may open above the roof strip.
+	const chamberTopSlack = 24;
+	// The fit itself, published so a harness can map a world point to a page
+	// point instead of copying the arithmetic.
+	const view = { scale: 1, offsetX: 0, floorY: 0 };
 	// Clicks below this height are travel commands; rock clicks inspect instead.
 	// The target marker is drawn to the same height, so the zones are visible.
 	const moveClickHeight = 1.7;
@@ -822,9 +841,15 @@
 		canvas.width = Math.round(width * ratio);
 		canvas.height = Math.round(height * ratio);
 		context.setTransform(ratio, 0, 0, ratio, 0, 0);
-		scale = Math.min((width - 32) / viewWidth, (height - 80) / config.ceiling);
+		const sceneHeight = config.ceiling + boundaryStrip * 2;
+		scale = Math.min((width - 32) / viewWidth, (height - chamberRoofPad - chamberFootPad) / sceneHeight);
+		const slack = height - chamberRoofPad - chamberFootPad - sceneHeight * scale;
+		const topPad = chamberRoofPad + (slack > 0 ? Math.min(slack * 0.5, chamberTopSlack) : 0);
 		offsetX = (width - viewWidth * scale) / 2 - viewMinX * scale;
-		floorY = (height + config.ceiling * scale) / 2 + 9;
+		floorY = topPad + boundaryStrip * scale + config.ceiling * scale;
+		view.scale = scale;
+		view.offsetX = offsetX;
+		view.floorY = floorY;
 		sceneDirty = true;
 	}
 
@@ -1353,9 +1378,19 @@
 		setToolDrawer('market-drawer', ui['market-open'], false);
 	}
 
+	// A competitor command is only written when the direction really changed, so
+	// releasing a key that was pressed on the other platform never puts a two
+	// second manual window on the platform that has the controls now.
+	let commandedDirection = 0;
 	function updateDirection() {
 		const direction = Number(rightHeld) - Number(leftHeld);
-		if (!playerApi.rigActive()) { playerApi.command(direction); sceneDirty = true; return; }
+		if (!playerApi.rigActive()) {
+			if (direction || commandedDirection) playerApi.command(direction);
+			commandedDirection = direction;
+			sceneDirty = true;
+			return;
+		}
+		commandedDirection = 0;
 		world.direction = direction;
 		autopilot.hold('move', world.brake || leftHeld || rightHeld);
 		if (leftHeld || rightHeld) world.target = NaN;
@@ -1737,6 +1772,7 @@
 	bindHelp();
 	bindHelpGestures();
 
+	window.SteamView = view;
 	window.addEventListener('keydown', keydown);
 	window.addEventListener('keyup', keyup);
 	window.addEventListener('blur', function () { clearInput(); endPistonDrag(); });
