@@ -42,13 +42,13 @@
 			title: 'Shared and owned balls',
 			text: [
 				'BALLS in the system bar sets what is in the chamber. One shared ball is the classic game: a single ball both platforms may push, and only the rig can catch it in its collector and pulse it with its reflector.',
-				'Two shared balls put two balls in flight at once and both platforms may push either of them. The rig still holds one at a time, and its autopilot, ballistic overlay and ball readouts follow the ball that will reach the platform sooner, so the second ball never splits the plan.',
+				'Two shared balls put two balls in flight at once and both platforms may push either of them. The rig still holds one at a time, and the autopilot, ballistic overlay and ball readouts follow one ball, so the second never splits the plan: the autopilot works the ball it can still meet, and never turns away from a landing it can reach towards one it cannot.',
 				'One per platform gives every platform its own ball. Ownership is the collision rule: a platform cannot see, catch, bounce or pulse a ball it does not own, so the rig’s collector passes straight through a competitor’s ball and that competitor’s deck passes straight through the rig’s.',
 				'A competitor keeps its own ball alive with its bounce drive — the deck returns the ball and a pulse of the rig’s base size is added while the ball is coming down — and scoops a grounded ball back up by driving over it. Its ball breaks the same ceiling rock, the debris lands as floor rubble, and its blade harvests that rubble into its own purse. Competitor balls and pulses are outside the rig’s energy ledger, exactly like the commercial grader.'
 			],
 			keys: [
 				['1 shared', 'One ball, both platforms push it, the rig catches it'],
-				['2 shared', 'Two balls in play, the autopilot plans for the sooner one'],
+				['2 shared', 'Two balls in play, the autopilot works the one it can meet'],
 				['1 per platform', 'Each platform pushes only its own ball'],
 				['Competitor ball', 'Mines rock, leaves rubble, pays its owner only']
 			]
@@ -124,7 +124,8 @@
 				'Four independent duties, each a checkbox and a shortcut. A duty yields to the manual command that does the same job — A/D or a travel click takes the intercept, Space takes the drive, the slider, wheel or drag takes the tilt — and resumes after two seconds of simulation time without manual input.',
 				'The chase puts the reflector centre on the predicted landing and stops there. The timed intercept spends the whole flight time arriving as the ball does, rolling through the mark when that is the slower run.',
 				'The drive keeper pulses only when the passive bounce would fall short of the ceiling, which holds the ball within one pulse of the top, and it releases a caught ball. The level bounce slews the tilt at 45°/s so the next reflection leaves straight up.',
-				'Only the checkbox or its shortcut switches a duty off, and the status line says “manual override” while a duty is suspended. With Trajectory computer II both intercept modes time economically and look through rock rebounds to the next landing.'
+				'Only the checkbox or its shortcut switches a duty off, and the status line says “manual override” while a duty is suspended. With Trajectory computer II both intercept modes time economically and look through rock rebounds to the next landing.',
+				'With more than one ball the clause names the one being worked (`ball 1/2`) and says when the landing is out of reach: the rig stops promising an intercept it cannot make and turns the run into the pickup that follows the grounding. A ball already on the floor is a sure catch, so it is worked whenever no landing can be met; a second flight it cannot reach costs nothing by waiting.'
 			],
 			keys: [
 				['X', 'Chase the predicted landing'],

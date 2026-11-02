@@ -300,12 +300,15 @@ test('the wanted tilt is the zero of the simulation\'s own contact solver', () =
 	}
 });
 
-test('a mark no run can reach is still chased, and a grounded ball is collected', () => {
+test('a mark no run can reach is still chased when it is the ball chosen, and a grounded ball is collected', () => {
 	const world = flight(physics.createWorld(), 20, 3, 3);
 	world.drive = true;
 	engage('smart', 'drive', 'angle');
 	autopilot.update(world, c.step);
 	assert.ok(Number.isFinite(autopilot.state.interceptX), 'a far landing still gives a mark');
+	assert.equal(autopilot.state.recovering, true, 'the plan is priced as the pickup it will probably become');
+	assert.equal(autopilot.state.reachable, false, 'even the reflector edge cannot be under it in time');
+	assert.ok(autopilot.state.contactIn > 0, 'and the run keeps its deadline: the deck can still catch it');
 	assert.equal(world.direction, 1, 'the run goes for it at full demand');
 	untilBounces(world, 1, 30);
 	// Whatever the outcome, a ball that reaches the ground is collected: the mark
@@ -327,6 +330,137 @@ test('a mark no run can reach is still chased, and a grounded ball is collected'
 	while (world.ball.state === 'held' && released++ < 240 * 5) { autopilot.update(world, c.step); physics.step(world, c.step); }
 	assert.equal(world.ball.state, 'flying', 'the keeper releases the collected ball');
 	balanced(world);
+});
+
+// Two shared balls and no competitor policy: the chamber is the rig's own.
+function twoBallWorld(nearX, nearY, farX, farY) {
+	const world = physics.createWorld();
+	physics.setBallMode(world, 'shared2');
+	const near = world.balls[0];
+	const far = world.balls[1];
+	world.platform.x = 12;
+	world.platform.vx = 0;
+	world.direction = 0;
+	world.target = NaN;
+	world.pistonAngle = 0;
+	world.drive = false;
+	world.bounces = 0;
+	world.pushes = 0;
+	world.groundings = 0;
+	near.x = nearX; near.y = nearY; near.vx = 0; near.vy = 0; near.state = 'flying';
+	far.x = farX; far.y = farY; far.vx = 0; far.vy = 0; far.state = 'flying';
+	sync(world);
+	return world;
+}
+
+test('a landing out of reach never takes the plan from one the rig can meet', () => {
+	// The first ball comes down onto the reflector; the second would land on the
+	// floor across the chamber before the platform could cross it. The soonest
+	// landing is the one it cannot reach, which is exactly the trap.
+	const world = twoBallWorld(12.6, 4, 2.5, 3);
+	const [near, far] = world.balls;
+	assert.ok(physics.ballLandingTime(far, c.deck) < physics.ballLandingTime(near, c.deck),
+		'the unreachable ball is the one landing sooner');
+	engage('move');
+	autopilot.update(world, c.step);
+	assert.equal(physics.focusBall(world), near, 'the ball it can meet is the one it works');
+	assert.equal(autopilot.state.focus, near, 'and the plan belongs to it');
+	assert.equal(autopilot.state.recovering, false);
+	assert.ok(Math.abs(autopilot.state.interceptX + c.pistonCentre - near.x) < 1,
+		'the face is put under the landing it can reach');
+	let steps = 0;
+	while (world.bounces === 0 && steps++ < 240 * 3) {
+		autopilot.update(world, c.step);
+		physics.step(world, c.step);
+	}
+	assert.equal(world.bounces, 1, 'the reachable landing is met');
+	assert.equal(far.state, 'grounded', 'the unreachable one grounds, as predicted, without a chase');
+	balanced(world);
+	engage();
+});
+
+test('with two shared balls a spare on the floor is worked when no landing can be met', () => {
+	// The flight lands far beyond the platform's reach; the spare is on the floor
+	// a few metres away. The rig collects the certain ball instead of chasing the
+	// one that is already lost.
+	const world = twoBallWorld(10, c.radius, 20, 8);
+	const [spare, flight] = world.balls;
+	world.platform.x = 3;
+	spare.state = 'grounded';
+	spare.y = c.radius;
+	sync(world);
+	engage('move');
+	autopilot.update(world, c.step);
+	assert.equal(physics.focusBall(world), spare, 'the ball on the floor is the one it can still get');
+	assert.ok(Math.abs(autopilot.state.interceptX - spare.x) < 1e-9, 'the mark is the ball itself');
+	assert.equal(autopilot.state.contactIn, 0, 'there is no flight left to meet');
+	assert.equal(autopilot.state.recovering, true);
+	let steps = 0;
+	while (spare.state !== 'held' && steps++ < 240 * 10) {
+		autopilot.update(world, c.step);
+		physics.step(world, c.step);
+	}
+	assert.equal(spare.state, 'held', 'and the rig drives over it');
+	balanced(world);
+	engage();
+});
+
+// Height from which a ball dropped at rest lands on the deck in `seconds`.
+function dropHeight(seconds) {
+	return c.deck + c.radius + 0.5 * c.ballGravity * seconds * seconds;
+}
+
+test('with two shared balls a desperate landing never takes the plan from a keep the rig can stop on', () => {
+	// The far ball lands sooner across the chamber: the platform can only
+	// cross its mark at full speed, stopped arrival is 2.45 s into a 2.0 s
+	// flight. The near ball lands a little later almost where the platform
+	// stands, and the rig can stop on it. Either landing can be kept, but
+	// rushing the far one spends the near one's flight travelling back —
+	// the trap that grounded both.
+	const world = twoBallWorld(5, dropHeight(2), 13.5, dropHeight(2.5));
+	const [far, near] = world.balls;
+	engage('move');
+	autopilot.update(world, c.step);
+	assert.equal(physics.focusBall(world), near, 'the keep the rig can stop on is the one it works');
+	assert.equal(autopilot.state.focus, near);
+	assert.equal(autopilot.state.recovering, false);
+	assert.ok(Math.abs(autopilot.state.interceptX + c.pistonCentre - near.x) < 1, 'the face is put under the near landing');
+	let furthest = world.platform.x;
+	let steps = 0;
+	while (world.bounces === 0 && steps++ < 240 * 5) {
+		autopilot.update(world, c.step);
+		physics.step(world, c.step);
+		furthest = Math.min(furthest, world.platform.x);
+	}
+	assert.equal(world.bounces, 1, 'the near landing is met');
+	assert.equal(far.state, 'grounded', 'the far ball grounds where it fell, to be collected');
+	assert.ok(furthest > 9, `the rig never crossed the chamber for the far ball (got to ${furthest.toFixed(1)} m)`);
+	balanced(world);
+	engage();
+});
+
+test('with two shared balls a schedule that keeps both landings beats the cheaper single keep', () => {
+	// The first landing is the dearer travel, but keeping it still leaves the
+	// second reachable from its mark; skipping it for the cheaper second
+	// landing would keep one ball where keeping it in order keeps both.
+	const world = twoBallWorld(9, dropHeight(2.2), 14, 8);
+	const [first, second] = world.balls;
+	second.vy = 4;
+	sync(world);
+	world.drive = true;
+	engage('move', 'drive', 'angle');
+	autopilot.update(world, c.step);
+	assert.equal(physics.focusBall(world), first, 'the earlier landing is worked because the second survives it');
+	let steps = 0;
+	while (world.bounces < 2 && steps++ < 240 * 6) {
+		autopilot.update(world, c.step);
+		physics.step(world, c.step);
+		if (world.ball.state === 'held' && world.drive) physics.launch(world);
+	}
+	assert.equal(world.bounces, 2, 'both landings are kept in order');
+	assert.equal(world.groundings, 0, 'neither ball touches the floor');
+	balanced(world);
+	engage();
 });
 
 test('the keepers do nothing at all until a channel is engaged', () => {

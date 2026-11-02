@@ -146,6 +146,24 @@ test('an unreachable landing is reported with the missing distance', () => {
 	physics.createWorld();
 });
 
+test('reachability starts from the speed the platform already carries', () => {
+	const w = physics.createWorld();
+	w.forceSetting = 0.1;
+	w.platform.x = 6; w.platform.vx = 0;
+	w.ball.x = 20; w.ball.y = 3; w.ball.vx = 0; w.ball.vy = 0; w.ball.state = 'flying';
+	assert.equal(prediction.predict(w).reachable, false, 'a parked platform cannot cross the chamber in time');
+	// Already rolling towards the mark at its top speed, it covers the same
+	// flight without accelerating, which is what the thrust bound has to see.
+	w.platform.vx = physics.speedNow();
+	const rolling = prediction.predict(w);
+	assert.equal(rolling.reachable, true, 'a platform already rolling at the mark meets the landing');
+	assert.ok(rolling.gap < 0);
+	// Rolling the other way must not be counted as reach.
+	w.platform.vx = -physics.speedNow();
+	assert.equal(prediction.predict(w).reachable, false, 'speed away from the mark is not speed towards it');
+	physics.createWorld();
+});
+
 test('a held or grounded ball has no flight to predict', () => {
 	const w = physics.createWorld();
 	w.ball.state = 'held';

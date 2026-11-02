@@ -757,16 +757,35 @@
 	}
 
 	// One clause per engaged duty, so the panel says what the autopilot is doing
-	// and not only which of its switches are on.
-	function travelClause(plan) {
+	// and not only which of its switches are on. `ball` names the working ball
+	// when there is more than one, and the last two clauses say when the plan is
+	// no longer an intercept at all.
+	function travelClause(plan, ball) {
 		if (!Number.isFinite(plan.interceptX)) return 'Intercept · ball held, no flight to meet';
-		if (plan.contactIn <= 0) return 'Intercept · collecting at ' + plan.interceptX.toFixed(1) + ' m';
-		return (plan.smart ? 'Timed intercept · ' : 'Intercept · ') + plan.interceptX.toFixed(1) + ' m in ' + plan.contactIn.toFixed(2) + ' s';
+		if (plan.uncertain) return 'Intercept · ' + ball + 'no landing yet, following the ball at ' + plan.interceptX.toFixed(1) + ' m';
+		if (plan.contactIn <= 0) return 'Intercept · ' + ball + 'collecting at ' + plan.interceptX.toFixed(1) + ' m';
+		if (plan.recovering) return 'Intercept · ' + ball + 'landing out of reach, collecting at ' + plan.interceptX.toFixed(1) + ' m';
+		return (plan.smart ? 'Timed intercept · ' : 'Intercept · ') + ball + plan.interceptX.toFixed(1) + ' m in ' + plan.contactIn.toFixed(2) + ' s';
 	}
 
-	function autopilotText(plan) {
+	// Which of the rig's balls the intercept is working, as `ball n/m`, so two
+	// shared balls never leave the panel saying only where the platform is going.
+	function workingBall() {
+		const balls = world.balls || [];
+		const focus = world.ball;
+		let count = 0;
+		let index = 0;
+		for (let i = 0; i < balls.length; i++) {
+			if (!physics.isRigBall(balls[i])) continue;
+			count++;
+			if (balls[i] === focus) index = count;
+		}
+		return count > 1 && index > 0 ? 'ball ' + index + '/' + count + ' · ' : '';
+	}
+
+	function autopilotText(plan, ball) {
 		let text = '';
-		if (plan.move || plan.smart) text = autopilot.suspended('move') ? 'Intercept · manual override' : travelClause(plan);
+		if (plan.move || plan.smart) text = autopilot.suspended('move') ? 'Intercept · manual override' : travelClause(plan, ball);
 		if (plan.drive) text += (text ? ' · ' : '') + 'Drive keeper · ' + (autopilot.suspended('drive') ? 'manual override' : plan.wantedDrive ? 'pulse armed' : 'pulse held');
 		if (plan.angle) text += (text ? ' · ' : '') + 'Level bounce · ' + (autopilot.suspended('angle') ? 'manual override' : 'tilt to ' + (plan.wantedAngle * 180 / Math.PI).toFixed(1) + '°');
 		return text;
@@ -775,7 +794,7 @@
 	function autopilotReadout() {
 		const plan = autopilot.state;
 		setHidden(ui['autopilot-status'], !plan.active);
-		if (plan.active) setText(ui['autopilot-status'], autopilotText(plan));
+		if (plan.active) setText(ui['autopilot-status'], autopilotText(plan, workingBall()));
 	}
 
 	let paused = false;

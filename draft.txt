@@ -115,6 +115,13 @@ c - auto change angle to keep upcoming ball reflection vertical up. should respe
 autopilot should use add 2nd tier computer after available but not wait fall of ball so it has more time to move.
 2nd tier should move not only  during the descent but after bounce to move with minimal speed and save fuel
 
+### TODO deferred need improve (partially solved):
+  
+bot behavior in case of 2+ shared balls: autopilot move it in position where it cant reach in time, miss ball, then return to other ball and cant reach it also because time spend on unreachable target, etc . this cause no ball got at all. need improve autopilot.
+
+previous agent told it solve it. but i see . multiple balls - and autopilot move just to next ball without calculated ican it have time or is better to less movement and get another ball
+
+
 ## shortcuts actions
 
 click - move platform to x autopilot
@@ -203,3 +210,5 @@ move show and science to drawers
 move CARGO / STORAGE to left of canvas (where currently science)
 
 plan to make single sci+shop drawer to represent as tree and possible research and easy see what it unlock
+
+

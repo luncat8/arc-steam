@@ -358,6 +358,60 @@
 		return (acceleration * time - Math.sqrt(discriminant)) * 0.5;
 	}
 
+	// Platform travel model shared by the ballistic computer and the intercept
+	// policy: full thrust from the speed the platform already has towards the
+	// mark, up to the speed limit, then cruise. Braking is not budgeted, so
+	// `coverage` is the reach of an optimistic manoeuvre and `travelTime` the
+	// earliest arrival at a mark it must not stop on.
+	function coverage(time, speed, acceleration, topSpeed) {
+		if (!(time > 0)) return 0;
+		const start = Math.min(speed, topSpeed);
+		const ramp = Math.max(0, (topSpeed - start) / acceleration);
+		if (time <= ramp) return start * time + 0.5 * acceleration * time * time;
+		return start * ramp + 0.5 * acceleration * ramp * ramp + topSpeed * (time - ramp);
+	}
+
+	function travelTime(distance, speed, acceleration, topSpeed) {
+		if (!(distance > 0)) return 0;
+		const start = Math.min(speed, topSpeed);
+		const ramp = Math.max(0, (topSpeed - start) / acceleration);
+		const ramped = start * ramp + 0.5 * acceleration * ramp * ramp;
+		// Below the ramped distance the manoeuvre is still accelerating, so the
+		// arrival is the quadratic's positive root.
+		if (distance < ramped) return (Math.sqrt(start * start + 2 * acceleration * distance) - start) / acceleration;
+		return ramp + (distance - ramped) / topSpeed;
+	}
+
+	// Earliest arrival at a mark stopped, from rest: the peak of an
+	// accelerate-brake triangle, capped by a cruise at the speed limit.
+	function restStopTime(distance, acceleration, topSpeed) {
+		const peak = Math.sqrt(acceleration * distance);
+		if (peak <= topSpeed) return 2 * peak / acceleration;
+		return 2 * topSpeed / acceleration + (distance - topSpeed * topSpeed / acceleration) / topSpeed;
+	}
+
+	// Earliest arrival at a mark with no speed left over, from the signed speed
+	// already carried towards it. This is the manoeuvre both intercept
+	// controllers actually fly — the timed run brakes onto its mark and the
+	// chase's target follower brakes onto its target — so a mark is only
+	// reachable in a flight time when this fits inside it, where the passing
+	// `travelTime` above can promise a mark up to √2 sooner than either can
+	// stop on it. Rolling away is braked first and the drift paid for; rolling
+	// too fast for the mark brakes past it and comes back, which is dearer than
+	// passing through, again as it should be.
+	function stopTime(distance, speed, acceleration, topSpeed) {
+		if (!(distance > 0)) return 0;
+		if (!(acceleration > 0)) return Infinity;
+		const start = Math.max(-topSpeed, Math.min(topSpeed, speed));
+		if (start < 0) return -start / acceleration + restStopTime(distance + start * start / (2 * acceleration), acceleration, topSpeed);
+		const brakeDistance = start * start / (2 * acceleration);
+		if (distance < brakeDistance) return start / acceleration + restStopTime(brakeDistance - distance, acceleration, topSpeed);
+		const peak = Math.sqrt(acceleration * distance + start * start * 0.5);
+		if (peak <= topSpeed) return (2 * peak - start) / acceleration;
+		const cruise = distance - (2 * topSpeed * topSpeed - start * start) / (2 * acceleration);
+		return (topSpeed - start) / acceleration + cruise / topSpeed + topSpeed / acceleration;
+	}
+
 	function reserveNow() {
 		// Four full-throttle, wall-to-wall starts; acceleration distance caps
 		// the kinetic cost when the map is too short to attain rated speed.
@@ -448,6 +502,8 @@
 		}
 		world.balls = list;
 		world.ballMode = mode;
+		// A re-seated arrangement drops the intercept's chosen ball with it.
+		world.focus = null;
 		world.bounces = 0;
 		world.pushes = 0;
 		world.groundings = 0;
@@ -478,16 +534,22 @@
 		return null;
 	}
 
-	// The rig's ball of the moment: the one it holds, else the one whose landing
-	// is soonest, so a two-ball game never splits the plan.
+	// The rig's ball of the moment: the one it holds, then the ball its intercept
+	// policy chose, else the one whose landing is soonest, so a two-ball game
+	// never splits the plan. The policy choice is a hint, honoured only while it
+	// is still a rig ball in the list.
 	function focusBall(world) {
 		const balls = world.balls || [];
+		for (let i = 0; i < balls.length; i++) if (balls[i].state === 'held') return balls[i];
+		const chosen = world.focus;
+		if (chosen && isRigBall(chosen)) {
+			for (let i = 0; i < balls.length; i++) if (balls[i] === chosen) return chosen;
+		}
 		let best = null;
 		let bestTime = Infinity;
 		for (let i = 0; i < balls.length; i++) {
 			const ball = balls[i];
 			if (!isRigBall(ball)) continue;
-			if (ball.state === 'held') return ball;
 			if (!best) best = ball;
 			if (ball.state !== 'flying') continue;
 			const time = ballLandingTime(ball, config.deck);
@@ -514,7 +576,7 @@
 			brake: false, drive: true, forceSetting: 0.6, direction: 0, target: NaN,
 			pistonAngle: 0, pistonOffset: 0, pistonVelocity: 0, pistonImpact: 0,
 			platform: { id: 'rig', x: 12, y: 0, vx: 0, vy: 0, angle: 0, omega: 0, spin: 0, previousX: 12, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0 },
-			balls: [], ballMode: 'shared1',
+			balls: [], ballMode: 'shared1', focus: null,
 			bounces: 0, pushes: 0, lastPush: 0, groundings: 0, sales: 0, lastSale: 0
 		};
 		setBallMode(world, 'shared1', []);
@@ -1053,7 +1115,7 @@ function spend(world, useful) {
 		thermalFactor, coolingPower, platformMass, platformMin, platformMax, dryMass,
 		platformPitchAt, platformBaseAt, platformPointAt, platformSurfaceAt, planeContactTime,
 		chargePadMin, chargePadMax, onChargePad, charging,
-		retentionNow, rockRetentionNow, ballMassNow, damageBonusNow, damageRadiusBonusNow, pulseNow, forceNow, speedNow, arrivalSpeed, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
+		retentionNow, rockRetentionNow, ballMassNow, damageBonusNow, damageRadiusBonusNow, pulseNow, forceNow, speedNow, arrivalSpeed, coverage, travelTime, stopTime, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
 		setPistonAngle, pistonContactTime, solvePiston, contactResult,
 		setBallMode, mayPush, isRigBall, ballLandingTime, focusBall, heldBall, heldBallMass
 	};

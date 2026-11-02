@@ -341,6 +341,57 @@ test('the autopilot plans for the rig ball that lands sooner', () => {
 	autopilot.reset();
 });
 
+test('the autopilot keeps a ball in play across a two-ball shift instead of trading both', () => {
+	const world = fresh('shared2');
+	for (const channel of ['move', 'smart', 'drive', 'angle']) autopilot.set(channel, false);
+	autopilot.reset();
+	for (const channel of ['move', 'drive', 'angle']) autopilot.set(channel, true);
+	let bothDown = 0;
+	let worstDown = 0;
+	let switches = 0;
+	let lastFocus = physics.focusBall(world);
+	for (let step = 0; step < Math.round(60 / c.step); step++) {
+		autopilot.update(world, c.step);
+		const focus = physics.focusBall(world);
+		if (focus !== lastFocus) { switches++; lastFocus = focus; }
+		physics.step(world, c.step);
+		if (world.ball.state === 'held' && world.drive) physics.launch(world);
+		let inPlay = false;
+		for (const ball of world.balls) if (ball.state !== 'grounded') inPlay = true;
+		bothDown = inPlay ? 0 : bothDown + c.step;
+		if (bothDown > worstDown) worstDown = bothDown;
+	}
+	assert.ok(world.bounces >= 10, `the shift keeps bouncing: ${world.bounces} bounces`);
+	assert.ok(world.groundings <= 6, `groundings stay bounded: ${world.groundings}`);
+	assert.ok(switches <= 10, `the plan is not traded every bounce: ${switches} changes in 60 s`);
+	assert.ok(worstDown < 1, `both balls never lie on the floor together for long: ${worstDown.toFixed(2)} s`);
+	assert.equal(world.focus, lastFocus, 'the intercept publishes the ball it works as the world hint');
+	near(balance(world), 0, 1e-6);
+	// Disengaging hands the plain focus rule back instead of keeping a stale ball.
+	for (const channel of ['move', 'drive', 'angle']) autopilot.set(channel, false);
+	autopilot.update(world, c.step);
+	assert.equal(world.focus, null);
+	autopilot.reset();
+});
+
+test('the intercept hint is honoured only while it is a rig ball in the chamber', () => {
+	const world = fresh('each');
+	const rigBall = world.balls.find(ball => ball.owner === 'rig');
+	const rivalBall = world.balls.find(ball => ball.owner === 'rival-1');
+	world.focus = rivalBall;
+	assert.equal(physics.focusBall(world), rigBall, 'a ball the rig may not push is not a hint');
+	world.focus = { owner: null, x: 1, y: 1, vx: 0, vy: 0, state: 'flying' };
+	assert.equal(physics.focusBall(world), rigBall, 'nor is a ball that is not in the chamber');
+	// A held ball outranks the hint, because it is the rig's next launch.
+	world.focus = world.balls[0] === rigBall ? rivalBall : world.balls[0];
+	rigBall.state = 'held';
+	assert.equal(physics.focusBall(world), rigBall);
+	rigBall.state = 'flying';
+	// Re-seating the arrangement drops the hint with the balls it named.
+	players.setBallMode('shared2');
+	assert.equal(world.focus, null);
+});
+
 test('changing the arrangement re-seats the balls and keeps the ledger exact', () => {
 	const world = fresh('each');
 	run(world, 5);

@@ -803,3 +803,44 @@ test('the exported piston solver is the contact the simulation resolves, and rea
 	}
 	physics.createWorld();
 });
+
+test('the travel model and its inverse describe the same run to a mark', () => {
+	const acceleration = 4.8;
+	const top = physics.speedNow();
+	for (const speed of [-6, 0, 2.5, 11]) {
+		for (const time of [0.05, 0.5, 1.7, 4]) {
+			const distance = physics.coverage(time, speed, acceleration, top);
+			if (distance <= 0) continue;
+			near(physics.travelTime(distance, speed, acceleration, top), time, 1e-9);
+		}
+	}
+	// A platform already at the speed limit cruises: no ramp, no acceleration.
+	near(physics.travelTime(24, top, acceleration, top), 24 / top, 1e-12);
+	// A mark behind the platform still costs the reversal the inverse reports.
+	assert.ok(physics.travelTime(6, -top, acceleration, top) > 6 / top, 'the reversal is paid for');
+	assert.equal(physics.travelTime(-1, 0, acceleration, top), 0, 'a mark already reached costs nothing');
+	assert.equal(physics.coverage(0, 0, acceleration, top), 0);
+});
+
+test('the stopped arrival prices the manoeuvre the intercept controllers fly', () => {
+	const acceleration = 4.8;
+	const top = physics.speedNow();
+	// From rest the peak of the accelerate-brake triangle sets the time, and a
+	// long run cruises between the ramps.
+	near(physics.stopTime(7.5, 0, acceleration, top), 2.5, 1e-12);
+	near(physics.stopTime(48, 0, acceleration, top), 6.5, 1e-12);
+	// Speed already carried towards the mark is spent, not ignored: rolling
+	// towards it shortens the run, rolling away must be braked out and the
+	// drift away paid for on the way back.
+	near(physics.stopTime(6.9, 2.4, acceleration, top), 2, 1e-12);
+	near(physics.stopTime(6.9, -2.4, acceleration, top), 3, 1e-12);
+	// Too fast for the mark: braking past it and coming back stopped is
+	// dearer than the pass through the mark the thrust-only bound reports.
+	const overshot = physics.stopTime(3, 6, acceleration, top);
+	near(overshot, 6 / acceleration + 2 * Math.sqrt(0.75 / acceleration), 1e-12);
+	assert.ok(overshot > physics.travelTime(3, 6, acceleration, top), 'stopping on a mark costs more than passing it');
+	assert.ok(physics.stopTime(7.23, 0, acceleration, top) > physics.travelTime(7.23, 0, acceleration, top),
+		'a mark can be passable in a flight and still not be stoppable in it');
+	assert.equal(physics.stopTime(0, 3, acceleration, top), 0, 'a mark already reached costs nothing');
+	assert.equal(physics.stopTime(-2, 3, acceleration, top), 0);
+});

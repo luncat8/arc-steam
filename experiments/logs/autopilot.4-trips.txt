@@ -1,0 +1,48 @@
+autopilot.4 — two shared balls, one platform
+node experiments/two-ball-trips.cjs · 120 s per start · starts 3…21 m · force 60% · rock layer 13 m
+Selection now prices a stopped arrival and the chain of landings a schedule keeps:
+a desperate cross-chamber rush no longer takes the plan from a keep the rig can
+stop on. Previous (autopilot.3) means for comparison: chase bnc=36 grd=4.6 sw=5.3
+mined=355 · timed bnc=38 grd=5.0 sw=11.9 mined=399 · chase only bnc=36 grd=5.7
+mined=292 · timed only bnc=36 grd=6.4 mined=352. Shift-long mining is chaotic —
+one grounding re-rolls the rest of the shift — so the targeted two-ball trap
+tests in experiments/autopilot.test.js are the primary evidence; this sweep is
+the no-collapse check (any stays 99–100%, bounces do not drop).
+
+two shared balls, 120 s per start, one platform · force 60% · rock layer at 13 m
+chase      x0= 3 any= 99% fly= 23/ 95% grd= 77/  5% drymax=  0.8s waitmax= 35.4s bnc= 37 grd-n= 7 sw=  7 bothdown=  2 travel=  90 draw= 15934J mined=361 cr=    0 T=117 bal=2.1e-9
+chase      x0= 6 any=100% fly= 48/ 81% grd= 52/ 19% drymax=  0.5s waitmax= 51.8s bnc= 41 grd-n= 6 sw= 11 bothdown=  1 travel=  89 draw= 14871J mined=325 cr=    0 T=104 bal=7.0e-10
+chase      x0= 9 any=100% fly= 61/ 60% grd= 39/ 40% drymax=  0.0s waitmax= 37.5s bnc= 37 grd-n= 4 sw=  4 bothdown=  0 travel=  92 draw= 17413J mined=317 cr=    0 T=112 bal=5.8e-11
+chase      x0=12 any=100% fly= 85/ 30% grd= 15/ 70% drymax=  0.0s waitmax= 33.2s bnc= 36 grd-n= 4 sw=  4 bothdown=  0 travel=  67 draw= 12631J mined=359 cr=    0 T=107 bal=1.1e-9
+chase      x0=15 any=100% fly= 67/ 48% grd= 33/ 52% drymax=  0.4s waitmax= 39.5s bnc= 36 grd-n= 6 sw=  7 bothdown=  2 travel= 106 draw= 18320J mined=307 cr=    0 T=114 bal=0.0e+0
+chase      x0=18 any=100% fly=100/  2% grd=  0/ 98% drymax=  0.3s waitmax=117.9s bnc= 34 grd-n= 4 sw=  0 bothdown=  3 travel=  78 draw= 14136J mined=336 cr=    0 T=107 bal=4.1e-10
+chase      x0=21 any=100% fly= 80/ 36% grd= 20/ 64% drymax=  0.5s waitmax= 30.1s bnc= 33 grd-n= 8 sw=  3 bothdown=  1 travel=  76 draw= 14296J mined=325 cr=    0 T=103 bal=5.8e-10
+mean chase         any=100% bnc= 36 grd-n= 5.6 sw=  5.1 bothdown= 1.3 downS= 0.4 travel=  85 draw= 15371J mined=333 cr=    0 T=109 drymax=0.8s waitmax=117.9s
+
+timed      x0= 3 any=100% fly= 58/ 71% grd= 42/ 29% drymax=  0.5s waitmax= 21.5s bnc= 33 grd-n= 8 sw=  9 bothdown=  1 travel= 101 draw=  7766J mined=193 cr=   69 T= 70 bal=1.7e-10
+timed      x0= 6 any=100% fly= 57/ 76% grd= 43/ 24% drymax=  0.2s waitmax= 50.6s bnc= 43 grd-n= 4 sw=  9 bothdown=  1 travel=  82 draw=  5971J mined=420 cr=  204 T=101 bal=2.5e-9
+timed      x0= 9 any=100% fly= 53/ 93% grd= 47/  7% drymax=  0.4s waitmax= 29.3s bnc= 48 grd-n= 4 sw= 29 bothdown=  2 travel=  95 draw=  8280J mined=409 cr=  135 T=104 bal=2.2e-9
+timed      x0=12 any= 99% fly= 75/ 30% grd= 25/ 70% drymax=  1.7s waitmax= 76.9s bnc= 34 grd-n= 4 sw=  4 bothdown=  2 travel=  79 draw=  4483J mined=388 cr=    0 T= 98 bal=1.7e-9
+timed      x0=15 any=100% fly= 73/ 47% grd= 27/ 53% drymax=  0.1s waitmax= 48.8s bnc= 38 grd-n= 5 sw= 11 bothdown=  1 travel= 104 draw=  7970J mined=387 cr=   83 T=109 bal=1.5e-9
+timed      x0=18 any=100% fly= 84/ 57% grd= 16/ 43% drymax=  0.2s waitmax= 17.0s bnc= 36 grd-n= 9 sw= 18 bothdown=  2 travel= 101 draw=  8759J mined=289 cr=    0 T= 84 bal=8.7e-10
+timed      x0=21 any= 98% fly= 75/ 74% grd= 25/ 26% drymax=  2.1s waitmax= 19.2s bnc= 41 grd-n= 8 sw= 27 bothdown=  2 travel= 115 draw=  8320J mined=320 cr=   84 T= 93 bal=5.8e-11
+mean timed         any= 99% bnc= 39 grd-n= 6.0 sw= 15.3 bothdown= 1.6 downS= 0.9 travel=  97 draw=  7364J mined=344 cr=   82 T= 94 drymax=2.1s waitmax=76.9s
+
+chase only x0= 3 any=100% fly=  4/100% grd= 96/  0% drymax=  0.3s waitmax= 66.4s bnc= 32 grd-n= 4 sw=  1 bothdown=  2 travel=  94 draw= 16725J mined=321 cr=    0 T=106 bal=1.1e-9
+chase only x0= 6 any=100% fly= 42/ 78% grd= 58/ 22% drymax=  0.1s waitmax= 46.7s bnc= 33 grd-n= 5 sw=  9 bothdown=  1 travel=  94 draw= 17790J mined=273 cr=    0 T=103 bal=5.8e-10
+chase only x0= 9 any=100% fly= 61/ 60% grd= 39/ 40% drymax=  0.1s waitmax= 46.7s bnc= 31 grd-n= 4 sw=  8 bothdown=  1 travel=  87 draw= 16557J mined=274 cr=    0 T= 99 bal=1.2e-9
+chase only x0=12 any=100% fly= 94/ 31% grd=  6/ 69% drymax=  0.2s waitmax= 59.8s bnc= 38 grd-n= 6 sw= 14 bothdown=  1 travel= 123 draw= 20481J mined=255 cr=    0 T=103 bal=4.7e-10
+chase only x0=15 any= 98% fly= 57/ 79% grd= 43/ 21% drymax=  1.4s waitmax= 35.7s bnc= 42 grd-n= 7 sw= 22 bothdown=  2 travel=  93 draw= 16631J mined=323 cr=    0 T=106 bal=5.8e-10
+chase only x0=18 any=100% fly= 70/ 60% grd= 30/ 40% drymax=  0.3s waitmax= 38.7s bnc= 37 grd-n= 8 sw= 19 bothdown=  1 travel= 127 draw= 21541J mined=269 cr=    0 T=108 bal=1.2e-9
+chase only x0=21 any= 99% fly= 78/ 36% grd= 22/ 64% drymax=  0.6s waitmax= 43.4s bnc= 30 grd-n=10 sw=  5 bothdown=  3 travel= 125 draw= 22431J mined=213 cr=    0 T=101 bal=9.9e-10
+mean chase only    any= 99% bnc= 35 grd-n= 6.3 sw= 11.1 bothdown= 1.6 downS= 0.6 travel= 106 draw= 18879J mined=275 cr=    0 T=104 drymax=1.4s waitmax=66.4s
+
+timed only x0= 3 any= 98% fly= 58/ 51% grd= 42/ 49% drymax=  1.8s waitmax= 56.3s bnc= 37 grd-n= 5 sw= 10 bothdown=  3 travel= 127 draw=  9181J mined=445 cr=    0 T=116 bal=2.7e-9
+timed only x0= 6 any=100% fly= 54/ 83% grd= 46/ 17% drymax=  0.0s waitmax= 33.3s bnc= 46 grd-n= 4 sw= 20 bothdown=  1 travel=  94 draw=  6407J mined=519 cr=  238 T=113 bal=5.4e-9
+timed only x0= 9 any=100% fly= 70/ 73% grd= 30/ 27% drymax=  0.6s waitmax= 22.1s bnc= 40 grd-n= 8 sw= 23 bothdown=  2 travel= 142 draw= 12677J mined=298 cr=  147 T= 96 bal=4.1e-10
+timed only x0=12 any=100% fly= 55/ 72% grd= 45/ 28% drymax=  0.0s waitmax= 34.6s bnc= 40 grd-n= 5 sw= 21 bothdown=  0 travel= 111 draw=  6744J mined=437 cr=  194 T= 98 bal=2.8e-9
+timed only x0=15 any=100% fly= 85/ 64% grd= 15/ 36% drymax=  0.3s waitmax= 24.5s bnc= 44 grd-n= 6 sw= 31 bothdown=  1 travel=  99 draw=  7645J mined=404 cr=  634 T= 99 bal=1.9e-9
+timed only x0=18 any= 99% fly= 66/ 58% grd= 34/ 42% drymax=  0.6s waitmax= 23.5s bnc= 37 grd-n= 7 sw= 10 bothdown=  1 travel= 130 draw=  7583J mined=379 cr=   38 T=104 bal=1.3e-9
+timed only x0=21 any=100% fly= 72/ 68% grd= 28/ 33% drymax=  0.2s waitmax= 33.1s bnc= 38 grd-n= 8 sw= 21 bothdown=  3 travel= 138 draw=  9951J mined=330 cr=   47 T= 90 bal=6.4e-10
+mean timed only    any= 99% bnc= 40 grd-n= 6.1 sw= 19.4 bothdown= 1.6 downS= 0.7 travel= 120 draw=  8599J mined=402 cr=  186 T=102 drymax=1.8s waitmax=56.3s
+

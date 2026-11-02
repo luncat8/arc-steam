@@ -218,6 +218,15 @@ test('the BALLS setting changes the chamber between shared and owned balls', () 
 	assert.deepEqual(world.balls.map(ball => ball.owner), [null, null]);
 	assert.match(dom.element('ball-energy').textContent, /\u00b7 2 balls$/);
 	assert.equal(select.value, 'shared2');
+	// With two rig balls the autopilot's clause says which one it is working.
+	world.platform.x = 8; world.platform.vx = 0; world.direction = 0; world.target = NaN;
+	dom.element('auto-move').checked = true;
+	dom.element('autopilot').dispatch('change', { target: dom.element('auto-move') });
+	advance(8);
+	assert.match(dom.element('autopilot-status').textContent, /^Intercept \u00b7 ball [12]\/2 \u00b7 /);
+	dom.element('auto-move').checked = false;
+	dom.element('autopilot').dispatch('change', { target: dom.element('auto-move') });
+	assert.equal(dom.element('autopilot-status').hidden, true);
 	// The help mark carries the new topic.
 	const trigger = dom.element('help-balls');
 	assert.equal(trigger.getAttribute('aria-controls'), 'help-drawer');

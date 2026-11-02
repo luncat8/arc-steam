@@ -86,11 +86,13 @@
 		out.y = Math.max(wantedY, platform.y - config.platformDropRate * time);
 	}
 
-	function predict(world) {
+	// `target` prices any ball of the chamber; the page's overlay and readouts
+	// leave it out and get the rig's focused ball.
+	function predict(world, target) {
 		const physics = root.SteamPhysics;
 		const config = physics.config;
 		const economy = root.SteamCeiling;
-		const ball = world.ball;
+		const ball = target || world.ball;
 		const platform = world.platform;
 		samples = 0;
 		kind = NONE;
@@ -241,14 +243,15 @@
 		ghostY = platformPose.y;
 		ghostAngle = platformPose.angle;
 		// Intercept feasibility is a thrust bound, not a solved manoeuvre: the
-		// platform accelerates at its current force setting to the speed limit and
-		// then cruises for the rest of the flight time. Braking is not budgeted, so
-		// a reachable mark means the landing can be met, not that coasting meets it.
+		// platform pushes at its current force setting towards the mark, from the
+		// speed it already has, to the speed limit and then cruises for the rest of
+		// the flight time. Braking is not budgeted, so a reachable mark means the
+		// landing can be met, not that coasting meets it.
 		const acceleration = physics.forceNow() * world.forceSetting / physics.platformMass(world);
-		const topSpeed = physics.speedNow();
-		const ramp = Math.min(time, topSpeed / acceleration);
-		const cover = 0.5 * acceleration * ramp * ramp + topSpeed * (time - ramp);
-		gap = Math.abs(endX - platform.x) - cover;
+		const distance = endX - platform.x;
+		const speed = Math.sign(distance) * platform.vx;
+		const cover = physics.coverage(time, speed, acceleration, physics.speedNow());
+		gap = Math.abs(distance) - cover;
 		reachable = (kind === DECK || kind === GROUND) && gap <= 0;
 		return state;
 	}
