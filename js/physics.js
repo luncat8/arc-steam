@@ -118,11 +118,29 @@
 
 	function updatePlatformTerrain(world, dt) {
 		const platform = world.platform;
-		const wantedAngle = platformPitchAt(platform.x, platform.id);
-		const turn = config.platformPitchRate * dt;
-		platform.angle += Math.max(-turn, Math.min(turn, wantedAngle - platform.angle));
-		const wantedHeight = platformBaseAt(platform.x, platform.angle, platform.id);
-		platform.y = Math.max(wantedHeight, platform.previousY - config.platformDropRate * dt);
+	const wantedAngle = platformPitchAt(platform.x, platform.id);
+	const turn = config.platformPitchRate * dt;
+	platform.angle += Math.max(-turn, Math.min(turn, wantedAngle - platform.angle));
+	let wantedHeight = platformBaseAt(platform.x, platform.angle, platform.id);
+	// Never pop up through a rival platform still sitting above us when the
+	// drive order flips: rise onto a platform above at the same rate we fall,
+	// so the two trade places smoothly instead of teleporting through each
+	// other on a direction change.
+	const players = root.SteamPlayers;
+	if (players && wantedHeight > platform.previousY) {
+		const reach = config.platformWidth * 0.5 + (players.state.tailPlate || 0);
+		for (let i = 0; i < players.state.players.length; i++) {
+			const other = players.state.players[i];
+			if (other.id === platform.id) continue;
+			const body = other.kind === 'rig' ? world.platform : other;
+			if (!Number.isFinite(body.y)) continue;
+			const dx = platform.x - body.x;
+			if (Math.abs(dx) >= reach) continue;
+			if (body.y <= platform.previousY) continue;
+			wantedHeight = Math.min(wantedHeight, platform.previousY + config.platformDropRate * dt);
+		}
+	}
+	platform.y = Math.max(wantedHeight, platform.previousY - config.platformDropRate * dt);
 		platform.stepVx = (platform.x - platform.previousX) / dt;
 		platform.stepVy = (platform.y - platform.previousY) / dt;
 		platform.stepOmega = (platform.angle - platform.previousAngle) / dt;

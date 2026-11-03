@@ -136,11 +136,28 @@
 		return height;
 	}
 
-	function settle(rival) {
+	function settle(rival, dt = 0) {
 		const physics = root.SteamPhysics;
 		if (!physics) return;
+		const config = physics.config;
 		rival.angle = physics.platformPitchAt(rival.x, rival.id);
-		rival.y = physics.platformBaseAt(rival.x, rival.angle, rival.id);
+		let wanted = physics.platformBaseAt(rival.x, rival.angle, rival.id);
+		// A drive-order flip must not pop the platform up through the body of the
+		// platform currently sitting above it: rising onto a platform above us is
+		// rate-limited like a descent, so two platforms trade places smoothly
+		// instead of teleporting through each other when the direction changes.
+		let limited = wanted;
+		for (let i = 0; i < players.length; i++) {
+			const other = players[i];
+			if (other === rival) continue;
+			const body = posOf(other);
+			if (!Number.isFinite(body.y)) continue;
+			const dx = rival.x - body.x;
+			if (Math.abs(dx) >= halfWidth() + tailPlate) continue;
+			if (body.y <= rival.previousY) continue;
+			limited = Math.min(limited, rival.previousY + config.platformDropRate * dt);
+		}
+		rival.y = Math.max(limited, rival.previousY - config.platformDropRate * dt);
 	}
 
 	function createRig() {
@@ -550,7 +567,7 @@
 		if (rival.x < minX) { rival.x = minX; rival.vx = 0; }
 		if (rival.x > maxX) { rival.x = maxX; rival.vx = 0; }
 		rival.spin += (rival.x - previousX) / physics.config.platformWheelRadius;
-		settle(rival);
+		settle(rival, dt);
 		// The ball solves a deck contact against this body between steps, so the
 		// body reports where it came from exactly like the rig's platform.
 		rival.stepVx = (rival.x - rival.previousX) / dt;
@@ -633,7 +650,9 @@
 	// The plate leaves the deck edge at its current angle and stops on whatever
 	// it leans against — the floor, or the deck of the platform it is about to
 	// climb — which is the same line profileAt collides with.
-	function drawTails(context, player, body) {
+	// skin is the paint source (rivals wear the rig's colours); player supplies
+	// the deployment angles, which are per-platform state.
+	function drawTails(context, skin, player, body) {
 		const half = halfWidth();
 		for (let end = 0; end < 2; end++) {
 			const side = end ? 1 : -1;
@@ -643,14 +662,14 @@
 			const footX = side * (half + bodyTop * Math.tan(angle));
 			const ground = Math.max(0, Math.min(bodyTop, surfaceAt(body.x + footX, player.id) - body.y));
 			if (ground >= bodyTop - 1e-4) continue;
-			context.fillStyle = player.tail;
+			context.fillStyle = skin.tail;
 			context.beginPath();
 			context.moveTo(edgeX, bodyTop);
 			context.lineTo(footX, ground);
 			context.lineTo(edgeX, ground);
 			context.closePath();
 			context.fill();
-			context.strokeStyle = player.deck;
+			context.strokeStyle = skin.deck;
 			context.lineWidth = 0.025;
 			context.beginPath();
 			context.moveTo(edgeX, bodyTop);
@@ -697,9 +716,9 @@
 	// over the 1.6 m swath it grades, its cutting edge lit while the deck drive
 	// is armed. The rig's machinery never appears on this body.
 	const bladeTip = 0.12;
-	function drawBlade(context, player) {
+	function drawBlade(context, skin, player) {
 		const half = bladeSwath * 0.5;
-		context.fillStyle = player.deck;
+		context.fillStyle = skin.deck;
 		context.beginPath();
 		context.moveTo(-half + bladeTip, 0);
 		context.lineTo(-half, 0.09);
@@ -709,7 +728,7 @@
 		context.lineTo(half - bladeTip, 0);
 		context.closePath();
 		context.fill();
-		context.fillStyle = player.pulse ? '#b9ed91' : player.deck;
+		context.fillStyle = player.pulse ? '#b9ed91' : skin.deck;
 		context.fillRect(-half + bladeTip, 0, bladeSwath - bladeTip * 2, 0.03);
 	}
 
@@ -722,23 +741,28 @@
 	}
 
 	// One body routine for every player: chassis, deck, tails, wheels and load.
-	// The rig passes its machinery as an overlay so it stays inside this pass and
-	// is covered by a competitor that is riding on top of it; the overlay belongs
-	// to the rig alone, so a competitor is never drawn with the rig's fuel bar,
-	// thermometer, collector and piston. Nothing is faded: the selected platform
-	// is marked by the accent outline instead of washing the other one out.
+	// Both platforms are exactly the same machine: every platform is painted
+	// with the rig's body colours, so both render identically, and only the
+	// platform that is not currently selected is washed out with rivalDim.
+	// The rig's machinery overlay stays rig-only — a competitor on top covers
+	// it, and is never drawn with the rig's fuel bar, thermometer, collector
+	// and piston. The selected platform is marked by the accent outline instead
+	// of a washed-out body.
 	function drawBody(context, player, rigMachinery) {
 		const body = posOf(player);
 		const isActive = players[active] === player;
 		const half = halfWidth();
+		// Same paint for both platforms; only the alpha of the non-active one
+		// differs, so switching players moves the dim with the selection.
+		const skin = players[0];
 		context.save();
 		context.translate(body.x, body.y);
 		context.rotate(body.angle);
-		drawTails(context, player, body);
-		if (player.kind === 'rival') drawBlade(context, player);
-		context.fillStyle = player.body;
+		drawTails(context, skin, player, body);
+		if (player.kind === 'rival') drawBlade(context, skin, player);
+		context.fillStyle = skin.body;
 		context.fillRect(-half, bodyBottom, half * 2, bodyTop - bodyBottom);
-		context.fillStyle = player.deck;
+		context.fillStyle = skin.deck;
 		context.fillRect(-half, bodyTop - 0.05, half * 2, 0.05);
 		if (player.kind === 'rival') drawLoad(context, player);
 		drawWheels(context, player);
@@ -757,14 +781,38 @@
 		// The platform riding on top is drawn last, matching the collision order.
 		for (let i = 1; i < drawOrder.length; i++) {
 			const player = drawOrder[i];
+			const thisY = posOf(player).y;
 			let j = i - 1;
-			while (j >= 0 && posOf(drawOrder[j]).y > posOf(player).y) {
-				drawOrder[j + 1] = drawOrder[j];
-				j--;
+			while (j >= 0) {
+				const otherY = posOf(drawOrder[j]).y;
+				if (otherY > thisY + 1e-6) {
+					drawOrder[j + 1] = drawOrder[j];
+					j--;
+					continue;
+				}
+				// Near-level platforms keep the collision order: the one applying
+				// more drive power rides on top, so a direction change cannot
+				// flicker the stacking when the heights are equal.
+				if (otherY >= thisY - 1e-6 && above(player, drawOrder[j])) {
+					drawOrder[j + 1] = drawOrder[j];
+					j--;
+					continue;
+				}
+				break;
 			}
 			drawOrder[j + 1] = player;
 		}
-		for (let i = 0; i < drawOrder.length; i++) drawBody(context, drawOrder[i], rigMachinery);
+		const rivalDim = 0.6;
+		for (let i = 0; i < drawOrder.length; i++) {
+			const player = drawOrder[i];
+			const isDim = player !== players[active];
+			if (isDim) {
+				context.save();
+				context.globalAlpha = rivalDim;
+			}
+			drawBody(context, drawOrder[i], rigMachinery);
+			if (isDim) context.restore();
+		}
 	}
 
 	const state = Object.freeze({
