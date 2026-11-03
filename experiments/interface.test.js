@@ -163,7 +163,9 @@ test('the player strip lists every player with money, a BOT switch and a control
 	// collector strip and reflector piston.
 	const machinery = [];
 	players.draw(dom.element('c').context, function (_context, player) { machinery.push(player.kind); });
-	assert.deepEqual(machinery, ['rig']);
+	assert.equal(machinery.length, 2);
+	assert.ok(machinery.includes('rig'));
+	assert.ok(machinery.includes('rival'));
 	// A command stays with the platform it was given to: the rig's travel target
 	// is dropped when the competitor takes the keys.
 	world.direction = 1;

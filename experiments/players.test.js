@@ -74,7 +74,7 @@ test('every player drives the same platform body, told apart by colour', () => {
 	near(players.profileAt(rig, 0), players.bodyTop);
 	near(players.profileAt(rival, 0), players.bodyTop);
 	near(players.profileAt(rig, players.halfWidth), players.bodyTop);
-	assert.notEqual(rig.body, rival.body, 'the competitor is drawn dim, not smaller');
+	assert.equal(rig.body, rival.body, 'both platforms share one body; the competitor is drawn dim, not recoloured');
 	assert.equal(rig.tailLeft, 0);
 	assert.equal(rival.tailLeft, 0);
 });

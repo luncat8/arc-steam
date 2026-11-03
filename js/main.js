@@ -648,6 +648,8 @@
 		autopilot.hold('move', false);
 		endPistonDrag();
 		syncActiveControls();
+		updateDirection();
+		refreshPlayers();
 		refresh();
 	}
 

@@ -24,13 +24,6 @@
 	// A hand command silences the platform's own policy for the same two seconds
 	// the autopilot uses, so taking the wheel never fights the bot.
 	const manualSeconds = 2;
-	// The competitor is the rig's platform in its own palette: warm brass for the
-	// first, cool slate for the second. The body is dark enough that the load
-	// heap and the cutting edge read against it.
-	const rivalBodies = [
-		{ body: '#3f3a31', tail: '#2f2b25', deck: '#7d6a4f' },
-		{ body: '#38343d', tail: '#292630', deck: '#6a6276' }
-	];
 	const startSlots = [19, 5, 22, 2];
 	const players = [];
 	const rivals = [];
@@ -171,7 +164,7 @@
 	}
 
 	function createRival(index) {
-		const colours = rivalBodies[index % rivalBodies.length];
+		const rig = players[0];
 		const rival = {
 			index: index + 1, id: 'rival-' + (index + 1), name: 'RIVAL ' + (index + 1),
 			colour: index % 2 ? '#8f86c9' : '#c98c5a', kind: 'rival', bot: true,
@@ -181,7 +174,7 @@
 			tailLeft: 0, tailRight: 0,
 			pulse: false, playing: null, mark: NaN, markTime: 0, commanded: false,
 			previousX: 0, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0,
-			body: colours.body, tail: colours.tail, deck: colours.deck
+			body: rig ? rig.body : '#35454b', tail: rig ? rig.tail : '#2c3a3f', deck: rig ? rig.deck : '#4a5c62'
 		};
 		settle(rival);
 		// The ball solves a deck contact against this body between steps, so the
@@ -711,67 +704,23 @@
 		}
 	}
 
-	// The competitor works the floor with a scraper blade instead of the rig's
-	// collector and piston: a wedge between the wheels that reaches the ground
-	// over the 1.6 m swath it grades, its cutting edge lit while the deck drive
-	// is armed. The rig's machinery never appears on this body.
-	const bladeTip = 0.12;
-	function drawBlade(context, skin, player) {
-		const half = bladeSwath * 0.5;
-		context.fillStyle = skin.deck;
-		context.beginPath();
-		context.moveTo(-half + bladeTip, 0);
-		context.lineTo(-half, 0.09);
-		context.lineTo(-half + 0.34, bodyBottom + 0.02);
-		context.lineTo(half - 0.34, bodyBottom + 0.02);
-		context.lineTo(half, 0.09);
-		context.lineTo(half - bladeTip, 0);
-		context.closePath();
-		context.fill();
-		context.fillStyle = player.pulse ? '#b9ed91' : skin.deck;
-		context.fillRect(-half + bladeTip, 0, bladeSwath - bladeTip * 2, 0.03);
-	}
-
-	function drawLoad(context, player) {
-		const limit = root.SteamCeiling ? root.SteamCeiling.state.storageLimit : loadLimitDefault;
-		const ratio = Math.min(1, player.cargoCells / limit);
-		if (ratio <= 0) return;
-		context.fillStyle = '#8a6b3f';
-		context.fillRect(-0.9, bodyTop, 1.8, 0.03 + ratio * 0.16);
-	}
-
-	// One body routine for every player: chassis, deck, tails, wheels and load.
-	// Both platforms are exactly the same machine: every platform is painted
-	// with the rig's body colours, so both render identically, and only the
-	// platform that is not currently selected is washed out with rivalDim.
-	// The rig's machinery overlay stays rig-only — a competitor on top covers
-	// it, and is never drawn with the rig's fuel bar, thermometer, collector
-	// and piston. The selected platform is marked by the accent outline instead
-	// of a washed-out body.
-	function drawBody(context, player, rigMachinery) {
+	// active flag changes colour, non-active platform is dimmed
+	function renderPlatform(context, player, rigMachinery, isActive) {
+		if (isActive === undefined) isActive = players[active] === player;
 		const body = posOf(player);
-		const isActive = players[active] === player;
 		const half = halfWidth();
-		// Same paint for both platforms; only the alpha of the non-active one
-		// differs, so switching players moves the dim with the selection.
 		const skin = players[0];
 		context.save();
+		context.globalAlpha = isActive ? 1 : 0.6;
 		context.translate(body.x, body.y);
 		context.rotate(body.angle);
 		drawTails(context, skin, player, body);
-		if (player.kind === 'rival') drawBlade(context, skin, player);
 		context.fillStyle = skin.body;
 		context.fillRect(-half, bodyBottom, half * 2, bodyTop - bodyBottom);
 		context.fillStyle = skin.deck;
 		context.fillRect(-half, bodyTop - 0.05, half * 2, 0.05);
-		if (player.kind === 'rival') drawLoad(context, player);
 		drawWheels(context, player);
-		if (rigMachinery && player.kind === 'rig') rigMachinery(context, player);
-		if (isActive) {
-			context.strokeStyle = '#b9ed91';
-			context.lineWidth = 0.03;
-			context.strokeRect(-half, bodyBottom, half * 2, bodyTop - bodyBottom);
-		}
+		if (rigMachinery) rigMachinery(context, player);
 		context.restore();
 	}
 
@@ -802,16 +751,9 @@
 			}
 			drawOrder[j + 1] = player;
 		}
-		const rivalDim = 0.6;
 		for (let i = 0; i < drawOrder.length; i++) {
 			const player = drawOrder[i];
-			const isDim = player !== players[active];
-			if (isDim) {
-				context.save();
-				context.globalAlpha = rivalDim;
-			}
-			drawBody(context, drawOrder[i], rigMachinery);
-			if (isDim) context.restore();
+			renderPlatform(context, player, rigMachinery, player === players[active]);
 		}
 	}
 
@@ -828,7 +770,7 @@
 	});
 
 	const api = {
-		init, update, surfaceAt, draw, profileAt, money, load, force, activeSpeed, activeTarget, rigActive,
+		init, update, surfaceAt, draw, renderPlatform, profileAt, money, load, force, activeSpeed, activeTarget, rigActive,
 		setActive, setBot, syncRigBot, command, commandTarget, commandBrake, clearCommand, setForce, setBallMode,
 		state, bodyTop, bodyBottom, tailAngle, tailReach, tailFullGap, bladeSwath, bladeCut,
 		get halfWidth() { return halfWidth(); }
