@@ -4,60 +4,50 @@ Status: implemented; see `archive/players.4-worklog.md`.
 
 Source: the report that the second platform renders strangely, that switching
 players breaks the panel and the shortcuts, and that the rig's shortcuts reach
-the other platform.
+the other platform. A second report after the first attempt: the second platform
+had lost its piston and its other instruments, and the menu changed on a switch.
 
 ## What is wrong
 
-- **The rig's machinery is drawn on every platform.** `SteamPlayers.draw` passes
-  `drawRigMachinery` to each body and `renderPlatform` applies it
-  unconditionally. The overlay reads the live rig — fuel bar, thermometer, amber
-  collector strip and reflector piston — so a competitor is drawn with a second,
-  bright copy of it. Measured in Chromium: the competitor carried the collector
-  strip (`#e6b66e`) and a green deck band. That copy *is* the "strange second
-  platform", and because it answers the rig's state it also looks like the keys
-  drive both.
-- **The competitor is dimmed to 60% while its machinery copy is not**, so the
-  report's "same shape, dim colour" reading fails twice: the shape differs and
-  the dim is applied to the wrong part of the drawing.
-- **A direction key held across a switch keeps the old platform moving.** `D`
-  pressed on the rig leaves `world.direction = 1`; taking a competitor's
-  controls clears the rig's direction but the key is still down, so the platform
-  keeps being commanded by a key the player pressed for the other one.
-- **The panel becomes an empty column on a competitor.** Bounce assist, tilt and
-  autopilot all leave, and nothing takes their place, so the column no longer
-  says which platform it drives.
-- **The telemetry keeps claiming to be the selected platform's.** Cargo, mass
-  and funds stay the rig's numbers under a title that names a competitor.
-- **Leftovers.** The chamber legend still advertises `BLADE · COMPETITOR
-  GRADING` and the help/README still describe a blade and an accent outline,
-  neither of which the renderer draws.
+- **The rig's machinery overlay was gated to the rig's body.** Behind it was a
+  real bug — the overlay is drawn from the *rig's* live state, so on a competitor
+  it painted a bright second instrument cluster. `players.3` therefore skipped it
+  for competitors, which left a competitor as a bare hull: no collector strip, no
+  fuel bar, no thermometer, no reflector piston. The platform was not the same
+  machine any more.
+- **The menu rearranged itself on a switch.** The panel hid the rig's block for a
+  competitor and showed a different summary in its place, so the controls moved
+  under the player and the column changed height.
+- **A direction key held across a switch kept the old platform moving.** `D`
+  pressed on the rig leaves `world.direction = 1`; taking a competitor's controls
+  clears the rig's direction but the key is still down.
+- **Leftovers.** The chamber legend advertised `BLADE · COMPETITOR GRADING` and
+  the help/README described a blade and an accent outline, none of which the
+  renderer draws.
 
 ## Decisions
 
-- **One drawing, one palette, one difference.** Both platforms are drawn by
-  `renderPlatform` with the rig's skin, the same geometry, wheels, deck and
-  tails. The only variation is opacity: `1` for the selected platform, `0.6` for
-  every other one. The alpha is assigned (never multiplied into the stored
-  value), so repeated switching cannot compound the dim.
-- **The machinery belongs to the rig's body.** The overlay is applied only when
-  `player.kind === 'rig'`, inside the rig's own transform, so a platform riding
-  on top covers it and no competitor can wear it. A competitor is a chassis, a
-  deck and wheels — nothing else.
+- **One drawing, one palette, one difference.** Every platform is drawn by
+  `renderPlatform` with the same skin, the same geometry, wheels, deck, tails
+  **and the same machinery overlay** — the whole machine. The only variation is
+  opacity: `1` for the selected platform, `0.6` for every other one. The alpha is
+  assigned (never multiplied into the stored value), so repeated switching cannot
+  compound the dim.
+- **The instruments are the machine's, not the rig's.** Both hulls show the fuel
+  bar, thermometer, collector strip and reflector piston, because every platform
+  is that machine. The overlay is a drawing of the machine's instruments, not a
+  second control surface: the keys address the selected platform only, which is
+  enforced by the command routing, not by hiding the drawing.
+- **The menu does not change with the selection.** Only the panel title changes
+  (`YOU · MANUAL` → `RIVAL 1 · BOT`). The bounce drive, the release, the piston
+  tilt and the autopilot duties stay on screen and act for the selected platform,
+  so every visible control belongs to the platform in the title.
 - **Keys address the platform in the title.** A held key is the selected
   platform's command: a switch drops the held keys with the command they gave,
   and pressing again drives only the new selection. Neither platform can move on
   a key pressed for the other.
-- **The rig's own keys do nothing while a competitor is driven.** `Space`, `Q`,
-  `E`, `X`, `⇧X`, `Z` and `C` are the rig's; they are ignored rather than routed.
-- **The panel answers for the selected platform.** Rig machinery leaves it and a
-  `THIS PLATFORM` summary takes its place: purse, load, policy, and one line
-  naming where the rig's controls are.
-- **The readouts follow the title.** The motion readout, the cargo card, the
-  mass card and the funds card describe the selected platform — its own speed,
-  load, dry chassis mass plus its load, and its own purse.
-- **The rig's cards say so.** Reserve, ball energy, stored thermal energy,
-  machinery temperature and the energy-balance error stay the rig's numbers and
-  carry a `RIG` tag, dimmed, while a competitor is selected.
+- **The telemetry describes the machine** and does not switch with the
+  selection.
 
 ## Mechanics
 
@@ -65,7 +55,7 @@ the other platform.
 renderPlatform(context, player, machinery, isActive)
   alpha = isActive ? 1 : 0.6
   tails, chassis, deck, wheels
-  machinery(context, player)        // only when player.kind === 'rig'
+  machinery(context, player)        // both platforms: one complete machine
 
 updateDirection()
   key direction = held keys
@@ -78,31 +68,28 @@ setActivePlayer(index)
 
 ## Files
 
-- `js/players.js` — one skin for both bodies, the machinery overlay gated to the
-  rig, `dimAlpha` as the only difference, `clearCommand(index)` and
-  `activeMass()`.
-- `js/main.js` — held keys as the selected platform's command, the competitor
-  summary, the readouts and cards following the selection, the `RIG` scope
-  attribute, `bindHelpMark` extracted so the panel's mark reuses the help wiring.
-- `index.html`, `styles.css` — `#rival-panel` with its readout, the telemetry
-  `data-owner` cards and their `RIG` tag, the blade legend removed.
+- `js/players.js` — one skin, one complete body including the instruments,
+  `dimAlpha` as the only difference, `setActive` standing the outgoing platform
+  down.
+- `js/main.js` — held keys as the selected platform's command, the title-only
+  panel sync, the machine controls live for whichever platform is selected,
+  `bindHelpMark` extracted so the panel's mark reuses the help wiring.
+- `index.html`, `styles.css` — the blade legend removed; the rig block is no
+  longer hidden for a competitor.
 - `js/help.js`, `README.md` — the drawing, the roster, the switch and the keys.
 - `experiments/players.test.js`, `experiments/interface.test.js` — the one-body
-  painting test and the switch/summary tests.
+  painting test, the held-key test and the stable-menu test.
 - `experiments/browser-smoke.cjs` — the rock-cell assertion reads the live
   columns and rows instead of the hard-coded 192 × 16.
 
 ## Acceptance
 
-- Both platforms are the same drawing in the same colours; the unselected one is
-  the same drawing at 60% opacity, and switch after switch never darkens it
-  further.
-- A competitor carries no fuel bar, thermometer, collector strip or piston.
+- Both platforms are the same complete machine in the same colours: chassis,
+  deck, wheels, plates, fuel bar, thermometer, collector strip and piston. The
+  unselected one is that drawing at 60% opacity, and switch after switch never
+  darkens it further.
+- Switching players changes the panel title and nothing else: same controls,
+  same height, same telemetry.
 - Holding `A`/`D` and clicking the other player line leaves neither platform
   moving; pressing the key again drives only the selected one.
-- The rig's `Space`/`Q`/`E`/`X`/`Z`/`C` do nothing while a competitor is driven.
-- The panel names the selected platform, shows its purse, load and policy, and
-  the cargo, mass, funds and motion readouts move with it.
-- The reserve, heat and ball cards keep reporting the rig and carry a `RIG` tag
-  while a competitor is selected.
 - The full suite passes and the page boots clean in Chromium.

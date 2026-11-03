@@ -14,11 +14,9 @@
 		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger',
 		'refuel', 'refuel-cost', 'fuel-price', 'reserve-note', 'cargo-note',
 		'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry', 'mineral-tooltip', 'science-drawer', 'market-drawer', 'science-open', 'science-close', 'market-open', 'market-close',
-		'telemetry', 'player-list', 'control-title', 'rig-drive', 'rival-panel', 'rival-funds', 'rival-load', 'rival-policy', 'help-players-panel'];
+		'telemetry', 'player-list', 'control-title', 'rig-drive'];
 	// One mark per help topic, plus the drawer it feeds.
 	for (const topic of window.SteamHelp.topics) ids.push('help-' + topic.id);
-	// The competitor's panel summary carries its own mark for the players topic.
-	ids.push('help-players-panel');
 	ids.push('help-drawer', 'help-close', 'help-head', 'help-title', 'help-body', 'help-index');
 	const ui = {};
 	for (const id of ids) ui[id] = document.getElementById(id);
@@ -617,34 +615,19 @@
 		}
 	}
 
-	// The panel is the selected platform's drive, named with the policy it runs
-	// under. The rig's own machinery — bounce assist, piston tilt and autopilot —
-	// has no meaning on a competitor, so it leaves the panel instead of sitting
-	// there disabled with shortcut labels that would drive the other platform;
-	// the competitor's own purse, load and policy take its place so the column
-	// still answers who is being driven.
+	// Every platform is the same machine, so the panel is the same panel: it only
+	// changes the name and the policy in its title. Nothing appears or disappears
+	// with the switch, because every control on screen belongs to the machine the
+	// player is driving.
 	let titleIndex = -1;
 	let titleBot = null;
 	function syncActiveControls() {
 		const index = playerApi.state.active;
 		const active = playerApi.state.players[index];
-		const rigActive = active.kind === 'rig';
 		if (index !== titleIndex || active.bot !== titleBot) {
 			titleIndex = index;
 			titleBot = active.bot;
 			setText(ui['control-title'], active.name + ' · ' + (active.bot ? 'BOT' : 'MANUAL'));
-		}
-		setHidden(ui['rig-drive'], !rigActive);
-		setHidden(ui['rival-panel'], rigActive);
-		// The rig's own cards dim while a competitor is driven: they still report
-		// the rig's machinery, and the panel title says whose controls are live.
-		const scope = rigActive ? 'rig' : 'rival';
-		if (ui.telemetry.dataset.scope !== scope) ui.telemetry.dataset.scope = scope;
-		if (!rigActive) {
-			const limit = window.SteamCeiling.state.storageLimit;
-			setText(ui['rival-funds'], playerApi.money(index).toFixed(1) + ' cr');
-			setText(ui['rival-load'], Math.round(playerApi.load(index)) + ' / ' + limit);
-			setText(ui['rival-policy'], active.bot ? 'BOT' : 'MANUAL');
 		}
 		syncForceControl();
 	}
@@ -1211,25 +1194,14 @@
 		else if (reserveWarning === 'EMPTY') setText(ui['reserve-note'], 'Empty · hand-crank crawl to the centre pad, or market import');
 		else if (reserveWarning) setText(ui['reserve-note'], 'Low reserve · park on the centre pad');
 		else setText(ui['reserve-note'], 'Centre pad refills free in ' + config.chargeSeconds + ' s · emergency import in the market');
-		// Cargo, mass and funds describe the platform in the controls panel title,
-		// so switching players moves the cards with the controls. The reserve,
-		// heat and ball cards stay the rig's machinery and say so.
-		const activeIndex = playerApi.state.active;
-		const activePlayer = playerApi.state.players[activeIndex];
-		const rigActive = playerApi.rigActive();
-		const activeLoad = playerApi.load(activeIndex);
-		const cargoFull = activeLoad >= ceiling.storageLimit;
+		const heldMass = physics.heldBallMass(world);
+		const cargoFull = ceiling.cargoCells >= ceiling.storageLimit;
 		setWarning('cargo-telemetry', cargoFull ? 'FULL' : '');
-		setText(ui['cargo-note'], cargoFull
-			? 'Full · extra fragments are refused until ' + (rigActive ? 'the rig' : activePlayer.name) + ' sells at a wall'
-			: rigActive ? '100 cells maximum · cargo adds mass' : '100 cells maximum · its own load, its own purse');
-		ui.cargo.textContent = activeLoad + ' / ' + ceiling.storageLimit;
-		ui['platform-mass'].textContent = playerApi.activeMass().toFixed(1) + ' kg';
-		const activeFunds = playerApi.money(activeIndex);
-		ui.funds.textContent = ceiling.commune && rigActive ? 'commons' : activeFunds.toFixed(1) + ' cr';
-		setText(ui['funds-note'], rigActive
-			? (ceiling.commune ? 'Nothing costs · sales still measured' : 'Automatic sale at either wall')
-			: activePlayer.name + ' · own purse · no rig ledger entry');
+		setText(ui['cargo-note'], cargoFull ? 'Full · extra fragments are refused until you sell at a wall' : '100 cells maximum · cargo adds mass');
+		ui.cargo.textContent = ceiling.cargoCells + ' / ' + ceiling.storageLimit;
+		ui['platform-mass'].textContent = (physics.dryMass() + ceiling.cargoMass + heldMass).toFixed(1) + ' kg';
+		ui.funds.textContent = ceiling.commune ? 'commons' : ceiling.funds.toFixed(1) + ' cr';
+		setText(ui['funds-note'], ceiling.commune ? 'Nothing costs · sales still measured' : 'Automatic sale at either wall');
 		const balls = world.balls || [];
 		let rigBallCount = 0;
 		for (let i = 0; i < balls.length; i++) if (physics.isRigBall(balls[i])) rigBallCount++;
@@ -1249,7 +1221,7 @@
 		if (ui.drive.getAttribute('aria-pressed') !== pressed) ui.drive.setAttribute('aria-pressed', pressed);
 		setText(ui.drive.firstChild, world.drive ? 'Drive on ' : 'Drive off ');
 		const canLaunch = physics.canLaunch(world);
-		setDisabled(ui.launch, !playerApi.rigActive() || !canLaunch);
+		setDisabled(ui.launch, !canLaunch);
 		statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch);
 	}
 
@@ -1300,7 +1272,7 @@
 	// Manual tilt is the one writer the tilt keeper yields to, so taking the slider,
 	// the wheel or a drag temporarily pauses that duty, not its enabled switch.
 	function setPistonAngle(degrees) {
-		if (!Number.isFinite(degrees) || !playerApi.rigActive()) return;
+		if (!Number.isFinite(degrees)) return;
 		autopilot.override('angle');
 		const before = world.pistonAngle;
 		physics.setPistonAngle(world, Math.max(-10, Math.min(10, degrees)) * Math.PI / 180);
@@ -1322,7 +1294,6 @@
 	}
 
 	function setChannel(channel, on) {
-		if (!playerApi.rigActive()) return;
 		autopilot.set(channel, on);
 		syncAutopilot();
 		refresh();
@@ -1452,8 +1423,8 @@
 	}
 
 	function clearInput() { world.brake = false; leftHeld = false; rightHeld = false; playerApi.clearCommand(); updateDirection(); }
-	function toggleDrive() { if (!playerApi.rigActive()) return; world.drive = !world.drive; autopilot.override('drive'); refresh(); }
-	function releaseBall() { if (!playerApi.rigActive()) return; physics.launch(world); refresh(); }
+	function toggleDrive() { world.drive = !world.drive; autopilot.override('drive'); refresh(); }
+	function releaseBall() { physics.launch(world); refresh(); }
 	function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }
 	// One force setting per player: the slider and W/S edit the platform being
 	// driven, and switching players reads that player's setting back into the
@@ -1581,7 +1552,6 @@
 	// up (negative delta) raises the angle, a standard notch steps about 4°.
 	canvas.addEventListener('wheel', function (event) {
 		event.preventDefault();
-		if (!playerApi.rigActive()) return;
 		setPistonAngle(pistonDegrees() - Math.max(-100, Math.min(100, event.deltaY)) * 0.04);
 	}, { passive: false });
 	canvas.addEventListener('pointerdown', function (event) {
@@ -1601,7 +1571,7 @@
 				autopilot.override('move');
 			} else playerApi.commandTarget(worldX);
 			sceneDirty = true;
-		} else if (worldX >= 0 && worldX <= config.width && worldY <= config.ceiling && playerApi.rigActive()) {
+		} else if (worldX >= 0 && worldX <= config.width && worldY <= config.ceiling) {
 			// Open air starts a piston drag; dragging left or up raises the angle.
 			pistonDragActive = true;
 			autopilot.hold('angle', true);
@@ -1763,7 +1733,6 @@
 			const trigger = ui['help-' + topic.id];
 			if (trigger) bindHelpMark(trigger, topic.id);
 		}
-		bindHelpMark(ui['help-players-panel'], 'players');
 		for (const topic of helpTopics) {
 			const button = document.createElement('button');
 			button.type = 'button';

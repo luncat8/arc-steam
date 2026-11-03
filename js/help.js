@@ -170,18 +170,18 @@
 			label: 'Players',
 			title: 'Competitors and the scoreboard',
 			text: [
-				'The strip under the telemetry lists every platform at the mine, one line per player. The rig is YOU; the others are competitors that work the same floor rubble and keep their own credits. Both platforms are one drawing — the same chassis, deck, wheels and 45° plates in the same colours — and the selected one is drawn whole while the others are the same drawing at 60% opacity. Nothing is added to a competitor and nothing is taken away: no second fuel bar, thermometer, collector or piston.',
-				'Click a line to take that platform’s controls. The force setting, A/D, the brake and the low-ground travel click all move to it, and the panel title names the platform and its policy (`RIVAL 1 · BOT`). The rig’s machinery — reserve, ball, piston, autopilot — leaves the panel and its shortcut labels with it, and the competitor’s own purse, load and policy take their place. The ball, piston and autopilot keys belong to the rig alone: pressing them while a competitor is driven does nothing at all. The keys always address the platform in the title, so a key held during a switch is dropped rather than carried to the other platform. The reserve, heat and ball cards stay the rig’s and carry a RIG tag while a competitor is selected.',
+				'The strip under the telemetry lists every platform at the mine, one line per player. The rig is YOU; the others are competitors that work the same floor rubble and keep their own credits. Every platform is the same complete machine — chassis, deck, wheels, 45° plates, fuel bar, thermometer, collector strip and reflector piston, in the same colours — and the selected one is drawn whole while the others are the same drawing at 60% opacity. Nothing is added to a platform and nothing is taken away.',
+				'Click a line to take that platform’s controls. The force setting, A/D, the brake, the low-ground travel click, the bounce drive, the piston tilt and the autopilot duties all act for the selected platform, and only the panel title changes with the switch (`YOU · MANUAL` → `RIVAL 1 · BOT`): the menu itself never rearranges. No key reaches a platform you are not driving, and a direction key held during a switch is dropped with the command it gave, so neither platform can move on a key pressed for the other.',
 				'BOT hands a platform to its policy, and both platforms play the ball the same way. A bot competitor stands where the ball it may push is coming down, meets it on its flat deck, drives over a ball on the floor to scoop it up, and spends a pulse only while the passive bounce would still fall short of the rock. A bot rig runs the autopilot duties — the intercept, the drive keeper and the level bounce. Both make a selling trip to the nearer wall once their hopper is full, and both bank whatever they took on the way. A ball the competitor may not push, and a ball already held in the rig’s collector, are not in its world at all, so it holds station instead of wandering.',
 				'Two platforms that meet do not collide like walls. Each body has a retractable 45° plate at both ends: folded while the other platform is far or moving away, swinging down at a limited rate as the gap closes, and clipped at the floor so the plate and the ramp the wheels follow are the same line. The platform applying more drive power is the one that rides on top; the other stays on the floor and is driven over. Their credits never enter the rig’s ledger.'
 			],
 			keys: [
 				['Click a player line', 'Take that platform’s controls and its force setting'],
-				['Selected platform', 'Drawn whole; every other platform is the same body at 60% opacity'],
+				['Selected platform', 'Drawn whole; every other platform is the same complete machine at 60% opacity'],
 				['BOT checkbox', 'Let that player’s policy drive it'],
 				['45° plate', 'Unfolds as a platform closes in, folds when it leaves'],
 				['Higher force', 'The platform that climbs over the other'],
-				['RIG tag', 'A telemetry card that keeps describing the rig while a competitor is driven']
+				['Complete machine', 'Every platform carries the same instruments, dimmed when not selected']
 			]
 		},
 		{

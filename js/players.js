@@ -249,22 +249,11 @@
 		return player ? forceOf(player) : 0;
 	}
 
-	// The readouts follow the platform in the title, so a switched-in competitor
-	// reports its own motion, load and mass instead of the rig's.
 	function activeSpeed() {
 		const player = players[active];
 		if (!player) return 0;
 		if (player.kind === 'rig') return rigWorld ? rigWorld.platform.vx : 0;
 		return player.vx;
-	}
-
-	function activeMass() {
-		const player = players[active];
-		if (!player) return 0;
-		const cellMass = root.SteamCeiling ? root.SteamCeiling.state.cellMass : 0.6;
-		const physics = root.SteamPhysics;
-		const dryMass = physics ? physics.dryMass() : 0;
-		return dryMass + load(active) * cellMass + (player.kind === 'rig' && physics ? physics.heldBallMass(rigWorld) : 0);
 	}
 
 	function activeTarget() {
@@ -368,10 +357,9 @@
 
 	// Only a platform that actually holds a command is stood down, so releasing a
 	// pointer, a window blur or a reset cannot put a manual window on a platform
-	// that its own policy was driving. `index` names the platform to stand down;
-	// it defaults to the selected one, and a switch passes the platform it left.
-	function clearCommand(index) {
-		const player = players[index === undefined ? active : index];
+	// that its own policy was driving.
+	function clearCommand() {
+		const player = players[active];
 		if (!player || player.kind !== 'rival') return false;
 		if (!player.direction && !player.braking && !Number.isFinite(player.target)) return false;
 		player.manual = manualSeconds;
@@ -717,13 +705,12 @@
 		}
 	}
 
-	// One body, drawn once: both platforms are this same machine in this same
-	// palette — tails, chassis, deck and wheels — and the only difference between
-	// them is the dim applied to the platform the controls are not on. The rig's
-	// own machinery (fuel bar, thermometer, collector, reflector piston) is part
-	// of the rig's body and is never copied onto a competitor: it reads the rig's
-	// live state, so a second copy would answer the rig's keys on the other
-	// platform.
+	// One machine, drawn once: every platform gets the whole body — tails,
+	// chassis, deck, wheels, fuel bar, thermometer, collector strip and reflector
+	// piston — in the same palette, and the only difference between them is the
+	// dim applied to the platform the controls are not on. The machinery is the
+	// machine's, so both hulls show the same instruments; nothing is added to or
+	// taken from a competitor.
 	function renderPlatform(context, player, rigMachinery, isActive) {
 		if (isActive === undefined) isActive = players[active] === player;
 		const body = posOf(player);
@@ -741,7 +728,7 @@
 		context.fillStyle = rig.deck;
 		context.fillRect(-half, bodyTop - 0.05, half * 2, 0.05);
 		drawWheels(context, player);
-		if (rigMachinery && player.kind === 'rig') rigMachinery(context, player);
+		if (rigMachinery) rigMachinery(context, player);
 		context.restore();
 	}
 
@@ -791,7 +778,7 @@
 	});
 
 	const api = {
-		init, update, surfaceAt, draw, renderPlatform, profileAt, money, load, force, activeSpeed, activeMass, activeTarget, rigActive,
+		init, update, surfaceAt, draw, renderPlatform, profileAt, money, load, force, activeSpeed, activeTarget, rigActive,
 		setActive, setBot, syncRigBot, command, commandTarget, commandBrake, clearCommand, setForce, setBallMode,
 		state, bodyTop, bodyBottom, tailAngle, tailReach, tailFullGap, bladeSwath, bladeCut,
 		get halfWidth() { return halfWidth(); }

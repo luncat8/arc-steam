@@ -128,14 +128,15 @@ test('both platforms are one drawing and the dim is the only difference', () => 
 	rival.angle = 0;
 	rival.tailLeft = 0; rival.tailRight = 0;
 	rig.tailLeft = 0; rig.tailRight = 0;
-	// The rig's machinery rides on the rig's body only: a competitor is never a
-	// second fuel bar, thermometer, collector or piston answering the rig's keys.
+	// Every platform is the whole machine: the overlay draws the same fuel bar,
+	// thermometer, collector strip and reflector piston inside each hull, so a
+	// platform never looks like a different, stripped vehicle.
 	const machinery = [];
 	const overlay = function (_context, player) { machinery.push(player.kind); };
 	const activeRig = painting(rig, true, overlay);
 	const dimRival = painting(rival, false, overlay);
-	assert.deepEqual(machinery, ['rig'], 'the machinery overlay draws once, on the rig');
-	assert.deepEqual(dimRival.geometry, activeRig.geometry, 'identical geometry, wheels and deck');
+	assert.deepEqual(machinery.slice().sort(), ['rig', 'rival'], 'both hulls carry the same machinery');
+	assert.deepEqual(dimRival.geometry, activeRig.geometry, 'identical geometry, wheels, deck and instruments');
 	assert.equal(activeRig.alpha, 1, 'the selected platform is drawn whole');
 	assert.equal(dimRival.alpha, 0.6, 'the other platform is the same drawing, dimmed');
 	// The dim follows the selection and never compounds: the drawing is the same

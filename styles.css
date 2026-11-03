@@ -48,15 +48,6 @@ main { max-width: 1920px; margin: auto; padding: 8px; display: grid; gap: 8px; }
 #market-open::after, #science-open::after { display: block; margin-top: 4px; color: var(--accent); font: 8px ui-monospace, monospace; letter-spacing: 0.7px; }
 #market-open::after { content: "OPEN MARKET ↗"; }
 #science-open::after { content: "OPEN SCIENCE + SHOP ↗"; }
-/* While a competitor is driven, the cards that still describe the rig step back
-   and carry a RIG tag in the corner, so no card claims to be the selected
-   platform's. The tag yields to a live warning, which already owns that corner. */
-.telemetry[data-scope="rival"] article[data-owner="rig"] { opacity: 0.55; }
-.telemetry[data-scope="rival"] article[data-owner="rig"]::before {
-	content: "RIG"; position: absolute; top: 7px; right: 10px; padding: 1px 4px; border-radius: 2px;
-	background: #16232a; color: #8fa4a8; font: 8px ui-monospace, monospace; letter-spacing: 0.8px;
-}
-.telemetry[data-scope="rival"] article[data-owner="rig"][data-warning]::before { display: none; }
 .telemetry span { font: 9px ui-monospace, monospace; color: #94a8ac; letter-spacing: 1px; }
 .telemetry strong { display: block; font: 17px ui-monospace, monospace; margin: 6px 0 4px; }
 .telemetry small { font-size: 10px; color: #71868a; }
@@ -135,16 +126,6 @@ canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 .view-modes input { position: absolute; inset: 0; margin: 0; opacity: 0; pointer-events: none; }
 
 .controls { padding: 14px 16px; }
-/* The rig's machinery leaves the panel while a competitor is driven: its keys
-   would address the other platform. */
-#rig-drive[hidden], #rival-panel[hidden] { display: none; }
-/* A competitor's column: the rig's machinery is gone, so its own purse, load
-   and policy answer what the title says and the note says where the rig is. */
-.platform-readout { display: grid; gap: 1px; margin: 6px 0 0; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--line); }
-.platform-readout div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 6px 8px; background: #0b1316; }
-.platform-readout dt { font: 9px ui-monospace, monospace; letter-spacing: 1px; color: var(--muted); }
-.platform-readout dd { margin: 0; font: 12px ui-monospace, monospace; color: #dce6e4; white-space: nowrap; }
-#rival-panel .hint { margin-top: 10px; }
 .controls button { width: 100%; text-align: left; font-size: 12px; }
 .controls button span { float: right; color: #7d9094; font-size: 10px; }
 .drive[aria-pressed="true"] { color: var(--accent); background: #25392a; border-color: #6a9757; }

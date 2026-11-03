@@ -158,12 +158,12 @@ test('the player strip lists every player with money, a BOT switch and a control
 	assert.equal(rigRow.children[0].children[2].textContent, ceiling.state.funds.toFixed(1) + ' cr');
 	const rivalBox = rivalRow.children[1].children[0];
 	assert.equal(rivalBox.checked, true, 'the competitor starts bot controlled');
-	// The rig's machinery rides inside the rig's own body only: a competitor is
-	// the same chassis, deck and wheels, never a second fuel bar, thermometer,
-	// collector strip and reflector piston that would answer the rig's keys.
+	// Every platform is the whole machine, so both hulls carry the same
+	// machinery: chassis, deck, wheels, fuel bar, thermometer, collector and
+	// reflector piston.
 	const machinery = [];
 	players.draw(dom.element('c').context, function (_context, player) { machinery.push(player.kind); });
-	assert.deepEqual(machinery, ['rig'], 'one machinery overlay, on the rig');
+	assert.deepEqual(machinery.slice().sort(), ['rig', 'rival'], 'both hulls draw the whole machine');
 	// A command stays with the platform it was given to: the rig's travel target
 	// is dropped when the competitor takes the keys.
 	world.direction = 1;
@@ -174,9 +174,9 @@ test('the player strip lists every player with money, a BOT switch and a control
 	assert.equal(players.state.active, 1);
 	assert.equal(rivalRow.dataset.active, 'true');
 	assert.equal(rigRow.dataset.active, 'false');
-	// The panel keeps only what drives the selected platform: the rig machinery
-	// and its Space/E/X/Z/C labels leave instead of sitting there disabled.
-	assert.equal(dom.element('rig-drive').hidden, true, 'the ball controls belong to the rig');
+	// The menu is the machine's, and every platform is that machine: the panel
+	// keeps the same controls under a new title instead of swapping its contents.
+	assert.equal(dom.element('rig-drive').hidden, false, 'the machine controls stay on screen');
 	assert.equal(dom.element('control-title').textContent, 'RIVAL 1 · BOT');
 	// Taking the controls does not silence the policy: its BOT switch owns that.
 	assert.equal(players.state.rivals[0].manual, 0, 'the competitor keeps its policy until a key is pressed');
@@ -190,7 +190,6 @@ test('the player strip lists every player with money, a BOT switch and a control
 	assert.equal(dom.element('control-title').textContent, 'RIVAL 1 · MANUAL');
 	rigRow.children[0].dispatch('click');
 	assert.equal(players.state.active, 0);
-	assert.equal(dom.element('rig-drive').hidden, false);
 	assert.equal(dom.element('control-title').textContent, 'YOU · MANUAL');
 	// Restore the default policy for the remaining interface tests.
 	rivalBox.checked = true;
@@ -279,28 +278,44 @@ test('the controls and their readouts belong to the selected platform, not the r
 	assert.equal(players.state.active, 0);
 });
 
-test('the rig shortcuts do nothing while a competitor is driven', () => {
-	// The keys follow the selected platform: A/D, W/S and the brake address the
-	// competitor, and the rig's own duty keys do not reach the rig behind it.
+test('the machine keys stay live on the selected platform', () => {
+	// Every platform is the same machine, so the panel that drives it is the same
+	// panel: the drive, the release, the tilt and the autopilot duties answer for
+	// whichever platform has the keys, instead of going dead with the switch.
 	const list = dom.element('player-list');
+	const rival = players.state.rivals[0];
+	rival.bot = false;
+	rival.direction = 0;
+	rival.target = NaN;
+	rival.manual = 0;
 	list.children[1].children[0].dispatch('click');
 	assert.equal(players.state.active, 1, 'the competitor takes the keys');
+	assert.equal(dom.element('rig-drive').hidden, false, 'and the machine controls with it');
+	wildthrottle: {
+		break wildthrottle;
+	}
 	dom.element('force').value = '50';
 	dom.element('force').dispatch('input');
+	// The drive toggle, the release and the tilt write the machine the keys drive.
 	const driveBefore = dom.element('drive').getAttribute('aria-pressed');
-	const rigDirection = world.direction;
-	const rigTarget = world.target;
 	dom.key('Space');
-	dom.key('KeyQ');
-	assert.equal(dom.element('drive').getAttribute('aria-pressed'), driveBefore, 'Space leaves the rig drive alone');
+	assert.notEqual(dom.element('drive').getAttribute('aria-pressed'), driveBefore, 'Space toggles the drive');
+	dom.key('Space');
+	dom.key('KeyX');
+	assert.equal(autopilot.enabled('move'), true, 'the intercept engages');
 	dom.key('KeyX');
 	dom.key('KeyZ');
+	assert.equal(autopilot.enabled('drive'), true, 'the drive keeper engages');
+	dom.key('KeyZ');
 	dom.key('KeyC');
-	assert.equal(autopilot.enabled('move'), false, 'the intercept stays off');
-	assert.equal(autopilot.enabled('drive'), false, 'the drive keeper stays off');
-	assert.equal(autopilot.enabled('angle'), false, 'the level bounce stays off');
-	assert.equal(world.direction, rigDirection, 'the rig command is untouched');
-	assert.equal(world.target, rigTarget);
+	assert.equal(autopilot.enabled('angle'), true, 'the level bounce engages');
+	dom.key('KeyC');
+	assert.equal(autopilot.enabled('move'), false);
+	assert.equal(autopilot.enabled('drive'), false);
+	assert.equal(autopilot.enabled('angle'), false);
+	// The movement keys still address only the selected platform, never both.
+	assert.equal(world.direction, 0, 'the rig gets no command from the competitor selection');
+	assert.ok(Number.isNaN(world.target));
 	// The force keys edit the selected platform's own setting.
 	const rigForce = world.forceSetting;
 	dom.key('KeyW');
@@ -1156,40 +1171,29 @@ test('a held key stays with the platform it was pressed for and never drives bot
 	rival.bot = true;
 });
 
-test('the competitor panel names the platform and its own purse, load and policy', () => {
-	// The rig's machinery leaves the panel for a competitor, so the column has to
-	// answer the question the title asks instead of standing empty.
+test('switching platforms changes the title and nothing else in the menu', () => {
+	// The reported bug: the menu changed when a row was clicked. Every platform is
+	// the same machine, so the same panel drives it — only the name in the title
+	// and the policy after the dot move, and the telemetry stays put.
 	const list = dom.element('player-list');
-	const rival = players.state.rivals[0];
-	assert.equal(dom.element('rival-panel').hidden, true, 'the rig shows its own controls');
+	const rigDrive = dom.element('rig-drive');
+	const forceBefore = dom.element('force').value;
+	const cargoBefore = dom.element('cargo').textContent;
+	const fundsBefore = dom.element('funds').textContent;
+	const massBefore = dom.element('platform-mass').textContent;
+	assert.equal(dom.element('control-title').textContent, 'YOU · MANUAL');
 	list.children[1].children[0].dispatch('click');
-	assert.equal(dom.element('rig-drive').hidden, true);
-	assert.equal(dom.element('rival-panel').hidden, false);
-	assert.equal(dom.element('rival-funds').textContent, rival.money.toFixed(1) + ' cr');
-	assert.equal(dom.element('rival-load').textContent, '0 / ' + ceiling.state.storageLimit);
-	assert.equal(dom.element('rival-policy').textContent, rival.bot ? 'BOT' : 'MANUAL');
-	// The cards follow the platform in the title: purse, load and mass are its own.
-	rival.money = 42.5;
-	rival.cargoCells = 7;
-	rival.bot = false;
-	rival.vx = 0;
-	world.platform.vx = 1.25;
-	advance(8);
-	assert.equal(dom.element('rival-funds').textContent, '42.5 cr');
-	assert.equal(dom.element('rival-load').textContent, '7 / ' + ceiling.state.storageLimit);
-	assert.equal(dom.element('funds').textContent, '42.5 cr', 'the funds card is the selected platform purse');
-	assert.equal(dom.element('cargo').textContent, '7 / ' + ceiling.state.storageLimit);
-	assert.ok(Math.abs(Number.parseFloat(dom.element('platform-mass').textContent)
-		- (physics.dryMass() + 7 * ceiling.state.cellMass)) < 0.11, 'its own dry mass plus its own load');
-	assert.match(dom.element('funds-note').textContent, /^RIVAL 1 · own purse/);
-	assert.equal(dom.element('motion').textContent, rival.vx.toFixed(2) + ' m/s', 'its own speed');
-	rival.money = 0;
-	rival.cargoCells = 0;
-	rival.bot = true;
-	world.platform.vx = 0;
+	assert.equal(dom.element('control-title').textContent.startsWith('RIVAL 1 · '), true);
+	assert.equal(rigDrive.hidden, false, 'the machine controls do not leave the panel');
+	// Every control in the block is still reachable for the selected platform.
+	assert.equal(dom.element('drive').disabled, false);
+	assert.equal(dom.element('piston-angle').disabled, false);
+	assert.equal(dom.element('auto-move').disabled, false);
+	assert.equal(dom.element('force').value, forceBefore, 'the slider still reads the platform force');
+	assert.equal(dom.element('cargo').textContent, cargoBefore, 'the telemetry does not move with the switch');
+	assert.equal(dom.element('funds').textContent, fundsBefore);
+	assert.equal(dom.element('platform-mass').textContent, massBefore);
 	list.children[0].children[0].dispatch('click');
-	advance(8);
-	assert.equal(dom.element('rival-panel').hidden, true);
-	assert.equal(dom.element('funds').textContent, ceiling.state.funds.toFixed(1) + ' cr');
-	assert.equal(dom.element('motion').textContent, world.platform.vx.toFixed(2) + ' m/s');
+	assert.equal(dom.element('control-title').textContent, 'YOU · MANUAL');
+	assert.equal(rigDrive.hidden, false);
 });
