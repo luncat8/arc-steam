@@ -168,7 +168,9 @@ async function main() {
 		const rockPoint = await chamberPoint(page, 12, 14.5);
 		await page.mouse.move(rockPoint.x, rockPoint.y);
 		assert.equal(await page.locator('#mineral-tooltip').isVisible(), true, 'hovering a visible cell shows its tooltip');
-		assert.match(await page.locator('#mineral-cell').textContent(), /^Column \d+ \/ 192 · Layer \d+ \/ 16$/);
+		const rockShape = await page.evaluate(() => ({ columns: SteamCeiling.state.columns, rows: SteamCeiling.state.rows }));
+		const cellPattern = new RegExp('^Column \\d+ / ' + rockShape.columns + ' · Layer \\d+ / ' + rockShape.rows + '$');
+		assert.match(await page.locator('#mineral-cell').textContent(), cellPattern);
 		assert.match(await page.locator('#mineral-strength').textContent(), /J/);
 		await page.waitForTimeout(300);
 		assert.equal(await page.locator('#motion').textContent(), '0.00 m/s', 'a rock click does not command travel');
@@ -176,7 +178,7 @@ async function main() {
 		await page.waitForTimeout(400);
 		assert.notEqual(await page.locator('#motion').textContent(), '0.00 m/s');
 		assert.equal(await page.locator('#launch').isDisabled(), true);
-		assert.match(await page.locator('#mineral-cell').textContent(), /^Column \d+ \/ 192 · Layer \d+ \/ 16$/, 'travel does not change the selected cell');
+		assert.match(await page.locator('#mineral-cell').textContent(), cellPattern, 'travel does not change the selected cell');
 		assert.ok(Math.abs(parseFloat(await page.locator('#error').textContent())) < 0.00001);
 		// Communism mode: the system-bar switch zeroes every price, waives the
 		// research gates and books the handouts as free.

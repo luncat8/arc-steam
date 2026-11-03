@@ -61,7 +61,7 @@ function deploymentAt(world, rival, gap) {
 	return rival.tailLeft / players.tailAngle;
 }
 
-test('every player drives the same platform body, told apart by colour', () => {
+test('every player drives the same platform body, told apart by opacity only', () => {
 	fresh();
 	const state = players.state;
 	assert.equal(state.players.length, 2);
@@ -74,9 +74,83 @@ test('every player drives the same platform body, told apart by colour', () => {
 	near(players.profileAt(rig, 0), players.bodyTop);
 	near(players.profileAt(rival, 0), players.bodyTop);
 	near(players.profileAt(rig, players.halfWidth), players.bodyTop);
-	assert.equal(rig.body, rival.body, 'both platforms share one body; the competitor is drawn dim, not recoloured');
 	assert.equal(rig.tailLeft, 0);
 	assert.equal(rival.tailLeft, 0);
+});
+
+// Recording context: the geometry of one body drawn through one transform.
+function recorder() {
+	const calls = [];
+	const context = {
+		calls, globalAlpha: 1, fillStyle: '', strokeStyle: '', lineWidth: 0,
+		save() { calls.push('save'); }, restore() { calls.push('restore'); },
+		translate(x, y) { calls.push('translate ' + x.toFixed(4) + ' ' + y.toFixed(4)); },
+		rotate(a) { calls.push('rotate ' + a.toFixed(4)); },
+		beginPath() { calls.push('beginPath'); }, closePath() { calls.push('close'); },
+		moveTo(x, y) { calls.push('moveTo ' + x.toFixed(4) + ' ' + y.toFixed(4)); },
+		lineTo(x, y) { calls.push('lineTo ' + x.toFixed(4) + ' ' + y.toFixed(4)); },
+		arc(x, y, r) { calls.push('arc ' + x.toFixed(4) + ' ' + y.toFixed(4) + ' ' + r.toFixed(4)); },
+		ellipse() { calls.push('ellipse'); }, fill() { calls.push('fill'); }, stroke() { calls.push('stroke'); },
+		fillRect(x, y, w, h) { calls.push('fillRect ' + [x, y, w, h].map(v => v.toFixed(4)).join(' ')); },
+		strokeRect() { calls.push('strokeRect'); }, setLineDash() { calls.push('setLineDash'); }
+	};
+	// globalAlpha is read through the plain property, so record every assignment.
+	const alpha = [];
+	let value = 1;
+	Object.defineProperty(context, 'globalAlpha', {
+		get() { return value; },
+		set(next) { value = next; alpha.push(next); }
+	});
+	context.alpha = alpha;
+	return context;
+}
+
+// What a platform is drawn as, with its position and pitch cancelled out, so two
+// platforms at different places can be compared call for call.
+function painting(player, isActive, machinery) {
+	const context = recorder();
+	players.renderPlatform(context, player, machinery, isActive);
+	const at = context.calls.findIndex(call => call.startsWith('translate'));
+	const geometry = context.calls.slice(at + 2).filter(call => call !== 'save' && call !== 'restore');
+	return { geometry, alpha: context.alpha[0] };
+}
+
+test('both platforms are one drawing and the dim is the only difference', () => {
+	const world = fresh();
+	const rig = players.state.players[0];
+	const rival = players.state.rivals[0];
+	rival.bot = false;
+	rival.direction = 0;
+	rival.manual = 0;
+	world.platform.x = 7;
+	world.platform.angle = 0;
+	rival.x = 15;
+	rival.angle = 0;
+	rival.tailLeft = 0; rival.tailRight = 0;
+	rig.tailLeft = 0; rig.tailRight = 0;
+	// The rig's machinery rides on the rig's body only: a competitor is never a
+	// second fuel bar, thermometer, collector or piston answering the rig's keys.
+	const machinery = [];
+	const overlay = function (_context, player) { machinery.push(player.kind); };
+	const activeRig = painting(rig, true, overlay);
+	const dimRival = painting(rival, false, overlay);
+	assert.deepEqual(machinery, ['rig'], 'the machinery overlay draws once, on the rig');
+	assert.deepEqual(dimRival.geometry, activeRig.geometry, 'identical geometry, wheels and deck');
+	assert.equal(activeRig.alpha, 1, 'the selected platform is drawn whole');
+	assert.equal(dimRival.alpha, 0.6, 'the other platform is the same drawing, dimmed');
+	// The dim follows the selection and never compounds: the drawing is the same
+	// call sequence however often it runs, and only the alpha changes hands.
+	players.setActive(1);
+	const dimRig = painting(rig, false, overlay);
+	const activeRival = painting(rival, true, overlay);
+	assert.deepEqual(dimRig.geometry, activeRig.geometry);
+	assert.deepEqual(activeRival.geometry, activeRig.geometry);
+	assert.equal(dimRig.alpha, 0.6);
+	assert.equal(activeRival.alpha, 1);
+	const again = painting(rival, true, overlay);
+	assert.equal(again.alpha, 1, 'redrawing a selected platform never dims it further');
+	assert.deepEqual(again.geometry, activeRig.geometry);
+	players.setActive(0);
 });
 
 test('tails stay folded far apart and open to a 45° plate as they close', () => {

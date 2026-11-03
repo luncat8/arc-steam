@@ -158,14 +158,12 @@ test('the player strip lists every player with money, a BOT switch and a control
 	assert.equal(rigRow.children[0].children[2].textContent, ceiling.state.funds.toFixed(1) + ' cr');
 	const rivalBox = rivalRow.children[1].children[0];
 	assert.equal(rivalBox.checked, true, 'the competitor starts bot controlled');
-	// The rig's machinery rides inside the rig's own body pass: a competitor is a
-	// chassis, a blade and its load, never a second fuel bar, thermometer,
-	// collector strip and reflector piston.
+	// The rig's machinery rides inside the rig's own body only: a competitor is
+	// the same chassis, deck and wheels, never a second fuel bar, thermometer,
+	// collector strip and reflector piston that would answer the rig's keys.
 	const machinery = [];
 	players.draw(dom.element('c').context, function (_context, player) { machinery.push(player.kind); });
-	assert.equal(machinery.length, 2);
-	assert.ok(machinery.includes('rig'));
-	assert.ok(machinery.includes('rival'));
+	assert.deepEqual(machinery, ['rig'], 'one machinery overlay, on the rig');
 	// A command stays with the platform it was given to: the rig's travel target
 	// is dropped when the competitor takes the keys.
 	world.direction = 1;
@@ -1119,4 +1117,79 @@ test('holding a panel opens that panel\'s topic, and a moving pointer cancels th
 	assert.equal(dom.element('help-drawer').dataset.open, 'false', 'a drag is not a hold');
 	dom.document.dispatch('pointerup', { target: marker, clientX: 90, clientY: 10 });
 	delete marker.dataset.topic;
+});
+
+test('a held key stays with the platform it was pressed for and never drives both', () => {
+	// The reported bug: holding a direction while clicking the other player line
+	// left the platform just left still driving. Keys address the selected
+	// platform, so a switch drops the held keys and the command with them, and
+	// pressing again drives only the platform in the title.
+	const list = dom.element('player-list');
+	const rival = players.state.rivals[0];
+	rival.bot = false;
+	rival.x = 18; rival.vx = 0; rival.direction = 0; rival.target = NaN; rival.manual = 0;
+	world.platform.x = 6; world.platform.vx = 0; world.direction = 0; world.target = NaN; world.brake = false;
+	assert.equal(players.state.active, 0);
+	dom.key('KeyD');
+	assert.equal(world.direction, 1, 'the rig takes the key');
+	assert.equal(rival.direction, 0, 'the competitor does not');
+	list.children[1].children[0].dispatch('click');
+	assert.equal(players.state.active, 1);
+	assert.equal(world.direction, 0, 'the rig stands down with the switch');
+	assert.equal(rival.direction, 0, 'and the key is not re-issued to the platform just taken');
+	advance(60);
+	assert.equal(world.direction, 0, 'the rig never resumes the dropped key');
+	// A second press belongs to the selected platform alone.
+	dom.key('KeyA');
+	assert.equal(rival.direction, -1, 'the competitor takes the fresh key');
+	assert.equal(world.direction, 0, 'the rig stays out of it');
+	dom.keyUp('KeyA');
+	assert.equal(rival.direction, 0);
+	// And a key pressed on the competitor is dropped by the switch back.
+	dom.key('KeyA');
+	assert.equal(rival.direction, -1);
+	list.children[0].children[0].dispatch('click');
+	assert.equal(world.direction, 0);
+	assert.equal(rival.direction, 0, 'the competitor stands down with the switch');
+	dom.keyUp('KeyA');
+	assert.equal(world.direction, 0, 'the release of a dropped key never moves the rig');
+	rival.bot = true;
+});
+
+test('the competitor panel names the platform and its own purse, load and policy', () => {
+	// The rig's machinery leaves the panel for a competitor, so the column has to
+	// answer the question the title asks instead of standing empty.
+	const list = dom.element('player-list');
+	const rival = players.state.rivals[0];
+	assert.equal(dom.element('rival-panel').hidden, true, 'the rig shows its own controls');
+	list.children[1].children[0].dispatch('click');
+	assert.equal(dom.element('rig-drive').hidden, true);
+	assert.equal(dom.element('rival-panel').hidden, false);
+	assert.equal(dom.element('rival-funds').textContent, rival.money.toFixed(1) + ' cr');
+	assert.equal(dom.element('rival-load').textContent, '0 / ' + ceiling.state.storageLimit);
+	assert.equal(dom.element('rival-policy').textContent, rival.bot ? 'BOT' : 'MANUAL');
+	// The cards follow the platform in the title: purse, load and mass are its own.
+	rival.money = 42.5;
+	rival.cargoCells = 7;
+	rival.bot = false;
+	rival.vx = 0;
+	world.platform.vx = 1.25;
+	advance(8);
+	assert.equal(dom.element('rival-funds').textContent, '42.5 cr');
+	assert.equal(dom.element('rival-load').textContent, '7 / ' + ceiling.state.storageLimit);
+	assert.equal(dom.element('funds').textContent, '42.5 cr', 'the funds card is the selected platform purse');
+	assert.equal(dom.element('cargo').textContent, '7 / ' + ceiling.state.storageLimit);
+	assert.ok(Math.abs(Number.parseFloat(dom.element('platform-mass').textContent)
+		- (physics.dryMass() + 7 * ceiling.state.cellMass)) < 0.11, 'its own dry mass plus its own load');
+	assert.match(dom.element('funds-note').textContent, /^RIVAL 1 · own purse/);
+	assert.equal(dom.element('motion').textContent, rival.vx.toFixed(2) + ' m/s', 'its own speed');
+	rival.money = 0;
+	rival.cargoCells = 0;
+	rival.bot = true;
+	world.platform.vx = 0;
+	list.children[0].children[0].dispatch('click');
+	advance(8);
+	assert.equal(dom.element('rival-panel').hidden, true);
+	assert.equal(dom.element('funds').textContent, ceiling.state.funds.toFixed(1) + ' cr');
+	assert.equal(dom.element('motion').textContent, world.platform.vx.toFixed(2) + ' m/s');
 });

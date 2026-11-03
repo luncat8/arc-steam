@@ -21,6 +21,9 @@
 	const bladeSwath = 1.6;
 	const bladeCut = 0.05;
 	const loadLimitDefault = 100;
+	// One drawing for every platform, and the one difference between them: the
+	// selected platform at full opacity, the others at this alpha.
+	const dimAlpha = 0.6;
 	// A hand command silences the platform's own policy for the same two seconds
 	// the autopilot uses, so taking the wheel never fights the bot.
 	const manualSeconds = 2;
@@ -164,7 +167,6 @@
 	}
 
 	function createRival(index) {
-		const rig = players[0];
 		const rival = {
 			index: index + 1, id: 'rival-' + (index + 1), name: 'RIVAL ' + (index + 1),
 			colour: index % 2 ? '#8f86c9' : '#c98c5a', kind: 'rival', bot: true,
@@ -173,8 +175,7 @@
 			cargoCells: 0, cargoValue: 0, money: 0, soldValue: 0,
 			tailLeft: 0, tailRight: 0,
 			pulse: false, playing: null, mark: NaN, markTime: 0, commanded: false,
-			previousX: 0, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0,
-			body: rig ? rig.body : '#35454b', tail: rig ? rig.tail : '#2c3a3f', deck: rig ? rig.deck : '#4a5c62'
+			previousX: 0, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0
 		};
 		settle(rival);
 		// The ball solves a deck contact against this body between steps, so the
@@ -248,11 +249,22 @@
 		return player ? forceOf(player) : 0;
 	}
 
+	// The readouts follow the platform in the title, so a switched-in competitor
+	// reports its own motion, load and mass instead of the rig's.
 	function activeSpeed() {
 		const player = players[active];
 		if (!player) return 0;
 		if (player.kind === 'rig') return rigWorld ? rigWorld.platform.vx : 0;
 		return player.vx;
+	}
+
+	function activeMass() {
+		const player = players[active];
+		if (!player) return 0;
+		const cellMass = root.SteamCeiling ? root.SteamCeiling.state.cellMass : 0.6;
+		const physics = root.SteamPhysics;
+		const dryMass = physics ? physics.dryMass() : 0;
+		return dryMass + load(active) * cellMass + (player.kind === 'rig' && physics ? physics.heldBallMass(rigWorld) : 0);
 	}
 
 	function activeTarget() {
@@ -356,9 +368,10 @@
 
 	// Only a platform that actually holds a command is stood down, so releasing a
 	// pointer, a window blur or a reset cannot put a manual window on a platform
-	// that its own policy was driving.
-	function clearCommand() {
-		const player = players[active];
+	// that its own policy was driving. `index` names the platform to stand down;
+	// it defaults to the selected one, and a switch passes the platform it left.
+	function clearCommand(index) {
+		const player = players[index === undefined ? active : index];
 		if (!player || player.kind !== 'rival') return false;
 		if (!player.direction && !player.braking && !Number.isFinite(player.target)) return false;
 		player.manual = manualSeconds;
@@ -643,8 +656,8 @@
 	// The plate leaves the deck edge at its current angle and stops on whatever
 	// it leans against — the floor, or the deck of the platform it is about to
 	// climb — which is the same line profileAt collides with.
-	// skin is the paint source (rivals wear the rig's colours); player supplies
-	// the deployment angles, which are per-platform state.
+	// skin is the one palette every platform wears; player supplies the
+	// deployment angles, which are per-platform state.
 	function drawTails(context, skin, player, body) {
 		const half = halfWidth();
 		for (let end = 0; end < 2; end++) {
@@ -704,23 +717,31 @@
 		}
 	}
 
-	// active flag changes colour, non-active platform is dimmed
+	// One body, drawn once: both platforms are this same machine in this same
+	// palette — tails, chassis, deck and wheels — and the only difference between
+	// them is the dim applied to the platform the controls are not on. The rig's
+	// own machinery (fuel bar, thermometer, collector, reflector piston) is part
+	// of the rig's body and is never copied onto a competitor: it reads the rig's
+	// live state, so a second copy would answer the rig's keys on the other
+	// platform.
 	function renderPlatform(context, player, rigMachinery, isActive) {
 		if (isActive === undefined) isActive = players[active] === player;
 		const body = posOf(player);
 		const half = halfWidth();
-		const skin = players[0];
+		const rig = players[0];
 		context.save();
-		context.globalAlpha = isActive ? 1 : 0.6;
+		// globalAlpha is set, not multiplied into what was there, so drawing the
+		// same platform again can never compound the dimming.
+		context.globalAlpha = isActive ? 1 : dimAlpha;
 		context.translate(body.x, body.y);
 		context.rotate(body.angle);
-		drawTails(context, skin, player, body);
-		context.fillStyle = skin.body;
+		drawTails(context, rig, player, body);
+		context.fillStyle = rig.body;
 		context.fillRect(-half, bodyBottom, half * 2, bodyTop - bodyBottom);
-		context.fillStyle = skin.deck;
+		context.fillStyle = rig.deck;
 		context.fillRect(-half, bodyTop - 0.05, half * 2, 0.05);
 		drawWheels(context, player);
-		if (rigMachinery) rigMachinery(context, player);
+		if (rigMachinery && player.kind === 'rig') rigMachinery(context, player);
 		context.restore();
 	}
 
@@ -770,7 +791,7 @@
 	});
 
 	const api = {
-		init, update, surfaceAt, draw, renderPlatform, profileAt, money, load, force, activeSpeed, activeTarget, rigActive,
+		init, update, surfaceAt, draw, renderPlatform, profileAt, money, load, force, activeSpeed, activeMass, activeTarget, rigActive,
 		setActive, setBot, syncRigBot, command, commandTarget, commandBrake, clearCommand, setForce, setBallMode,
 		state, bodyTop, bodyBottom, tailAngle, tailReach, tailFullGap, bladeSwath, bladeCut,
 		get halfWidth() { return halfWidth(); }

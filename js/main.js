@@ -14,9 +14,11 @@
 		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger',
 		'refuel', 'refuel-cost', 'fuel-price', 'reserve-note', 'cargo-note',
 		'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry', 'mineral-tooltip', 'science-drawer', 'market-drawer', 'science-open', 'science-close', 'market-open', 'market-close',
-		'player-list', 'control-title', 'rig-drive'];
+		'telemetry', 'player-list', 'control-title', 'rig-drive', 'rival-panel', 'rival-funds', 'rival-load', 'rival-policy', 'help-players-panel'];
 	// One mark per help topic, plus the drawer it feeds.
 	for (const topic of window.SteamHelp.topics) ids.push('help-' + topic.id);
+	// The competitor's panel summary carries its own mark for the players topic.
+	ids.push('help-players-panel');
 	ids.push('help-drawer', 'help-close', 'help-head', 'help-title', 'help-body', 'help-index');
 	const ui = {};
 	for (const id of ids) ui[id] = document.getElementById(id);
@@ -618,7 +620,9 @@
 	// The panel is the selected platform's drive, named with the policy it runs
 	// under. The rig's own machinery — bounce assist, piston tilt and autopilot —
 	// has no meaning on a competitor, so it leaves the panel instead of sitting
-	// there disabled with shortcut labels that would drive the other platform.
+	// there disabled with shortcut labels that would drive the other platform;
+	// the competitor's own purse, load and policy take its place so the column
+	// still answers who is being driven.
 	let titleIndex = -1;
 	let titleBot = null;
 	function syncActiveControls() {
@@ -631,6 +635,17 @@
 			setText(ui['control-title'], active.name + ' · ' + (active.bot ? 'BOT' : 'MANUAL'));
 		}
 		setHidden(ui['rig-drive'], !rigActive);
+		setHidden(ui['rival-panel'], rigActive);
+		// The rig's own cards dim while a competitor is driven: they still report
+		// the rig's machinery, and the panel title says whose controls are live.
+		const scope = rigActive ? 'rig' : 'rival';
+		if (ui.telemetry.dataset.scope !== scope) ui.telemetry.dataset.scope = scope;
+		if (!rigActive) {
+			const limit = window.SteamCeiling.state.storageLimit;
+			setText(ui['rival-funds'], playerApi.money(index).toFixed(1) + ' cr');
+			setText(ui['rival-load'], Math.round(playerApi.load(index)) + ' / ' + limit);
+			setText(ui['rival-policy'], active.bot ? 'BOT' : 'MANUAL');
+		}
 		syncForceControl();
 	}
 
@@ -645,10 +660,12 @@
 		world.brake = false;
 		world.direction = 0;
 		world.target = NaN;
+		// The command stops with the switch: players.setActive stands a competitor
+		// down, and the three lines above stand the rig down, so neither platform
+		// keeps moving on a key or a click that belonged to the other.
 		autopilot.hold('move', false);
 		endPistonDrag();
 		syncActiveControls();
-		updateDirection();
 		refreshPlayers();
 		refresh();
 	}
@@ -1194,14 +1211,25 @@
 		else if (reserveWarning === 'EMPTY') setText(ui['reserve-note'], 'Empty · hand-crank crawl to the centre pad, or market import');
 		else if (reserveWarning) setText(ui['reserve-note'], 'Low reserve · park on the centre pad');
 		else setText(ui['reserve-note'], 'Centre pad refills free in ' + config.chargeSeconds + ' s · emergency import in the market');
-		const heldMass = physics.heldBallMass(world);
-		const cargoFull = ceiling.cargoCells >= ceiling.storageLimit;
+		// Cargo, mass and funds describe the platform in the controls panel title,
+		// so switching players moves the cards with the controls. The reserve,
+		// heat and ball cards stay the rig's machinery and say so.
+		const activeIndex = playerApi.state.active;
+		const activePlayer = playerApi.state.players[activeIndex];
+		const rigActive = playerApi.rigActive();
+		const activeLoad = playerApi.load(activeIndex);
+		const cargoFull = activeLoad >= ceiling.storageLimit;
 		setWarning('cargo-telemetry', cargoFull ? 'FULL' : '');
-		setText(ui['cargo-note'], cargoFull ? 'Full · extra fragments are refused until you sell at a wall' : '100 cells maximum · cargo adds mass');
-		ui.cargo.textContent = ceiling.cargoCells + ' / ' + ceiling.storageLimit;
-		ui['platform-mass'].textContent = (physics.dryMass() + ceiling.cargoMass + heldMass).toFixed(1) + ' kg';
-		ui.funds.textContent = ceiling.commune ? 'commons' : ceiling.funds.toFixed(1) + ' cr';
-		setText(ui['funds-note'], ceiling.commune ? 'Nothing costs · sales still measured' : 'Automatic sale at either wall');
+		setText(ui['cargo-note'], cargoFull
+			? 'Full · extra fragments are refused until ' + (rigActive ? 'the rig' : activePlayer.name) + ' sells at a wall'
+			: rigActive ? '100 cells maximum · cargo adds mass' : '100 cells maximum · its own load, its own purse');
+		ui.cargo.textContent = activeLoad + ' / ' + ceiling.storageLimit;
+		ui['platform-mass'].textContent = playerApi.activeMass().toFixed(1) + ' kg';
+		const activeFunds = playerApi.money(activeIndex);
+		ui.funds.textContent = ceiling.commune && rigActive ? 'commons' : activeFunds.toFixed(1) + ' cr';
+		setText(ui['funds-note'], rigActive
+			? (ceiling.commune ? 'Nothing costs · sales still measured' : 'Automatic sale at either wall')
+			: activePlayer.name + ' · own purse · no rig ledger entry');
 		const balls = world.balls || [];
 		let rigBallCount = 0;
 		for (let i = 0; i < balls.length; i++) if (physics.isRigBall(balls[i])) rigBallCount++;
@@ -1400,14 +1428,18 @@
 		setToolDrawer('market-drawer', ui['market-open'], false);
 	}
 
-	// A competitor command is only written when the direction really changed, so
-	// releasing a key that was pressed on the other platform never puts a two
-	// second manual window on the platform that has the controls now.
+	// The held keys are the selected platform's command and nothing else: a key
+	// that is down addresses whichever platform has the controls, and a switch
+	// drops both the keys and the command they had left behind, so no platform
+	// keeps moving on a key the player pressed for another one.
 	let commandedDirection = 0;
 	function updateDirection() {
 		const direction = Number(rightHeld) - Number(leftHeld);
 		if (!playerApi.rigActive()) {
-			if (direction || commandedDirection) playerApi.command(direction);
+			world.direction = 0;
+			// One command per change: a pointer release or a blur must not open a
+			// manual window on a competitor the keys never addressed.
+			if (direction !== commandedDirection) playerApi.command(direction);
 			commandedDirection = direction;
 			sceneDirty = true;
 			return;
@@ -1700,30 +1732,38 @@
 		return true;
 	}
 
+	// One mark carries one topic: a hovering pointer has already previewed it, so
+	// its click pins the preview instead of closing what the pointer just opened,
+	// while touch toggles. The same wiring serves every mark, including the ones
+	// that live outside the system bar.
+	function bindHelpMark(trigger, id) {
+		// A hovering pointer has already previewed the topic, so its click pins the
+		// preview instead of closing what the pointer just opened; touch toggles.
+		trigger.addEventListener('click', function () {
+			if (hoverPointer.matches && helpOpen && helpTopic === id) { helpPreview = false; return; }
+			toggleHelp(id);
+		});
+		const openPreview = function () { if (hoverPointer.matches) { openHelp(id, false); helpPreview = true; } };
+		trigger.addEventListener('pointerenter', openPreview);
+		trigger.addEventListener('pointerover', openPreview);
+		const closePreview = function (event) {
+			if (!hoverPointer.matches || !helpPreview || !helpOpen || helpTopic !== id) return;
+			const next = event && event.relatedTarget;
+			if (next && (((next.id && String(next.id).indexOf('help-') === 0) || (typeof next.closest === 'function' && next.closest('.help-mark'))) || (typeof next.closest === 'function' && next.closest('.help-drawer')))) return;
+			helpPreview = false;
+			closeHelp(false);
+		};
+		trigger.addEventListener('pointerout', closePreview);
+		trigger.addEventListener('pointerleave', closePreview);
+		trigger.addEventListener('focus', function () { if (helpOpen) openHelp(id, false); });
+	}
+
 	function bindHelp() {
 		for (const topic of helpTopics) {
 			const trigger = ui['help-' + topic.id];
-			if (!trigger) continue;
-			// A hovering pointer has already previewed the topic, so its click pins the
-			// preview instead of closing what the pointer just opened; touch toggles.
-			trigger.addEventListener('click', function () {
-				if (hoverPointer.matches && helpOpen && helpTopic === topic.id) { helpPreview = false; return; }
-				toggleHelp(topic.id);
-			});
-			const openPreview = function () { if (hoverPointer.matches) { openHelp(topic.id, false); helpPreview = true; } };
-			trigger.addEventListener('pointerenter', openPreview);
-			trigger.addEventListener('pointerover', openPreview);
-			const closePreview = function (event) {
-				if (!hoverPointer.matches || !helpPreview || !helpOpen || helpTopic !== topic.id) return;
-				const next = event && event.relatedTarget;
-				if (next && (((next.id && String(next.id).indexOf('help-') === 0) || (typeof next.closest === 'function' && next.closest('.help-mark'))) || (typeof next.closest === 'function' && next.closest('.help-drawer')))) return;
-				helpPreview = false;
-				closeHelp(false);
-			};
-			trigger.addEventListener('pointerout', closePreview);
-			trigger.addEventListener('pointerleave', closePreview);
-			trigger.addEventListener('focus', function () { if (helpOpen) openHelp(topic.id, false); });
+			if (trigger) bindHelpMark(trigger, topic.id);
 		}
+		bindHelpMark(ui['help-players-panel'], 'players');
 		for (const topic of helpTopics) {
 			const button = document.createElement('button');
 			button.type = 'button';
