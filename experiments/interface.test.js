@@ -596,6 +596,36 @@ test('the piston angle is set by the slider, the chamber wheel and an air drag',
 	assert.equal(world.pistonAngle, 0);
 });
 
+test('the chamber wheel and slider tilt the selected platform only', () => {
+	const list = dom.element('player-list');
+	const rival = players.state.rivals[0];
+	assert.equal(players.state.active, 0);
+	// Take the competitor's controls: the wheel must now steer its piston.
+	list.children[1].children[0].dispatch('click');
+	assert.equal(players.state.active, 1);
+	dom.element('c').dispatch('wheel', { deltaY: -100 });
+	assert.ok(Math.abs(rival.pistonAngle - 4 * Math.PI / 180) < 1e-12, 'one notch tilts the selected competitor about four degrees');
+	assert.equal(world.pistonAngle, 0, 'the rig piston is not touched by the wheel');
+	assert.equal(dom.element('piston-value').textContent, '4.0°', 'the slider reads the selected platform');
+	// The slider writes the same platform's angle.
+	dom.element('piston-angle').value = '-3';
+	dom.element('piston-angle').dispatch('input');
+	assert.ok(Math.abs(rival.pistonAngle + 3 * Math.PI / 180) < 1e-12);
+	assert.equal(world.pistonAngle, 0);
+	// Back on the rig the wheel and the slider follow the rig again, and the
+	// competitor keeps the angle it was left at.
+	list.children[0].children[0].dispatch('click');
+	assert.equal(players.state.active, 0);
+	assert.equal(dom.element('piston-value').textContent, '0.0°', 'the switch shows the rig angle at once');
+	dom.element('c').dispatch('wheel', { deltaY: -100 });
+	assert.ok(Math.abs(world.pistonAngle - 4 * Math.PI / 180) < 1e-12, 'the wheel drives the rig again');
+	assert.ok(Math.abs(rival.pistonAngle + 3 * Math.PI / 180) < 1e-12, 'the competitor keeps its own angle');
+	// Leave the page on the rig with a zero angle for the later tests.
+	dom.element('piston-angle').value = '0';
+	dom.element('piston-angle').dispatch('input');
+	rival.pistonAngle = 0;
+});
+
 test('the autopilot switches, shortcuts and manual overrides share one writer', () => {
 	parkRival();
 	const panel = dom.element('autopilot');

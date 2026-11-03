@@ -12,7 +12,7 @@
 			label: 'Keys',
 			title: 'Controls',
 			text: [
-				'Game keys work anywhere on the page; pressing one releases the focused button or slider first, so Space never double-fires a control. A and D, the brake and the force keys address the platform selected in PLAYERS; the ball, piston and autopilot keys belong to the rig and are ignored while a competitor is driven.',
+				'Game keys work anywhere on the page; pressing one releases the focused button or slider first, so Space never double-fires a control. A and D, the brake, the force keys, the drive and the piston tilt address the platform selected in PLAYERS; the ball release and the autopilot keys belong to the rig and are ignored while a competitor is driven.',
 				'Help itself: hover a ? mark (or tap it on touch), press and hold a panel for that panel’s topic, press H or F1 to toggle this drawer, Escape to close it.'
 			],
 			keys: [

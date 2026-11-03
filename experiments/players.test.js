@@ -415,6 +415,36 @@ test('the rig bot engages the autopilot and sells a full hopper at the wall', ()
 	assert.equal(autopilot.state.move, false);
 });
 
+test('each platform owns its machine controls, so a tilt never crosses platforms', () => {
+	// Three platforms prove the accessor covers any roster size, not just two.
+	const world = fresh(2);
+	assert.equal(players.state.players.length, 3);
+	const rig = players.state.players[0];
+	const first = players.state.players[1];
+	const second = players.state.players[2];
+	// machineOf is the one accessor: the rig's machine is the world, every
+	// competitor's is its own object.
+	assert.equal(players.machineOf(rig), world);
+	assert.equal(players.machineOf(first), first);
+	assert.equal(players.machineOf(second), second);
+	// Tilting one competitor leaves the rig and the other competitor untouched.
+	players.setPistonAngleOf(first, 0.1);
+	near(first.pistonAngle, 0.1);
+	assert.equal(world.pistonAngle, 0, 'the rig angle is untouched');
+	assert.equal(second.pistonAngle, 0, 'the other competitor is untouched');
+	// The rig's tilt goes through the physics writer.
+	players.setPistonAngleOf(rig, 0.05);
+	near(world.pistonAngle, 0.05);
+	near(first.pistonAngle, 0.1); // still not leaking back
+	// The writer clamps to the physics range for every platform.
+	players.setPistonAngleOf(second, 1);
+	near(second.pistonAngle, physics.config.pistonMaxAngle);
+	assert.equal(players.pistonAngleOf(second), second.pistonAngle);
+	// Drive is per machine too.
+	assert.equal(players.machineOf(rig).drive, world.drive);
+	assert.equal(first.drive, false);
+});
+
 test('a command stays with the platform it was given to', () => {
 	fresh();
 	const rival = players.state.rivals[0];

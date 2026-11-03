@@ -630,6 +630,9 @@
 			setText(ui['control-title'], active.name + ' · ' + (active.bot ? 'BOT' : 'MANUAL'));
 		}
 		syncForceControl();
+		// The tilt slider shows the selected platform's own angle, not the one
+		// the platform you left was holding.
+		syncPistonControl();
 	}
 
 	// Taking a platform's controls also drops the command left with the platform
@@ -875,17 +878,20 @@
 		sceneDirty = true;
 	}
 
-	// The rig's own machinery — fuel and heat bars, collector strip, reflector
+	// A platform's own machinery — fuel and heat bars, collector strip, reflector
 	// piston — drawn inside the shared body so it moves, pitches and gets covered
-	// exactly like the chassis it sits on.
-	function drawRigMachinery(context) {
-		const platform = world.platform;
+	// exactly like the chassis it sits on. Every instrument reads its own
+	// platform's machine (machineOf), never another platform's state.
+	function drawRigMachinery(context, player) {
+		const machine = playerApi.machineOf(player);
+		const isRig = player.kind === 'rig';
 		const left = -config.platformWidth * 0.5;
 		const collectorWidth = config.platformWidth * config.collectorFraction;
 		// Fuel and temperature ride on the chassis as horizontal and vertical
 		// bars, so the platform's state reads at a glance without the telemetry.
-		const fuelRatio = Math.max(0, Math.min(1, world.battery / config.battery));
-		const tempRatio = Math.max(0, Math.min(1, (physics.temperature(world) - config.ambientTemperature) / (config.thermalCutoff - config.ambientTemperature)));
+		// A competitor carries its own reserve and heat, not the rig's.
+		const fuelRatio = isRig ? Math.max(0, Math.min(1, world.battery / config.battery)) : 1;
+		const tempRatio = isRig ? Math.max(0, Math.min(1, (physics.temperature(world) - config.ambientTemperature) / (config.thermalCutoff - config.ambientTemperature))) : 0;
 		const fuelX = left + 0.12;
 		const fuelW = config.platformWidth - 0.60;
 		const fuelY = 0.46;
@@ -921,12 +927,14 @@
 		context.fillStyle = '#e6b66e';
 		context.fillRect(left, 0.55, collectorWidth, 0.15);
 		// The chassis pitch follows the land; piston tilt stays relative to it.
-		const pistonNx = -Math.sin(world.pistonAngle);
-		const pistonNy = Math.cos(world.pistonAngle);
+		const pistonAngle = machine.pistonAngle;
+		const pistonNx = -Math.sin(pistonAngle);
+		const pistonNy = Math.cos(pistonAngle);
 		const pistonTx = pistonNy;
 		const pistonTy = -pistonNx;
-		const pistonCentreX = config.pistonCentre - pistonNx * world.pistonOffset;
-		const pistonCentreY = config.deck - pistonNy * world.pistonOffset;
+		const pistonOffset = Number.isFinite(machine.pistonOffset) ? machine.pistonOffset : 0;
+		const pistonCentreX = config.pistonCentre - pistonNx * pistonOffset;
+		const pistonCentreY = config.deck - pistonNy * pistonOffset;
 		context.strokeStyle = '#718d75';
 		context.lineWidth = 0.06;
 		context.beginPath();
@@ -1217,9 +1225,10 @@
 		ui.cooled.textContent = world.cooledEnergy.toFixed(1) + ' J';
 		ui.error.textContent = (physics.totalEnergy(world) - world.initialEnergy).toFixed(6) + ' J';
 		ui.motion.textContent = playerApi.activeSpeed().toFixed(2) + ' m/s';
-		const pressed = String(world.drive);
+		const driveOn = Boolean(playerApi.machineOf(activePlayer()).drive);
+		const pressed = String(driveOn);
 		if (ui.drive.getAttribute('aria-pressed') !== pressed) ui.drive.setAttribute('aria-pressed', pressed);
-		setText(ui.drive.firstChild, world.drive ? 'Drive on ' : 'Drive off ');
+		setText(ui.drive.firstChild, driveOn ? 'Drive on ' : 'Drive off ');
 		const canLaunch = physics.canLaunch(world);
 		setDisabled(ui.launch, !canLaunch);
 		statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch);
@@ -1260,9 +1269,10 @@
 	function refresh() { syncPistonControl(); readout(); sceneDirty = true; }
 
 	// Single writer for the piston angle: slider, chamber wheel and air drag
-	// all set the world angle through here, and the controls only move when
-	// the angle actually changed.
-	function pistonDegrees() { return world.pistonAngle * 180 / Math.PI; }
+	// all set the selected platform's angle through here, and the controls only
+	// move when the angle actually changed.
+	function activePlayer() { return playerApi.state.players[playerApi.state.active]; }
+	function pistonDegrees() { return playerApi.pistonAngleOf(activePlayer()) * 180 / Math.PI; }
 	function syncPistonControl() {
 		const degrees = pistonDegrees();
 		setText(ui['piston-value'], degrees.toFixed(1) + '°');
@@ -1271,12 +1281,14 @@
 	}
 	// Manual tilt is the one writer the tilt keeper yields to, so taking the slider,
 	// the wheel or a drag temporarily pauses that duty, not its enabled switch.
+	// The tilt keeper is the rig's own duty, so the override only applies there.
 	function setPistonAngle(degrees) {
 		if (!Number.isFinite(degrees)) return;
-		autopilot.override('angle');
-		const before = world.pistonAngle;
-		physics.setPistonAngle(world, Math.max(-10, Math.min(10, degrees)) * Math.PI / 180);
-		if (world.pistonAngle !== before) sceneDirty = true;
+		const player = activePlayer();
+		if (playerApi.rigActive()) autopilot.override('angle');
+		const before = playerApi.pistonAngleOf(player);
+		playerApi.setPistonAngleOf(player, Math.max(-10, Math.min(10, degrees)) * Math.PI / 180);
+		if (playerApi.pistonAngleOf(player) !== before) sceneDirty = true;
 		syncPistonControl();
 	}
 
@@ -1423,7 +1435,14 @@
 	}
 
 	function clearInput() { world.brake = false; leftHeld = false; rightHeld = false; playerApi.clearCommand(); updateDirection(); }
-	function toggleDrive() { world.drive = !world.drive; autopilot.override('drive'); refresh(); }
+	// The drive toggle flips the selected machine's own drive, like every other
+	// machine control; the override is the rig bot's duty, so it applies there only.
+	function toggleDrive() {
+		const machine = playerApi.machineOf(activePlayer());
+		machine.drive = !machine.drive;
+		if (playerApi.rigActive()) autopilot.override('drive');
+		refresh();
+	}
 	function releaseBall() { physics.launch(world); refresh(); }
 	function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }
 	// One force setting per player: the slider and W/S edit the platform being

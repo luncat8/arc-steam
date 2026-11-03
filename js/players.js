@@ -71,6 +71,31 @@
 		return player.force;
 	}
 
+	// The machine controls are per platform: the rig's live in the world (the
+	// physics reads the piston angle and drive there), every competitor keeps
+	// its own copy on the player object. One accessor covers any number of
+	// platforms, so the wheel, the slider and a drag address the selected
+	// platform only and can never steer another one.
+	function machineOf(player) {
+		return player.kind === 'rig' && rigWorld ? rigWorld : player;
+	}
+
+	function pistonAngleOf(player) {
+		const angle = machineOf(player).pistonAngle;
+		return Number.isFinite(angle) ? angle : 0;
+	}
+
+	// One writer for the tilt, clamped to the same range physics enforces: the
+	// rig's angle goes through the physics setter, a competitor's is its own.
+	function setPistonAngleOf(player, angle) {
+		const physics = root.SteamPhysics;
+		const max = physics ? physics.config.pistonMaxAngle : Math.PI / 18;
+		const clamped = Math.max(-max, Math.min(max, angle));
+		if (player.kind === 'rig' && rigWorld && physics) return physics.setPistonAngle(rigWorld, clamped);
+		machineOf(player).pistonAngle = clamped;
+		return clamped;
+	}
+
 	// Drive power is the force setting while the platform is commanding a move.
 	// A coasting or braking platform applies none, so a driven competitor climbs
 	// a parked rig and a raised slider climbs a driven competitor.
@@ -172,6 +197,7 @@
 			colour: index % 2 ? '#8f86c9' : '#c98c5a', kind: 'rival', bot: true,
 			force: 0.6, x: startSlots[index % startSlots.length], y: 0, angle: 0, vx: 0, spin: 0,
 			direction: 0, target: NaN, braking: false, manual: 0,
+			pistonAngle: 0, drive: false,
 			cargoCells: 0, cargoValue: 0, money: 0, soldValue: 0,
 			tailLeft: 0, tailRight: 0,
 			pulse: false, playing: null, mark: NaN, markTime: 0, commanded: false,
@@ -780,6 +806,7 @@
 	const api = {
 		init, update, surfaceAt, draw, renderPlatform, profileAt, money, load, force, activeSpeed, activeTarget, rigActive,
 		setActive, setBot, syncRigBot, command, commandTarget, commandBrake, clearCommand, setForce, setBallMode,
+		machineOf, pistonAngleOf, setPistonAngleOf,
 		state, bodyTop, bodyBottom, tailAngle, tailReach, tailFullGap, bladeSwath, bladeCut,
 		get halfWidth() { return halfWidth(); }
 	};
