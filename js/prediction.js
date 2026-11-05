@@ -11,10 +11,10 @@
 	const capacity = Math.ceil(horizon * 3 / march) + 100;
 	const pathX = new Float64Array(capacity);
 	const pathY = new Float64Array(capacity);
-	const bounce = root.SteamPhysics.contactResult();
 	const platformPose = { x: 0, y: 0, angle: 0 };
 	const nextPlatformPose = { x: 0, y: 0, angle: 0 };
 	const platformSurface = { x: 0, y: 0, angle: 0 };
+	const deckBounce = { vx: 0, vy: 0 };
 	// Terminal outcomes. WALL and CEILING reflect and keep the march going, so
 	// they never reach the caller as a kind.
 	const NONE = 0;
@@ -31,6 +31,7 @@
 	const NO_SURFACE = 0;
 	const COLLECTOR = 1;
 	const PISTON = 2;
+	let pathBall = null;
 	let samples = 0;
 	let kind = NONE;
 	let endX = 0;
@@ -75,25 +76,110 @@
 		return time >= 0 ? time : Infinity;
 	}
 
-	function projectedPlatformPose(physics, platform, time, out) {
-		const config = physics.config;
-		const rawX = platform.x + platform.vx * time;
-		out.x = Math.max(physics.platformMin(), Math.min(physics.platformMax(), rawX));
-		const desiredAngle = physics.platformPitchAt(out.x);
-		const turn = config.platformPitchRate * time;
-		out.angle = platform.angle + Math.max(-turn, Math.min(turn, desiredAngle - platform.angle));
-		const wantedY = physics.platformBaseAt(out.x, out.angle);
-		out.y = Math.max(wantedY, platform.y - config.platformDropRate * time);
+	// The machine the computer describes: the body and the deck of one platform.
+	// The page selects a platform and the computer follows it, so the rig's live
+	// world platform and a competitor's own body are read into one record here
+	// and nowhere else.
+	const machine = { rig: true, id: 'rig', x: 0, y: 0, vx: 0, angle: 0, pistonAngle: 0, drive: false, force: 1 };
+	const thrust = { acceleration: 0, top: 0 };
+
+	// The body the computer describes: the one it is asked for, else the one the
+	// page has selected, else the rig.
+	function playerOf(world, id) {
+		const players = root.SteamPlayers;
+		const list = players && players.state ? players.state.players : null;
+		if (!list || !list.length) return null;
+		if (id !== undefined) {
+			for (let i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+		}
+		return list[players.state.active] || list[0];
 	}
 
-	// `target` prices any ball of the chamber; the page's overlay and readouts
-	// leave it out and get the rig's focused ball.
-	function predict(world, target) {
+	function selectMachine(world, id) {
+		const player = playerOf(world, id);
+		if (!player || player.kind === 'rig') {
+			const platform = world.platform;
+			machine.rig = true;
+			machine.id = platform.id;
+			machine.x = platform.x;
+			machine.y = platform.y;
+			machine.vx = platform.vx;
+			machine.angle = platform.angle;
+			machine.pistonAngle = world.pistonAngle;
+			machine.drive = Boolean(world.drive);
+			machine.force = world.forceSetting;
+			return player;
+		}
+		machine.rig = false;
+		machine.id = player.id;
+		machine.x = player.x;
+		machine.y = player.y;
+		machine.vx = player.vx;
+		machine.angle = player.angle;
+		machine.pistonAngle = player.pistonAngle;
+		machine.drive = Boolean(player.drive);
+		machine.force = player.force;
+		return player;
+	}
+
+	// What the machine can do: the rig's researched engine and loaded mass, or a
+	// competitor's own power setting on its bare hull, which is the same rule its
+	// controller drives by.
+	function machineThrust(physics, world, player) {
+		if (machine.rig) {
+			thrust.acceleration = physics.forceNow() * world.forceSetting / physics.platformMass(world);
+			thrust.top = physics.speedNow();
+			return thrust;
+		}
+		const force = Math.max(0.1, machine.force);
+		thrust.acceleration = physics.config.force / physics.config.platformMass * force;
+		thrust.top = physics.config.maxSpeed * force;
+		return thrust;
+	}
+
+	// The ball a machine works: the one it holds, then the ball landing soonest,
+	// then a ball on the floor. Mirrors the simulation's own focus, so the page
+	// never names a ball for the computer to draw the right flight.
+	function workingBall(world, id) {
+		const physics = root.SteamPhysics;
+		const balls = world.balls || [];
+		let soonest = Infinity;
+		let best = null;
+		for (let i = 0; i < balls.length; i++) {
+			const ball = balls[i];
+			if (!physics.mayPush(ball, id)) continue;
+			if (ball.state === 'held') return ball;
+			if (!best) best = ball;
+			if (ball.state !== 'flying') continue;
+			const landing = crossing(ball.y, ball.vy, machine.y + physics.config.deck + physics.config.radius, physics.config.ballGravity);
+			if (landing < soonest) { soonest = landing; best = ball; }
+		}
+		return best || world.ball;
+	}
+
+	function projectedPlatformPose(physics, time, out) {
+		const config = physics.config;
+		const rawX = machine.x + machine.vx * time;
+		out.x = Math.max(physics.platformMin(), Math.min(physics.platformMax(), rawX));
+		const desiredAngle = physics.platformPitchAt(out.x, machine.id);
+		const turn = config.platformPitchRate * time;
+		out.angle = machine.angle + Math.max(-turn, Math.min(turn, desiredAngle - machine.angle));
+		const wantedY = physics.platformBaseAt(out.x, out.angle, machine.id);
+		out.y = Math.max(wantedY, machine.y - config.platformDropRate * time);
+	}
+
+	// `target` prices any ball of the chamber and `id` any platform's machine; the
+	// page's overlay and readouts leave both out and get the selected platform and
+	// the ball it works. The rig's own policy passes its id, because the platform
+	// the page is looking at is not the platform that policy drives.
+	function predict(world, target, id) {
 		const physics = root.SteamPhysics;
 		const config = physics.config;
 		const economy = root.SteamCeiling;
-		const ball = target || world.ball;
-		const platform = world.platform;
+		const player = selectMachine(world, id);
+		const ball = target || workingBall(world, machine.id);
+		const platform = machine;
+		pathBall = ball;
 		samples = 0;
 		kind = NONE;
 		endX = ball.x;
@@ -152,11 +238,13 @@
 			if (groundTime < step) { step = groundTime; event = GROUND; }
 			// The coasting platform follows the terrain while its chassis pitch
 			// slews at the live rate. Surface velocities include that tilt.
-			projectedPlatformPose(physics, platform, time, platformPose);
-			projectedPlatformPose(physics, platform, time + step, nextPlatformPose);
+			projectedPlatformPose(physics, time, platformPose);
+			projectedPlatformPose(physics, time + step, nextPlatformPose);
 			const platformVx = step > 0 ? (nextPlatformPose.x - platformPose.x) / step : 0;
 			const platformVy = step > 0 ? (nextPlatformPose.y - platformPose.y) / step : 0;
 			const platformOmega = step > 0 ? (nextPlatformPose.angle - platformPose.angle) / step : 0;
+			// The machine's two deck faces, at the spans the simulation uses: the flat
+			// collector strip catches and the reflector bounces off its own tilt.
 			const collectorWidth = config.platformWidth * config.collectorFraction;
 			const collectorCentre = -config.platformWidth * 0.5 + collectorWidth * 0.5;
 			physics.platformPointAt(platformPose.x, platformPose.y, platformPose.angle, collectorCentre, config.deck, 0, platformSurface);
@@ -165,11 +253,11 @@
 			const deckTime = physics.planeContactTime(x, y, vx, vy, platformSurface.x, platformSurface.y,
 				surfaceVx, surfaceVy, platformSurface.angle, step, collectorWidth * 0.5);
 			if (deckTime < step) { step = deckTime; event = DECK; surface = COLLECTOR; }
-			physics.platformPointAt(platformPose.x, platformPose.y, platformPose.angle, config.pistonCentre, config.deck, world.pistonAngle, platformSurface);
+			physics.platformPointAt(platformPose.x, platformPose.y, platformPose.angle, config.pistonCentre, config.deck, platform.pistonAngle, platformSurface);
 			surfaceVx = platformVx - platformOmega * (platformSurface.y - platformPose.y);
 			surfaceVy = platformVy + platformOmega * (platformSurface.x - platformPose.x);
-			const pistonTime = physics.pistonContactTime(x, y, vx, vy, platformSurface.x, platformSurface.y,
-				surfaceVx, surfaceVy, platformSurface.angle, step);
+			const pistonTime = physics.planeContactTime(x, y, vx, vy, platformSurface.x, platformSurface.y,
+				surfaceVx, surfaceVy, platformSurface.angle, step, config.pistonHalf);
 			if (pistonTime < step) { step = pistonTime; event = DECK; surface = PISTON; }
 			let nx = 0, ny = -1;
 			let contactX = 0;
@@ -196,18 +284,25 @@
 					landingKind = event; landingX = x; landingY = y; landingVx = vx; landingVy = vy;
 					landingTime = time; landingSurface = surface; landingUncertain = crossedRock;
 				}
+				// A catch ends the plan: the platform owns the ball from here. Only a
+				// reflector bounce is worth continuing past, and only with tier II.
 				if (!extended || event === GROUND || event === DECK && surface === COLLECTOR) break;
 				pathX[samples] = x; pathY[samples] = y; samples++;
 				if (event === ROCK) {
 					const normal = vx * nx + vy * ny;
 					if (normal < 0) { vx -= (1 + retention) * normal * nx; vy -= (1 + retention) * normal * ny; }
 					x += nx * 0.0001; y += ny * 0.0001;
+				} else if (surface === COLLECTOR) {
+					// A collector holds the ball: the next contact would be a catch of
+					// this platform, so the flight ends there either way.
+					break;
 				} else {
-					const push = world.drive ? Math.min(available, physics.pulseNow() * physics.thermalFactor(world)) : 0;
-					physics.solvePiston(world, vx, vy, platformSurface.angle - world.platform.angle, push, bounce, surfaceVx, surfaceVy);
-					vx = bounce.vx; vy = bounce.vy;
-					available -= bounce.push;
-					if (bounce.captured) break;
+					// The reflector answers with the same bounce the simulation gives it:
+					// this machine's face, its own tilt and its own drive.
+					const push = machine.drive ? Math.min(available, physics.pulseNow() * physics.thermalFactor(world)) : 0;
+					physics.deckBounce(vx, vy, platformSurface.angle, surfaceVx, surfaceVy, push, deckBounce);
+					vx = deckBounce.vx; vy = deckBounce.vy;
+					available -= push;
 					x -= Math.sin(platformSurface.angle) * 0.0001;
 					y += Math.cos(platformSurface.angle) * 0.0001;
 				}
@@ -238,7 +333,7 @@
 			endTime = landingTime; surface = landingSurface; time = landingTime;
 			uncertain = landingUncertain;
 		}
-		projectedPlatformPose(physics, platform, time, platformPose);
+		projectedPlatformPose(physics, time, platformPose);
 		ghostX = platformPose.x;
 		ghostY = platformPose.y;
 		ghostAngle = platformPose.angle;
@@ -247,10 +342,10 @@
 		// speed it already has, to the speed limit and then cruises for the rest of
 		// the flight time. Braking is not budgeted, so a reachable mark means the
 		// landing can be met, not that coasting meets it.
-		const acceleration = physics.forceNow() * world.forceSetting / physics.platformMass(world);
+		const reach = machineThrust(physics, world, player);
 		const distance = endX - platform.x;
 		const speed = Math.sign(distance) * platform.vx;
-		const cover = physics.coverage(time, speed, acceleration, physics.speedNow());
+		const cover = physics.coverage(time, speed, reach.acceleration, reach.top);
 		gap = Math.abs(distance) - cover;
 		reachable = (kind === DECK || kind === GROUND) && gap <= 0;
 		return state;
@@ -258,6 +353,12 @@
 
 	const api = {
 		state, predict, horizon, march,
+		// Which machine the drawn path belongs to, so the page's own labels and
+		// highlights address the platform the computer is describing.
+		get platformId() { return machine.id; },
+		get platformRig() { return machine.rig; },
+		// The ball this path belongs to, so a readout names the right flight.
+		get ball() { return pathBall; },
 		kinds: Object.freeze({ NONE, DECK, GROUND, ROCK, TIMEOUT, PARKED }),
 		surfaces: Object.freeze({ NONE: NO_SURFACE, COLLECTOR, PISTON })
 	};

@@ -270,7 +270,9 @@
 			return out;
 		}
 		const computer = root.SteamPrediction;
-		const path = computer.predict(world, ball);
+		// The rig's own duty predicts the rig, whichever platform the page has
+		// selected: the computer the player reads is not this plan's.
+		const path = computer.predict(world, ball, 'rig');
 		const kinds = computer.kinds;
 		if (path.kind !== kinds.DECK && path.kind !== kinds.GROUND) {
 			// An uncertain or unfinished trajectory has no landing to meet. Track
@@ -447,7 +449,7 @@
 		if (world.focus !== best) world.focus = best;
 		// Leave the shared ballistic computer describing the ball the plan is for,
 		// so the overlay and the readout never trail the last candidate priced.
-		if (best && best !== priced) root.SteamPrediction.predict(world, best);
+		if (best && best !== priced) root.SteamPrediction.predict(world, best, 'rig');
 	}
 
 	function replan(world) {

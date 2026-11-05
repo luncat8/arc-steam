@@ -744,6 +744,8 @@
 		setText(specValues[9], (physics.recoveryNow() * 100).toFixed(0) + '%');
 	}
 
+	// The computer is the selected platform's, so its readout names that machine
+	// and describes the deck it will meet the ball on.
 	function predictionReadout() {
 		if (!SteamResearch.state.prediction) {
 			setHidden(ui['prediction-status'], true);
@@ -753,10 +755,11 @@
 		const computer = window.SteamPrediction;
 		const kinds = computer.kinds;
 		const path = computer.predict(world);
-		if (path.kind === kinds.PARKED) setText(ui['prediction-status'], 'Ballistic computer: the ball is ' + world.ball.state + ', so there is no flight to predict.');
-		else if (path.kind === kinds.ROCK) setText(ui['prediction-status'], 'Predicted rock contact at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + (SteamResearch.state.predictionBounces ? ' s · tier II continues through estimated rebounds; fracture and future controls can change them.' : ' s · the rebound depends on fracture, so the path stops there.'));
-		else if (path.kind === kinds.TIMEOUT) setText(ui['prediction-status'], 'Ballistic computer: still airborne after ' + computer.horizon.toFixed(0) + ' s of prediction.');
-		else setText(ui['prediction-status'], 'Landing ' + (path.kind === kinds.DECK ? 'on the deck' : 'on the ground') + ' at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + ' s · ghost coasts to ' + path.ghostX.toFixed(1) + ' m · '
+		const machine = computer.platformRig ? 'Rig · ' : activePlayer().name + ' · ';
+		if (path.kind === kinds.PARKED) setText(ui['prediction-status'], 'Ballistic computer: ' + machine + 'has no ball in flight, so there is nothing to predict.');
+		else if (path.kind === kinds.ROCK) setText(ui['prediction-status'], machine + 'predicted rock contact at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + (SteamResearch.state.predictionBounces ? ' s · tier II continues through estimated rebounds; fracture and future controls can change them.' : ' s · the rebound depends on fracture, so the path stops there.'));
+		else if (path.kind === kinds.TIMEOUT) setText(ui['prediction-status'], machine + 'still airborne after ' + computer.horizon.toFixed(0) + ' s of prediction.');
+		else setText(ui['prediction-status'], machine + 'landing ' + (path.kind === kinds.DECK ? 'on the deck' : 'on the ground') + ' at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + ' s · ghost coasts to ' + path.ghostX.toFixed(1) + ' m · '
 			+ (path.reachable ? 'intercept reachable at full thrust' : 'intercept short by ' + path.gap.toFixed(1) + ' m at full thrust'));
 		return true;
 	}
@@ -773,15 +776,17 @@
 		return (plan.smart ? 'Timed intercept · ' : 'Intercept · ') + ball + plan.interceptX.toFixed(1) + ' m in ' + plan.contactIn.toFixed(2) + ' s';
 	}
 
-	// Which of the rig's balls the intercept is working, as `ball n/m`, so two
-	// shared balls never leave the panel saying only where the platform is going.
+	// Which of the selected platform's balls the computer is describing, as
+	// `ball n/m`, so a two-ball game never leaves the panel saying only where a
+	// platform is going.
 	function workingBall() {
 		const balls = world.balls || [];
-		const focus = world.ball;
+		const id = window.SteamPrediction.platformId;
+		const focus = window.SteamPrediction.ball;
 		let count = 0;
 		let index = 0;
 		for (let i = 0; i < balls.length; i++) {
-			if (!physics.isRigBall(balls[i])) continue;
+			if (!physics.mayPush(balls[i], id)) continue;
 			count++;
 			if (balls[i] === focus) index = count;
 		}
@@ -1229,9 +1234,9 @@
 		const pressed = String(driveOn);
 		if (ui.drive.getAttribute('aria-pressed') !== pressed) ui.drive.setAttribute('aria-pressed', pressed);
 		setText(ui.drive.firstChild, driveOn ? 'Drive on ' : 'Drive off ');
-		const canLaunch = physics.canLaunch(world);
+		const canLaunch = physics.canLaunch(world, window.SteamPrediction.ball);
 		setDisabled(ui.launch, !canLaunch);
-		statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch);
+		statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch, driveOn);
 	}
 
 	// The platform rests on the terrain and only leaves it where the ground drops
@@ -1244,7 +1249,7 @@
 	// The status bar: three facts that stay true all session, then the messages
 	// that exist only while their condition does. Each message keeps its own
 	// tone, so the ball's advice and the reserve warning stand side by side.
-	function statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch) {
+	function statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch, driveOn) {
 		const ceiling = window.SteamCeiling.state;
 		setText(ui['fact-reserve'], (world.battery / 1000).toFixed(2) + ' kJ');
 		setTone(ui['fact-reserve'], reserveWarning === 'EMPTY' ? 'danger' : reserveWarning ? 'warn' : '');
@@ -1252,11 +1257,14 @@
 		setTone(ui['fact-cargo'], cargoFull ? 'warn' : '');
 		setText(ui['fact-temp'], temperature.toFixed(0) + ' °C');
 		setTone(ui['fact-temp'], thermalFactor === 0 ? 'danger' : thermalFactor < 1 ? 'warn' : '');
-		if (world.ball.state === 'held') {
-			if (!world.drive) setMessage(ui['status-ball'], 'Ball held · enable drive to release', 'warn');
+		// The line describes the selected platform's ball, like the computer does.
+		const watched = window.SteamPrediction.ball;
+		if (!watched) setMessage(ui['status-ball'], 'No ball this platform may push', 'warn');
+		else if (watched.state === 'held') {
+			if (!driveOn) setMessage(ui['status-ball'], 'Ball held · enable drive to release', 'warn');
 			else if (!canLaunch) setMessage(ui['status-ball'], thermalFactor === 0 ? 'Overheated · wait for cooling' : 'Insufficient energy to lift ball', 'warn');
 			else setMessage(ui['status-ball'], 'Ball held · press E to release' + (thermalFactor < 1 ? ' · drive derated' : ''), 'info');
-		} else if (world.ball.state === 'grounded') setMessage(ui['status-ball'], 'Ball grounded · move over it to collect', 'warn');
+		} else if (watched.state === 'grounded') setMessage(ui['status-ball'], 'Ball grounded · move over it to collect', 'warn');
 		else setMessage(ui['status-ball'], 'Ball in flight · ' + world.pushes + ' powered pushes' + (thermalFactor < 1 ? ' · drive derated' : ''), 'info');
 		// The two ways out of a short reserve, said only while both apply: the
 		// reserve is low and the platform is on the ground to act on it. Standing
@@ -1443,7 +1451,16 @@
 		if (playerApi.rigActive()) autopilot.override('drive');
 		refresh();
 	}
-	function releaseBall() { physics.launch(world); refresh(); }
+	// The release is the selected platform's: the rig spends its reserve, a
+	// competitor spends its own pulse on the ball it holds.
+	function releaseBall() {
+		const player = activePlayer();
+		const ball = window.SteamPrediction.ball;
+		if (!ball || ball.state !== 'held') return;
+		if (player.kind === 'rig') physics.launch(world, ball);
+		else physics.launch(world, ball, player);
+		refresh();
+	}
 	function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }
 	// One force setting per player: the slider and W/S edit the platform being
 	// driven, and switching players reads that player's setting back into the

@@ -238,3 +238,88 @@ test('the prediction horizon covers the taller chamber at the slower ball speed'
 	assert.ok(w.time >= path.time && w.time < path.time + c.step);
 	balanced(w);
 });
+
+test('the computer describes the selected platform, so both can use it', () => {
+	const players = require('../js/players.js');
+	const w = physics.createWorld();
+	players.init(w, 1);
+	players.setBallMode('each');
+	const rival = players.state.rivals[0];
+	rival.bot = false;
+	rival.x = 12;
+	rival.vx = 0;
+	rival.ballTarget = NaN;
+	w.platform.x = 3;
+	w.platform.previousX = 3;
+	players.update(w, c.step);
+	const rivalBall = w.balls.find(ball => ball.owner === rival.id);
+	players.setActive(1);
+	// The ball is above the competitor's deck, so its own collector strip is the
+	// surface the computer has to find — not the rig's, three metres away.
+	rivalBall.state = 'flying';
+	rivalBall.x = 12 - c.platformWidth * 0.5 + 0.3;
+	rivalBall.y = 3;
+	rivalBall.vx = 0;
+	rivalBall.vy = 0;
+	let path = prediction.predict(w);
+	assert.equal(prediction.platformId, rival.id);
+	assert.equal(prediction.platformRig, false);
+	assert.equal(prediction.ball, rivalBall, 'the selected platform owns the drawn flight');
+	assert.equal(path.kind, prediction.kinds.DECK);
+	assert.equal(path.surface, prediction.surfaces.COLLECTOR);
+	near(path.ghostX, 12, 1e-9);
+	// Selecting the rig again hands the computer back to the rig's own ball.
+	players.setActive(0);
+	path = prediction.predict(w);
+	assert.equal(prediction.platformId, 'rig');
+	assert.equal(prediction.ball, w.ball, 'the rig is described by the rig ball');
+	assert.notEqual(path.kind, prediction.kinds.DECK);
+	physics.createWorld();
+});
+
+test('the predicted reflector bounce is the bounce the simulation gives', () => {
+	const players = require('../js/players.js');
+	const w = physics.createWorld();
+	players.init(w, 1);
+	players.setBallMode('each');
+	const rival = players.state.rivals[0];
+	rival.bot = false;
+	rival.x = 12;
+	rival.vx = 0;
+	rival.ballTarget = NaN;
+	rival.pistonAngle = 0.2;
+	rival.drive = false;
+	w.platform.x = 3;
+	w.platform.previousX = 3;
+	players.update(w, c.step);
+	const ball = w.balls.find(item => item.owner === rival.id);
+	players.setActive(1);
+	ball.state = 'flying';
+	ball.x = rival.x + 0.4;
+	ball.y = 4;
+	ball.vx = 0;
+	ball.vy = 0;
+	sync(w);
+	const path = prediction.predict(w);
+	assert.equal(path.kind, prediction.kinds.DECK);
+	assert.equal(path.surface, prediction.surfaces.PISTON);
+	// The bounce counter is the rig's machinery, so the competitor's deck is read
+	// off the ball itself: it arrives downward and leaves upward.
+	let steps = 0;
+	let previous = ball.vy;
+	while (steps < 240 * 3) {
+		physics.step(w, c.step);
+		steps++;
+		if (ball.vy > 0.1 && previous <= 0.1) break;
+		previous = ball.vy;
+	}
+	assert.ok(ball.vy > 0, 'the competitor deck bounces the ball');
+	const contact = steps * c.step;
+	assert.ok(contact >= path.time && contact < path.time + 2 * c.step, `sim ${contact} vs predicted ${path.time}`);
+	near(ball.x, path.endX, 1e-3);
+	// The tilt is the machine's: an angled face sends the ball sideways. The
+	// reflector leans with a positive angle, so the normal points left.
+	assert.ok(ball.vx < -0.2, 'the competitor tilt steers the bounce');
+	balanced(w);
+	physics.createWorld();
+});

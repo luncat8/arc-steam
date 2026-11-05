@@ -475,7 +475,8 @@ test('the ballistic computer overlay appears only after its research', () => {
 	advance(8);
 	const status = dom.element('prediction-status');
 	assert.equal(status.hidden, false);
-	assert.match(status.textContent, /^Landing on the ground at \d+\.\d m in \d+\.\d\d s · ghost coasts to \d+\.\d m · intercept short by \d+\.\d m at full thrust$/);
+	// The computer is the selected platform's, so its readout names that machine.
+	assert.match(status.textContent, /^Rig · landing on the ground at \d+\.\d m in \d+\.\d\d s · ghost coasts to \d+\.\d m · intercept short by \d+\.\d m at full thrust$/);
 	dom.contextCalls.length = 0;
 	advance(1);
 	assert.ok(dom.contextCalls.includes('setLineDash'), 'the predicted path is drawn dashed');

@@ -437,7 +437,10 @@ test('a deck lifted by the terrain cannot fling a ball with a pose jump', () => 
 	world.initialEnergy = physics.totalEnergy(world);
 	physics.step(world, c.step);
 	assert.ok(ball.vy > 0, 'the rising deck still pushes the ball up');
-	assert.ok(ball.vy <= (1 + Math.sqrt(c.retention)) * c.platformDropRate + 1e-6, 'never faster than the deck may rise');
+	// The face under the ball is the reflector, out at pistonCentre, so the pose
+	// jump is clamped to the drop rate plus the pitch rate's lever arm there.
+	const rise = c.platformDropRate + c.platformPitchRate * c.pistonCentre;
+	assert.ok(ball.vy <= (1 + Math.sqrt(c.retention)) * rise + 1e-6, 'never faster than the deck may rise');
 	assert.ok(Math.abs(ball.vx) <= 0.35 * (physics.speedNow() + c.platformPitchRate * c.deck) + 1e-6, 'nor carry more than it may move');
 	near(balance(world), 0, 1e-6);
 });

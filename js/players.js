@@ -157,28 +157,20 @@
 		return height;
 	}
 
-	function settle(rival, dt = 0) {
+	// A competitor settles through the same pose solve as the rig: one slew and
+	// one rate-limited base, so its deck moves the way any platform's does and
+	// the ball sees the same surface on either machine. A new body starts settled
+	// and at rest.
+	function settle(rival, dt) {
 		const physics = root.SteamPhysics;
-		if (!physics) return;
-		const config = physics.config;
-		rival.angle = physics.platformPitchAt(rival.x, rival.id);
-		let wanted = physics.platformBaseAt(rival.x, rival.angle, rival.id);
-		// A drive-order flip must not pop the platform up through the body of the
-		// platform currently sitting above it: rising onto a platform above us is
-		// rate-limited like a descent, so two platforms trade places smoothly
-		// instead of teleporting through each other when the direction changes.
-		let limited = wanted;
-		for (let i = 0; i < players.length; i++) {
-			const other = players[i];
-			if (other === rival) continue;
-			const body = posOf(other);
-			if (!Number.isFinite(body.y)) continue;
-			const dx = rival.x - body.x;
-			if (Math.abs(dx) >= halfWidth() + tailPlate) continue;
-			if (body.y <= rival.previousY) continue;
-			limited = Math.min(limited, rival.previousY + config.platformDropRate * dt);
-		}
-		rival.y = Math.max(limited, rival.previousY - config.platformDropRate * dt);
+		if (!physics || !physics.settlePose) return;
+		if (dt) { physics.settlePose(rival, dt, rival.id); return; }
+		physics.settlePose(rival, 1, rival.id);
+		rival.stepVx = 0;
+		rival.stepVy = 0;
+		rival.stepOmega = 0;
+		rival.vy = 0;
+		rival.omega = 0;
 	}
 
 	function createRig() {
@@ -587,12 +579,9 @@
 		if (rival.x < minX) { rival.x = minX; rival.vx = 0; }
 		if (rival.x > maxX) { rival.x = maxX; rival.vx = 0; }
 		rival.spin += (rival.x - previousX) / physics.config.platformWheelRadius;
+		// The pose solve reports the step's own velocities, which is what the ball
+		// sees as this body's deck motion.
 		settle(rival, dt);
-		// The ball solves a deck contact against this body between steps, so the
-		// body reports where it came from exactly like the rig's platform.
-		rival.stepVx = (rival.x - rival.previousX) / dt;
-		rival.stepVy = (rival.y - rival.previousY) / dt;
-		rival.stepOmega = (rival.angle - rival.previousAngle) / dt;
 		if (Math.abs(rival.vx) > 0.05) grade(rival, dt);
 		const atWall = rival.x <= minX + 1e-3 || rival.x >= maxX - 1e-3;
 		if (atWall && rival.cargoCells > 0) sell(rival);
@@ -799,6 +788,7 @@
 		get selling() { return selling; },
 		get force() { return players[active] ? forceOf(players[active]) : 0; },
 		get ballMode() { return ballMode; },
+		get world() { return rigWorld; },
 		get halfWidth() { return halfWidth(); },
 		bodyTop, bodyBottom, tailAngle, tailPlate, tailReach, tailFullGap, bladeSwath, bladeCut
 	});
