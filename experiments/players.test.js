@@ -483,3 +483,65 @@ test('switching players moves the controls and the force setting with them', () 
 	near(players.force(0), 0.6);
 	assert.equal(players.setActive(0), false);
 });
+
+// How deep any underside point of the upper hull is inside the lower body, over
+// one pose. A point above the plate or the deck is not penetration.
+function hullPenetration(upper, lower, lowerPlayer) {
+	let deepest = 0;
+	const half = players.halfWidth;
+	const bottom = players.bodyBottom;
+	const cosine = Math.cos(upper.angle);
+	const sine = Math.sin(upper.angle);
+	for (let localX = -half; localX <= half + 1e-9; localX += 0.02) {
+		const x = upper.x + cosine * localX - sine * bottom;
+		const y = upper.y + sine * localX + cosine * bottom;
+		const dx = x - lower.x;
+		if (Math.abs(dx) > half + players.tailPlate) continue;
+		const top = lower.y + players.profileAt(lowerPlayer, dx);
+		if (top - y > deepest) deepest = top - y;
+	}
+	return deepest;
+}
+
+test('a platform riding over another never sinks into it and never stutters', () => {
+	const world = fresh();
+	const rival = players.state.rivals[0];
+	rival.bot = false;
+	rival.target = NaN;
+	rival.direction = 0;
+	rival.x = 12;
+	rival.vx = 0;
+	rival.tailLeft = 0;
+	rival.tailRight = 0;
+	world.platform.x = 7;
+	world.platform.y = 0;
+	world.platform.vx = 0;
+	world.platform.angle = 0;
+	world.direction = 1;
+	world.target = NaN;
+	world.forceSetting = 0.6;
+	let deepest = 0;
+	let previousY = world.platform.y;
+	let previousAngle = world.platform.angle;
+	for (let i = 0; i < 240 * 4; i++) {
+		players.update(world, c.step);
+		physics.step(world, c.step);
+		if (Math.abs(world.platform.x - rival.x) < players.halfWidth * 2) {
+			const penetration = hullPenetration(world.platform, rival, rival);
+			if (penetration > deepest) deepest = penetration;
+		}
+		// The pose is continuous: the base falls at the drop rate and climbs with
+		// the ground passing under the hull, never by more than the platform moves.
+		const climb = (c.platformDropRate + Math.abs(world.platform.vx)) * c.step + 1e-6;
+		assert.ok(Math.abs(world.platform.y - previousY) <= climb, 'the base moves like a machine, not a jump');
+		assert.ok(Math.abs(world.platform.angle - previousAngle) <= c.platformPitchRate * c.step + 1e-9, 'the pitch slews at its own rate');
+		previousY = world.platform.y;
+		previousAngle = world.platform.angle;
+		if (world.platform.x > 16) break;
+	}
+	assert.ok(world.platform.x > 16, 'the rig crossed the competitor');
+	assert.ok(deepest < 0.01, 'the upper hull stays out of the lower body, measured ' + deepest);
+	// The pair never trades places: the parked competitor is not lifted by the
+	// platform riding over it.
+	near(rival.y, 0, 0.02);
+});

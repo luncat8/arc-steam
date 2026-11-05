@@ -41,10 +41,10 @@
 			label: 'Balls',
 			title: 'Shared and owned balls',
 			text: [
-				'BALLS in the system bar sets what is in the chamber. One shared ball is the classic game: a single ball both platforms may push, and only the rig can catch it in its collector and pulse it with its reflector.',
-				'Two shared balls put two balls in flight at once and both platforms may push either of them. The rig still holds one at a time, and the autopilot, ballistic overlay and ball readouts follow one ball, so the second never splits the plan: the autopilot works the ball it can still meet, and never turns away from a landing it can reach towards one it cannot.',
+				'BALLS in the system bar sets what is in the chamber. One shared ball is the classic game: a single ball both platforms may push, and whichever platform it comes down on catches it in its own collector and pulses it with its own reflector.',
+				'Two shared balls put two balls in flight at once and both platforms may push either of them. Every platform holds one at a time, and the ballistic overlay and the ball readouts follow the selected platform’s ball, so the second never splits what the player is reading: the autopilot works the ball it can still meet, and never turns away from a landing it can reach towards one it cannot.',
 				'One per platform gives every platform its own ball. Ownership is the collision rule: a platform cannot see, catch, bounce or pulse a ball it does not own, so the rig’s collector passes straight through a competitor’s ball and that competitor’s deck passes straight through the rig’s.',
-				'A competitor keeps its own ball alive with its bounce drive — the deck returns the ball and a pulse of the rig’s base size is added while the ball is coming down — and scoops a grounded ball back up by driving over it. Its ball breaks the same ceiling rock, the debris lands as floor rubble, and its chassis harvests that rubble into its own purse. Competitor balls and pulses are outside the rig’s energy ledger, exactly like the commercial grader.'
+				'A competitor keeps its own ball alive with its own deck: the collector catches it, the reflector bounces it off the competitor’s tilt, a pulse of the rig’s base size is added while the ball would fall short of the rock, and a grounded ball is scooped back up by driving over it. Its ball breaks the same ceiling rock, the debris lands as floor rubble, and its chassis harvests that rubble into its own purse. Competitor balls, catches and pulses are outside the rig’s energy ledger, exactly like the commercial grader.'
 			],
 			keys: [
 				['1 shared', 'One ball, both platforms push it, the rig catches it'],
@@ -108,6 +108,7 @@
 			text: [
 				'The reflector is a sprung piston whose face tilts ±10°. A positive angle raises the right edge and sends a falling ball left, so drag towards where the ball should go — left or up raises the angle.',
 				'Each contact compresses the piston in proportion to normal impact speed (0.024 m per m/s, capped at 0.16 m) and a damped spring pushes it back out. Compression is drawn only; the collision plane stays at its rest position.',
+				'The tilt is the machine’s own: the wheel, the slider and a drag steer the selected platform’s reflector, every platform’s reflector answers a ball off its own tilt, and the ballistic computer draws the flight against it.',
 				'The slider covers the whole range, and a wheel notch over the chamber steps about 4°.'
 			],
 			keys: [
@@ -152,7 +153,8 @@
 			text: [
 				'One tree combines technology research and the equipment each node unlocks. Base chassis gear — the road grader, engine powertrain bay and commercial grader bot — sits at the root and needs no research.',
 				'Researching a node debits funds once, applies its measured bonus immediately, and unlocks the shop slot attached inside that node. Tiered families (engines, cooling radiators and strike balls) fit one unit at a time and swap owned tiers for free; engines are fitted while parked at the left shop.',
-				'Blocked controls stay clickable and explain why in the status bar above the tree. Live platform specifications update in place as deltas stack. Communism mode drops every price and prerequisite; test mode grants the whole tree and shop at once.'
+				'Blocked controls stay clickable and explain why in the status bar above the tree. Live platform specifications update in place as deltas stack. Communism mode drops every price and prerequisite; test mode grants the whole tree and shop at once.',
+				'The ballistic computer is the selected platform’s: its overlay, its landing readout, its ghost and its release all address the platform whose controls you hold, and the autopilot’s own flight never replaces them.'
 			]
 		},
 		{
@@ -172,7 +174,7 @@
 			text: [
 				'The strip under the telemetry lists every platform at the mine, one line per player. The rig is YOU; the others are competitors that work the same floor rubble and keep their own credits. Every platform is the same complete machine — chassis, deck, wheels, 45° plates, fuel bar, thermometer, collector strip and reflector piston, in the same colours — and the selected one is drawn whole while the others are the same drawing at 60% opacity. Nothing is added to a platform and nothing is taken away.',
 				'Click a line to take that platform’s controls. The force setting, A/D, the brake, the low-ground travel click, the bounce drive, the piston tilt and the autopilot duties all act for the selected platform, and only the panel title changes with the switch (`YOU · MANUAL` → `RIVAL 1 · BOT`): the menu itself never rearranges. No key reaches a platform you are not driving, and a direction key held during a switch is dropped with the command it gave, so neither platform can move on a key pressed for the other.',
-				'BOT hands a platform to its policy, and both platforms play the ball the same way. A bot competitor stands where the ball it may push is coming down, meets it on its flat deck, drives over a ball on the floor to scoop it up, and spends a pulse only while the passive bounce would still fall short of the rock. A bot rig runs the autopilot duties — the intercept, the drive keeper and the level bounce. Both make a selling trip to the nearer wall once their hopper is full, and both bank whatever they took on the way. A ball the competitor may not push, and a ball already held in the rig’s collector, are not in its world at all, so it holds station instead of wandering.',
+				'BOT hands a platform to its policy, and both platforms play the ball the same way. A bot competitor stands where the ball it may push is coming down, meets it on its own deck, drives over a ball on the floor to scoop it up, and spends a pulse only while the passive bounce would still fall short of the rock; a ball its collector caught is released again at once. A bot rig runs the autopilot duties — the intercept, the drive keeper and the level bounce. Both make a selling trip to the nearer wall once their hopper is full, and both bank whatever they took on the way. A ball the competitor may not push, and a ball another platform holds, are not in its world at all, so it holds station instead of wandering.',
 				'Two platforms that meet do not collide like walls. Each body has a retractable 45° plate at both ends: folded while the other platform is far or moving away, swinging down at a limited rate as the gap closes, and clipped at the floor so the plate and the ramp the wheels follow are the same line. The platform applying more drive power is the one that rides on top; the other stays on the floor and is driven over. Their credits never enter the rig’s ledger.'
 			],
 			keys: [

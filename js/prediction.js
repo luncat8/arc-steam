@@ -5,12 +5,17 @@
 	// preallocated buffers. Prediction never mutates the world and allocates
 	// nothing per call, so the render loop can draw the cached path every frame
 	// while it is recomputed at the slower readout cadence.
+	//
+	// The computer describes one machine and one ball: the platform the page has
+	// selected and the ball that platform may push. The autopilot prices its own
+	// plans with `predict(world, ball, 'rig')`, which is a different machine
+	// whenever a competitor is selected, so the page's path and the plan's path
+	// live in two separate traces. A keeper can never leave its own flight on the
+	// overlay of a platform the player is looking at.
 	// Cover a full deck-to-ceiling-to-deck flight at the tuned ball gravity.
 	const horizon = 2 * Math.sqrt(2 * root.SteamPhysics.config.ceiling / root.SteamPhysics.config.ballGravity) + 1;
 	const march = 1 / 100;
 	const capacity = Math.ceil(horizon * 3 / march) + 100;
-	const pathX = new Float64Array(capacity);
-	const pathY = new Float64Array(capacity);
 	const platformPose = { x: 0, y: 0, angle: 0 };
 	const nextPlatformPose = { x: 0, y: 0, angle: 0 };
 	const platformSurface = { x: 0, y: 0, angle: 0 };
@@ -31,41 +36,46 @@
 	const NO_SURFACE = 0;
 	const COLLECTOR = 1;
 	const PISTON = 2;
-	let pathBall = null;
-	let samples = 0;
-	let kind = NONE;
-	let endX = 0;
-	let endY = 0;
-	let endVx = 0;
-	let endVy = 0;
-	let surface = NO_SURFACE;
-	let endTime = 0;
-	let uncertain = false;
-	let ghostX = 0;
-	let ghostY = 0;
-	let ghostAngle = 0;
-	let reachable = false;
-	let gap = 0;
 
+	// One trace: the drawn path, the terminal contact and the ghost of the
+	// machine the path belongs to. Two of them exist — the page's and the
+	// policy's — and both are written in place.
+	function createTrace() {
+		return {
+			pathX: new Float64Array(capacity),
+			pathY: new Float64Array(capacity),
+			samples: 0, kind: NONE,
+			endX: 0, endY: 0, endVx: 0, endVy: 0,
+			surface: NO_SURFACE, time: 0, uncertain: false,
+			ghostX: 0, ghostY: 0, ghostAngle: 0,
+			reachable: false, gap: 0,
+			id: 'rig', rig: true, ball: null
+		};
+	}
+	const page = createTrace();
+	const policy = createTrace();
+
+	// The page's trace is the one the overlay, the labels and the controls read.
 	const state = Object.freeze({
-		pathX, pathY,
-		get samples() { return samples; },
-		get kind() { return kind; },
-		get endX() { return endX; },
-		get endY() { return endY; },
+		pathX: page.pathX,
+		pathY: page.pathY,
+		get samples() { return page.samples; },
+		get kind() { return page.kind; },
+		get endX() { return page.endX; },
+		get endY() { return page.endY; },
 		// Ball velocity at the terminal contact, before the impact is resolved.
-		get endVx() { return endVx; },
-		get endVy() { return endVy; },
-		get surface() { return surface; },
-		get time() { return endTime; },
-		get uncertain() { return uncertain; },
-		get ghostX() { return ghostX; },
-		get ghostY() { return ghostY; },
-		get ghostAngle() { return ghostAngle; },
-		get reachable() { return reachable; },
+		get endVx() { return page.endVx; },
+		get endVy() { return page.endVy; },
+		get surface() { return page.surface; },
+		get time() { return page.time; },
+		get uncertain() { return page.uncertain; },
+		get ghostX() { return page.ghostX; },
+		get ghostY() { return page.ghostY; },
+		get ghostAngle() { return page.ghostAngle; },
+		get reachable() { return page.reachable; },
 		// Metres of platform travel still missing from the intercept; <= 0 when the
 		// landing can be met at full thrust.
-		get gap() { return gap; }
+		get gap() { return page.gap; }
 	});
 
 	// Descending crossing of a height, matching the simulation's own root choice.
@@ -83,16 +93,28 @@
 	const machine = { rig: true, id: 'rig', x: 0, y: 0, vx: 0, angle: 0, pistonAngle: 0, drive: false, force: 1 };
 	const thrust = { acceleration: 0, top: 0 };
 
+	function playerList() {
+		const players = root.SteamPlayers;
+		return players && players.state ? players.state.players : null;
+	}
+
+	// The page's selection: the platform whose controls, computer and readouts
+	// the player is looking at.
+	function selectionId() {
+		const list = playerList();
+		if (!list || !list.length) return 'rig';
+		return list[root.SteamPlayers.state.active].id;
+	}
+
 	// The body the computer describes: the one it is asked for, else the one the
 	// page has selected, else the rig.
 	function playerOf(world, id) {
-		const players = root.SteamPlayers;
-		const list = players && players.state ? players.state.players : null;
+		const list = playerList();
 		if (!list || !list.length) return null;
 		if (id !== undefined) {
 			for (let i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
 		}
-		return list[players.state.active] || list[0];
+		return list[root.SteamPlayers.state.active] || list[0];
 	}
 
 	function selectMachine(world, id) {
@@ -125,7 +147,7 @@
 	// What the machine can do: the rig's researched engine and loaded mass, or a
 	// competitor's own power setting on its bare hull, which is the same rule its
 	// controller drives by.
-	function machineThrust(physics, world, player) {
+	function machineThrust(physics, world) {
 		if (machine.rig) {
 			thrust.acceleration = physics.forceNow() * world.forceSetting / physics.platformMass(world);
 			thrust.top = physics.speedNow();
@@ -139,7 +161,8 @@
 
 	// The ball a machine works: the one it holds, then the ball landing soonest,
 	// then a ball on the floor. Mirrors the simulation's own focus, so the page
-	// never names a ball for the computer to draw the right flight.
+	// never names a ball for the computer to draw the right flight. A ball held
+	// by another platform is out of this machine's hands.
 	function workingBall(world, id) {
 		const physics = root.SteamPhysics;
 		const balls = world.balls || [];
@@ -148,13 +171,26 @@
 		for (let i = 0; i < balls.length; i++) {
 			const ball = balls[i];
 			if (!physics.mayPush(ball, id)) continue;
-			if (ball.state === 'held') return ball;
+			if (ball.state === 'held') {
+				if ((ball.holder || world.platform.id) === id) return ball;
+				continue;
+			}
 			if (!best) best = ball;
 			if (ball.state !== 'flying') continue;
 			const landing = crossing(ball.y, ball.vy, machine.y + physics.config.deck + physics.config.radius, physics.config.ballGravity);
 			if (landing < soonest) { soonest = landing; best = ball; }
 		}
-		return best || world.ball;
+		if (best) return best;
+		const held = physics.heldBallOf(world, physics.machineById(world, id));
+		return held || world.ball;
+	}
+
+	// What one step of the machine's face can deliver: the rig spends what its
+	// reserve and its heat allow, a competitor its fixed deck charge.
+	function machinePulse(physics, world, available) {
+		if (!machine.drive) return 0;
+		if (!machine.rig) return Math.min(available, physics.config.pulse);
+		return Math.min(available, physics.pulseNow() * physics.thermalFactor(world));
 	}
 
 	function projectedPlatformPose(physics, time, out) {
@@ -176,34 +212,39 @@
 		const physics = root.SteamPhysics;
 		const config = physics.config;
 		const economy = root.SteamCeiling;
-		const player = selectMachine(world, id);
+		selectMachine(world, id);
 		const ball = target || workingBall(world, machine.id);
 		const platform = machine;
-		pathBall = ball;
-		samples = 0;
-		kind = NONE;
-		endX = ball.x;
-		endY = ball.y;
-		endVx = ball.vx;
-		endVy = ball.vy;
-		surface = NO_SURFACE;
-		endTime = 0;
-		uncertain = false;
-		ghostX = platform.x;
-		ghostY = platform.y;
-		ghostAngle = platform.angle;
-		reachable = false;
-		gap = 0;
+		const trace = id === undefined || id === selectionId() ? page : policy;
+		const pathX = trace.pathX;
+		const pathY = trace.pathY;
+		trace.ball = ball;
+		trace.id = machine.id;
+		trace.rig = machine.rig;
+		trace.samples = 0;
+		trace.kind = NONE;
+		trace.endX = ball.x;
+		trace.endY = ball.y;
+		trace.endVx = ball.vx;
+		trace.endVy = ball.vy;
+		trace.surface = NO_SURFACE;
+		trace.time = 0;
+		trace.uncertain = false;
+		trace.ghostX = platform.x;
+		trace.ghostY = platform.y;
+		trace.ghostAngle = platform.angle;
+		trace.reachable = false;
+		trace.gap = 0;
 		if (ball.state !== 'flying') {
-			kind = PARKED;
-			return state;
+			trace.kind = PARKED;
+			return trace;
 		}
 		const extended = Boolean(root.SteamResearch && root.SteamResearch.state.predictionBounces);
 		const limit = extended ? horizon * 3 : horizon;
 		let crossedRock = false;
 		let landingKind = NONE, landingX = 0, landingY = 0, landingVx = 0, landingVy = 0, landingTime = 0, landingSurface = NO_SURFACE;
 		let landingUncertain = false;
-		let available = world.battery * physics.engineNow().efficiency;
+		let available = machine.rig ? world.battery * physics.engineNow().efficiency : Infinity;
 		const gravity = config.ballGravity;
 		const retention = Math.sqrt(physics.retentionNow());
 		// Rock contacts are only traced while the march can reach the layer, which
@@ -214,9 +255,11 @@
 		let vx = ball.vx;
 		let vy = ball.vy;
 		let time = 0;
+		let kind = NONE;
+		let surface = NO_SURFACE;
+		let samples = 1;
 		pathX[0] = x;
 		pathY[0] = y;
-		samples = 1;
 		while (time < limit && samples < capacity - 1) {
 			let step = march;
 			let event = NONE;
@@ -299,7 +342,7 @@
 				} else {
 					// The reflector answers with the same bounce the simulation gives it:
 					// this machine's face, its own tilt and its own drive.
-					const push = machine.drive ? Math.min(available, physics.pulseNow() * physics.thermalFactor(world)) : 0;
+					const push = machinePulse(physics, world, available);
 					physics.deckBounce(vx, vy, platformSurface.angle, surfaceVx, surfaceVy, push, deckBounce);
 					vx = deckBounce.vx; vy = deckBounce.vy;
 					available -= push;
@@ -313,14 +356,6 @@
 			samples++;
 		}
 		if (kind === NONE) kind = TIMEOUT;
-		// Rock damage and an exhausted horizon both leave the outcome unknown, so
-		// the overlay is flagged instead of promising a trajectory.
-		uncertain = crossedRock || kind === ROCK || kind === TIMEOUT;
-		endX = x;
-		endY = y;
-		endVx = vx;
-		endVy = vy;
-		endTime = time;
 		pathX[samples] = x;
 		pathY[samples] = y;
 		samples++;
@@ -329,36 +364,48 @@
 			// before it add warning time without becoming bogus platform targets;
 			// later simulated piston bounces stay in the drawn path but cannot feed
 			// the autopilot's own future movement back into its current target.
-			kind = landingKind; endX = landingX; endY = landingY; endVx = landingVx; endVy = landingVy;
-			endTime = landingTime; surface = landingSurface; time = landingTime;
-			uncertain = landingUncertain;
+			kind = landingKind; x = landingX; y = landingY; vx = landingVx; vy = landingVy;
+			time = landingTime; surface = landingSurface;
 		}
+		// Rock damage and an exhausted horizon both leave the outcome unknown, so
+		// the overlay is flagged instead of promising a trajectory.
+		trace.uncertain = extended && landingKind
+			? landingUncertain
+			: crossedRock || kind === ROCK || kind === TIMEOUT;
+		trace.kind = kind;
+		trace.surface = surface;
+		trace.samples = samples;
+		trace.endX = x;
+		trace.endY = y;
+		trace.endVx = vx;
+		trace.endVy = vy;
+		trace.time = time;
 		projectedPlatformPose(physics, time, platformPose);
-		ghostX = platformPose.x;
-		ghostY = platformPose.y;
-		ghostAngle = platformPose.angle;
+		trace.ghostX = platformPose.x;
+		trace.ghostY = platformPose.y;
+		trace.ghostAngle = platformPose.angle;
 		// Intercept feasibility is a thrust bound, not a solved manoeuvre: the
 		// platform pushes at its current force setting towards the mark, from the
 		// speed it already has, to the speed limit and then cruises for the rest of
 		// the flight time. Braking is not budgeted, so a reachable mark means the
 		// landing can be met, not that coasting meets it.
-		const reach = machineThrust(physics, world, player);
-		const distance = endX - platform.x;
+		const reach = machineThrust(physics, world);
+		const distance = trace.endX - platform.x;
 		const speed = Math.sign(distance) * platform.vx;
 		const cover = physics.coverage(time, speed, reach.acceleration, reach.top);
-		gap = Math.abs(distance) - cover;
-		reachable = (kind === DECK || kind === GROUND) && gap <= 0;
-		return state;
+		trace.gap = Math.abs(distance) - cover;
+		trace.reachable = (kind === DECK || kind === GROUND) && trace.gap <= 0;
+		return trace;
 	}
 
 	const api = {
 		state, predict, horizon, march,
 		// Which machine the drawn path belongs to, so the page's own labels and
 		// highlights address the platform the computer is describing.
-		get platformId() { return machine.id; },
-		get platformRig() { return machine.rig; },
+		get platformId() { return page.id; },
+		get platformRig() { return page.rig; },
 		// The ball this path belongs to, so a readout names the right flight.
-		get ball() { return pathBall; },
+		get ball() { return page.ball; },
 		kinds: Object.freeze({ NONE, DECK, GROUND, ROCK, TIMEOUT, PARKED }),
 		surfaces: Object.freeze({ NONE: NO_SURFACE, COLLECTOR, PISTON })
 	};

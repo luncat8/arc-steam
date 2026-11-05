@@ -93,10 +93,26 @@
 	// stopped-arrival travel the selection compares between keeps that save
 	// the same landings, and `kept` the landings a schedule starting with
 	// this ball still keeps, filled in by `select`.
-	function blankPlan() {
-		return { ball: null, interceptX: NaN, contactIn: 0, contactVx: 0, contactVy: 0, contactY: 0, contactOnPiston: false, recovering: false, uncertain: false, tier: RECOVER, cost: Infinity, arrival: Infinity, effort: Infinity, edge: false, kept: 0, counted: false };
+	function blankPlan(out) {
+		out.ball = null;
+		out.interceptX = NaN;
+		out.contactIn = 0;
+		out.contactVx = 0;
+		out.contactVy = 0;
+		out.contactY = 0;
+		out.contactOnPiston = false;
+		out.recovering = false;
+		out.uncertain = false;
+		out.tier = RECOVER;
+		out.cost = Infinity;
+		out.arrival = Infinity;
+		out.effort = Infinity;
+		out.edge = false;
+		out.kept = 0;
+		out.counted = false;
+		return out;
 	}
-	const plan = blankPlan();
+	const plan = blankPlan({});
 	// One priced plan per ball in the chamber, grown once to the ball count and
 	// reused by every selection: pricing a ball overwrites the shared ballistic
 	// computer, so the pair of landings can only be compared from records kept
@@ -192,8 +208,10 @@
 	function stale(world) {
 		// A different ball is a different flight: with two shared balls the plan
 		// belongs to the one it was made for, so a focus change replans at once.
-		return planAge >= planInterval || world.ball !== seenBall
-			|| world.ball.state !== seenState
+		// A ball a competitor caught leaves the rig with none at all.
+		const ball = world.ball;
+		return planAge >= planInterval || ball !== seenBall
+			|| (ball ? ball.state : '') !== seenState
 			|| world.bounces !== seenBounces || world.pushes !== seenPushes;
 	}
 
@@ -394,7 +412,7 @@
 	function select(world) {
 		const physics = root.SteamPhysics;
 		const balls = world.balls || [];
-		while (candidatePool.length < balls.length) candidatePool.push(blankPlan());
+		while (candidatePool.length < balls.length) candidatePool.push(blankPlan({}));
 		let count = 0;
 		let priced = null;
 		for (let i = 0; i < balls.length; i++) {
@@ -447,8 +465,8 @@
 		}
 		const best = chosen >= 0 ? candidatePool[chosen].ball : null;
 		if (world.focus !== best) world.focus = best;
-		// Leave the shared ballistic computer describing the ball the plan is for,
-		// so the overlay and the readout never trail the last candidate priced.
+		// The plan's own flight is priced by the policy trace of the computer, so
+		// the overlay of the platform the player is looking at is never replaced.
 		if (best && best !== priced) root.SteamPrediction.predict(world, best, 'rig');
 	}
 
@@ -456,10 +474,11 @@
 		const ball = world.ball;
 		planAge = 0;
 		seenBall = ball;
-		seenState = ball.state;
+		seenState = ball ? ball.state : '';
 		seenBounces = world.bounces;
 		seenPushes = world.pushes;
-		planBall(world, ball, plan);
+		if (ball) planBall(world, ball, plan);
+		else blankPlan(plan);
 	}
 
 	function commandTravel(world) {
@@ -503,7 +522,8 @@
 	// would accelerate the ball every bounce until it is unplayably fast.
 	function driveDecision(world) {
 		// A held or grounded ball must stay launchable, so the drive is on.
-		if (world.ball.state !== 'flying') return true;
+		const ball = world.ball;
+		if (!ball || ball.state !== 'flying') return true;
 		if (!plan.contactOnPiston) return wantedDrive;
 		const config = root.SteamPhysics.config;
 		const bounce = solve(world, angleOn && !suspended(ANGLE) ? wantedAngle : world.pistonAngle, 0);
@@ -520,7 +540,7 @@
 		world.drive = wantedDrive;
 		// A caught ball has no flight energy at all, so the keeper's own rule sends
 		// it back up instead of letting the shift stall on a held ball.
-		if (wantedDrive && world.ball.state === 'held') root.SteamPhysics.launch(world);
+		if (wantedDrive && world.ball && world.ball.state === 'held') root.SteamPhysics.launch(world);
 	}
 
 	// The tilt that leaves the upcoming contact travelling straight up. Raising the

@@ -947,7 +947,7 @@
 		context.lineTo(config.pistonCentre, 0.22);
 		context.stroke();
 		context.lineWidth = 1 / scale;
-		context.fillStyle = world.drive ? '#b9ed91' : '#718d75';
+		context.fillStyle = machine.drive ? '#b9ed91' : '#718d75';
 		context.beginPath();
 		context.moveTo(pistonCentreX - pistonTx * config.pistonHalf, pistonCentreY - pistonTy * config.pistonHalf);
 		context.lineTo(pistonCentreX + pistonTx * config.pistonHalf, pistonCentreY + pistonTy * config.pistonHalf);
@@ -1216,9 +1216,11 @@
 		ui.funds.textContent = ceiling.commune ? 'commons' : ceiling.funds.toFixed(1) + ' cr';
 		setText(ui['funds-note'], ceiling.commune ? 'Nothing costs · sales still measured' : 'Automatic sale at either wall');
 		const balls = world.balls || [];
-		let rigBallCount = 0;
-		for (let i = 0; i < balls.length; i++) if (physics.isRigBall(balls[i])) rigBallCount++;
-		ui['ball-energy'].textContent = physics.ballEnergy(world.ball).toFixed(1) + ' J' + (rigBallCount > 1 ? ' · ' + rigBallCount + ' balls' : '');
+		const machine = playerApi.machineOf(activePlayer());
+		const watched = physics.focusBallOf(world, machine);
+		let pushableCount = 0;
+		for (let i = 0; i < balls.length; i++) if (physics.mayPush(balls[i], physics.machineBody(machine).id)) pushableCount++;
+		ui['ball-energy'].textContent = (watched ? physics.ballEnergy(watched).toFixed(1) : '0.0') + ' J' + (pushableCount > 1 ? ' · ' + pushableCount + ' balls' : '');
 		ui.heat.textContent = world.heat.toFixed(1) + ' J';
 		const temperature = physics.temperature(world);
 		const thermalFactor = physics.thermalFactor(world);
@@ -1230,11 +1232,11 @@
 		ui.cooled.textContent = world.cooledEnergy.toFixed(1) + ' J';
 		ui.error.textContent = (physics.totalEnergy(world) - world.initialEnergy).toFixed(6) + ' J';
 		ui.motion.textContent = playerApi.activeSpeed().toFixed(2) + ' m/s';
-		const driveOn = Boolean(playerApi.machineOf(activePlayer()).drive);
+		const driveOn = Boolean(machine.drive);
 		const pressed = String(driveOn);
 		if (ui.drive.getAttribute('aria-pressed') !== pressed) ui.drive.setAttribute('aria-pressed', pressed);
 		setText(ui.drive.firstChild, driveOn ? 'Drive on ' : 'Drive off ');
-		const canLaunch = physics.canLaunch(world, window.SteamPrediction.ball);
+		const canLaunch = physics.canLaunch(world, watched);
 		setDisabled(ui.launch, !canLaunch);
 		statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch, driveOn);
 	}
@@ -1258,14 +1260,15 @@
 		setText(ui['fact-temp'], temperature.toFixed(0) + ' °C');
 		setTone(ui['fact-temp'], thermalFactor === 0 ? 'danger' : thermalFactor < 1 ? 'warn' : '');
 		// The line describes the selected platform's ball, like the computer does.
-		const watched = window.SteamPrediction.ball;
+		const machine = playerApi.machineOf(activePlayer());
+		const watched = physics.focusBallOf(world, machine);
 		if (!watched) setMessage(ui['status-ball'], 'No ball this platform may push', 'warn');
 		else if (watched.state === 'held') {
 			if (!driveOn) setMessage(ui['status-ball'], 'Ball held · enable drive to release', 'warn');
 			else if (!canLaunch) setMessage(ui['status-ball'], thermalFactor === 0 ? 'Overheated · wait for cooling' : 'Insufficient energy to lift ball', 'warn');
 			else setMessage(ui['status-ball'], 'Ball held · press E to release' + (thermalFactor < 1 ? ' · drive derated' : ''), 'info');
 		} else if (watched.state === 'grounded') setMessage(ui['status-ball'], 'Ball grounded · move over it to collect', 'warn');
-		else setMessage(ui['status-ball'], 'Ball in flight · ' + world.pushes + ' powered pushes' + (thermalFactor < 1 ? ' · drive derated' : ''), 'info');
+		else setMessage(ui['status-ball'], 'Ball in flight · ' + (machine.pushes || 0) + ' powered pushes' + (thermalFactor < 1 ? ' · drive derated' : ''), 'info');
 		// The two ways out of a short reserve, said only while both apply: the
 		// reserve is low and the platform is on the ground to act on it. Standing
 		// on the pad already grants the first one, so it stops there.
@@ -1455,10 +1458,9 @@
 	// competitor spends its own pulse on the ball it holds.
 	function releaseBall() {
 		const player = activePlayer();
-		const ball = window.SteamPrediction.ball;
+		const ball = physics.focusBallOf(world, playerApi.machineOf(player));
 		if (!ball || ball.state !== 'held') return;
-		if (player.kind === 'rig') physics.launch(world, ball);
-		else physics.launch(world, ball, player);
+		physics.launch(world, ball, playerApi.machineOf(player));
 		refresh();
 	}
 	function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }

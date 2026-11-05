@@ -189,10 +189,11 @@
 			colour: index % 2 ? '#8f86c9' : '#c98c5a', kind: 'rival', bot: true,
 			force: 0.6, x: startSlots[index % startSlots.length], y: 0, angle: 0, vx: 0, spin: 0,
 			direction: 0, target: NaN, braking: false, manual: 0,
-			pistonAngle: 0, drive: false,
+			pistonAngle: 0, pistonOffset: 0, pistonVelocity: 0, pistonImpact: 0,
+			drive: false, bounces: 0, pushes: 0,
 			cargoCells: 0, cargoValue: 0, money: 0, soldValue: 0,
 			tailLeft: 0, tailRight: 0,
-			pulse: false, playing: null, mark: NaN, markTime: 0, commanded: false,
+			playing: null, mark: NaN, markTime: 0, commanded: false,
 			previousX: 0, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0
 		};
 		settle(rival);
@@ -506,30 +507,39 @@
 		return x < physics.config.width * 0.5 ? physics.platformMin() - 1 : physics.platformMax() + 1;
 	}
 
-	// A competitor plays the ball the way the rig's bot does, with a flat deck
-	// in place of the collector and piston: it stands where the flight comes
-	// down and meets it there, drives over a ball on the floor to scoop it, and
-	// spends a pulse only while the passive bounce would fall short of the rock.
-	// A full hopper sends it to the nearer wall first, exactly like the rig's
-	// selling trip. With no ball in play it holds station instead of wandering.
+	// A competitor plays the ball with the same machinery as the rig: its
+	// collector catches, its reflector bounces off its own tilt, and it stands
+	// where the flight comes down or drives over a ball on the floor to scoop
+	// it. The drive stays armed only while the passive bounce would fall short
+	// of the rock, exactly the rig's drive-keeper rule at its fixed pulse size.
+	// A full hopper sends it to the nearer wall first, like the rig's selling
+	// trip. With no ball in play it holds station instead of wandering.
 	function stepBallPolicy(rival) {
 		rival.mark = NaN;
 		rival.markTime = 0;
 		const physics = root.SteamPhysics;
 		if (!physics) return;
 		const config = physics.config;
-		// The drive belongs to the platform, not to one ball: it stays armed while
-		// any ball this deck may bounce would still fall short of the rock, which
-		// is the rig's drive-keeper rule at the platform's fixed pulse size.
 		const balls = rigWorld ? rigWorld.balls : null;
-		rival.pulse = false;
+		rival.drive = false;
 		if (balls) {
 			for (let i = 0; i < balls.length; i++) {
 				const other = balls[i];
 				if (!physics.mayPush(other, rival.id) || other.state === 'held') continue;
 				const apex = other.y + other.vy * other.vy / (2 * config.ballGravity);
-				if (apex < config.ceiling - config.radius) { rival.pulse = true; break; }
+				if (apex < config.ceiling - config.radius) { rival.drive = true; break; }
 			}
+		}
+		// A caught ball is this platform's: the bot releases it at once, so a
+		// competitor never parks the only ball in play. The platform under the
+		// controls keeps its catch, because its computer and its release are the
+		// player's to use.
+		const caught = physics.heldBallOf(rigWorld, rival);
+		if (caught) {
+			rival.playing = caught;
+			rival.drive = true;
+			if (rival.bot && rival.manual <= 0 && players[active] !== rival && physics.canLaunch(rigWorld, caught)) physics.launch(rigWorld, caught, rival);
+			return;
 		}
 		const ball = playBall(rival);
 		rival.playing = ball;

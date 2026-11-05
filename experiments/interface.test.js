@@ -1228,3 +1228,91 @@ test('switching platforms changes the title and nothing else in the menu', () =>
 	assert.equal(dom.element('control-title').textContent, 'YOU · MANUAL');
 	assert.equal(rigDrive.hidden, false);
 });
+
+test('the computer, the release and the ball readout belong to the selected platform', () => {
+	const list = dom.element('player-list');
+	const rival = players.state.rivals[0];
+	const computer = globalThis.SteamPrediction;
+	advance(1);
+	// A later test may have reset the chamber, and the computer needs its research.
+	study('ballistics');
+	advance(1);
+	players.setBallMode('shared1');
+	const ball = world.balls[0];
+	// One shared ball in flight, the two platforms parked apart and neither
+	// driving: what moves here is the computer, not the chamber.
+	world.platform.x = 3;
+	world.platform.vx = 0;
+	world.platform.direction = 0;
+	world.direction = 0;
+	world.target = NaN;
+	world.brake = false;
+	world.drive = false;
+	rival.bot = false;
+	rival.manual = 0;
+	rival.x = 19;
+	rival.vx = 0;
+	rival.direction = 0;
+	rival.target = NaN;
+	rival.braking = false;
+	ball.state = 'flying';
+	ball.holder = null;
+	ball.x = 12;
+	ball.y = 4;
+	ball.vx = 1;
+	ball.vy = 0;
+	harness.sync(world);
+	players.setActive(0);
+	advance(10);
+	assert.equal(computer.platformId, 'rig');
+	assert.match(dom.element('prediction-status').textContent, /^Rig \u00b7 /);
+	// Take the competitor: the same computer now describes its machine and the
+	// ball it may push, and the panel says so.
+	list.children[1].children[0].dispatch('click');
+	assert.equal(players.state.active, 1);
+	advance(10);
+	assert.equal(computer.platformId, rival.id, 'the computer follows the selected platform');
+	assert.equal(computer.ball, ball, 'it describes the ball that platform may push');
+	assert.match(dom.element('prediction-status').textContent, /^RIVAL 1 \u00b7 /);
+	assert.ok(Math.abs(computer.state.ghostX - rival.x) < Math.abs(computer.state.ghostX - world.platform.x), 'the ghost is the selected platform');
+	// The rig's own plan runs while the competitor is selected; its flight is
+	// never left on the overlay the player is reading.
+	dom.element('auto-move').checked = true;
+	dom.element('autopilot').dispatch('change', { target: dom.element('auto-move') });
+	advance(30);
+	assert.equal(computer.platformId, rival.id, 'the rig plan never takes the page computer over');
+	assert.equal(computer.ball, ball);
+	assert.match(dom.element('prediction-status').textContent, /^RIVAL 1 \u00b7 /);
+	dom.element('auto-move').checked = false;
+	dom.element('autopilot').dispatch('change', { target: dom.element('auto-move') });
+	// The competitor catches the ball in its own collector, and the release key
+	// spends the competitor's drive, not the rig's reserve.
+	world.platform.x = 2;
+	world.direction = 0;
+	world.target = NaN;
+	ball.state = 'flying';
+	ball.holder = null;
+	const config = physics.config;
+	ball.x = rival.x - config.platformWidth * 0.5 + config.platformWidth * config.collectorFraction * 0.5;
+	ball.y = rival.y + config.deck + 0.6;
+	ball.vx = 0;
+	ball.vy = -2;
+	rival.drive = true;
+	advance(40);
+	assert.equal(ball.state, 'held', 'the competitor collector caught the ball');
+	assert.equal(ball.holder, rival.id);
+	assert.match(dom.element('ball-energy').textContent, /^0\.0 J$/, 'the readout follows the caught ball');
+	const battery = world.battery;
+	rival.drive = true;
+	dom.key('KeyE');
+	assert.equal(ball.state, 'flying', 'the release belongs to the platform that holds the ball');
+	assert.ok(ball.vy > 0);
+	assert.equal(world.battery, battery, 'the competitor release does not spend the rig reserve');
+	// Back on the rig the computer is the rig's again.
+	list.children[0].children[0].dispatch('click');
+	advance(10);
+	assert.equal(computer.platformId, 'rig');
+	assert.match(dom.element('prediction-status').textContent, /^Rig \u00b7 /);
+	rival.bot = true;
+	world.drive = false;
+});

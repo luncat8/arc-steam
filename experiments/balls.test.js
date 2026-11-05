@@ -8,6 +8,7 @@ const physics = harness.physics;
 const ceiling = harness.ceiling;
 const players = require('../js/players.js');
 const autopilot = require('../js/autopilot.js');
+const prediction = harness.prediction;
 const c = physics.config;
 
 function fresh(mode) {
@@ -126,19 +127,22 @@ test('a deck pulse lifts a shared ball, not only one it owns', () => {
 	const rival = players.state.rivals[0];
 	const ball = world.balls[0];
 	// A shared ball is pushable by either platform, so the competitor's drive is
-	// part of the game for it too: only the ledger booking differs.
+	// part of the game for it too: only the ledger booking differs. The rig is
+	// parked away, because it may push this ball as well.
+	world.platform.x = 2;
 	rival.bot = false;
 	rival.x = 12;
 	rival.vx = 0;
 	players.update(world, c.step);
-	function drop(pulse) {
+	function drop(armed) {
 		ball.state = 'flying';
+		ball.holder = null;
 		ball.x = rival.x;
 		ball.y = rival.y + c.deck + c.radius + 0.4;
 		ball.vx = 0;
 		ball.vy = -2;
 		world.initialEnergy = physics.totalEnergy(world);
-		rival.pulse = pulse;
+		rival.drive = armed;
 		let peak = -Infinity;
 		for (let i = 0; i < 240; i++) {
 			physics.step(world, c.step);
@@ -154,51 +158,70 @@ test('a deck pulse lifts a shared ball, not only one it owns', () => {
 	near(balance(world), 0, 1e-6);
 });
 
-test('a competitor ball bounces off its deck, takes pulses and is scooped when grounded', () => {
+test('a competitor catches, reflects and releases with its own machinery', () => {
 	const world = fresh('each');
 	const rival = players.state.rivals[0];
 	const ball = world.balls.find(b => b.owner === rival.id);
 	rival.bot = false;
 	rival.manual = 0;
-	rival.ballTarget = NaN;
 	rival.x = 12;
-	rival.vx = 0;
-	rival.pulse = true;
-	// Drop it onto the deck: it returns upward.
-	ball.x = 12;
+	rival.drive = true;
+	// The reflector span bounces the ball off its own tilt.
+	players.setPistonAngleOf(rival, c.pistonMaxAngle);
+	ball.x = rival.x + c.pistonCentre;
 	ball.y = rival.y + c.deck + 1.2;
 	ball.vx = 0;
 	ball.vy = 0;
 	ball.state = 'flying';
+	ball.holder = null;
 	let peak = 0;
 	for (let i = 0; i < 240; i++) {
 		players.update(world, c.step);
-		rival.pulse = true;
 		physics.step(world, c.step);
 		if (ball.vy > peak) peak = ball.vy;
 	}
-	assert.ok(peak > 0.5, 'the deck returns the ball');
-	// Grounded under the competitor, the pulse lifts it again.
+	assert.ok(peak > 0.5, 'the reflector returns the ball');
+	// The collector span catches into the competitor's own hopper.
+	ball.state = 'flying';
+	ball.holder = null;
+	ball.x = rival.x - c.platformWidth * 0.5 + c.platformWidth * c.collectorFraction * 0.5;
+	ball.y = rival.y + c.deck + c.radius + 0.3;
+	ball.vx = 0;
+	ball.vy = -2;
+	players.setPistonAngleOf(rival, 0);
+	for (let i = 0; i < 240 && ball.state !== 'held'; i++) {
+		players.update(world, c.step);
+		physics.step(world, c.step);
+	}
+	assert.equal(ball.state, 'held', 'the competitor collector catches the ball');
+	assert.equal(ball.holder, rival.id, 'the catch belongs to the competitor');
+	// Its own release sends the ball off its tilted face.
+	assert.equal(physics.canLaunch(world, ball), true, 'a driven competitor can release what it holds');
+	assert.equal(physics.launch(world, ball, rival), true);
+	assert.equal(ball.state, 'flying');
+	assert.ok(ball.vy > 0);
+	// Grounded under the competitor, its drive scoops the ball back up.
 	ball.state = 'grounded';
+	ball.holder = null;
 	ball.x = rival.x;
 	ball.y = c.radius;
 	ball.vx = 0;
 	ball.vy = 0;
-	rival.pulse = true;
+	rival.drive = true;
 	players.update(world, c.step);
 	physics.step(world, c.step);
 	assert.equal(ball.state, 'flying', 'a grounded ball is scooped');
 	assert.ok(ball.vy > 0);
-	// With the pulse off, nothing lifts it. The policy is what turns the pulse
-	// back on, so this steps the physics alone with the body held still.
+	// With the drive off nothing lifts it; the policy is what arms the drive.
 	ball.state = 'grounded';
+	ball.holder = null;
 	ball.x = rival.x;
 	ball.y = c.radius;
 	ball.vx = 0;
 	ball.vy = 0;
-	rival.pulse = false;
+	rival.drive = false;
 	physics.step(world, c.step);
-	assert.equal(ball.state, 'grounded', 'the pulse is what lifts it');
+	assert.equal(ball.state, 'grounded', 'the drive is what lifts it');
 });
 
 test('a competitor ball mines the ceiling and the competitor banks the rubble', () => {
@@ -428,7 +451,7 @@ test('a deck lifted by the terrain cannot fling a ball with a pose jump', () => 
 	rival.stepVx = 300;
 	rival.stepVy = 300;
 	rival.stepOmega = 50;
-	rival.pulse = false;
+	rival.drive = false;
 	ball.state = 'flying';
 	ball.x = rival.x;
 	ball.y = rival.y + c.deck + c.radius;
@@ -443,4 +466,186 @@ test('a deck lifted by the terrain cannot fling a ball with a pose jump', () => 
 	assert.ok(ball.vy <= (1 + Math.sqrt(c.retention)) * rise + 1e-6, 'never faster than the deck may rise');
 	assert.ok(Math.abs(ball.vx) <= 0.35 * (physics.speedNow() + c.platformPitchRate * c.deck) + 1e-6, 'nor carry more than it may move');
 	near(balance(world), 0, 1e-6);
+});
+
+// One shot at a deck, from the same geometry relative to the machine's own body,
+// so the rig and a competitor can be compared impulse for impulse.
+function deckShot(machine, tilt, speed) {
+	const world = fresh('each');
+	const rival = players.state.rivals[0];
+	world.drive = false;
+	world.platform.x = machine === 'rig' ? 12 : 2;
+	world.platform.previousX = world.platform.x;
+	world.platform.vx = 0;
+	rival.x = machine === 'rig' ? 2 : 12;
+	rival.bot = false;
+	rival.drive = false;
+	rival.vx = 0;
+	rival.previousX = rival.x;
+	rival.previousY = rival.y;
+	rival.previousAngle = rival.angle;
+	rival.stepVx = 0;
+	rival.stepVy = 0;
+	rival.stepOmega = 0;
+	if (machine === 'rig') physics.setPistonAngle(world, tilt);
+	else rival.pistonAngle = tilt;
+	const body = machine === 'rig' ? world.platform : rival;
+	const ball = world.balls.find(item => item.owner === (machine === 'rig' ? 'rig' : rival.id));
+	ball.owner = null;
+	ball.holder = null;
+	ball.state = 'flying';
+	ball.x = body.x + c.pistonCentre + 0.3;
+	ball.y = c.deck + 0.8;
+	ball.vx = 0.6;
+	ball.vy = -speed;
+	let guard = 0;
+	while (guard++ < 400 && ball.state === 'flying' && (machine === 'rig' ? world.bounces : rival.bounces) === 0) physics.step(world, c.step);
+	return { ball, world, rival, bounces: machine === 'rig' ? world.bounces : rival.bounces };
+}
+
+test('either platform reflects a ball off its own reflector face, tilt for tilt', () => {
+	for (const tilt of [0, c.pistonMaxAngle, -c.pistonMaxAngle]) {
+		const rig = deckShot('rig', tilt, 3);
+		const rival = deckShot('rival', tilt, 3);
+		assert.equal(rig.bounces, 1, 'the rig reflector answers');
+		assert.equal(rival.bounces, 1, 'the competitor reflector answers');
+		near(rival.ball.vx, rig.ball.vx, 1e-9);
+		near(rival.ball.vy, rig.ball.vy, 1e-9);
+	}
+	// A raised left edge sends the ball left on either machine, and the other way
+	// for a raised right edge: the tilt is the machine's own.
+	const left = deckShot('rival', c.pistonMaxAngle, 3);
+	const right = deckShot('rival', -c.pistonMaxAngle, 3);
+	assert.ok(left.ball.vx < right.ball.vx - 0.5, 'the competitor tilt steers the reflection');
+});
+
+test('a ball never passes through either deck, and either collector catches it', () => {
+	for (const machine of ['rig', 'rival']) {
+		const fast = deckShot(machine, 0.12, 400);
+		assert.equal(fast.bounces, 1, machine + ' deck stops a ball at any speed');
+		// The collector strip catches on either platform.
+		const world = fresh('each');
+		const rival = players.state.rivals[0];
+		world.drive = false;
+		world.platform.x = machine === 'rig' ? 12 : 2;
+		world.platform.vx = 0;
+		rival.x = machine === 'rig' ? 2 : 12;
+		rival.bot = false;
+		rival.drive = false;
+		rival.vx = 0;
+		rival.previousX = rival.x;
+		rival.previousY = rival.y;
+		rival.previousAngle = rival.angle;
+		rival.stepVx = 0;
+		rival.stepVy = 0;
+		rival.stepOmega = 0;
+		const body = machine === 'rig' ? world.platform : rival;
+		const ball = world.balls.find(item => item.owner === (machine === 'rig' ? 'rig' : rival.id));
+		ball.owner = null;
+		ball.holder = null;
+		ball.state = 'flying';
+		ball.x = body.x - c.platformWidth * 0.5 + c.platformWidth * c.collectorFraction * 0.5;
+		ball.y = c.deck + 0.8;
+		ball.vx = 0;
+		ball.vy = -3;
+		for (let guard = 0; guard < 400 && ball.state === 'flying'; guard++) physics.step(world, c.step);
+		assert.equal(ball.state, 'held', machine + ' collector catches the ball');
+		assert.equal(ball.holder, machine === 'rig' ? 'rig' : rival.id, 'the catch belongs to the machine that made it');
+	}
+});
+
+test('a caught ball is the platform\'s own, and its release is that machine\'s', () => {
+	const world = fresh('shared1');
+	const rival = players.state.rivals[0];
+	const ball = world.balls[0];
+	world.platform.x = 2;
+	world.platform.vx = 0;
+	world.drive = false;
+	rival.x = 12;
+	rival.bot = false;
+	rival.manual = 0;
+	rival.drive = true;
+	rival.vx = 0;
+	players.update(world, c.step);
+	ball.state = 'flying';
+	ball.holder = null;
+	ball.x = rival.x - c.platformWidth * 0.5 + c.platformWidth * c.collectorFraction * 0.5;
+	ball.y = rival.y + c.deck + 0.6;
+	ball.vx = 0;
+	ball.vy = -2;
+	const battery = world.battery;
+	for (let guard = 0; guard < 400 && ball.state !== 'held'; guard++) physics.step(world, c.step);
+	assert.equal(ball.holder, rival.id, 'the competitor caught a shared ball');
+	assert.equal(ball.state, 'held');
+	// The competitor may release it; the rig, holding nothing, may not.
+	assert.equal(physics.canLaunch(world, ball), true);
+	assert.equal(physics.launch(world, ball), true, 'the release finds the platform that holds the ball');
+	assert.equal(ball.state, 'flying');
+	assert.ok(ball.vy > 0);
+	assert.equal(world.battery, battery, 'a competitor release does not spend the rig reserve');
+	assert.equal(world.pushes, 0, 'nor count as a rig push');
+	assert.equal(rival.pushes, 1);
+	// Its collector holds at most one: a second ball is returned, not caught.
+	ball.state = 'flying';
+	ball.holder = null;
+	ball.x = rival.x - 1.2;
+	ball.y = rival.y + c.deck + 0.6;
+	ball.vx = 0;
+	ball.vy = -2;
+	for (let guard = 0; guard < 400 && ball.state !== 'held'; guard++) physics.step(world, c.step);
+	assert.equal(ball.state, 'held', 'the collector catches again');
+	assert.equal(physics.heldBallOf(world, physics.machineById(world, rival.id)), ball);
+	assert.equal(physics.heldBallOf(world, physics.machineById(world, 'rig')), null, 'the rig holds nothing');
+});
+
+test('the ballistic computer follows the selected platform, and the rig plan cannot replace it', () => {
+	const world = fresh('each');
+	const rival = players.state.rivals[0];
+	const rigBall = world.balls.find(ball => ball.owner === 'rig');
+	const rivalBall = world.balls.find(ball => ball.owner === rival.id);
+	rival.bot = false;
+	rival.manual = 0;
+	rival.x = 19;
+	rival.vx = 0;
+	world.platform.x = 3;
+	world.platform.vx = 0;
+	world.direction = 0;
+	world.target = NaN;
+	rigBall.state = 'flying';
+	rigBall.x = 8;
+	rigBall.y = 5;
+	rigBall.vx = 2;
+	rigBall.vy = 0;
+	rivalBall.state = 'flying';
+	rivalBall.x = 12;
+	rivalBall.y = 4;
+	rivalBall.vx = 1;
+	rivalBall.vy = 0;
+	// The page is on the rig: the computer describes the rig's ball.
+	players.setActive(0);
+	prediction.predict(world);
+	assert.equal(prediction.platformId, 'rig');
+	assert.equal(prediction.ball, rigBall);
+	assert.equal(prediction.state.kind, prediction.kinds.GROUND);
+	// On the competitor: the same computer describes the competitor's ball and
+	// the competitor's machine, which is a different flight.
+	players.setActive(1);
+	prediction.predict(world);
+	const kind = prediction.state.kind;
+	const endX = prediction.state.endX;
+	assert.equal(prediction.platformId, rival.id);
+	assert.equal(prediction.ball, rivalBall, 'the ball this platform may push');
+	assert.equal(prediction.state.ghostX, 19, 'the ghost is the selected platform');
+	// The rig's own plan runs at the same time and prices the rig's machine; it
+	// must not leave its flight on the page's overlay.
+	autopilot.set('move', true);
+	autopilot.update(world, c.step);
+	autopilot.update(world, c.step);
+	assert.equal(prediction.platformId, rival.id, 'the rig policy never takes the page computer over');
+	assert.equal(prediction.ball, rivalBall);
+	assert.equal(prediction.state.kind, kind);
+	assert.equal(prediction.state.endX, endX);
+	autopilot.reset();
+	autopilot.set('move', false);
+	players.setActive(0);
 });
