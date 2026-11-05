@@ -545,3 +545,40 @@ test('a platform riding over another never sinks into it and never stutters', ()
 	// platform riding over it.
 	near(rival.y, 0, 0.02);
 });
+
+test('a mid-crossing power change keeps the hull already on top', () => {
+	const world = fresh();
+	const rival = players.state.rivals[0];
+	rival.x = 16; rival.bot = false; rival.force = 0.9; rival.direction = -1; rival.vx = 0; rival.target = NaN;
+	rival.tailLeft = 0; rival.tailRight = 0;
+	world.platform.x = 12; world.platform.vx = 0; world.direction = 0; world.target = NaN;
+	let cut = false, flipped = false, deepest = 0;
+	let rigY = world.platform.y, rivalY = rival.y;
+	let maxJump = 0;
+	for (let i = 0; i < 240 * 4; i++) {
+		// The rider brakes and the lower hull starts driving while the pair is
+		// still overlapping: the power ranking would swap them without a latch.
+		if (rival.y > 0.35 && !cut) {
+			rival.direction = 0;
+			rival.braking = true;
+			world.direction = 1;
+			world.forceSetting = 0.9;
+			cut = true;
+		}
+		players.update(world, c.step);
+		physics.step(world, c.step);
+		const rigJump = Math.abs(world.platform.y - rigY);
+		const rivalJump = Math.abs(rival.y - rivalY);
+		maxJump = Math.max(maxJump, rigJump, rivalJump);
+		if (cut && world.platform.y > rival.y + 0.02) flipped = true;
+		if (Math.abs(world.platform.x - rival.x) < players.halfWidth * 2) {
+			deepest = Math.max(deepest, hullPenetration(rival, world.platform, players.state.rig));
+		}
+		rigY = world.platform.y; rivalY = rival.y;
+	}
+	assert.ok(cut, 'the competitor climbed onto the rig before its drive was cut');
+	assert.equal(flipped, false, 'a brake and a direction change do not trade the hulls');
+	assert.equal(world.platform.y, 0, 'the lower hull stays on the floor');
+	assert.ok(rivalY >= 0 && maxJump < 0.05, 'no body teleports through the other');
+	assert.ok(deepest < 0.03, 'a moving pair stays within a sampling step, measured ' + deepest);
+});

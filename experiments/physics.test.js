@@ -844,3 +844,150 @@ test('the stopped arrival prices the manoeuvre the intercept controllers fly', (
 	assert.equal(physics.stopTime(0, 3, acceleration, top), 0, 'a mark already reached costs nothing');
 	assert.equal(physics.stopTime(-2, 3, acceleration, top), 0);
 });
+
+test('the GROUND setting keeps a chosen share of the ball\'s normal impact energy', () => {
+	function strike(mode) {
+		const w = physics.createWorld();
+		physics.setGroundBounce(mode);
+		w.platform.x = 3; w.direction = 0; w.target = NaN; w.drive = false;
+		w.ball.x = 20; w.ball.y = 3; w.ball.vx = 0; w.ball.vy = 0;
+		sync(w);
+		let arriving = 0, leaving = 0;
+		for (let i = 0; i < 240 * 4; i++) {
+			const before = w.ball.vy;
+			physics.step(w, c.step);
+			if (before < 0 && w.ball.vy > 0 && w.ball.y < 1) { arriving = before; leaving = w.ball.vy; break; }
+			if (w.ball.state === 'grounded') { arriving = before; break; }
+		}
+		balanced(w);
+		return { w, arriving, leaving };
+	}
+	const absorbed = strike('absorb');
+	assert.ok(absorbed.arriving < 0, 'the ball reached the floor');
+	assert.equal(absorbed.leaving, 0, 'the default ground takes every bounce');
+	assert.equal(absorbed.w.ball.state, 'grounded');
+	assert.equal(absorbed.w.groundings, 1);
+	assert.equal(absorbed.w.bounces, 0);
+	const half = strike('half');
+	near(physics.groundRetentionNow(), 0.5);
+	near(half.leaving / -half.arriving, Math.sqrt(0.5), 0.01);
+	assert.equal(half.w.ball.state, 'flying', 'the ball rebounds instead of grounding');
+	assert.equal(half.w.groundings, 0);
+	assert.equal(half.w.bounces, 1, 'the rebound replans the autopilot');
+	assert.ok(half.w.heat > 0, 'the lost half of the impact energy becomes heat');
+	assert.ok(half.w.heat < absorbed.w.heat, 'less energy is lost than in a grounding');
+	const elastic = strike('elastic');
+	near(elastic.leaving, -elastic.arriving, 0.01);
+	near(elastic.w.heat + elastic.w.cooledEnergy, 0, 1e-6);
+	physics.setGroundBounce('absorb');
+});
+
+test('half-energy ground rebounds settle and keep the energy ledger exact', () => {
+	const w = physics.createWorld();
+	physics.setGroundBounce('half');
+	w.platform.x = 3; w.drive = false;
+	w.ball.x = 20; w.ball.y = 3; w.ball.vx = 0; w.ball.vy = 0;
+	sync(w);
+	let rebounds = 0;
+	let previous = w.ball.vy;
+	for (let i = 0; i < 240 * 20 && w.ball.state !== 'grounded'; i++) {
+		physics.step(w, c.step);
+		if (previous < 0 && w.ball.vy > 0 && w.ball.y < 1) rebounds++;
+		previous = w.ball.vy;
+	}
+	assert.equal(w.ball.state, 'grounded', 'a rebound too small to see settles the ball');
+	assert.ok(rebounds >= 5, 'the ball bounces several times before it rests');
+	assert.equal(w.groundings, 1);
+	balanced(w);
+	physics.setGroundBounce('absorb');
+});
+
+test('a rising floor lifts a rebounding ball without a second impulse', () => {
+	const w = physics.createWorld();
+	physics.setGroundBounce('half');
+	const state = ceiling.state;
+	const drawContext = { fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} };
+	state.floorPiles.fill(0.5); ceiling.drawFloor(drawContext);
+	w.platform.x = 3; w.drive = false;
+	w.ball.x = 20; w.ball.y = 0.5 + c.radius - 0.02; w.ball.vx = 0; w.ball.vy = 1;
+	sync(w);
+	physics.step(w, c.step);
+	assert.ok(w.ball.y >= ceiling.floorAt(20) + c.radius, 'the ball is lifted out of the surface');
+	assert.ok(w.ball.y < ceiling.floorAt(20) + c.radius + 0.01, 'and flies on from there');
+	near(w.ball.vy, 1 - c.ballGravity * c.step, 1e-6, 'the rising ball keeps its flight');
+	assert.ok(w.terrainWork > 0, 'the lift is booked as terrain work');
+	assert.equal(w.ball.state, 'flying');
+	balanced(w);
+	state.floorPiles.fill(0); ceiling.drawFloor(drawContext);
+	physics.setGroundBounce('absorb');
+	physics.createWorld();
+});
+
+test('a projected deck reflection is the piston bounce the chamber resolves', () => {
+	// The ballistic computer forecasts through a tilted reflector, so its
+	// answer must be the same impulse sequence the chamber resolves: friction,
+	// restitution, recoil and pulse, not the simpler flat-strip shortcut the
+	// collector and hull use.
+	const w = physics.createWorld();
+	w.platform.x = 6;
+	w.platform.vx = 1.2;
+	w.drive = false;
+	physics.setPistonAngle(w, c.pistonMaxAngle);
+	const faceAngle = w.platform.angle + w.pistonAngle;
+	const vx = 1.6, vy = -4;
+	const face = physics.contactResult();
+	const projected = physics.contactResult();
+	const shortcut = { vx: 0, vy: 0 };
+	const frozen = JSON.stringify(w);
+	physics.solvePiston(w, vx, vy, w.pistonAngle, 0, face, 0.4, -0.1);
+	physics.reflectOnDeck(w, w.platform.id, vx, vy, faceAngle, 0.4, -0.1, 0, w.platform.vx, projected);
+	physics.deckBounce(vx, vy, faceAngle, 0.4, -0.1, 0, shortcut);
+	assert.equal(JSON.stringify(w), frozen, 'both solvers read the world and write only their result');
+	near(projected.vx, face.vx, 1e-12);
+	near(projected.vy, face.vy, 1e-12);
+	assert.equal(projected.captured, face.captured);
+	assert.ok(Math.hypot(shortcut.vx - face.vx, shortcut.vy - face.vy) > 0.1,
+		'a tilted, sideways contact is not the flat-strip shortcut');
+	physics.createWorld();
+});
+
+test('a collector already holding a ball returns the next arrival off its flat strip', () => {
+	const w = physics.createWorld();
+	physics.setBallMode(w, 'shared2');
+	w.platform.x = 3;
+	w.platform.vx = 0;
+	w.platform.previousX = 3;
+	w.platform.previousY = 0;
+	w.platform.previousAngle = 0;
+	w.drive = false;
+	w.direction = 0;
+	w.target = NaN;
+	const held = w.balls[0];
+	const arriving = w.balls[1];
+	held.state = 'held';
+	held.holder = 'rig';
+	held.x = w.platform.x;
+	held.y = c.deck + c.radius;
+	held.vx = 0;
+	held.vy = 0;
+	arriving.state = 'flying';
+	arriving.holder = null;
+	arriving.x = w.platform.x - c.platformWidth * 0.5 + c.platformWidth * c.collectorFraction * 0.5;
+	arriving.y = 2;
+	arriving.vx = 0;
+	arriving.vy = 0;
+	sync(w);
+	assert.equal(physics.heldBallOf(w, w), held, 'the collector starts full');
+	let bounces = 0;
+	for (let i = 0; i < 240 * 4 && bounces < 2; i++) {
+		const before = arriving.vy;
+		physics.step(w, c.step);
+		if (before < 0 && arriving.vy > 0) bounces++;
+	}
+	assert.equal(bounces, 2, 'the full strip bounces instead of catching');
+	assert.equal(arriving.state, 'flying', 'the second ball is never captured');
+	assert.equal(held.state, 'held', 'the first ball stays with the machine');
+	assert.equal(physics.heldBallOf(w, w), held);
+	balanced(w);
+	physics.createWorld();
+});

@@ -57,12 +57,30 @@
 		// Left-wall pocket lets the asymmetric collector slide into the wall so
 		// the reflector can cover the wall all the way to x = 0.
 		pocketDepth: 3.6 * 0.35,
+		// A normal ground rebound slower than this is a rest, not a flight: with
+		// a lossy ground a ball would otherwise bounce forever a millimetre high.
+		groundMinBounce: 0.15,
 		// Road-grader rolling resistance when its blade is engaged under the
 		// platform centre while moving. Adds friction opposite motion.
 		// Kept below the 60 N hand crank so an empty reserve can still crawl
 		// to the charge pad with the grader installed.
 		graderFriction: 45
 	});
+
+	// Ground bounce is a sandbox setting, not world state: like the rock shape
+	// and the ball arrangement it stays chosen across New game. The value is the
+	// fraction of normal impact energy a ground strike keeps; a rebound scales
+	// the normal speed by its square root.
+	const groundModes = Object.freeze({ absorb: 0, half: 0.5, elastic: 1 });
+	let groundMode = 'absorb';
+	let groundRetention = 0;
+	function setGroundBounce(mode) {
+		groundMode = Object.prototype.hasOwnProperty.call(groundModes, mode) ? mode : 'absorb';
+		groundRetention = groundModes[groundMode];
+		return groundMode;
+	}
+	function groundRetentionNow() { return groundRetention; }
+	function groundRestitutionNow() { return Math.sqrt(groundRetention); }
 
 	function platformMin() { return config.platformWidth * 0.5 - config.pocketDepth; }
 	function platformMax() { return config.width - config.platformWidth * 0.5; }
@@ -353,8 +371,11 @@
 		const ny = Math.cos(faceAngle);
 		const tx = ny;
 		const ty = -nx;
-		const ballMass = config.ballMass;
-		const carriedMass = rig ? platformMass(world) : config.platformMass + (heldBallOf(world, machine) ? ballMassNow() : 0);
+		// The same installed ball mass the rest of the collision ledgers use: a
+		// heavier strike ball must change the impulse by exactly the mass that
+		// its energy, pulse and capture bookings use.
+		const ballMass = ballMassNow();
+		const carriedMass = rig ? platformMass(world) : config.platformMass + (heldBallOf(world, machine) ? ballMass : 0);
 		const platformVx = platform.vx;
 		const localX = Math.cos(baseAngle) * config.pistonCentre - Math.sin(baseAngle) * config.deck;
 		const localY = Math.sin(baseAngle) * config.pistonCentre + Math.cos(baseAngle) * config.deck;
@@ -417,6 +438,19 @@
 	// and no surface velocity, exactly as the simulation resolves the contact.
 	function solvePiston(world, ballVx, ballVy, angle, push, out, surfaceVx, surfaceVy) {
 		return solveFace(world, world, ballVx, ballVy, world.platform.angle + angle, push, out, surfaceVx, surfaceVy);
+	}
+
+	// The same reflector answer for a projected contact: the ballistic computer
+	// passes the machine id, its forecast deck speed and the face motion it used
+	// to find the contact. The scratch body carries only what solveFace reads —
+	// with both surface velocities given, the live pose is never consulted — so
+	// one forecast bounce cannot differ from the bounce the chamber will give.
+	const projectedBody = { id: 'rig', vx: 0, vy: 0, omega: 0, angle: 0 };
+	const projectedMachine = { platform: projectedBody };
+	function reflectOnDeck(world, id, ballVx, ballVy, faceAngle, surfaceVx, surfaceVy, push, platformVx, out) {
+		projectedBody.id = id;
+		projectedBody.vx = platformVx;
+		return solveFace(world, projectedMachine, ballVx, ballVy, faceAngle, push, out, surfaceVx, surfaceVy);
 	}
 
 	// The simulation's own scratch for the contact it is resolving this step.
@@ -747,6 +781,9 @@
 
 	function createWorld() {
 		engine = engines[3];
+		// A new chamber starts at the default ground rule; the page re-applies
+		// its system-bar selection right after the reset.
+		setGroundBounce('absorb');
 		if (root.SteamCeiling) root.SteamCeiling.reset(1);
 		if (root.SteamEquipment) root.SteamEquipment.reset();
 		if (root.SteamResearch) root.SteamResearch.reset();
@@ -1262,11 +1299,35 @@ function spend(world, useful) {
 			if (!type) return;
 			if (type === 1) { ball.vx = -ball.vx; continue; }
 			if (type === 2) {
-				// The ball settles on the rubble surface and keeps the potential
-				// energy of its resting height; only the remainder becomes heat.
+				// Ground is a heightmap, so a surface that rose under a ball
+				// already on its way up only lifts it back out: no second
+				// impulse, and the lift is work by the prescribed terrain.
 				const rest = root.SteamCeiling ? root.SteamCeiling.floorAt(ball.x) : 0;
+				const surface = rest + config.radius;
+				if (ball.vy >= 0) {
+					const lift = surface - ball.y;
+					ball.y = surface;
+					if (rigBall && lift > 0) world.terrainWork += ballMassNow() * config.ballGravity * lift;
+					continue;
+				}
+				const rebound = -ball.vy * groundRestitutionNow();
+				if (rebound >= config.groundMinBounce) {
+					// The impact keeps a fraction of its normal energy. Booking
+					// the difference between the arriving and leaving flight
+					// keeps the ledger exact, including the surface re-seat.
+					const before = ballEnergy(ball) - ballMassNow() * config.ballGravity * rest;
+					ball.vy = rebound;
+					ball.y = surface;
+					if (rigBall) {
+						world.heat += before - 0.5 * ballMassNow() * (ball.vx * ball.vx + ball.vy * ball.vy);
+						world.bounces++;
+					}
+					continue;
+				}
+				// A spent rebound settles on the rubble and keeps the potential
+				// energy of its resting height; only the remainder becomes heat.
 				if (rigBall) world.heat += ballEnergy(ball) - ballMassNow() * config.ballGravity * rest;
-				ball.y = rest + config.radius;
+				ball.y = surface;
 				ball.vx = 0;
 				ball.vy = 0;
 				ball.state = 'grounded';
@@ -1394,7 +1455,8 @@ function spend(world, useful) {
 		platformPitchAt, platformBaseAt, platformPointAt, platformSurfaceAt, planeContactTime,
 		chargePadMin, chargePadMax, onChargePad, charging,
 		retentionNow, rockRetentionNow, ballMassNow, damageBonusNow, damageRadiusBonusNow, pulseNow, forceNow, speedNow, arrivalSpeed, coverage, travelTime, stopTime, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
-		settlePose, setPistonAngle, pistonContactTime, solvePiston, solveFace, contactResult, deckBounce,
+		setGroundBounce, groundRetentionNow, get groundBounceMode() { return groundMode; },
+		settlePose, setPistonAngle, pistonContactTime, solvePiston, solveFace, reflectOnDeck, contactResult, deckBounce,
 		setBallMode, mayPush, isRigBall, ballLandingTime, focusBall, heldBall, heldBallMass,
 		machineBody, machineById, machinesOf, machineDrive, machinePistonAngle, heldBallOf, focusBallOf
 	};

@@ -7,7 +7,7 @@
 	const canvas = document.getElementById('c');
 	const context = canvas.getContext('2d');
 	const ids = ['clock', 'drive', 'launch', 'status-bar', 'status-ball', 'status-energy', 'fact-reserve', 'fact-cargo', 'fact-temp', 'prediction-status', 'force', 'force-value', 'piston-angle', 'piston-value',
-		'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'balls', 'commune', 'test-mode', 'view-modes',
+		'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'balls', 'ground-bounce', 'commune', 'test-mode', 'view-modes',
 		'platform-spec', 'spec-card', 'progression-tree', 'tree-links', 'progression-status', 'research-progress', 'science-funds',
 		'mineral-cell', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
@@ -754,10 +754,10 @@
 		setHidden(ui['prediction-status'], false);
 		const computer = window.SteamPrediction;
 		const kinds = computer.kinds;
-		const path = computer.predict(world);
+		const path = computer.predictAll(world);
 		const machine = computer.platformRig ? 'Rig · ' : activePlayer().name + ' · ';
-		if (path.kind === kinds.PARKED) setText(ui['prediction-status'], 'Ballistic computer: ' + machine + 'has no ball in flight, so there is nothing to predict.');
-		else if (path.kind === kinds.ROCK) setText(ui['prediction-status'], machine + 'predicted rock contact at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + (SteamResearch.state.predictionBounces ? ' s · tier II continues through estimated rebounds; fracture and future controls can change them.' : ' s · the rebound depends on fracture, so the path stops there.'));
+		if (path.kind === kinds.PARKED) setText(ui['prediction-status'], 'Ballistic computer: ' + machine + (computer.pathCount > 1 ? 'the focused ball is parked; the other flights are drawn.' : 'has no ball in flight, so there is nothing to predict.'));
+		else if (path.kind === kinds.ROCK) setText(ui['prediction-status'], machine + 'predicted rock contact at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + (SteamResearch.state.predictionBounces ? ' s · tier II looks through the rebound to the next landing; fracture and future controls can change them.' : ' s · the rebound depends on fracture, so the path stops there.'));
 		else if (path.kind === kinds.TIMEOUT) setText(ui['prediction-status'], machine + 'still airborne after ' + computer.horizon.toFixed(0) + ' s of prediction.');
 		else setText(ui['prediction-status'], machine + 'landing ' + (path.kind === kinds.DECK ? 'on the deck' : 'on the ground') + ' at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + ' s · ghost coasts to ' + path.ghostX.toFixed(1) + ' m · '
 			+ (path.reachable ? 'intercept reachable at full thrust' : 'intercept short by ' + path.gap.toFixed(1) + ' m at full thrust'));
@@ -776,17 +776,17 @@
 		return (plan.smart ? 'Timed intercept · ' : 'Intercept · ') + ball + plan.interceptX.toFixed(1) + ' m in ' + plan.contactIn.toFixed(2) + ' s';
 	}
 
-	// Which of the selected platform's balls the computer is describing, as
-	// `ball n/m`, so a two-ball game never leaves the panel saying only where a
-	// platform is going.
+	// Which of the rig's balls the autopilot plan is working, as `ball n/m`, so
+	// a two-ball game never leaves the panel saying only where the platform is
+	// going. The plan names its own ball: the page's computer is a separate
+	// flight and must not be read as the policy's choice.
 	function workingBall() {
 		const balls = world.balls || [];
-		const id = window.SteamPrediction.platformId;
-		const focus = window.SteamPrediction.ball;
+		const focus = autopilot.state.focus;
 		let count = 0;
 		let index = 0;
 		for (let i = 0; i < balls.length; i++) {
-			if (!physics.mayPush(balls[i], id)) continue;
+			if (!physics.isRigBall(balls[i])) continue;
 			count++;
 			if (balls[i] === focus) index = count;
 		}
@@ -1046,31 +1046,43 @@
 		drawPadLabel(offsetX + config.width * 0.5 * scale, floorY + 0.35 * scale + 12, chargingNow);
 	}
 
-	// Ballistic overlay, drawn in world units inside the chamber transform: the
-	// dotted flight path, the landing mark, and the platform ghost coasting to the
-	// predicted landing time. Amber means the intercept is not reachable or the
-	// outcome is unknown.
-	function drawPrediction() {
-		const path = window.SteamPrediction.state;
-		if (path.samples < 2) return;
-		context.save();
-		context.strokeStyle = path.uncertain ? '#9c8a55' : '#5f9c74';
-		context.lineWidth = 1.2 / scale;
-		context.setLineDash([0.1, 0.13]);
+	// Ballistic overlay, drawn in world units inside the chamber transform: one
+	// dotted flight per ball the selected machine may push. The focus flight
+	// carries the landing mark and the platform ghost coasting to the predicted
+	// landing time; companion flights are dimmer and mark only their own end.
+	// Amber means the intercept is not reachable or the outcome is unknown.
+	function drawFlight(trace, primary) {
+		if (trace.samples < 2) return;
+		context.strokeStyle = primary ? (trace.uncertain ? '#9c8a55' : '#5f9c74') : '#4a6f60';
+		context.lineWidth = (primary ? 1.2 : 0.9) / scale;
+		context.setLineDash(primary ? [0.1, 0.13] : [0.06, 0.16]);
 		context.beginPath();
-		context.moveTo(path.pathX[0], rockWarpY(path.pathY[0]));
-		for (let i = 1; i < path.samples; i++) context.lineTo(path.pathX[i], rockWarpY(path.pathY[i]));
+		context.moveTo(trace.pathX[0], rockWarpY(trace.pathY[0]));
+		for (let i = 1; i < trace.samples; i++) context.lineTo(trace.pathX[i], rockWarpY(trace.pathY[i]));
 		context.stroke();
 		context.setLineDash([]);
-		context.beginPath(); context.arc(path.endX, rockWarpY(path.endY), 0.26, 0, Math.PI * 2); context.stroke();
-		context.strokeStyle = path.reachable ? '#b9ed91' : '#e6b66e';
-		const ghostAngle = path.ghostAngle;
-		const ghostY = path.ghostY;
+		if (!primary) {
+			const last = trace.samples - 1;
+			context.beginPath(); context.arc(trace.pathX[last], rockWarpY(trace.pathY[last]), 0.16, 0, Math.PI * 2); context.stroke();
+			return;
+		}
+		context.beginPath(); context.arc(trace.endX, rockWarpY(trace.endY), 0.26, 0, Math.PI * 2); context.stroke();
+		context.strokeStyle = trace.reachable ? '#b9ed91' : '#e6b66e';
 		context.save();
-		context.translate(path.ghostX, ghostY);
-		context.rotate(ghostAngle);
+		context.translate(trace.ghostX, trace.ghostY);
+		context.rotate(trace.ghostAngle);
 		context.strokeRect(-config.platformWidth * 0.5, config.deck - 0.06, config.platformWidth, 0.12);
 		context.restore();
+	}
+
+	function drawPrediction() {
+		const computer = window.SteamPrediction;
+		const paths = computer.paths;
+		const count = computer.pathCount;
+		if (!count) return;
+		context.save();
+		for (let i = 1; i < count; i++) drawFlight(paths[i], false);
+		drawFlight(paths[0], true);
 		context.restore();
 	}
 
@@ -1551,7 +1563,7 @@
 	}
 
 	document.getElementById('reset').addEventListener('click', function () {
-		world = physics.createWorld(); playerApi.init(world); window.SteamCeiling.setShape(ui.shape.value); ui.balls.value = playerApi.state.ballMode; renderedSales = -1; clearInput(); endPistonDrag(); setForce(world.forceSetting); autopilot.reset(); accumulator = 0;
+		world = physics.createWorld(); playerApi.init(world); window.SteamCeiling.setShape(ui.shape.value); ui.balls.value = playerApi.state.ballMode; physics.setGroundBounce(ui['ground-bounce'].value); renderedSales = -1; clearInput(); endPistonDrag(); setForce(world.forceSetting); autopilot.reset(); accumulator = 0;
 		syncActiveControls();
 		for (const row of tierRows) row.selectedIndex = -1;
 		if (testMode) grantTestState();
@@ -1579,6 +1591,13 @@
 		playerApi.setBallMode(ui.balls.value);
 		autopilot.reset();
 		clearInput();
+		refresh();
+	});
+	// Ground rebound is a chamber rule, so the plan and the drawn flights are
+	// rebuilt as soon as it changes.
+	ui['ground-bounce'].addEventListener('change', function () {
+		physics.setGroundBounce(ui['ground-bounce'].value);
+		autopilot.reset();
 		refresh();
 	});
 	ui['view-modes'].addEventListener('change', viewModeChanged);
@@ -1854,5 +1873,6 @@
 	new ResizeObserver(fitStatusBar).observe(ui['status-bar']);
 	fitStatusBar();
 	buildPlayers();
+	physics.setGroundBounce(ui['ground-bounce'].value);
 	resize(); refresh(); requestAnimationFrame(frame);
 })();

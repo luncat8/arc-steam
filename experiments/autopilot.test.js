@@ -108,9 +108,11 @@ test('tier II starts a low-speed intercept before rock contact and keeps replann
 	const firstPlan = autopilot.state;
 	assert.ok(firstPlan.contactIn > 0, 'the landing beyond the rock contact is predicted while the ball is still in flight');
 	assert.ok(Number.isFinite(firstPlan.interceptX), 'the contact mark is available before impact');
-	assert.notEqual(prediction.state.kind, prediction.kinds.ROCK, 'a rock strike is not mistaken for a landing');
-	assert.ok(Math.abs(firstPlan.interceptX + c.pistonCentre - prediction.state.endX) < 1e-9,
-		'the automatic face target is the landing marker drawn by the computer');
+	// The plan is priced in the policy trace: the page's own overlay is no
+	// longer written by the rig's autopilot, even with the rig selected.
+	assert.notEqual(prediction.policy.kind, prediction.kinds.ROCK, 'a rock strike is not mistaken for a landing');
+	assert.ok(Math.abs(firstPlan.interceptX + c.pistonCentre - prediction.policy.endX) < 1e-9,
+		'the automatic face target is the landing marker of the policy forecast');
 	assert.ok(Number.isNaN(world.target), 'tier II uses timed movement rather than the full-throttle chase');
 	assert.notEqual(world.direction, 0, 'the platform starts moving before the predicted contact');
 	const startX = world.platform.x;
@@ -126,9 +128,9 @@ test('tier II starts a low-speed intercept before rock contact and keeps replann
 	assert.ok(bounced, 'the real ball reaches a piston bounce after the rock trajectory');
 	autopilot.update(world, c.step);
 	assert.ok(autopilot.state.contactIn > 0, 'the new trajectory is planned immediately after the bounce');
-	const wantedCentre = Math.max(physics.platformMin(), Math.min(physics.platformMax(), prediction.state.endX - c.pistonCentre));
+	const wantedCentre = Math.max(physics.platformMin(), Math.min(physics.platformMax(), prediction.policy.endX - c.pistonCentre));
 	assert.ok(Math.abs(autopilot.state.interceptX - wantedCentre) < 1e-9,
-		'the post-bounce target follows the visible landing marker up to the travel limit');
+		'the post-bounce target follows the plan\'s landing marker up to the travel limit');
 	assert.ok(Number.isNaN(world.target), 'the post-bounce intercept remains in low-speed travel mode');
 	balanced(world);
 });

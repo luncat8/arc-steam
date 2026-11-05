@@ -7,10 +7,12 @@
 	// player works the floor rubble with a blade and banks its own credits.
 	//
 	// Two platforms that meet ride rather than collide: the platform applying
-	// more drive power is the one lifted, and the other is carved out of its
-	// ground query one way only, so no pair can lift itself. The tails unfold as
-	// the gap closes and fold again when it opens, so a climbing wheel always
-	// meets a 45° plate instead of a wall.
+	// more drive power starts the climb, and the other is carved out of its
+	// ground query one way only, so no pair can lift itself. Once one hull is on
+	// top, the pair keeps that rider until the bodies part — a brake or a
+	// direction change mid-crossing cannot swap them. The tails unfold as the
+	// gap closes and fold again when it opens, so a climbing wheel always meets
+	// a 45° plate instead of a wall.
 	const bodyBottom = 0.2;
 	const bodyTop = 0.6;
 	const tailAngle = Math.PI / 4;
@@ -111,13 +113,58 @@
 		return pushing ? forceOf(player) : 0;
 	}
 
-	// Strict layering. Equal power keeps the lower index on top, so an undecided
-	// pair never swaps every step.
-	function above(a, b) {
+	// A pair that has begun to ride keeps its rider until the bodies part. Drive
+	// power decides the first climb, but a brake, a reached mark or a direction
+	// change mid-crossing must not swap the two hulls while one is on top.
+	const layers = [];
+	const layerThreshold = 0.02;
+
+	function powerAbove(a, b) {
 		const pa = powerOf(a);
 		const pb = powerOf(b);
 		if (Math.abs(pa - pb) > 1e-6) return pa > pb;
 		return a.index < b.index;
+	}
+
+	function layerOf(a, b) {
+		for (let i = 0; i < layers.length; i++) {
+			const layer = layers[i];
+			if (layer.a === a && layer.b === b || layer.a === b && layer.b === a) return layer;
+		}
+		return null;
+	}
+
+	// Strict layering. Equal power keeps the lower index on top, so an undecided
+	// pair never swaps every step; an engaged pair keeps the rider it has now.
+	function above(a, b) {
+		const layer = layerOf(a, b);
+		if (layer && layer.engaged) return layer.rider === a;
+		return powerAbove(a, b);
+	}
+
+	function syncLayers() {
+		const engage = halfWidth() * 2 + tailPlate;
+		const release = halfWidth() * 2 + tailReach;
+		for (let i = 0; i < layers.length; i++) {
+			const layer = layers[i];
+			const a = posOf(layer.a);
+			const b = posOf(layer.b);
+			if (!Number.isFinite(a.x) || !Number.isFinite(b.x) || !Number.isFinite(a.y) || !Number.isFinite(b.y)) {
+				layer.engaged = false;
+				layer.rider = null;
+				continue;
+			}
+			const gap = Math.abs(a.x - b.x);
+			if (layer.engaged) {
+				if (gap > release) { layer.engaged = false; layer.rider = null; }
+				continue;
+			}
+			// Two hulls still on the same ground are ranked by drive power; once
+			// one has climbed, the higher one is the rider for the whole crossing.
+			if (gap > engage || Math.abs(a.y - b.y) <= layerThreshold) continue;
+			layer.engaged = true;
+			layer.rider = a.y > b.y ? layer.a : layer.b;
+		}
 	}
 
 	// Height of a platform body above its own base at horizontal offset dx. The
@@ -219,6 +266,10 @@
 			const rival = createRival(i);
 			players.push(rival);
 			rivals.push(rival);
+		}
+		layers.length = 0;
+		for (let i = 0; i < players.length; i++) {
+			for (let j = i + 1; j < players.length; j++) layers.push({ a: players[i], b: players[j], rider: null, engaged: false });
 		}
 		active = 0;
 		selling = false;
@@ -662,6 +713,7 @@
 		rigWorld = world || rigWorld;
 		if (!players.length) return;
 		stepRigBot(world, dt);
+		syncLayers();
 		for (let i = 1; i < players.length; i++) stepRival(players[i], dt);
 		for (let i = 0; i < players.length; i++) stepTails(players[i], dt);
 	}

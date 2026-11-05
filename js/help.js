@@ -42,15 +42,31 @@
 			title: 'Shared and owned balls',
 			text: [
 				'BALLS in the system bar sets what is in the chamber. One shared ball is the classic game: a single ball both platforms may push, and whichever platform it comes down on catches it in its own collector and pulses it with its own reflector.',
-				'Two shared balls put two balls in flight at once and both platforms may push either of them. Every platform holds one at a time, and the ballistic overlay and the ball readouts follow the selected platform’s ball, so the second never splits what the player is reading: the autopilot works the ball it can still meet, and never turns away from a landing it can reach towards one it cannot.',
+				'Two shared balls put two balls in flight at once and both platforms may push either of them. Every platform holds one at a time. The ballistic overlay draws a flight for every ball the selected platform may push — the focus flight with its landing mark and coasting ghost, the others as dimmer dotted paths — while the readouts still follow the one the platform is working. In the one-per-platform arrangement only that platform’s own ball is drawn: a ball it may not push has no flight to show.',
 				'One per platform gives every platform its own ball. Ownership is the collision rule: a platform cannot see, catch, bounce or pulse a ball it does not own, so the rig’s collector passes straight through a competitor’s ball and that competitor’s deck passes straight through the rig’s.',
 				'A competitor keeps its own ball alive with its own deck: the collector catches it, the reflector bounces it off the competitor’s tilt, a pulse of the rig’s base size is added while the ball would fall short of the rock, and a grounded ball is scooped back up by driving over it. Its ball breaks the same ceiling rock, the debris lands as floor rubble, and its chassis harvests that rubble into its own purse. Competitor balls, catches and pulses are outside the rig’s energy ledger, exactly like the commercial grader.'
 			],
 			keys: [
 				['1 shared', 'One ball, both platforms push it, the rig catches it'],
-				['2 shared', 'Two balls in play, the autopilot works the one it can meet'],
+				['2 shared', 'Two balls in play, the computer draws both flights'],
 				['1 per platform', 'Each platform pushes only its own ball'],
 				['Competitor ball', 'Mines rock, leaves rubble, pays its owner only']
+			]
+		},
+		{
+			id: 'ground',
+			label: 'Ground',
+			title: 'Ground bounce',
+			text: [
+				'GROUND in the system bar is a chamber rule, not an upgrade. It says how much of the energy a ball brings into the rubble floor it keeps after the strike. The default loses all of it: the ball settles on the floor until a platform collects it and releases it again.',
+				'Lose 50% keeps half of the normal impact energy, so the ball leaves the ground with about 71% of its downward speed and goes on bouncing, each rebound smaller than the last. Lose none keeps all of it. Only the normal component is damped; sideways motion is untouched, and the share that is lost becomes machinery heat for a ball in the rig’s ledger. A rebound too small to see settles the ball instead of buzzing a millimetre above the floor.',
+				'The ballistic computer follows the same rule. Its drawn flight ends at the second ground or platform contact — or at the first when that strike ends the flight — so the overlay shows the next one or two bounces rather than a long speculative chain. The setting stays chosen across New game, like the rock shape and the ball arrangement.'
+			],
+			keys: [
+				['Lose all', 'Default · the ball grounds and waits to be collected'],
+				['Lose 50%', 'A half-energy ground rebound, drawn through the next bounce'],
+				['Lose none', 'An elastic ground rebound'],
+				['GROUND ?', 'This topic, from the system bar']
 			]
 		},
 		{
@@ -59,6 +75,7 @@
 			title: 'The chamber',
 			text: [
 				'The chamber is 24 × 15 m. A ball bounces on the platform deck and off the ceiling; the sprung reflector piston sends it where you aim it.',
+				'The amber collector catches only when it is empty: a ball arriving while it already holds one is returned off the flat strip instead. The green piston reflects through the same impulse solve the ballistic computer uses, so a forecast through a tilted bounce follows the ball’s real flight.',
 				'Clicks have three meanings, and the zones never overlap: visible rock inspects a cell, the low band near the ground (the drawn 1.7 m target height) commands travel, and open air starts a piston drag.',
 				'The recessed bay on the right is the road grader’s garage; a called grader works the floor and returns there.'
 			],
@@ -140,7 +157,7 @@
 			label: 'Charge',
 			title: 'Recovery and charge',
 			text: [
-				'Ground contact dissipates all ball energy. Move over the ball to collect it, then release it; the drive is already on unless you switched it off.',
+				'Ground contact dissipates all ball energy at the default GROUND setting. Move over the ball to collect it, then release it; the drive is already on unless you switched it off. GROUND in the system bar can instead keep half or all of the impact energy, so the ball rebounds by itself — see the Ground topic.',
 				'Park on the centre strip of the ground to refill the reserve at 3 kW — 4 s from empty to full, free of charge.',
 				'Out of reach? The market’s emergency import buys energy at 25 cr/kJ up to the full 12 kJ, limited by the funds at hand. An empty reserve still hand-cranks at 0.8 m/s: movement only, no launch.',
 				'While the reserve is low and the platform is on the ground, the status bar at the foot of the page repeats both ways out; a grounded ball is announced there in orange until it is collected.'
@@ -154,7 +171,7 @@
 				'One tree combines technology research and the equipment each node unlocks. Base chassis gear — the road grader, engine powertrain bay and commercial grader bot — sits at the root and needs no research.',
 				'Researching a node debits funds once, applies its measured bonus immediately, and unlocks the shop slot attached inside that node. Tiered families (engines, cooling radiators and strike balls) fit one unit at a time and swap owned tiers for free; engines are fitted while parked at the left shop.',
 				'Blocked controls stay clickable and explain why in the status bar above the tree. Live platform specifications update in place as deltas stack. Communism mode drops every price and prerequisite; test mode grants the whole tree and shop at once.',
-				'The ballistic computer is the selected platform’s: its overlay, its landing readout, its ghost and its release all address the platform whose controls you hold, and the autopilot’s own flight never replaces them.'
+				'The ballistic computer is the selected platform’s: its overlay, its landing readout, its ghost and its release all address the platform whose controls you hold, and the autopilot’s own flight never replaces them — with the rig selected too. It draws every ball that platform may push and stops at the second bounce, using the chamber’s own reflector and collector answers.'
 			]
 		},
 		{
@@ -175,14 +192,14 @@
 				'The strip under the telemetry lists every platform at the mine, one line per player. The rig is YOU; the others are competitors that work the same floor rubble and keep their own credits. Every platform is the same complete machine — chassis, deck, wheels, 45° plates, fuel bar, thermometer, collector strip and reflector piston, in the same colours — and the selected one is drawn whole while the others are the same drawing at 60% opacity. Nothing is added to a platform and nothing is taken away.',
 				'Click a line to take that platform’s controls. The force setting, A/D, the brake, the low-ground travel click, the bounce drive, the piston tilt and the autopilot duties all act for the selected platform, and only the panel title changes with the switch (`YOU · MANUAL` → `RIVAL 1 · BOT`): the menu itself never rearranges. No key reaches a platform you are not driving, and a direction key held during a switch is dropped with the command it gave, so neither platform can move on a key pressed for the other.',
 				'BOT hands a platform to its policy, and both platforms play the ball the same way. A bot competitor stands where the ball it may push is coming down, meets it on its own deck, drives over a ball on the floor to scoop it up, and spends a pulse only while the passive bounce would still fall short of the rock; a ball its collector caught is released again at once. A bot rig runs the autopilot duties — the intercept, the drive keeper and the level bounce. Both make a selling trip to the nearer wall once their hopper is full, and both bank whatever they took on the way. A ball the competitor may not push, and a ball another platform holds, are not in its world at all, so it holds station instead of wandering.',
-				'Two platforms that meet do not collide like walls. Each body has a retractable 45° plate at both ends: folded while the other platform is far or moving away, swinging down at a limited rate as the gap closes, and clipped at the floor so the plate and the ramp the wheels follow are the same line. The platform applying more drive power is the one that rides on top; the other stays on the floor and is driven over. Their credits never enter the rig’s ledger.'
+				'Two platforms that meet do not collide like walls. Each body has a retractable 45° plate at both ends: folded while the other platform is far or moving away, swinging down at a limited rate as the gap closes, and clipped at the floor so the plate and the ramp the wheels follow are the same line. The platform applying more drive power starts the climb; the other stays on the floor and is driven over. Once one hull is on top, the pair keeps that rider until the bodies part — braking or changing direction mid-crossing cannot swap them and make the hulls stutter through each other. Their credits never enter the rig’s ledger.'
 			],
 			keys: [
 				['Click a player line', 'Take that platform’s controls and its force setting'],
 				['Selected platform', 'Drawn whole; every other platform is the same complete machine at 60% opacity'],
 				['BOT checkbox', 'Let that player’s policy drive it'],
 				['45° plate', 'Unfolds as a platform closes in, folds when it leaves'],
-				['Higher force', 'The platform that climbs over the other'],
+				['Higher force', 'Starts the climb; the rider stays on top for the crossing'],
 				['Complete machine', 'Every platform carries the same instruments, dimmed when not selected']
 			]
 		},

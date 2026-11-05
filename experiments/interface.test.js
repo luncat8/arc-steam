@@ -1316,3 +1316,75 @@ test('the computer, the release and the ball readout belong to the selected plat
 	rival.bot = true;
 	world.drive = false;
 });
+
+test('the GROUND selector changes the chamber rule and keeps it across New game', () => {
+	const select = dom.element('ground-bounce');
+	assert.equal(select.value, 'absorb');
+	assert.equal(physics.groundRetentionNow(), 0);
+	assert.ok(help.find('ground'), 'the setting has its own help topic');
+	assert.equal(dom.element('help-ground').getAttribute('aria-controls'), 'help-drawer');
+	select.value = 'half';
+	select.dispatch('change');
+	assert.equal(physics.groundRetentionNow(), 0.5);
+	assert.equal(physics.groundBounceMode, 'half');
+	// A ball dropped away from both decks rebounds instead of grounding.
+	parkRival();
+	const rival = players.state.rivals[0];
+	rival.drive = false;
+	rival.previousX = rival.x; rival.previousY = rival.y; rival.previousAngle = rival.angle;
+	players.setActive(0);
+	world.platform.x = 3; world.platform.vx = 0; world.direction = 0; world.target = NaN; world.drive = false;
+	world.platform.previousX = 3; world.platform.previousY = 0; world.platform.previousAngle = 0;
+	const ball = world.ball;
+	ball.state = 'flying'; ball.holder = null;
+	ball.x = 20; ball.y = 3; ball.vx = 0; ball.vy = 0;
+	harness.sync(world);
+	let arriving = 0, leaving = 0;
+	for (let i = 0; i < 240 * 4; i++) {
+		const before = ball.vy;
+		physics.step(world, physics.config.step);
+		assert.notEqual(ball.state, 'grounded', 'a half-energy ground does not ground the ball');
+		if (before < 0 && ball.vy > 0 && ball.y < 1) { arriving = before; leaving = ball.vy; break; }
+	}
+	assert.ok(arriving < 0, 'the ball reached the floor');
+	assert.ok(Math.abs(leaving / -arriving - Math.sqrt(0.5)) < 0.01);
+	// New game rebuilds the world but keeps the bar's choice.
+	dom.element('reset').dispatch('click');
+	advance(2);
+	assert.equal(select.value, 'half');
+	assert.equal(physics.groundRetentionNow(), 0.5);
+	assert.equal(physics.groundBounceMode, 'half');
+	select.value = 'absorb';
+	select.dispatch('change');
+	assert.equal(physics.groundRetentionNow(), 0);
+});
+
+test('the overlay draws one dotted flight per ball the selected machine may push', () => {
+	research.grant('ballistics', world);
+	parkRival();
+	players.setActive(0);
+	const select = dom.element('balls');
+	select.value = 'shared2';
+	select.dispatch('change');
+	world.balls[0].state = 'flying'; world.balls[0].holder = null;
+	world.balls[0].x = 8; world.balls[0].y = 5; world.balls[0].vx = 1; world.balls[0].vy = 0;
+	world.balls[1].state = 'flying'; world.balls[1].holder = null;
+	world.balls[1].x = 18; world.balls[1].y = 6; world.balls[1].vx = -1; world.balls[1].vy = 0;
+	advance(10);
+	assert.equal(globalThis.SteamPrediction.pathCount, 2, 'two shared balls, two flights');
+	dom.contextCalls.length = 0;
+	advance(1);
+	assert.equal(dom.contextCalls.filter(call => call === 'setLineDash').length, 4,
+		'two dotted flights each set and clear their dash in one draw');
+	// Owned balls: the other platform's ball is not drawn at all.
+	select.value = 'each';
+	select.dispatch('change');
+	advance(10);
+	assert.equal(globalThis.SteamPrediction.pathCount, 1, 'only the selected machine\'s own ball');
+	dom.contextCalls.length = 0;
+	advance(1);
+	assert.equal(dom.contextCalls.filter(call => call === 'setLineDash').length, 2);
+	select.value = 'shared1';
+	select.dispatch('change');
+	world.drive = false;
+});

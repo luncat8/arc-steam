@@ -2,6 +2,9 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { ceiling, physics, prediction, c, near, balanced, sync } = require('./harness.cjs');
+const players = require('../js/players.js');
+const autopilot = require('../js/autopilot.js');
+const research = require('../js/research.js');
 
 function frozen(world) {
 	return JSON.stringify(world);
@@ -321,5 +324,226 @@ test('the predicted reflector bounce is the bounce the simulation gives', () => 
 	// reflector leans with a positive angle, so the normal points left.
 	assert.ok(ball.vx < -0.2, 'the competitor tilt steers the bounce');
 	balanced(w);
+	physics.createWorld();
+});
+
+test('the rig plan never replaces the page overlay with the rig selected', () => {
+	const w = physics.createWorld();
+	players.init(w, 1);
+	players.setActive(0);
+	w.platform.x = 3; w.platform.vx = 0; w.direction = 0; w.target = NaN;
+	w.ball.x = 12; w.ball.y = 5; w.ball.vx = 1; w.ball.vy = 0;
+	const page = prediction.predictAll(w);
+	const kind = page.kind, endX = page.endX, samples = page.samples, ball = prediction.ball;
+	autopilot.set('move', true);
+	for (let i = 0; i < 4; i++) autopilot.update(w, c.step);
+	assert.equal(prediction.state.kind, kind, 'the drawn flight survives the plan');
+	near(prediction.state.endX, endX, 1e-9);
+	assert.equal(prediction.state.samples, samples);
+	assert.equal(prediction.ball, ball);
+	assert.ok(prediction.policy.samples > 1, 'the plan still has a flight of its own');
+	assert.equal(prediction.policy.ball, ball, 'it prices the same rig ball, on another trace');
+	autopilot.reset();
+	autopilot.set('move', false);
+	physics.createWorld();
+});
+
+test('the computer draws every ball the selected machine may push', () => {
+	const w = physics.createWorld();
+	players.init(w, 1);
+	players.setBallMode('shared2');
+	players.setActive(0);
+	w.balls[0].x = 8; w.balls[0].y = 5; w.balls[0].vx = 1; w.balls[0].vy = 0;
+	w.balls[1].x = 18; w.balls[1].y = 6; w.balls[1].vx = -1; w.balls[1].vy = 0;
+	const focus = prediction.predictAll(w);
+	assert.equal(prediction.pathCount, 2, 'two shared balls draw two flights');
+	assert.equal(prediction.paths[0].ball, focus.ball);
+	assert.notEqual(prediction.paths[1].ball, focus.ball);
+	assert.ok(prediction.paths[0].samples > 2);
+	assert.ok(prediction.paths[1].samples > 2);
+	near(prediction.paths[1].pathX[0], prediction.paths[1].ball.x, 1e-9);
+	// Owned balls: a competitor draws only its own ball, even when the rig's
+	// ball is the only one still flying.
+	players.setBallMode('each');
+	players.setActive(1);
+	const rival = players.state.rivals[0];
+	const rivalBall = w.balls.find(ball => ball.owner === rival.id);
+	rivalBall.state = 'grounded';
+	const owned = prediction.predictAll(w);
+	assert.equal(owned.kind, prediction.kinds.PARKED, 'no fallback to the rig\'s flight');
+	assert.equal(owned.samples, 0);
+	assert.equal(prediction.pathCount, 1, 'the other owner\'s ball is not drawn');
+	assert.equal(prediction.platformId, rival.id);
+	players.setActive(0);
+	players.setBallMode('shared1');
+	physics.createWorld();
+});
+
+test('a half-energy ground rebound is drawn through the second bounce', () => {
+	function scene(mode) {
+		const w = physics.createWorld();
+		players.init(w, 0);
+		players.setBallMode('shared1');
+		players.setActive(0);
+		physics.setGroundBounce(mode);
+		w.platform.x = 3; w.platform.vx = 0; w.direction = 0; w.target = NaN; w.drive = false;
+		w.ball.x = 20; w.ball.y = 3; w.ball.vx = 0; w.ball.vy = 0;
+		return w;
+	}
+	function groundContacts(path) {
+		let contacts = 0;
+		for (let i = 1; i < path.samples; i++) {
+			if (path.pathY[i] < c.radius + 0.002 && path.pathY[i - 1] >= c.radius + 0.002) contacts++;
+		}
+		return contacts;
+	}
+	const half = scene('half');
+	const flight = prediction.predictAll(half);
+	assert.equal(flight.kind, prediction.kinds.GROUND);
+	assert.equal(groundContacts(flight), 2, 'the drawn flight ends at the second ground contact');
+	assert.ok(flight.samples < 400, 'the overlay is not a long speculative chain');
+	// The simulation's rebound is the one the forecast continues from.
+	sync(half);
+	let arriving = 0, leaving = 0;
+	for (let i = 0; i < 240 * 4; i++) {
+		const before = half.ball.vy;
+		physics.step(half, c.step);
+		if (before < 0 && half.ball.vy > 0 && half.ball.y < 1) { arriving = before; leaving = half.ball.vy; break; }
+	}
+	near(leaving / -arriving, Math.sqrt(0.5), 0.01);
+	balanced(half);
+	// An absorbing ground has only one contact to show, even with tier II.
+	const absorb = scene('absorb');
+	research.grant('ballistics2', absorb);
+	assert.equal(groundContacts(prediction.predictAll(absorb)), 1);
+	physics.setGroundBounce('absorb');
+	research.reset();
+	physics.createWorld();
+});
+
+test('a tier-II page path stops at two bounces while the policy forecast runs on', () => {
+	const w = physics.createWorld();
+	players.init(w, 0);
+	players.setBallMode('shared1');
+	players.setActive(0);
+	research.grant('ballistics2', w);
+	w.platform.x = 12; w.platform.vx = 0;
+	w.ball.x = 13; w.ball.y = 4; w.ball.vx = 0; w.ball.vy = -1;
+	const drawn = prediction.predictAll(w);
+	const priced = prediction.predict(w, w.ball, 'rig');
+	assert.ok(priced.samples > drawn.samples, 'the autopilot still forecasts past the drawn path');
+	assert.equal(drawn.kind, priced.kind, 'both name the same next landing');
+	near(drawn.endX, priced.endX, 1e-9);
+	assert.ok(drawn.time < prediction.horizon * 2, 'the drawn horizon is short');
+	research.reset();
+	physics.createWorld();
+});
+
+test('a forecast through the tilted reflector lands where the chamber bounces', () => {
+	// With tier II the drawn path continues one bounce past the first landing.
+	// A tilted face with sideways motion is where the old flat-strip shortcut
+	// disagreed with the chamber's impulse solve by most of a metre.
+	const w = physics.createWorld();
+	physics.setGroundBounce('absorb');
+	players.init(w, 0);
+	players.setBallMode('shared1');
+	players.setActive(0);
+	research.grant('ballistics2', w);
+	w.platform.x = 3;
+	w.platform.vx = 0;
+	w.platform.previousX = 3;
+	w.platform.previousY = 0;
+	w.platform.previousAngle = 0;
+	w.pistonAngle = 0.15;
+	w.drive = false;
+	w.direction = 0;
+	w.target = NaN;
+	const ball = w.balls[0];
+	ball.state = 'flying';
+	ball.x = 3.2;
+	ball.y = 1.5;
+	ball.vx = 1.2;
+	ball.vy = 0;
+	ball.holder = null;
+	sync(w);
+	const drawn = prediction.predictAll(w);
+	assert.equal(drawn.kind, prediction.kinds.DECK);
+	assert.equal(drawn.surface, prediction.surfaces.PISTON);
+	const last = drawn.samples - 1;
+	let contacts = 0;
+	let second = null;
+	for (let i = 0; i < 240 * 8 && !second; i++) {
+		physics.step(w, c.step);
+		const count = w.bounces + w.groundings;
+		if (count > contacts) {
+			contacts = count;
+			if (count === 2) second = { x: ball.x, y: ball.y, time: w.time, vy: ball.vy };
+		}
+	}
+	assert.ok(second, 'the chamber bounces the ball a second time');
+	near(drawn.pathX[last], second.x, 0.02);
+	near(drawn.pathY[last], second.y, 0.02);
+	assert.ok(second.time > drawn.time, 'the drawn path reaches past the first landing');
+	// The shortcut the forecast used to take would have sent the ball right.
+	const shortcut = { vx: 0, vy: 0 };
+	physics.deckBounce(drawn.endVx, drawn.endVy, w.pistonAngle, 0, 0, 0, shortcut);
+	const shortcutX = drawn.endX + shortcut.vx * 2 * shortcut.vy / c.ballGravity;
+	assert.ok(shortcutX - second.x > 0.2, 'the flat-strip shortcut misses the real second contact');
+	balanced(w);
+	research.reset();
+	physics.createWorld();
+});
+
+test('a full collector returns a ball instead of ending the overlay forecast', () => {
+	const w = physics.createWorld();
+	physics.setGroundBounce('absorb');
+	players.init(w, 0);
+	players.setBallMode('shared2');
+	players.setActive(0);
+	research.grant('ballistics2', w);
+	w.platform.x = 3;
+	w.platform.vx = 0;
+	w.platform.previousX = 3;
+	w.platform.previousY = 0;
+	w.platform.previousAngle = 0;
+	w.pistonAngle = 0;
+	w.drive = false;
+	w.direction = 0;
+	w.target = NaN;
+	const held = w.balls[0];
+	const arriving = w.balls[1];
+	held.state = 'held';
+	held.holder = 'rig';
+	held.x = w.platform.x;
+	held.y = c.deck + c.radius;
+	held.vx = 0;
+	held.vy = 0;
+	arriving.state = 'flying';
+	arriving.holder = null;
+	arriving.x = w.platform.x - c.platformWidth * 0.5 + c.platformWidth * c.collectorFraction * 0.5;
+	arriving.y = 2;
+	arriving.vx = 0;
+	arriving.vy = 0;
+	sync(w);
+	const primary = prediction.predictAll(w);
+	assert.equal(primary.kind, prediction.kinds.PARKED, 'the held ball has no flight');
+	assert.equal(prediction.pathCount, 2, 'the arriving ball has its own drawn flight');
+	const companion = prediction.paths[1];
+	assert.equal(companion.kind, prediction.kinds.DECK);
+	assert.ok(companion.samples > 200, 'the flight continues through the returned bounce');
+	const last = companion.samples - 1;
+	near(companion.pathX[last], arriving.x, 0.02);
+	near(companion.pathY[last], c.deck + c.radius, 0.02);
+	let bounces = 0;
+	for (let i = 0; i < 240 * 8 && bounces < 2; i++) {
+		const before = arriving.vy;
+		physics.step(w, c.step);
+		if (before < 0 && arriving.vy > 0) bounces++;
+	}
+	assert.equal(bounces, 2, 'the chamber also bounces the ball off the full strip');
+	assert.equal(arriving.state, 'flying');
+	assert.equal(held.state, 'held');
+	balanced(w);
+	research.reset();
 	physics.createWorld();
 });
