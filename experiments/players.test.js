@@ -38,6 +38,7 @@ function fillCargo(world, cells) {
 	let guard = 0;
 	while (state.cargoCells < cells && guard++ < 100) {
 		ceiling.damage(12, state.bottom + 0.2, 20);
+		ceiling.collapse(2);
 		for (let i = 0; i < state.active.length; i++) {
 			if (!state.active[i]) continue;
 			state.debrisX[i] = world.platform.x - 1;

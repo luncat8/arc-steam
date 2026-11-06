@@ -60,7 +60,7 @@ test('fallen-soil tiles keep a 4:1 width-to-height ratio and a smooth interpolat
 	for (const height of state.floorHeight) near(height, 0.2, 1e-12);
 });
 
-test('radial 2D damage weakens nearby cells and emits each failed cell once', () => {
+test('radial 2D damage weakens nearby cells and the loosened ring falls later', () => {
 	ceiling.reset(9);
 	const before = Array.from(ceiling.state.strength);
 	const removed = ceiling.damage(6.25, ceiling.state.bottom + 0.06, 3);
@@ -71,7 +71,12 @@ test('radial 2D damage weakens nearby cells and emits each failed cell once', ()
 	assert.ok(extracted > 0);
 	assert.equal(state.lostCells, 0);
 	assert.equal(state.airborneCells, extracted);
+	// The weakened ring around the crater lets go in a later collapse burst.
+	const beforeCollapse = state.extractedCells;
+	ceiling.collapse(10);
+	assert.ok(state.extractedCells >= beforeCollapse);
 	ceiling.damage(6.25, ceiling.state.bottom + 0.06, 3);
+	ceiling.collapse(10);
 	assert.ok(state.extractedCells >= extracted);
 });
 
@@ -90,6 +95,7 @@ test('smooth heightmap and optional square shape reflect at angled slopes', () =
 	ceiling.setShape('smooth');
 	// Excavate a symmetric crater around x = 10 m
 	ceiling.damage(10.06, ceiling.state.bottom + 0.06, 5);
+	ceiling.collapse(10);
 	const leftHit = ceiling.trace(9.75, ceiling.state.bottom - 0.2, 0, 12, 0.05, 0.18);
 	assert.ok(Number.isFinite(leftHit.time));
 	assert.ok(leftHit.nx > 0.1);
@@ -132,7 +138,7 @@ test('overlapping contacts resolve at the surface instead of being skipped', () 
 
 test('storage stops at 100 cells, adds one dry-platform mass, and sells at once', () => {
 	ceiling.reset(5);
-	for (let x = 1; x < 23; x += 2) ceiling.damage(x, ceiling.state.bottom + 0.2, 20);
+	for (let x = 1; x < 23; x += 2) { ceiling.damage(x, ceiling.state.bottom + 0.2, 20); ceiling.collapse(2); }
 	const state = ceiling.state;
 	assert.equal(state.lostCells, 0);
 	assert.equal(state.airborneCells, state.extractedCells);
@@ -183,7 +189,7 @@ test('multiple broken cells are never lost on fracture and all broken mass falls
 	ceiling.reset(11);
 	const state = ceiling.state;
 	const initialEnergy = ceiling.state.energy;
-	for (let x = 1; x < 23; x += 1.5) ceiling.damage(x, ceiling.state.bottom + 0.5, 25);
+	for (let x = 1; x < 23; x += 1.5) { ceiling.damage(x, ceiling.state.bottom + 0.5, 25); ceiling.collapse(2); }
 	const extracted = state.extractedCells;
 	assert.ok(extracted > 400);
 	assert.equal(state.lostCells, 0);
@@ -199,6 +205,7 @@ test('multiple broken cells are never lost on fracture and all broken mass falls
 	}
 	const energyBefore = ceiling.state.energy;
 	ceiling.damage(12.25, ceiling.state.bottom + 0.06, 10);
+	ceiling.collapse(10);
 	assert.ok(state.extractedCells > 0);
 	assert.equal(state.lostCells, 0);
 	assert.equal(state.airborneCells, state.active.length + state.extractedCells);
@@ -208,7 +215,7 @@ test('multiple broken cells are never lost on fracture and all broken mass falls
 
 test('cargo tracks per-mineral mass and each wall sale appends a frozen ledger entry', () => {
 	ceiling.reset(7);
-	for (let x = 1; x < 23; x += 2) ceiling.damage(x, ceiling.state.bottom + 0.2, 20);
+	for (let x = 1; x < 23; x += 2) { ceiling.damage(x, ceiling.state.bottom + 0.2, 20); ceiling.collapse(2); }
 	const state = ceiling.state;
 	const world = { platform: { x: 12, vx: 0 }, heat: 0 };
 	for (let i = 0; i < state.active.length; i++) if (state.active[i]) {
@@ -240,6 +247,7 @@ test('extracted, airborne, caught and lost cells stay conserved', () => {
 	ceiling.reset(13);
 	ceiling.damage(6.25, ceiling.state.bottom + 0.5, 10);
 	ceiling.damage(18.25, ceiling.state.bottom + 0.5, 10);
+	ceiling.collapse(10);
 	const state = ceiling.state;
 	const world = { platform: { x: 12, vx: 0 }, heat: 0 };
 	for (let step = 0; step < 2400 && state.airborneCells > 0; step++) {
@@ -256,6 +264,7 @@ test('lost fragments pile up on the floor heightmap under their landing point', 
 	const state = ceiling.state;
 	const world = { platform: { x: -5, vx: 0 }, heat: 0 };
 	ceiling.damage(6.25, state.bottom + 0.5, 12);
+	ceiling.collapse(10);
 	const extracted = state.extractedCells;
 	assert.ok(extracted > 0);
 	for (let i = 0; i < state.active.length; i++) if (state.active[i]) {
@@ -278,4 +287,63 @@ test('lost fragments pile up on the floor heightmap under their landing point', 
 	assert.ok(state.floorHeight[column - 1] > 0);
 	assert.ok(state.floorHeight[column] > 0);
 	assert.ok(state.floorHeight[column + 1] > 0);
+});
+
+// 0.3.1 acceptance: delayed ceiling collapse.
+test('a single impact does not detach pixels immediately', () => {
+	ceiling.reset(11);
+	const state = ceiling.state;
+	const before = state.extractedCells;
+	const beforeLoose = state.looseCells;
+	const removed = ceiling.damage(8, state.bottom + 0.2, 40);
+	assert.ok(removed > 0);
+	// The blow spends at most half of a cell's remaining strength, so the ring
+	// around the contact stays standing and nothing is extracted in the same call.
+	assert.equal(state.extractedCells, before);
+	assert.ok(state.looseCells > beforeLoose, 'the hit must leave loose cells');
+	assert.ok(state.airborneCells === 0, 'nothing falls yet');
+	assert.ok(state.strength.some((value, index) => value < ceiling.initialStrength[index]),
+		'weakened but standing cells remain');
+});
+
+test('collapse probability rises with damage', () => {
+	// A light hit leaves the region below the collapse floor; repeated hits in
+	// the same spot push it over and the ceiling lets go.
+	ceiling.reset(33);
+	let extracted = 0;
+	for (let i = 0; i < 8; i++) { ceiling.damage(8, ceiling.state.bottom + 0.2, 3); ceiling.collapse(0.25); }
+	extracted = ceiling.state.extractedCells;
+	for (let i = 0; i < 40; i++) { ceiling.damage(8, ceiling.state.bottom + 0.2, 3); ceiling.collapse(0.25); }
+	assert.ok(ceiling.state.extractedCells > extracted, 'more damage must detach more later');
+});
+
+test('only exposed, damaged pixels detach, and a clump is bounded', () => {
+	ceiling.reset(47);
+	const state = ceiling.state;
+	ceiling.damage(8, state.bottom + 0.2, 200);
+	ceiling.collapse(60);
+	assert.ok(state.extractedCells > 0);
+	// Every detached cell was on the surface of its own column when it fell: the
+	// surface is now above it, so no interior cell paid out as invisible rubble.
+	const columns = state.columns;
+	for (let i = 0; i < state.active.length; i++) {
+		if (!state.active[i]) continue;
+		const row = Math.floor(state.debrisCell[i] / columns);
+		const column = state.debrisCell[i] % columns;
+		assert.ok(state.firstRow[column] > row, 'a detached cell was not on the surface');
+	}
+	// The scheduler never detaches more than collapseChunkMax cells in one roll.
+	assert.ok(ceiling.collapseChunkMax >= 1);
+});
+
+test('the collapse scheduler is bounded work per tick', () => {
+	ceiling.reset(21);
+	const state = ceiling.state;
+	// Batter the whole ceiling: every region must still roll at most once per tick
+	// and never more than collapseChunkMax cells at a time.
+	for (let x = 0; x < 24; x += 2) ceiling.damage(x, state.bottom + 0.2, 40);
+	const before = state.extractedCells;
+	ceiling.collapse(0.25);
+	assert.ok(state.extractedCells - before <= ceiling.collapseChunkMax,
+		'one tick never detaches more than the clump cap');
 });

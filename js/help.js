@@ -77,7 +77,8 @@
 				'The chamber is 24 × 15 m. A ball bounces on the platform deck and off the ceiling; the sprung reflector piston sends it where you aim it.',
 				'The amber collector catches only when it is empty: a ball arriving while it already holds one is returned off the flat strip instead. The green piston reflects through the same impulse solve the ballistic computer uses, so a forecast through a tilted bounce follows the ball’s real flight.',
 				'Clicks have three meanings, and the zones never overlap: visible rock inspects a cell, the low band near the ground (the drawn 1.7 m target height) commands travel, and open air starts a piston drag.',
-				'The recessed bay on the right is the road grader’s garage; a called grader works the floor and returns there.'
+				'The recessed bay on the right is the road grader’s garage; a called grader works the floor and returns there.',
+				'Rock is not cleared at once. A blow spends at most half of a cell’s strength and leaves the ring around it standing; the ceiling then gives way a region at a time, with a probability that rises with how battered the region is, so loose cells fall in small clumps over the seconds after the hit. Hover over rock to inspect its mix, value and remaining strength, and to see whether a cell is loose enough to let go.',
 			],
 			keys: [
 				['Collector', 'Amber strip, catches and holds balls and debris'],

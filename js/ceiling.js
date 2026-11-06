@@ -52,6 +52,55 @@
 	const baseDamageMultiplier = 2;
 	const baseDamageRange = 9;
 	const damageFalloffPower = 2.8;
+	// Delayed collapse. A hit weakens cells and leaves them standing; the rock
+	// only lets go later, in a handful of loose pixels from a region that keeps
+	// failing its roll. Damage in a region is the mean of how far its cells have
+	// been taken down, so a heavily battered pocket of rock becomes the likeliest
+	// place for the next fall without any pixel falling on the hit itself.
+	const collapseRegionsX = 12;
+	const collapseRegionsY = 6;
+	const bandColumns = Math.ceil(columns / collapseRegionsX);
+	const bandRows = Math.ceil(rows / collapseRegionsY);
+	const collapseRegionCells = bandColumns * bandRows;
+	const regionCount = collapseRegionsX * collapseRegionsY;
+	// A hit loosens rock instead of tearing it down: the share of a cell's
+	// remaining strength the blow removes becomes the cell's damage, and only
+	// when a region's rock is loose enough does the ceiling start giving way.
+	// A hit loosens a cell far more than it weakens it: the share of a cell's
+	// remaining strength taken becomes four times the share of its looseness it
+	// gains. So the rock keeps answering the ball with intact rock that is close
+	// to letting go, and the ceiling spends its time on the verge of a fall
+	// instead of on the verge of crumbling.
+	const loosedPerWeakened = 4;
+	// A blow spends at most this share of a cell's remaining strength, so a single
+	// impact never finishes a cell: the contact cells stay standing and the ring
+	// around them is left loose, to fall later in a collapse burst.
+	const hitLooseCap = 0.5;
+	const collapseLooseFloor = 0.3;
+	const collapseChanceSeconds = 0.25;
+	// One blow never brings a band down: its mean looseness starts around the
+	// loose floor, and the chance to let go ramps to half as the same spot is hit
+	// again and again.
+	const collapseChanceMax = 0.5;
+	const collapseChanceSaturation = 1;
+	const collapseChunkMin = 1;
+	const collapseChunkMax = 4;
+	const regionDamage = new Float32Array(regionCount);
+	const regionEligible = new Int32Array(regionCount);
+	// Eligible cells of the region being collapsed, found in row-major order so
+	// a run of them is a contiguous hand-sized clump of rock.
+	const eligibleCells = new Int32Array(collapseRegionCells + 1);
+	let collapseClock = 0;
+	// One increment per pass, so the same rock does not keep rolling the same
+	// number and a damaged region both fails and, later, succeeds.
+	let collapseRoll = 0;
+	// Drawable dust of the last few collapses: a ring of cells that fades out.
+	const dustCount = 96;
+	const dustX = new Float64Array(dustCount);
+	const dustY = new Float64Array(dustCount);
+	const dustAge = new Float64Array(dustCount);
+	const dustLife = 0.55;
+	let dustCursor = 0;
 	function installed(channel, owner) {
 		const id = owner || 'rig';
 		const machinery = root.SteamEquipment;
@@ -65,6 +114,10 @@
 	function damageRangeNow(owner) { return Math.ceil(damageRadiusNow(owner)); }
 	const initialStrength = new Float32Array(count);
 	const strength = new Float32Array(count);
+	// How loose each cell has become, 0 (sound rock) to 1 (about to let go). It
+	// is the share of a cell's remaining strength that impacts have taken since
+	// it last fell, so repeated hits around one spot add up.
+	const damageField = new Float32Array(count);
 	const elements = new Float32Array(count * 3);
 	const minerals = new Float32Array(count * 3);
 	const prices = new Float32Array(count);
@@ -214,6 +267,11 @@
 	let seed = 1;
 	let rockShape = 'smooth';
 	let extractedCells = 0;
+	// Cells that let go on their own schedule instead of on the hit that
+	// loosened them, and how many separate clumps that took: the chamber's own
+	// record of the delayed collapse.
+	let collapseCells = 0;
+	let collapseBursts = 0;
 	let caughtCells = 0;
 	let lostCells = 0;
 	let lostValue = 0;
@@ -298,6 +356,8 @@
 	function reset(newSeed) {
 		seed = newSeed || 1;
 		extractedCells = 0;
+		collapseCells = 0;
+		collapseBursts = 0;
 		caughtCells = 0;
 		lostCells = 0;
 		lostValue = 0;
@@ -324,6 +384,10 @@
 		graderCutMark.fill(0);
 		blade.value = 0;
 		blade.idle = 0;
+		damageField.fill(0);
+		regionDamage.fill(0);
+		regionEligible.fill(0);
+		collapseClock = 0;
 		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
 			const index = row * columns + column;
 			const x = column * 0.075;
@@ -363,6 +427,10 @@
 		return Math.pow(t, damageFalloffPower);
 	}
 
+	// An impact weakens the rock around its contact and returns only what it
+	// actually took out. Weakened cells stay standing, so the pendulum of a hit
+	// is answered by intact rock; the collapse scheduler above them decides when
+	// a battered region lets go.
 	function damage(x, y, impactJ, owner) {
 		const centerColumn = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
 		let firstIntact = 0;
@@ -370,9 +438,9 @@
 		const rawRow = Math.max(0, Math.min(rows - 1, Math.floor((y - bottom) / cell)));
 		const centerRow = firstIntact < rows ? Math.max(firstIntact, rawRow) : rawRow;
 		const mult = damageMultiplierNow(owner);
-		const radius = damageRadiusNow(owner);
-		const range = damageRangeNow(owner);
 		const budget = impactJ * mult;
+const radius = damageRadiusNow(owner);
+		const range = damageRangeNow(owner);
 		let removed = 0;
 		for (let rowOffset = -range; rowOffset <= range; rowOffset++) for (let columnOffset = -range; columnOffset <= range; columnOffset++) {
 			const row = centerRow + rowOffset;
@@ -381,14 +449,21 @@
 			if (row < 0 || row >= rows || column < 0 || column >= columns || distance > radius) continue;
 			const index = row * columns + column;
 			if (strength[index] <= 0) continue;
-			const amount = Math.min(strength[index], budget * damageWeight(distance, owner));
-			strength[index] -= amount;
+			const before = strength[index];
+			// A blow spends at most half of a cell's remaining strength: the contact
+			// cells stay standing and the ring around them is left loose, to fall
+			// later in a collapse burst. The rest of the impact energy is absorbed.
+			const amount = Math.min(before, budget * damageWeight(distance, owner), before * hitLooseCap);
+			strength[index] = before - amount;
+		 damageField[index] = Math.min(1, damageField[index] + amount / before * loosedPerWeakened);
 			removed += amount / mult;
 			if (strength[index] > 0.0001) continue;
 			removed += strength[index] / mult;
 			strength[index] = 0;
 			spawn(index);
 		}
+		// Anything left hanging over a fresh gap lets go at once: a crater has to
+		// read as a crater, not as an island of rock floating above it.
 		const minCol = Math.max(0, centerColumn - range);
 		const maxCol = Math.min(columns - 1, centerColumn + range);
 		for (let column = minCol; column <= maxCol; column++) {
@@ -406,6 +481,156 @@
 		}
 		updateHeightmap();
 		return Math.min(impactJ, removed);
+	}
+
+	// The ceiling gives way a region at a time. Every region is examined on the
+	// same slow clock, and a region whose rock is loose enough rolls once: a
+	// success lets a small clump of its loosest exposed cells go. Bounded work:
+	// Advance the collapse scheduler by a span of chamber time. The chamber
+	// calls it from step(); exposing it lets a measurement or a test turn
+	// loosened rock into falling rock without running the whole simulation.
+	function collapse(seconds) {
+		const span = (seconds === undefined || seconds === null) ? collapseChanceSeconds : seconds;
+		const steps = Math.max(1, Math.round(span / collapseChanceSeconds));
+		for (let i = 0; i < steps; i++) collapseTick(collapseChanceSeconds);
+	}
+	// one pass over the field, and a clump is never larger than collapseChunkMax
+	// however much of the rock is already broken.
+	function collapseTick(dt) {
+		collapseClock += dt;
+		if (collapseClock < collapseChanceSeconds) return;
+		collapseClock = 0;
+		let rolled = 0;
+		for (let region = 0; region < regionCount; region++) {
+			const damage = scanRegion(region, true);
+			if (damage < collapseLooseFloor || !regionEligible[region]) continue;
+			const excess = Math.min(1, (damage - collapseLooseFloor) / (collapseChanceSaturation - collapseLooseFloor));
+			if (hash(region, collapseRoll + region, 5) >= collapseChanceMax * excess) continue;
+			collapseRegion(region, excess);
+			rolled++;
+			collapseBursts++;
+		}
+		collapseRoll++;
+		if (rolled) updateHeightmap();
+	}
+
+	// A region's looseness is the mean damage of the rock it has actually been
+	// hit in: a well-battered pocket of a band counts as much as a band that is
+	// loose everywhere, and untouched rock neither holds a collapse back nor
+	// causes one. The same walk lists the exposed cells loose enough to fall, so
+	// the roll and the falling clump always describe the same rock.
+	function scanRegion(region, collect) {
+		const rowStart = Math.floor(region / collapseRegionsX) * bandRows;
+		const columnStart = (region % collapseRegionsX) * bandColumns;
+		const rowEnd = Math.min(rows, rowStart + bandRows);
+		const columnEnd = Math.min(columns, columnStart + bandColumns);
+		let total = 0;
+		let touched = 0;
+		let loose = 0;
+		for (let row = rowStart; row < rowEnd; row++) for (let column = columnStart; column < columnEnd; column++) {
+			const index = row * columns + column;
+			if (strength[index] <= 0) continue;
+			const damage = damageField[index];
+			if (damage <= 0) continue;
+			total += damage;
+			touched++;
+			if (collect && damage >= collapseLooseFloor && exposed(index, row, column)) eligibleCells[loose++] = index;
+		}
+		regionDamage[region] = touched ? total / touched : 0;
+		regionEligible[region] = loose;
+		return regionDamage[region];
+	}
+
+	// A clump of loose rock lets go together. The cells keep their own mass and
+	// value, so the falling rock costs the ceiling exactly the energy its height
+	// carried and the ledger never has to book the collapse itself.
+	function collapseRegion(region, excess) {
+		const loose = regionEligible[region];
+		if (!loose) return;
+		const chunk = Math.min(loose, collapseChunkMin + Math.round(excess * (collapseChunkMax - collapseChunkMin)));
+		const start = Math.min(loose - 1, Math.floor(hash(region, collapseChunkMax * 31 + loose, 6) * loose));
+		for (let i = 0; i < chunk; i++) {
+			const index = eligibleCells[(start + i) % loose];
+			if (strength[index] <= 0) continue;
+			strength[index] = 0;
+			relieve(index);
+			spawn(index);
+			puff(index);
+			collapseCells++;
+		}
+	}
+
+	// The rock around a fresh gap is unloaded: the cells that hung beside the
+	// fallen clump shed half their looseness, so one battered spot cannot grind
+	// the whole band away pass after pass. Bounded to one cell either side.
+	function relieve(index) {
+		const row = Math.floor(index / columns);
+		const column = index % columns;
+		damageField[index] = 0;
+		if (row > 0) damageField[index - columns] *= 0.5;
+		if (row < rows - 1) damageField[index + columns] *= 0.5;
+		if (column > 0) damageField[index - 1] *= 0.5;
+		if (column < columns - 1) damageField[index + 1] *= 0.5;
+	}
+
+	// The clump's dust: a short-lived ring where the rock let go, drawn from a
+	// fixed pool so a collapse never allocates and never leaves anything behind
+	// but its own fall.
+	function puff(index) {
+		const slot = dustCursor;
+		dustCursor = (dustCursor + 1) % dustCount;
+		dustX[slot] = (index % columns + 0.5) * cell;
+		dustY[slot] = bottom + (Math.floor(index / columns) + 0.5) * cell;
+		dustAge[slot] = 0;
+	}
+	function ageDust(dt) {
+		for (let i = 0; i < dustCount; i++) if (dustAge[i] < dustLife) dustAge[i] += dt;
+	}
+
+	// Loose rock is drawn as a hairline of falling grit on the cell's own face:
+	// the sign that this part of the ceiling is about to go.
+	function drawCollapse(context) {
+		const area = cell * cell * 0.5;
+		for (let region = 0; region < regionCount; region++) {
+			const loose = regionEligible[region];
+			if (!loose) continue;
+			context.fillStyle = 'rgba(226, 196, 138, 0.5)';
+			const rowStart = Math.floor(region / collapseRegionsX) * bandRows;
+			const columnStart = (region % collapseRegionsX) * bandColumns;
+			const rowEnd = Math.min(rows, rowStart + bandRows);
+			const columnEnd = Math.min(columns, columnStart + bandColumns);
+			for (let row = rowStart; row < rowEnd; row++) for (let column = columnStart; column < columnEnd; column++) {
+				const index = row * columns + column;
+				if (strength[index] <= 0 || damageField[index] < collapseLooseFloor) continue;
+				if (!exposed(index, row, column)) continue;
+				context.fillRect(column * cell, drawnRowY[row] - cell * 0.18, cell, cell * 0.12);
+			}
+		}
+		for (let i = 0; i < dustCount; i++) {
+			if (dustAge[i] >= dustLife) continue;
+			const fade = 1 - dustAge[i] / dustLife;
+			context.fillStyle = 'rgba(214, 189, 148, ' + (fade * 0.55).toFixed(3) + ')';
+			context.fillRect(dustX[i] - area * 0.5, dustY[i] - dustAge[i] * 1.4, cell * 0.9, cell * 0.9);
+		}
+	}
+
+	function looseCells() {
+		let total = 0;
+		for (let region = 0; region < regionCount; region++) total += regionEligible[region];
+		return total;
+	}
+
+	// Only the rock's face may let go: a cell with empty space next to it. An
+	// interior cell would leave the column reading as solid from its own surface
+	// down while it paid out as rubble, so a collapse always opens the face the
+	// player can see.
+	function exposed(index, row, column) {
+		if (row === firstRow[column]) return true;
+		if (row > 0 && strength[index - columns] <= 0) return true;
+		if (row < rows - 1 && strength[index + columns] <= 0) return true;
+		if (column > 0 && strength[index - 1] <= 0) return true;
+		if (column < columns - 1 && strength[index + 1] <= 0) return true;
+		return false;
 	}
 
 	function fragmentCells(i) {
@@ -941,6 +1166,8 @@
 			debrisCells[i] = 0;
 			debrisValue[i] = 0;
 		}
+		collapseTick(dt);
+		ageDust(dt);
 		if (root.SteamEquipment && root.SteamEquipment.isInstalled('grader')) grade(world, dt);
 		stepGraderBot(world, dt);
 	}
@@ -1166,6 +1393,7 @@
 			context.fillStyle = colorFor(debrisCell[i], mode);
 			context.fillRect(debrisX[i] - cell * 0.38, debrisY[i] - cell * 0.38, cell * 0.76, cell * 0.76);
 		}
+		drawCollapse(context);
 	}
 
 	// Fallen rubble is drawn as shallow floor tiles. Each full cell is four
@@ -1197,6 +1425,9 @@
 		get baseDamageMultiplier() { return baseDamageMultiplier; },
 		get damageRange() { return damageRangeNow(); },
 		damageFalloffPower, pileLimit, graderCut, graderSmooth, graderClearance, graderSwath,
+		loosedPerWeakened, hitLooseCap, collapseLooseFloor, collapseChanceMax, collapseChanceSaturation, collapseChanceSeconds, collapseChunkMax,
+		collapseRegionsX, collapseRegionsY, regionDamage, regionEligible, damageField, collapseLooseFloor,
+		get looseCells() { return looseCells(); },
 		graderBot, blade, graderShare, floorValues,
 		get shape() { return rockShape; }, heightmap, firstRow, floorPiles, floorHeight,
 		garageHeight, garageDepth, garageParkX, graderSpeed,
@@ -1209,6 +1440,8 @@
 		get lostCells() { return lostCells; },
 		get lostValue() { return lostValue; },
 		get airborneCells() { return airborneCells(); },
+		get collapseCells() { return collapseCells; },
+		get collapseBursts() { return collapseBursts; },
 		get airborneValue() { return airborneValue(); },
 		get caughtValue() { return cargoValue + soldValue; },
 		get cargoCells() { return cargoCells; },
@@ -1223,7 +1456,7 @@
 
 	reset(1);
 
-	const api = { hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, damageRadiusNow, damageMultiplierNow, trace, step, harvest, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape, rockDrawnY, rockWorldY, rockScale };
+	const api = { hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, damageRadiusNow, damageMultiplierNow, trace, step, harvest, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape, rockDrawnY, rockWorldY, rockScale, collapse };
 	root.SteamCeiling = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

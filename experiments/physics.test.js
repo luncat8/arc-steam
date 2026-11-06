@@ -265,7 +265,8 @@ test('the ball grounds on fallen rubble at the pile surface and keeps the ledger
 	const w = physics.createWorld();
 	const state = ceiling.state;
 	// Break rock and drop every fragment at x = 3 so the floor piles up there.
-	for (let x = 1; x < 6; x += 0.5) ceiling.damage(x, state.bottom + 0.2, 20);
+	for (let x = 1; x < 6; x += 0.5) { ceiling.damage(x, state.bottom + 0.2, 20); ceiling.collapse(2); }
+	ceiling.collapse(10);
 	assert.ok(state.extractedCells > 0);
 	for (let i = 0; i < state.active.length; i++) if (state.active[i]) {
 		state.debrisX[i] = 3;
@@ -274,7 +275,7 @@ test('the ball grounds on fallen rubble at the pile surface and keeps the ledger
 		state.debrisVy[i] = -1;
 	}
 	w.platform.x = 20;
-	for (let i = 0; i < 240 * 3 && state.airborneCells > 0; i++) physics.step(w, c.step);
+	for (let i = 0; i < 240 * 10 && state.airborneCells > 0; i++) physics.step(w, c.step);
 	assert.equal(state.airborneCells, 0);
 	assert.equal(state.lostCells, state.extractedCells);
 	const pile = ceiling.floorAt(3);
@@ -625,6 +626,7 @@ test('ball reflects at an angle off a smooth heightmap crater and conserves ener
 	const w = physics.createWorld();
 	ceiling.setShape('smooth');
 	ceiling.damage(10.06, ceiling.state.bottom + 0.06, 6);
+	ceiling.collapse(10);
 	w.ball.x = 9.75; w.ball.y = ceiling.state.bottom - 0.25; w.ball.vx = 0; w.ball.vy = 8;
 	w.ball.state = 'flying';
 	sync(w);
@@ -636,6 +638,7 @@ test('ball reflects at an angle off a smooth heightmap crater and conserves ener
 	const sq = physics.createWorld();
 	ceiling.setShape('square');
 	ceiling.damage(10.06, ceiling.state.bottom + 0.06, 6);
+	ceiling.collapse(10);
 	sq.ball.x = 9.75; sq.ball.y = ceiling.state.bottom - 0.25; sq.ball.vx = 0; sq.ball.vy = 8;
 	sq.ball.state = 'flying';
 	sync(sq);
@@ -682,7 +685,7 @@ test('rock shape switch cannot tunnel the ball through the rock', () => {
 		return state.heightmap[v] + (state.heightmap[v + 1] - state.heightmap[v]) * t;
 	}
 	function carve() {
-		for (let x = 10; x < 12; x += 0.25) ceiling.damage(x + 0.06, ceiling.state.bottom + 0.06, 60);
+		for (let x = 10; x < 12; x += 0.25) { ceiling.damage(x + 0.06, ceiling.state.bottom + 0.06, 60); ceiling.collapse(1); }
 	}
 	// smooth -> square: the smooth surface cuts into square cells at crater
 	// edges, so a ball resting on it is inside the square solid after a switch.
