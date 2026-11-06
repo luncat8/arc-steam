@@ -55,25 +55,29 @@
 	const harvestReach = 1.15;
 	const harvestDeadline = 0.8;
 	let keeperTrial = null;
-	// Sale income buys the next affordable step in this order. The first chain
-	// earns the competitor its own computer before it spends on heavier machinery.
+	// Sale income buys the next affordable step in this order. A competitor's
+	// policy reads its pulse, its force, its mass and — for the keeper's horizon —
+	// tier II of the forecast; it never opens the page overlay, never feels heat
+	// and never chooses a ball tier, so the page-only nodes, the cooling chain,
+	// the strike metallurgy and the flywheel stay off the list. The order spends
+	// on what the machine does first: a stronger pulse and a stronger drive pay
+	// back in every contact and every trip, the computer chain lands where tier II
+	// turns the keeper's single forecast into a three-bounce one, and the mass
+	// cuts keep the larger machine accelerating.
 	const botBuild = Object.freeze([
 		Object.freeze({ research: 'materials' }),
 		Object.freeze({ research: 'electromagnetics' }),
-		Object.freeze({ research: 'ballistics' }),
 		Object.freeze({ equipment: 'coil' }),
 		Object.freeze({ research: 'traction' }),
 		Object.freeze({ equipment: 'motor' }),
 		Object.freeze({ research: 'alloys' }),
+		Object.freeze({ equipment: 'chassis' }),
 		Object.freeze({ research: 'thermodynamics' }),
 		Object.freeze({ research: 'power' }),
-		Object.freeze({ research: 'ballistics2' }),
 		Object.freeze({ equipment: 'overdrive' }),
-		Object.freeze({ equipment: 'chassis' }),
-		Object.freeze({ equipment: 'pad' }),
-		Object.freeze({ research: 'impact' }),
-		Object.freeze({ research: 'storage' }),
-		Object.freeze({ equipment: 'flywheel' })
+		Object.freeze({ research: 'ballistics' }),
+		Object.freeze({ research: 'ballistics2' }),
+		Object.freeze({ equipment: 'pad' })
 	]);
 
 	function halfWidth() {

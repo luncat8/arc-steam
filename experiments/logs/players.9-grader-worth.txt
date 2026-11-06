@@ -1,0 +1,41 @@
+grader-worth probe — 480 s shifts, pad-aware mining policy, 8 seeds each
+net = purse + hopper value + the garage grader's unsettled load at 50%; floor rubble is not counted
+
+  none        net   546 cr  (240 s   396)  earned   367  spent    0  grader    0  blade    0  floor  1920  caught  22%
+  commercial  net  1492 cr  (240 s  1165)  earned   363  spent    0  grader  963  blade    0  floor    25  caught  21%
+  road        net   811 cr  (240 s   472)  earned   432  spent  188  grader    0  blade  395  floor   950  caught  25%  road 5/8
+  both        net  1273 cr  (240 s   963)  earned   358  spent  300  grader  745  blade  305  floor    14  caught  20%  road 8/8
+  gear        net  1073 cr  (240 s   641)  earned   369  spent  430  grader  953  blade    0  floor    55  caught  22%
+  blade free  net  1704 cr  (240 s  1078)  earned   641  spent    0  grader  666  blade  369  floor     9  caught  25%
+
+delta vs none (net at 480 s, and at 240 s):
+  commercial  +  946 cr  (+  769 at half)
+  road        +  265 cr  (+   76 at half)
+  both        +  728 cr  (+  566 at half)
+  gear        +  527 cr  (+  245 at half)
+  blade free  + 1158 cr  (+  682 at half)
+
+== reading ==
+
+The garage grader is the opening. Calling it at 0 s is worth +946 cr over
+480 s and is already +769 cr by 240 s, because it halves the floor it sweeps
+(free value the rig never mines itself) and leaves the rig's own trips intact.
+
+The road grader is not the second purchase. A paid blade nets +265 cr against
+doing nothing and *less* than the free call alone (1273 vs 1492) because it
+buys at the first 300 cr — around 60 s — which is exactly when the purse is
+about to compound into pulse and force:
+
+  blade (paid)        811 cr
+  blade (granted)    1704 cr
+
+The same machine, with its price removed, out-earns every other opening: its
+blade earns 369–395 cr of its own shavings (50% share) and it deepens the
+floor for the garage grader. So the 300 cr is not the problem — the timing is.
+A blade bought after the pulse/force chain pays back; one bought first costs
+the first two research nodes and the harness still ends poorer at 480 s.
+
+Open question: the blade's own proceeds should be reinvested by a policy (an
+"opening" autopilot duty) rather than by the player, and the price should be
+tied to the floor depth it can actually work. The probe is the place to test
+both: `experiments/grader-worth.cjs` takes a strategy row per policy.

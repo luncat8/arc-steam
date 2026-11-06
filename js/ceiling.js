@@ -33,6 +33,14 @@
 	const garageDepth = 1.5;
 	const garageParkX = width + (garageDepth - 0.12) * 0.5;
 	const graderSpeed = 1.5;
+	// The blade keeps the value of the material its edge removed. The share is
+	// the garage grader's 50% for the same reason: the machine that ground the
+	// rubble does half the work, the platform that carried the blade the rest.
+	const graderShare = 0.5;
+	// A quarter of a second without finding rubble is a pause, not a pass: the
+	// blade settles its stint then instead of waiting for the platform to stop.
+	const bladeSettleDelay = 0.25;
+	const blade = { value: 0, idle: 0 };
 	// Impact tuning: hit point receives 2x impact energy in strength removal,
 	// falling to zero across a 8.78-cell radius (2.93× the base 3-cell radius,
 	// 1.5× the previous 5.85-cell radius) with a fast power-2.8 falloff.
@@ -314,6 +322,8 @@
 		graderBot.value = graderBot.cells = 0;
 		graderBot.direction = -1;
 		graderCutMark.fill(0);
+		blade.value = 0;
+		blade.idle = 0;
 		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
 			const index = row * columns + column;
 			const x = column * 0.075;
@@ -770,11 +780,23 @@
 	// The blade works a centred swath under the platform while it moves,
 	// not ahead of it. Neighbouring columns flow toward one another while
 	// the blade shaves the top; clamping at zero protects the original floor
-	// from becoming a pit.
+	// from becoming a pit. Shaved material is not lost: the blade keeps the
+	// value of the height it removed (the thickness it cut, not the
+	// redistribution it caused) and settles it when the platform comes to rest,
+	// like the garage grader's own share. A column keeps its value density, so
+	// the floor and the purse can never disagree.
 	function grade(world, dt) {
+		// A stint ends when the blade stops finding rubble for this long, whatever
+		// the platform is commanded to do: one settlement per working pause.
+		if (blade.value > 0) {
+			blade.idle += dt;
+			if (blade.idle >= bladeSettleDelay) settleBlade(world);
+		}
 		const platform = world.platform;
-		// Only while the platform is moving; a stationary platform does not grade.
-		const moving = Math.abs(platform.vx) > 0.02 || world.direction !== 0 || Number.isFinite(world.target);
+		// Only while the platform is actually translating under the blade: a
+		// platform parked on its mark must not keep grinding a fixed swath, which
+		// would both eat the pile under it and never end a stint.
+		const moving = Math.abs(platform.vx) > 0.02 || world.direction !== 0;
 		if (!moving) return;
 		const half = graderSwath * 0.5;
 		const left = platform.x - half;
@@ -796,10 +818,39 @@
 		}
 		if (!changed) return;
 		for (let column = first; column <= last; column++) {
-			if (floorPiles[column] > 0) floorValues[column] *= Math.min(1, floorScratch[column] / floorPiles[column]);
-			floorPiles[column] = floorScratch[column];
+			const height = floorPiles[column];
+			const graded = floorScratch[column];
+			// Every column keeps its value density, so the blade accrues exactly
+			// the value the floor lost and the ledger can never invent credits.
+			// Material the smoothing hands to a neighbour raises that column's
+			// height at the value it already had; nothing is created either way.
+			if (height > 0 && graded < height) {
+				const density = floorValues[column] / height;
+				const shaved = density * (height - graded);
+				blade.value += shaved;
+				blade.idle = 0;
+				floorValues[column] -= shaved;
+			}
+			floorPiles[column] = graded;
 		}
 		updateFloor();
+	}
+
+	// One settled stint per working pause: the blade's share of the shaved
+	// material enters the owner's purse as a single frozen entry, exactly like a
+	// garage-grader settlement. Under Communism the material is free, so the
+	// credit is zero and nothing is booked.
+	function settleBlade(world) {
+		if (blade.value <= 0) {
+			blade.idle = 0;
+			return;
+		}
+		const credits = price(blade.value * graderShare);
+		blade.value = 0;
+		blade.idle = 0;
+		if (credits <= 0) return;
+		funds += credits;
+		ledger.push(Object.freeze({ id: ledger.length + 1, type: 'blade', time: world.time, label: 'Road grader blade', credits }));
 	}
 
 	// A competitor blade shaves a thin layer from the rubble under its body and
@@ -1146,7 +1197,7 @@
 		get baseDamageMultiplier() { return baseDamageMultiplier; },
 		get damageRange() { return damageRangeNow(); },
 		damageFalloffPower, pileLimit, graderCut, graderSmooth, graderClearance, graderSwath,
-		graderBot, floorValues,
+		graderBot, blade, graderShare, floorValues,
 		get shape() { return rockShape; }, heightmap, firstRow, floorPiles, floorHeight,
 		garageHeight, garageDepth, garageParkX, graderSpeed,
 		mineralNames, mineralPrices, fuelPrice,

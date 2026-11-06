@@ -89,13 +89,14 @@
 		return root.SteamCeiling ? root.SteamCeiling.floorAt(x) : 0;
 	}
 
-	// The ground under a platform is the rock-and-rubble floor, the commercial
-	// grader's low dome and every competitor platform's trapezoid body. Competitors
-	// pass their own id so they never stand on their own 45° tails; the rig passes
-	// 'rig', which no competitor uses.
+	// The ground under a platform is the rock-and-rubble floor and every
+	// competitor platform's trapezoid body. Competitors pass their own id so they
+	// never stand on their own 45° tails; the rig passes 'rig', which no
+	// competitor uses. The garage grader's dome is deliberately not ground: it is
+	// 0.12 m tall against the 0.2 m belly, so the hull passes over it, and a
+	// wheel riding it would lift the whole deck out from under the ball.
 	function platformGroundAt(x, exceptId) {
 		let height = terrainHeight(x);
-		if (root.SteamCeiling) height = Math.max(height, root.SteamCeiling.botSurfaceAt(x));
 		if (root.SteamPlayers) height = Math.max(height, root.SteamPlayers.surfaceAt(x, exceptId));
 		return height;
 	}

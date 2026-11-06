@@ -168,9 +168,17 @@
 		return commons() || Boolean(root.SteamResearch && root.SteamResearch.isResearched('impact', owner));
 	}
 
+	// The road grader is the rig's own tool. A competitor's chassis harvests the
+	// rubble it drives over as part of its policy, so the blade would be inert
+	// mass under its hull; the item stays unavailable for every rival.
+	function rigOnly(id, owner) {
+		return id === 'grader' && ownerId(owner) !== 'rig';
+	}
+
 	function isUnlocked(id, owner) {
 		const item = find(id);
 		if (!item) return false;
+		if (rigOnly(id, owner)) return false;
 		if (commons()) return true;
 		return !item.requires || Boolean(root.SteamResearch && root.SteamResearch.isResearched(item.requires, owner));
 	}
@@ -287,7 +295,7 @@
 
 	function install(id, world, owner) {
 		const item = find(id);
-		if (!item || isInstalled(id, owner) || !isUnlocked(id, owner)) return false;
+		if (!item || rigOnly(id, owner) || isInstalled(id, owner) || !isUnlocked(id, owner)) return false;
 		return apply(item, world, owner, false);
 	}
 
@@ -311,7 +319,7 @@
 		engineCosts, ownsEngine, atShop, buyEngine, items, radiators,
 		ownsRadiator, radiatorUnlocked, installedRadiator, installRadiator,
 		balls, ballEntry, ownsBall, ballUnlocked, installedBall, installBall,
-		state, stateFor, find, isInstalled, isUnlocked, install, grant, installAll, reset
+		state, stateFor, find, isInstalled, isUnlocked, rigOnly, install, grant, installAll, reset
 	};
 	root.SteamEquipment = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;

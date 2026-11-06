@@ -1420,3 +1420,24 @@ test('the overlay draws one dotted flight per ball the selected machine may push
 	select.dispatch('change');
 	world.drive = false;
 });
+
+test('the road grader row follows the selected player: Locked for a rival, and the click says why', () => {
+	// The row is built once and re-read by the drawer, so this states the rule
+	// directly for both owners instead of depending on the page's selection.
+	players.setActive(0);
+	advance(2);
+	assert.equal(equipment.isUnlocked('grader', 'rig'), true, 'the rig sees the ungated blade');
+	players.setActive(1);
+	advance(2);
+	const rival = players.state.rivals[0];
+	const row = gearRow('grader');
+	assert.equal(buttonOf(row).textContent, 'Locked', 'a competitor cannot own the rig-only blade');
+	assert.equal(row.dataset.state, 'locked');
+	assert.equal(buttonOf(row).getAttribute('aria-disabled'), 'true', 'blocked but still clickable');
+	// The refusal must name the rule instead of dereferencing a prerequisite the
+	// item does not have.
+	buttonOf(row).dispatch('click');
+	assert.match(dom.element('progression-status').textContent, /grades under the rig's centre/);
+	assert.equal(equipment.isInstalled('grader', rival.id), false);
+	assert.equal(equipment.isUnlocked('grader', rival.id), false);
+});

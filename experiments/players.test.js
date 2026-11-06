@@ -636,15 +636,22 @@ test('a bot rival automatically invests its own takings and preserves sale accou
 	rival.cargoValue = 2000;
 	players.update(world, c.step);
 	assert.equal(research.state.completed, 0);
-	assert.equal(research.stateFor(rival.id).completed, 4);
-	assert.equal(research.stateFor(rival.id).prediction, true);
+	// 2000 cr buys the pulse chain (materials 180, electromagnetics 300, coil
+	// 400) and the drive chain (traction 380, motor 550), then stops at alloys
+	// (240) only because the mass cut is not what the machine needs first.
+	assert.equal(research.stateFor(rival.id).completed, 3);
 	assert.equal(equipment.isInstalled('coil', rival.id), true);
+	assert.equal(equipment.isInstalled('motor', rival.id), true);
 	assert.equal(equipment.isInstalled('coil'), false);
-	assert.equal(rival.buildIndex, 5, 'the bot stops at the next purchase it cannot yet afford');
-	assert.equal(rival.money, 220);
-	assert.equal(rival.spent, 1780);
+	// A rival's policy never opens the page overlay and never pays for it: the
+	// computer chain waits until the machine's own pulse and drive are bought.
+	assert.equal(research.stateFor(rival.id).prediction, false, 'no overlay research before the machine can use it');
+	assert.equal(research.isResearched('ballistics', rival.id), false);
+	assert.equal(rival.buildIndex, 5, 'the bot stops at the next purchase it can afford nothing of');
+	assert.equal(rival.money, 190);
+	assert.equal(rival.spent, 1810);
 	near(rival.soldValue, rival.money + rival.spent);
-	assert.match(rival.ledger[rival.ledger.length - 1].label, /Traction/);
+	assert.match(rival.ledger[rival.ledger.length - 1].label, /High-torque motor/);
 });
 
 test('the page computer belongs to the selected player rather than to a shared research pool', () => {
@@ -715,4 +722,30 @@ test('the rival tilt keeper bisects its own contact face and leaves the rig alon
 	rival.driveManual = 0;
 	players.update(world, c.step);
 	assert.equal(rival.drive, true, 'the keeper resumes when the override expires');
+});
+
+test('a bot rival spends on its own machine before page-only research', () => {
+	const world = fresh();
+	const rival = players.state.rivals[0];
+	const order = [];
+	rival.x = physics.platformMax();
+	rival.vx = 0;
+	// A long settlement sequence: each sale funds the next affordable step.
+	for (let sale = 0; sale < 12; sale++) {
+		rival.cargoCells = 100;
+		rival.cargoValue = 900;
+		rival.x = physics.platformMax();
+		players.update(world, c.step);
+		order.push(rival.lastPurchase);
+	}
+	// Nothing the rival's policy cannot read is ever bought: no page overlay
+	// until the machine's own pulse and drive are complete, and no ball tier,
+	// radiator, flywheel or metallurgy at all.
+	const firstPulse = order.findIndex(label => /Drive coil/.test(label));
+	const computer = order.findIndex(label => /Ballistic computer/.test(label));
+	assert.ok(firstPulse >= 0, 'the coil is bought');
+	assert.ok(computer < 0 || computer > firstPulse, 'the overlay never precedes the machine');
+	assert.ok(!order.some(label => /Hardened|Spiked|Impact forging|Radiator|Vent grille|Heavy radiator|Brake flywheel|Flywheel/.test(label)), 'no research the policy cannot use');
+	assert.equal(equipment.isInstalled('grader', rival.id), false, 'no rival buys the rig-only blade');
+	near(rival.soldValue, rival.money + rival.spent);
 });

@@ -167,3 +167,74 @@ test('owned balls and radiators use their player profile without touching the ri
 	near(physics.ballMassFor(rigBall), c.ballMass + 5);
 	balanced(w);
 });
+
+test('the road grader is the rig\'s tool: no competitor can buy it, and its refusal is not a prerequisite', () => {
+	const w = physics.createWorld();
+	players.init(w, 1);
+	const rival = players.state.rivals[0];
+	research.grant('materials', w, rival.id);
+	rival.money = 500;
+	assert.equal(equipment.isUnlocked('grader', rival.id), false, 'a rival never sees the blade as available');
+	assert.equal(equipment.isUnlocked('grader', 'rig'), true, 'the rig needs no research for it');
+	assert.equal(equipment.install('grader', w, rival.id), false, 'the API refuses the purchase');
+	assert.equal(equipment.isInstalled('grader', rival.id), false);
+	assert.equal(rival.money, 500, 'a refused purchase leaves the rival purse alone');
+	// Communism waives prices, not the rig-only rule.
+	ceiling.setCommune(true);
+	assert.equal(equipment.isUnlocked('grader', rival.id), false);
+	assert.equal(equipment.install('grader', w, rival.id), false);
+	ceiling.setCommune(false);
+	// The rig still buys it normally, for 300 cr, with no research at all.
+	ceiling.grant('Rig credit', 0);
+	w.platform.x = physics.platformMin();
+	const earned = earnFunds(w, 100);
+	assert.ok(earned >= 300, 'the rig earned the blade');
+	const before = ceiling.state.funds;
+	assert.equal(equipment.install('grader', w), true);
+	near(ceiling.state.funds, before - 300);
+	physics.createWorld();
+});
+
+test('a working blade keeps the value of what it shaved and settles it once per stint', () => {
+	const w = physics.createWorld();
+	const state = ceiling.state;
+	// Stage the sale away from the platform: a fragment parked in the moving
+	// rig's own hopper is surface rubble, whose capture the ceiling ledger never
+	// counted, so it would mask the blade's own balance.
+	w.platform.x = 3;
+	earnFunds(w, 100);
+	w.platform.x = 12;
+	w.platform.vx = 0;
+	w.platform.y = 0;
+	w.platform.previousY = 0;
+	assert.ok(equipment.install('grader', w), 'the ungated blade installs from sale income');
+	// The grader settles the platform, so pan the floor only after the install.
+	state.floorPiles.fill(0.3);
+	state.floorValues.fill(30);
+	// earnFunds' staged fragments are caught into the hopper before the sale, and
+	// the ceiling ledger never counted surfaced rubble as chamber energy; re-base
+	// so the balance below is the blade pass alone, which touches no energy term.
+	sync(w);
+	const before = state.funds;
+	const floorValue = () => Array.from(state.floorValues).reduce((total, value) => total + value, 0);
+	const pileHeight = () => Array.from(state.floorPiles).reduce((total, height) => total + height, 0);
+	const valueBefore = floorValue();
+	const heightBefore = pileHeight();
+	const entries = state.ledger.length;
+	w.target = physics.platformMax();
+	for (let i = 0; i < 240 * 8; i++) physics.step(w, c.step);
+	// The target is held to the end, so the stint is settled by the pause rule.
+	const valueAfter = floorValue();
+	const heightAfter = pileHeight();
+	assert.ok(heightAfter < heightBefore, 'the blade shaved material');
+	assert.ok(valueAfter < valueBefore, 'and the floor lost the matching value');
+	near(valueAfter / heightAfter, 100, 1e-9);
+	const blade = state.ledger.slice(entries).filter(entry => entry.type === 'blade');
+	assert.ok(blade.length >= 1, 'a stint is booked as one blade settlement');
+	for (const entry of blade) assert.ok(Object.isFrozen(entry));
+	const credited = blade.reduce((total, entry) => total + entry.credits, 0);
+	near(state.funds - before, credited, 1e-6, 'the whole credit arrives through the ledger');
+	near(credited, 0.5 * (valueBefore - valueAfter), 1e-6, 'the owner is paid half of the shaved value');
+	balanced(w);
+	physics.createWorld();
+});

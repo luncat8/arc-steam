@@ -488,6 +488,9 @@
 		const item = SteamEquipment.find(id);
 		if (SteamEquipment.install(id, world, owner)) setText(ui['progression-status'], 'Installed ' + item.name + ' at ' + world.time.toFixed(1) + ' s.');
 		else if (SteamEquipment.isInstalled(id, owner)) setText(ui['progression-status'], item.name + ' is already installed.');
+		// The grader's row is only ever locked for a competitor, and it has no
+		// prerequisite to name, so the refusal says why instead of dereferencing one.
+		else if (SteamEquipment.rigOnly(id, owner)) setText(ui['progression-status'], item.name + ' grades under the rig\'s centre; a competitor\'s chassis shaves rubble on its own.');
 		else if (!SteamEquipment.isUnlocked(id, owner)) setText(ui['progression-status'], item.name + ' needs the ' + SteamResearch.find(item.requires).name + ' research first.');
 		else setText(ui['progression-status'], 'Not enough funds for ' + item.name + ' (' + item.cost + ' cr needed).');
 		refresh();
@@ -1133,6 +1136,7 @@
 		const stamp = entry.time.toFixed(1) + ' s · ';
 		if (entry.source === 'test') return stamp + (entry.type === 'research' ? 'Test researched ' : 'Test installed ') + entry.label;
 		if (entry.type === 'grader') return stamp + 'Grader settlement · +' + entry.credits.toFixed(2) + ' cr (50% share)';
+		if (entry.type === 'blade') return stamp + 'Blade settlement · +' + entry.credits.toFixed(2) + ' cr (50% of the shaved rubble)';
 		if (entry.type === 'fuel') return stamp + 'Recharged ' + (entry.energy / 1000).toFixed(2) + ' kJ · ' + spent(entry.credits, 1);
 		if (entry.type === 'research') return stamp + 'Researched ' + entry.label + ' · ' + spent(entry.credits, 0);
 		if (entry.type === 'buy') return stamp + 'Bought ' + entry.label + ' · ' + spent(entry.credits, 0);
@@ -1142,6 +1146,7 @@
 	function ledgerStatus(entry) {
 		if (entry.source === 'test') return (entry.type === 'research' ? 'Test mode researched ' : 'Test mode installed ') + entry.label + ' at ' + entry.time.toFixed(1) + ' s.';
 		if (entry.type === 'grader') return 'Grader completed one pass · received ' + entry.credits.toFixed(2) + ' cr (50% share).';
+		if (entry.type === 'blade') return 'Road grader blade settled its stint · received ' + entry.credits.toFixed(2) + ' cr (50% of the rubble it shaved).';
 		if (entry.type === 'fuel') return 'Recharged ' + (entry.energy / 1000).toFixed(2) + ' kJ of reserve ' + (entry.credits > 0 ? 'for ' + entry.credits.toFixed(1) + ' cr' : 'for free') + ' at ' + entry.time.toFixed(1) + ' s.';
 		if (entry.type === 'research') return 'Researched ' + entry.label + ' ' + (entry.credits > 0 ? 'for ' + entry.credits.toFixed(0) + ' cr' : 'for free') + ' at ' + entry.time.toFixed(1) + ' s.';
 		if (entry.type === 'buy') return 'Bought ' + entry.label + ' ' + (entry.credits > 0 ? 'for ' + entry.credits.toFixed(0) + ' cr' : 'for free') + ' at ' + entry.time.toFixed(1) + ' s.';

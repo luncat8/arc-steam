@@ -75,7 +75,7 @@ test('commercial grader can be dispatched from anywhere, shuttles and settles 50
 	assert.equal(c.state.graderBot.active, false);
 });
 
-test('the inactive grader remains drawn in its low garage and the active bot lifts a wheel', () => {
+test('the inactive grader remains drawn in its low garage and the working bot stays under the hull', () => {
 	const w = p.createWorld();
 	const s = c.state;
 	const arcs = [];
@@ -90,7 +90,10 @@ test('the inactive grader remains drawn in its low garage and the active bot lif
 	c.state.graderBot.x = 12;
 	near(c.botSurfaceAt(12), 0.12);
 	near(c.botSurfaceAt(11), 0);
-	assert.ok(p.platformBaseAt(12 - p.config.platformWheelHalfSpan, 0) > 0.1);
+	// The dome is 0.12 m tall against the 0.2 m belly: the wheels pass over it
+	// and the deck keeps its floor height, so a ball's landing mark stays put.
+	assert.ok(c.botSurfaceAt(12) < p.config.platformBodyBottom, 'the dome fits under the hull');
+	near(p.platformBaseAt(12 - p.config.platformWheelHalfSpan, 0), 0);
 	near(p.platformBaseAt(12, 0), 0);
 	p.createWorld();
 	assert.equal(c.state.graderBot.active, false);
@@ -161,4 +164,23 @@ test('tier II follows a rock rebound to ground without mining the live rock', ()
 	assert.ok(path.pathY[path.samples - 1] < 1, 'forecast descends after the rock bounce');
 	assert.equal(c.state.extractedCells, extracted);
 	assert.equal(JSON.stringify(w), before);
+});
+
+test('the garage grader is not terrain: a working dome never lifts a wheel or the deck', () => {
+	const w = p.createWorld();
+	const s = c.state;
+	w.platform.x = p.platformMin();
+	assert.ok(c.hireGrader(w));
+	// Put the dome under the left wheel and step the platform over it.
+	for (let x = 0; x <= p.config.width; x += 0.25) {
+		c.state.graderBot.x = x;
+		near(p.platformBaseAt(x, 0), 0);
+		near(p.platformBaseAt(x + p.config.platformWheelHalfSpan, 0), 0);
+		assert.ok(p.platformPitchAt(x) === 0, 'no pitch from the dome');
+	}
+	// The dome is still a real silhouette for drawing and contact queries.
+	c.state.graderBot.x = 12;
+	balanced(w);
+	near(c.botSurfaceAt(12), 0.12);
+	p.createWorld();
 });
