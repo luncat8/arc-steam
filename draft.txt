@@ -176,6 +176,16 @@ make low-height garage for Commercial grader (similar like existing hole in wall
 platform's road grader add friction when work.
 should work under center of platform while movement but not ahead 
 
+## platform render
+add fuel bar (horizontal) and thermometer bar.
+make wheels rotation visible (i think some tire lines or screw will be good)
+
+## rock map
+
+layer density compress upward. mos bottom pixels same as now (not compressed). fallen debris also uncompress to normal size (think where better to not mess animation).
+visual rock size logarithmic: while same visual size it far part is very Y compressed, i want far pixels be 4x less Y size then near.
+
+
 ## ball
 
 ball damage radius
@@ -183,10 +193,29 @@ i expect first hit typically destroy 1-2 pixels, med damage in some area and sli
 
 add possible upgrade ball to increase damage but trade-off with increase energy loss bounce from rock.
 
+## competitor platform. 
+competitor dim color, use same rock and floor, same collision mechanics as commercial grader, 
+so add to platforms automatically retracted triangle 45° tails at both ends to be possible run over it. i want it hide when platforms far from each other and mechanically unfold only when near and distance decreasing (calculate when fold/unfold and animation position = f(distance)).
+probably on top should be platform what now has more engine movement power applied to move it.
+
+scoreboard:
+- money
+- checkbox is bot controlled
+- click - switch player. switch all gui to control selected and view it.
+
+add settings: 1 shared ball, 2 shared balls, 1 ball per platform (can push only own ball), improve bot and autopilot to properly handle this
+
+avoid such bot behavior in case of 2+ shared balls: autopilot move it in position where it cant reach in time, miss ball, then return to other ball and cant reach it also because time spend on unreachable target, etc . this cause no ball got at all. 
+
+### multiplayer autopilot
+need improve autopilot and increase movement penalty when distance is big and another platform are near distant ball - so better keep energy and got near ball then fight for far.
 
 ## game balance.
 heat and heat sink radiators balance and install engines
 dropwn to install radiators that has different mass and efficiency
+
+## balistic computer
+limit calculated and drawn trajectory to 2nd ground or platform bounce end position or to 1st if ball loose 100% speed according to bounce settings.
 
 
 ## gui

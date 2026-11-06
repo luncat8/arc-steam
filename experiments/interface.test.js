@@ -26,7 +26,7 @@ physics.step = function (stepped, dt) {
 	world = stepped;
 	return simulate(stepped, dt);
 };
-require('../js/main.js');
+dom.loadMainScripts();
 
 // The competitor plays its ball while the page runs, so the trajectory tests
 // pin it at the far wall first: what they measure and assert is the rig's own

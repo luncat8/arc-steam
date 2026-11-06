@@ -1,12 +1,35 @@
 'use strict';
 // Minimal DOM shim for the always-available interface test: the interface
 // wiring (ids, handlers, canvas calls, panel states) runs without a browser.
-// It implements only what js/main.js touches and records canvas commands
+// It implements only what js/main*.js touches and records canvas commands
 // rather than rasterising them; real browser behaviour belongs in browser-smoke.cjs.
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
-const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const root = path.join(__dirname, '..');
+const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+let mainScriptsLoaded = false;
+
+function loadMainScripts() {
+	if (mainScriptsLoaded) return;
+	const sources = Array.from(html.matchAll(/<script\s+src="([^"]+)"/g), match => match[1]);
+	const mainScripts = sources.filter(source => /^js\/main(?:_[\w-]+)?\.js$/.test(source));
+	const ids = new Set(Array.from(html.matchAll(/\bid="([\w-]+)"/g), match => match[1]));
+	const declarations = new Map();
+	for (const source of mainScripts) {
+		const filename = path.join(root, source);
+		const code = fs.readFileSync(filename, 'utf8');
+		for (const match of code.matchAll(/^(?:const|let|var|function)\s+([\w$]+)/gm)) {
+			const name = match[1];
+			if (declarations.has(name)) throw new Error('duplicate main-script binding: ' + name);
+			if (ids.has(name)) throw new Error('main-script binding shadows element id: ' + name);
+			declarations.set(name, source);
+		}
+		vm.runInThisContext(code, { filename });
+	}
+	mainScriptsLoaded = true;
+}
 
 class Element {
 	constructor(tagName, id) {
@@ -148,6 +171,7 @@ const api = {
 	contextCalls,
 	pointerMedia,
 	install,
+	loadMainScripts,
 	element(id) {
 		const element = elements.get(id);
 		if (!element) throw new Error('missing #' + id);

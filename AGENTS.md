@@ -42,7 +42,8 @@ getObj().data().action()
 
 ## files
 
-findings-pitfalls-skills.md - notes and pitfalls for LLM agents. write here if found good way to do something.
+- `js/main.js` + `js/main_*.js` - page UI split by ownership: bootstrap, progression, players, readouts, drawing, input, help, then boot. See `main-split.1-plan.md` and each file's header for direct dependencies.
+- `findings-pitfalls-skills.md` - notes and pitfalls for LLM agents. Write here if a useful general technique is found.
 
 archive/ - for implemented plans
 

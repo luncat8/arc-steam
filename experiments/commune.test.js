@@ -91,7 +91,7 @@ physics.step = function (stepped, dt) {
 	pageWorld = stepped;
 	return step(stepped, dt);
 };
-require('../js/main.js');
+dom.loadMainScripts();
 
 function advance(count) {
 	for (let i = 0; i < count; i++) dom.frame(1000 / 60 * (i + 1));
