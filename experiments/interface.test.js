@@ -1229,6 +1229,34 @@ test('switching platforms changes the title and nothing else in the menu', () =>
 	assert.equal(rigDrive.hidden, false);
 });
 
+test('the science and shop drawer spends the selected rival purse only', () => {
+	dom.element('reset').dispatch('click');
+	advance(2);
+	const rival = players.state.rivals[0];
+	players.setBot(1, false);
+	rival.x = physics.platformMax();
+	rival.vx = 0;
+	rival.cargoCells = 100;
+	rival.cargoValue = 2000;
+	advance(1);
+	assert.equal(rival.money, 2000);
+	const list = dom.element('player-list');
+	list.children[1].children[0].dispatch('click');
+	assert.match(dom.element('science-title').textContent, /RIVAL 1/);
+	buttonOf(techRow('materials')).dispatch('click');
+	assert.equal(research.isResearched('materials', rival.id), true);
+	assert.equal(research.isResearched('materials', 'rig'), false);
+	buttonOf(gearRow('pad')).dispatch('click');
+	assert.equal(equipment.isInstalled('pad', rival.id), true);
+	assert.equal(equipment.isInstalled('pad', 'rig'), false);
+	assert.equal(rival.money, 1570);
+	assert.equal(ceiling.state.funds, 0, 'neither purchase can debit the rig');
+	assert.equal(dom.element('science-funds').textContent, '1570.0 cr');
+	list.children[0].children[0].dispatch('click');
+	assert.equal(buttonOf(techRow('materials')).textContent, 'Research');
+	assert.equal(dom.element('science-funds').textContent, '0.0 cr');
+});
+
 test('the computer, the release and the ball readout belong to the selected platform', () => {
 	const list = dom.element('player-list');
 	const rival = players.state.rivals[0];
@@ -1270,6 +1298,10 @@ test('the computer, the release and the ball readout belong to the selected plat
 	// ball it may push, and the panel says so.
 	list.children[1].children[0].dispatch('click');
 	assert.equal(players.state.active, 1);
+	advance(1);
+	assert.equal(dom.element('prediction-status').hidden, true, 'the rig\'s research does not give the rival a computer');
+	assert.equal(computer.pathCount, 0, 'a machine without its own computer has no page paths');
+	research.grant('ballistics', world, rival.id);
 	advance(10);
 	assert.equal(computer.platformId, rival.id, 'the computer follows the selected platform');
 	assert.equal(computer.ball, ball, 'it describes the ball that platform may push');

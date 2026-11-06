@@ -231,7 +231,9 @@ test('a competitor ball mines the ceiling and the competitor banks the rubble', 
 	const before = ceiling.state.extractedCells;
 	run(world, 90);
 	assert.ok(ceiling.state.extractedCells > before, 'the competitor ball broke rock');
-	assert.ok(rival.money > 0, 'the competitor harvested the rubble and sold it');
+	assert.ok(rival.soldValue > 0, 'the competitor harvested the rubble and sold it');
+	assert.ok(rival.spent > 0, 'the working bot reinvested its own sale proceeds');
+	near(rival.soldValue, rival.money + rival.spent, 1e-9, 'sale proceeds are either saved or invested by the competitor');
 	assert.equal(ceiling.state.funds, 0, 'none of it reached the rig');
 	assert.ok(ball.state === 'flying' || ball.state === 'grounded');
 	near(balance(world), 0, 1e-6);

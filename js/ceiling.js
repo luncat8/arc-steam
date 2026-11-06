@@ -44,14 +44,17 @@
 	const baseDamageMultiplier = 2;
 	const baseDamageRange = 9;
 	const damageFalloffPower = 2.8;
-	function installed(channel) {
+	function installed(channel, owner) {
+		const id = owner || 'rig';
 		const machinery = root.SteamEquipment;
 		const technology = root.SteamResearch;
-		return (machinery ? machinery.state[channel] || 0 : 0) + (technology ? technology.state[channel] || 0 : 0);
+		const equipmentState = machinery ? machinery.stateFor(id) : null;
+		const researchState = technology ? technology.stateFor(id) : null;
+		return (equipmentState ? equipmentState[channel] || 0 : 0) + (researchState ? researchState[channel] || 0 : 0);
 	}
-	function damageRadiusNow() { return baseDamageRadius + installed('damageRadiusBonus'); }
-	function damageMultiplierNow() { return baseDamageMultiplier + installed('damageBonus'); }
-	function damageRangeNow() { return Math.ceil(damageRadiusNow()); }
+	function damageRadiusNow(owner) { return baseDamageRadius + installed('damageRadiusBonus', owner); }
+	function damageMultiplierNow(owner) { return baseDamageMultiplier + installed('damageBonus', owner); }
+	function damageRangeNow(owner) { return Math.ceil(damageRadiusNow(owner)); }
 	const initialStrength = new Float32Array(count);
 	const strength = new Float32Array(count);
 	const elements = new Float32Array(count * 3);
@@ -345,20 +348,20 @@
 		updateFloor();
 	}
 
-	function damageWeight(distance) {
-		const t = Math.max(0, 1 - distance / damageRadiusNow());
+	function damageWeight(distance, owner) {
+		const t = Math.max(0, 1 - distance / damageRadiusNow(owner));
 		return Math.pow(t, damageFalloffPower);
 	}
 
-	function damage(x, y, impactJ) {
+	function damage(x, y, impactJ, owner) {
 		const centerColumn = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
 		let firstIntact = 0;
 		while (firstIntact < rows && strength[firstIntact * columns + centerColumn] <= 0) firstIntact++;
 		const rawRow = Math.max(0, Math.min(rows - 1, Math.floor((y - bottom) / cell)));
 		const centerRow = firstIntact < rows ? Math.max(firstIntact, rawRow) : rawRow;
-		const mult = damageMultiplierNow();
-		const radius = damageRadiusNow();
-		const range = damageRangeNow();
+		const mult = damageMultiplierNow(owner);
+		const radius = damageRadiusNow(owner);
+		const range = damageRangeNow(owner);
 		const budget = impactJ * mult;
 		let removed = 0;
 		for (let rowOffset = -range; rowOffset <= range; rowOffset++) for (let columnOffset = -range; columnOffset <= range; columnOffset++) {
@@ -368,7 +371,7 @@
 			if (row < 0 || row >= rows || column < 0 || column >= columns || distance > radius) continue;
 			const index = row * columns + column;
 			if (strength[index] <= 0) continue;
-			const amount = Math.min(strength[index], budget * damageWeight(distance));
+			const amount = Math.min(strength[index], budget * damageWeight(distance, owner));
 			strength[index] -= amount;
 			removed += amount / mult;
 			if (strength[index] > 0.0001) continue;
@@ -1169,7 +1172,7 @@
 
 	reset(1);
 
-	const api = { hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, trace, step, harvest, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape, rockDrawnY, rockWorldY, rockScale };
+	const api = { hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, damageRadiusNow, damageMultiplierNow, trace, step, harvest, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, state, setShape, rockDrawnY, rockWorldY, rockScale };
 	root.SteamCeiling = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

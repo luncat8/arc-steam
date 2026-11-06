@@ -331,6 +331,7 @@ test('the rig plan never replaces the page overlay with the rig selected', () =>
 	const w = physics.createWorld();
 	players.init(w, 1);
 	players.setActive(0);
+	research.grant('ballistics', w);
 	w.platform.x = 3; w.platform.vx = 0; w.direction = 0; w.target = NaN;
 	w.ball.x = 12; w.ball.y = 5; w.ball.vx = 1; w.ball.vy = 0;
 	const page = prediction.predictAll(w);
@@ -353,6 +354,7 @@ test('the computer draws every ball the selected machine may push', () => {
 	players.init(w, 1);
 	players.setBallMode('shared2');
 	players.setActive(0);
+	research.grant('ballistics', w);
 	w.balls[0].x = 8; w.balls[0].y = 5; w.balls[0].vx = 1; w.balls[0].vy = 0;
 	w.balls[1].x = 18; w.balls[1].y = 6; w.balls[1].vx = -1; w.balls[1].vy = 0;
 	const focus = prediction.predictAll(w);
@@ -367,6 +369,7 @@ test('the computer draws every ball the selected machine may push', () => {
 	players.setBallMode('each');
 	players.setActive(1);
 	const rival = players.state.rivals[0];
+	research.grant('ballistics', w, rival.id);
 	const rivalBall = w.balls.find(ball => ball.owner === rival.id);
 	rivalBall.state = 'grounded';
 	const owned = prediction.predictAll(w);
@@ -385,6 +388,7 @@ test('a half-energy ground rebound is drawn through the second bounce', () => {
 		players.init(w, 0);
 		players.setBallMode('shared1');
 		players.setActive(0);
+		research.grant('ballistics', w);
 		physics.setGroundBounce(mode);
 		w.platform.x = 3; w.platform.vx = 0; w.direction = 0; w.target = NaN; w.drive = false;
 		w.ball.x = 20; w.ball.y = 3; w.ball.vx = 0; w.ball.vy = 0;
@@ -414,6 +418,7 @@ test('a half-energy ground rebound is drawn through the second bounce', () => {
 	balanced(half);
 	// An absorbing ground has only one contact to show, even with tier II.
 	const absorb = scene('absorb');
+	research.grant('ballistics', absorb);
 	research.grant('ballistics2', absorb);
 	assert.equal(groundContacts(prediction.predictAll(absorb)), 1);
 	physics.setGroundBounce('absorb');
@@ -426,6 +431,7 @@ test('a tier-II page path stops at two bounces while the policy forecast runs on
 	players.init(w, 0);
 	players.setBallMode('shared1');
 	players.setActive(0);
+	research.grant('ballistics', w);
 	research.grant('ballistics2', w);
 	w.platform.x = 12; w.platform.vx = 0;
 	w.ball.x = 13; w.ball.y = 4; w.ball.vx = 0; w.ball.vy = -1;
@@ -448,6 +454,7 @@ test('a forecast through the tilted reflector lands where the chamber bounces', 
 	players.init(w, 0);
 	players.setBallMode('shared1');
 	players.setActive(0);
+	research.grant('ballistics', w);
 	research.grant('ballistics2', w);
 	w.platform.x = 3;
 	w.platform.vx = 0;
@@ -500,6 +507,7 @@ test('a full collector returns a ball instead of ending the overlay forecast', (
 	players.init(w, 0);
 	players.setBallMode('shared2');
 	players.setActive(0);
+	research.grant('ballistics', w);
 	research.grant('ballistics2', w);
 	w.platform.x = 3;
 	w.platform.vx = 0;

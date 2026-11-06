@@ -169,8 +169,9 @@
 			return thrust;
 		}
 		const force = Math.max(0.1, machine.force);
-		thrust.acceleration = physics.config.force / physics.config.platformMass * force;
-		thrust.top = physics.config.maxSpeed * force;
+		const selected = physics.machineById(world, machine.id);
+		thrust.acceleration = physics.forceNow(machine.id) * force / physics.machineMass(world, selected);
+		thrust.top = physics.speedNow(machine.id) * force;
 		return thrust;
 	}
 
@@ -203,7 +204,7 @@
 	// reserve and its heat allow, a competitor its fixed deck charge.
 	function machinePulse(physics, world, available) {
 		if (!machine.drive) return 0;
-		if (!machine.rig) return Math.min(available, physics.config.pulse);
+		if (!machine.rig) return Math.min(available, physics.pulseNow(machine.id));
 		return Math.min(available, physics.pulseNow() * physics.thermalFactor(world));
 	}
 
@@ -248,7 +249,7 @@
 			trace.kind = PARKED;
 			return trace;
 		}
-		const tierTwo = Boolean(root.SteamResearch && root.SteamResearch.state.predictionBounces);
+		const tierTwo = Boolean(root.SteamResearch && root.SteamResearch.stateFor(platform.id).predictionBounces);
 		// A collector that already holds a ball returns the next arrival off its
 		// flat strip, so a forecast must bounce there instead of ending the flight.
 		const collectorFull = Boolean(physics.heldBallOf(world, physics.machineById(world, platform.id)));
@@ -265,7 +266,9 @@
 		let landingUncertain = false;
 		let available = machine.rig ? world.battery * physics.engineNow().efficiency : Infinity;
 		const gravity = config.ballGravity;
-		const retention = Math.sqrt(physics.retentionNow());
+		const ballOwner = ball.owner || 'rig';
+		const retention = Math.sqrt(physics.retentionNow(ballOwner));
+		const rockRetention = Math.sqrt(physics.rockRetentionNow(ballOwner));
 		// Rock contacts are only traced while the march can reach the layer, which
 		// keeps the heightmap rebuild off the cheap low-flight marches.
 		const rockReach = economy ? economy.state.bottom - config.radius - 0.5 : Infinity;
@@ -375,7 +378,7 @@
 				pathX[samples] = x; pathY[samples] = y; samples++;
 				if (event === ROCK) {
 					const normal = vx * nx + vy * ny;
-					if (normal < 0) { vx -= (1 + retention) * normal * nx; vy -= (1 + retention) * normal * ny; }
+					if (normal < 0) { vx -= (1 + rockRetention) * normal * nx; vy -= (1 + rockRetention) * normal * ny; }
 					x += nx * 0.0001; y += ny * 0.0001;
 				} else if (event === GROUND) {
 					// The same half-energy ground rebound the simulation applies.
@@ -384,7 +387,7 @@
 				} else if (surface === COLLECTOR) {
 					// A full collector returns the ball off its flat strip with
 					// no pulse, exactly as the chamber does.
-					physics.deckBounce(vx, vy, deckAngle, deckVx, deckVy, 0, deckBounce);
+					physics.deckBounce(vx, vy, deckAngle, deckVx, deckVy, 0, deckBounce, platform.id, ball);
 					vx = deckBounce.vx; vy = deckBounce.vy;
 					x -= Math.sin(deckAngle) * 0.0001;
 					y += Math.cos(deckAngle) * 0.0001;
@@ -393,7 +396,7 @@
 					// solver: this machine's face, tilt, friction, recoil, drive
 					// and pulse, so a forecast through a bounce is the real one.
 					const push = machinePulse(physics, world, available);
-					physics.reflectOnDeck(world, platform.id, vx, vy, deckAngle, deckVx, deckVy, push, platformVx, faceResult);
+					physics.reflectOnDeck(world, platform.id, vx, vy, deckAngle, deckVx, deckVy, push, platformVx, faceResult, ball);
 					vx = faceResult.vx; vy = faceResult.vy;
 					available -= push;
 					x -= Math.sin(deckAngle) * 0.0001;
@@ -455,6 +458,11 @@
 	function predictAll(world) {
 		const physics = root.SteamPhysics;
 		selectMachine(world, undefined);
+		const research = root.SteamResearch;
+		if (research && !research.stateFor(machine.id).prediction) {
+			pagePathCount = 0;
+			return traceFlight(world, null, page);
+		}
 		const focus = workingBall(world, machine.id);
 		const primary = traceFlight(world, focus, page);
 		const balls = world.balls || [];

@@ -44,7 +44,7 @@
 				'BALLS in the system bar sets what is in the chamber. One shared ball is the classic game: a single ball both platforms may push, and whichever platform it comes down on catches it in its own collector and pulses it with its own reflector.',
 				'Two shared balls put two balls in flight at once and both platforms may push either of them. Every platform holds one at a time. The ballistic overlay draws a flight for every ball the selected platform may push — the focus flight with its landing mark and coasting ghost, the others as dimmer dotted paths — while the readouts still follow the one the platform is working. In the one-per-platform arrangement only that platform’s own ball is drawn: a ball it may not push has no flight to show.',
 				'One per platform gives every platform its own ball. Ownership is the collision rule: a platform cannot see, catch, bounce or pulse a ball it does not own, so the rig’s collector passes straight through a competitor’s ball and that competitor’s deck passes straight through the rig’s.',
-				'A competitor keeps its own ball alive with its own deck: the collector catches it, the reflector bounces it off the competitor’s tilt, a pulse of the rig’s base size is added while the ball would fall short of the rock, and a grounded ball is scooped back up by driving over it. Its ball breaks the same ceiling rock, the debris lands as floor rubble, and its chassis harvests that rubble into its own purse. Competitor balls, catches and pulses are outside the rig’s energy ledger, exactly like the commercial grader.'
+				'A competitor keeps its own ball alive with its own deck: the collector catches it, the reflector bounces it off the competitor’s tilt, a pulse from its own upgraded machinery is added while the reflected ball would fall short of the rock, and a grounded ball is scooped back up by driving over it. Its owned ball uses its own strike-ball tier and breaks the same ceiling rock; the debris lands as floor rubble, and its chassis harvests that rubble into its own purse. Competitor balls, catches and pulses are outside the rig’s energy ledger, exactly like the commercial grader.'
 			],
 			keys: [
 				['1 shared', 'One ball, both platforms push it, the rig catches it'],
@@ -168,10 +168,10 @@
 			label: 'Sci+Shop',
 			title: 'Science and shop tree',
 			text: [
-				'One tree combines technology research and the equipment each node unlocks. Base chassis gear — the road grader, engine powertrain bay and commercial grader bot — sits at the root and needs no research.',
-				'Researching a node debits funds once, applies its measured bonus immediately, and unlocks the shop slot attached inside that node. Tiered families (engines, cooling radiators and strike balls) fit one unit at a time and swap owned tiers for free; engines are fitted while parked at the left shop.',
-				'Blocked controls stay clickable and explain why in the status bar above the tree. Live platform specifications update in place as deltas stack. Communism mode drops every price and prerequisite; test mode grants the whole tree and shop at once.',
-				'The ballistic computer is the selected platform’s: its overlay, its landing readout, its ghost and its release all address the platform whose controls you hold, and the autopilot’s own flight never replaces them — with the rig selected too. It draws every ball that platform may push and stops at the second bounce, using the chamber’s own reflector and collector answers.'
+				'One tree combines technology research and the equipment each node unlocks for the selected player. Every platform has its own purse, completed nodes, owned tiers and installed effects; nothing researched or bought for one player unlocks it for another. Base chassis gear — the road grader, engine powertrain bay and commercial grader bot — sits at the root and needs no research.',
+				'Researching a node debits the selected player’s funds once, applies its measured bonus to that machine immediately, and unlocks the shop slot attached inside that node. Tiered families (engines, cooling radiators and strike balls) fit one unit at a time and swap owned tiers for free; engines are fitted while parked at the left shop.',
+				'Blocked controls stay clickable and explain why in the status bar above the tree. Live platform specifications update in place as deltas stack. Communism mode drops every price and prerequisite; test mode grants the whole tree and shop to every player at once.',
+				'The ballistic computer must be researched by the selected platform itself: without that purchase it has no page overlay, even if another player owns one. Its overlay, its landing readout, its ghost and its release all address the platform whose controls you hold, and the autopilot’s own flight never replaces them — with the rig selected too. It draws every ball that platform may push and stops at the second bounce, using the chamber’s own reflector and collector answers.'
 			]
 		},
 		{
@@ -189,9 +189,9 @@
 			label: 'Players',
 			title: 'Competitors and the scoreboard',
 			text: [
-				'The strip under the telemetry lists every platform at the mine, one line per player. The rig is YOU; the others are competitors that work the same floor rubble and keep their own credits. Every platform is the same complete machine — chassis, deck, wheels, 45° plates, fuel bar, thermometer, collector strip and reflector piston, in the same colours — and the selected one is drawn whole while the others are the same drawing at 60% opacity. Nothing is added to a platform and nothing is taken away.',
+				'The strip under the telemetry lists every platform at the mine, one line per player. The rig is YOU; the others are independent competitors that work the same floor rubble and keep their own credits, research and installed upgrades. Every platform is the same complete machine — chassis, deck, wheels, 45° plates, fuel bar, thermometer, collector strip and reflector piston, in the same colours — and the selected one is drawn whole while the others are the same drawing at 60% opacity. Nothing is added to a platform and nothing is taken away.',
 				'Click a line to take that platform’s controls. The force setting, A/D, the brake, the low-ground travel click, the bounce drive, the piston tilt and the autopilot duties all act for the selected platform, and only the panel title changes with the switch (`YOU · MANUAL` → `RIVAL 1 · BOT`): the menu itself never rearranges. No key reaches a platform you are not driving, and a direction key held during a switch is dropped with the command it gave, so neither platform can move on a key pressed for the other.',
-				'BOT hands a platform to its policy, and both platforms play the ball the same way. A bot competitor stands where the ball it may push is coming down, meets it on its own deck, drives over a ball on the floor to scoop it up, and spends a pulse only while the passive bounce would still fall short of the rock; a ball its collector caught is released again at once. A bot rig runs the autopilot duties — the intercept, the drive keeper and the level bounce. Both make a selling trip to the nearer wall once their hopper is full, and both bank whatever they took on the way. A ball the competitor may not push, and a ball another platform holds, are not in its world at all, so it holds station instead of wandering.',
+				'BOT hands a platform to its policy, and both platforms play the ball the same way. A bot competitor meets the ball it may push, sweeps nearby rubble while the flight is safely away and returns before contact, scoops floor balls, uses its own tilt keeper to level the next reflection, and spends a pulse only while the reflected apex would still fall short of the rock; a ball its collector caught is released again at once. Each sale is automatically invested in that competitor’s own deterministic build order, with unspent credits saved for the next purchase. A bot rig runs the autopilot duties — the intercept, the drive keeper and the level bounce. Both make a selling trip to the nearer wall once their hopper is full, and both bank whatever they took on the way. Manual travel, tilt and drive temporarily suspend the matching competitor keeper. A ball the competitor may not push, and a ball another platform holds, are not in its world at all, so it holds station instead of wandering.',
 				'Two platforms that meet do not collide like walls. Each body has a retractable 45° plate at both ends: folded while the other platform is far or moving away, swinging down at a limited rate as the gap closes, and clipped at the floor so the plate and the ramp the wheels follow are the same line. The platform applying more drive power starts the climb; the other stays on the floor and is driven over. Once one hull is on top, the pair keeps that rider until the bodies part — braking or changing direction mid-crossing cannot swap them and make the hulls stutter through each other. Their credits never enter the rig’s ledger.'
 			],
 			keys: [
@@ -208,9 +208,9 @@
 			label: 'Market',
 			title: 'Market and ledger',
 			text: [
-				'Touching either SELL wall sells the whole load automatically. The panel breaks cargo and lifetime sales down by mineral, and the ledger records every sale with its mix, every purchase, every research payment and every recharge.',
+				'Touching either SELL wall sells the whole load automatically. This rig panel breaks the rig’s cargo and lifetime sales down by mineral, and its ledger records every rig sale, purchase, research payment and recharge. Competitor purses and purchase ledgers stay separate.',
 				'The emergency resupply imports energy instantly at the price shown, buying only what the funds cover; the centre pad remains the free route.',
-				'Sales, spending and imports all move one funds balance, so the ledger and the funds card always agree.'
+				'For the rig, sales, spending and imports all move one funds balance, so this ledger and the funds card always agree.'
 			]
 		},
 		{
@@ -219,7 +219,7 @@
 			title: 'Communism and test mode',
 			text: [
 				'Communism mode makes everything free: research, equipment and bought energy cost nothing and the research tree stops gating anything. Prices read FREE, the funds card reads commons, and sales are still measured and recorded.',
-				'Test mode researches every technology and installs every equipment item at once, without cost or prerequisites, applying the normal measured effects. Grants stay in place when the mode is switched off and clear on New game.',
+				'Test mode researches every technology and installs every equipment item for every player at once, without cost or prerequisites, applying the normal measured effects to each machine. Grants stay in place when the mode is switched off and clear on New game.',
 				'Both are modes rather than world state, so New game keeps them selected.'
 			]
 		}

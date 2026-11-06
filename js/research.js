@@ -1,8 +1,8 @@
 (function (root) {
 	'use strict';
-	// Technology tree. A node is researched once, debits shared funds, needs its
-	// prerequisites, and contributes the same explicit delta channels as installed
-	// machinery, so no node is a label-only unlock.
+	// Technology is owned by a platform, not by the page. Every profile has its
+	// own completed set and measured deltas; omitting an owner addresses the rig,
+	// which keeps the physics and test API compact without sharing competitor state.
 	const nodes = Object.freeze([
 		Object.freeze({
 			id: 'materials', name: 'Rebound materials', cost: 180, requires: Object.freeze([]),
@@ -55,122 +55,162 @@
 	const LOCKED = 'locked';
 	const AVAILABLE = 'available';
 	const RESEARCHED = 'researched';
-	const done = new Set();
-	let installedMass = 0;
-	let installedRetention = 0;
-	let installedPulse = 0;
-	let installedCooling = 0;
-	let installedForce = 0;
-	let installedSpeed = 0;
-	let installedDamageBonus = 0;
-	let installedRockRetentionBonus = 0;
-	let installedDamageRadiusBonus = 0;
-	let installedBallMassBonus = 0;
-	let predictionEnabled = false;
+	const profiles = new Map();
 
+	function ownerId(owner) {
+		return owner && typeof owner === 'object' ? owner.id : owner || 'rig';
+	}
+
+	function viewOf(profile) {
+		return Object.freeze({
+			get massDelta() { return profile.massDelta; },
+			get retentionBonus() { return profile.retentionBonus; },
+			get pulseBonus() { return profile.pulseBonus; },
+			get coolingBonus() { return profile.coolingBonus; },
+			get forceBonus() { return profile.forceBonus; },
+			get speedBonus() { return profile.speedBonus; },
+			get damageBonus() { return profile.damageBonus; },
+			get rockRetentionBonus() { return profile.rockRetentionBonus; },
+			get damageRadiusBonus() { return profile.damageRadiusBonus; },
+			get ballMassBonus() { return profile.ballMassBonus; },
+			get prediction() { return profile.prediction; },
+			get predictionBounces() { return profile.done.has('ballistics2'); },
+			get completed() { return profile.done.size; }
+		});
+	}
+
+	function createProfile() {
+		const profile = {
+			done: new Set(), massDelta: 0, retentionBonus: 0, pulseBonus: 0,
+			coolingBonus: 0, forceBonus: 0, speedBonus: 0, damageBonus: 0,
+			rockRetentionBonus: 0, damageRadiusBonus: 0, ballMassBonus: 0,
+			prediction: false
+		};
+		profile.view = viewOf(profile);
+		return profile;
+	}
+
+	function profileFor(owner) {
+		const id = ownerId(owner);
+		let profile = profiles.get(id);
+		if (!profile) {
+			profile = createProfile();
+			profiles.set(id, profile);
+		}
+		return profile;
+	}
+
+	// A stable facade for the rig. Reset replaces the underlying profile, not
+	// this object, so live readouts never retain a previous game's technology.
 	const state = Object.freeze({
-		get massDelta() { return installedMass; },
-		get retentionBonus() { return installedRetention; },
-		get pulseBonus() { return installedPulse; },
-		get coolingBonus() { return installedCooling; },
-		get forceBonus() { return installedForce; },
-		get speedBonus() { return installedSpeed; },
-		get damageBonus() { return installedDamageBonus; },
-		get rockRetentionBonus() { return installedRockRetentionBonus; },
-		get damageRadiusBonus() { return installedDamageRadiusBonus; },
-		get ballMassBonus() { return installedBallMassBonus; },
-		get prediction() { return predictionEnabled; },
-		get predictionBounces() { return done.has('ballistics2'); },
-		get completed() { return done.size; }
+		get massDelta() { return profileFor('rig').massDelta; },
+		get retentionBonus() { return profileFor('rig').retentionBonus; },
+		get pulseBonus() { return profileFor('rig').pulseBonus; },
+		get coolingBonus() { return profileFor('rig').coolingBonus; },
+		get forceBonus() { return profileFor('rig').forceBonus; },
+		get speedBonus() { return profileFor('rig').speedBonus; },
+		get damageBonus() { return profileFor('rig').damageBonus; },
+		get rockRetentionBonus() { return profileFor('rig').rockRetentionBonus; },
+		get damageRadiusBonus() { return profileFor('rig').damageRadiusBonus; },
+		get ballMassBonus() { return profileFor('rig').ballMassBonus; },
+		get prediction() { return profileFor('rig').prediction; },
+		get predictionBounces() { return profileFor('rig').done.has('ballistics2'); },
+		get completed() { return profileFor('rig').done.size; }
 	});
+
+	function stateFor(owner) { return profileFor(owner).view; }
 
 	function find(id) {
 		for (const node of nodes) if (node.id === id) return node;
 		return null;
 	}
 
-	function isResearched(id) {
-		return done.has(id);
+	function isResearched(id, owner) {
+		return profileFor(owner).done.has(id);
 	}
 
-	// Communism mode waives the tree: the commons hands out every node, so the
-	// prerequisites stop gating anything.
+	// Communism waives prices and prerequisite gates independently for every
+	// player; it does not copy one player's completed nodes into another's tree.
 	function commons() {
 		const economy = root.SteamCeiling;
 		return Boolean(economy && economy.state.commune);
 	}
 
-	function status(id) {
-		if (done.has(id)) return RESEARCHED;
+	function status(id, owner) {
+		const profile = profileFor(owner);
+		if (profile.done.has(id)) return RESEARCHED;
 		const node = find(id);
 		if (!node) return LOCKED;
 		if (commons()) return AVAILABLE;
-		for (const prerequisite of node.requires) if (!done.has(prerequisite)) return LOCKED;
+		for (const prerequisite of node.requires) if (!profile.done.has(prerequisite)) return LOCKED;
 		return AVAILABLE;
 	}
 
-	function apply(node, world, testGrant) {
-		const economy = root.SteamCeiling;
-		if (!economy) return false;
-		const physics = root.SteamPhysics;
-		const oldMass = world && physics ? physics.platformMass(world) : 0;
+	function purchase(owner, node, world, testGrant) {
+		const id = ownerId(owner);
 		const time = world ? world.time : 0;
-		const booked = testGrant ? economy.grant(node.name, time, 'research') : economy.purchase(node.name, node.cost, time, 'research');
-		if (!booked) return false;
-		done.add(node.id);
-		installedMass += node.massDelta || 0;
-		installedRetention += node.retentionBonus || 0;
-		installedPulse += node.pulseBonus || 0;
-		installedCooling += node.coolingBonus || 0;
-		installedForce += node.forceBonus || 0;
-		installedSpeed += node.speedBonus || 0;
-		installedDamageBonus += node.damageBonus || 0;
-		installedRockRetentionBonus += node.rockRetentionBonus || 0;
-		installedDamageRadiusBonus += node.damageRadiusBonus || 0;
-		installedBallMassBonus += node.ballMassBonus || 0;
-		if (node.capability === 'prediction') predictionEnabled = true;
-		if (physics) physics.applyMassChange(world, world ? physics.platformMass(world) - oldMass : 0, oldMass);
+		if (id === 'rig') {
+			const economy = root.SteamCeiling;
+			if (!economy) return false;
+			return testGrant ? economy.grant(node.name, time, 'research') : economy.purchase(node.name, node.cost, time, 'research');
+		}
+		const players = root.SteamPlayers;
+		return Boolean(players && players.purchase(id, node.name, node.cost, time, 'research', testGrant));
+	}
+
+	function apply(node, world, owner, testGrant) {
+		const id = ownerId(owner);
+		const profile = profileFor(id);
+		if (!purchase(id, node, world, testGrant)) return false;
+		const physics = root.SteamPhysics;
+		const machine = world && physics ? physics.machineById(world, id) : null;
+		const oldMass = machine && physics.machineMass ? physics.machineMass(world, machine) : 0;
+		profile.done.add(node.id);
+		profile.massDelta += node.massDelta || 0;
+		profile.retentionBonus += node.retentionBonus || 0;
+		profile.pulseBonus += node.pulseBonus || 0;
+		profile.coolingBonus += node.coolingBonus || 0;
+		profile.forceBonus += node.forceBonus || 0;
+		profile.speedBonus += node.speedBonus || 0;
+		profile.damageBonus += node.damageBonus || 0;
+		profile.rockRetentionBonus += node.rockRetentionBonus || 0;
+		profile.damageRadiusBonus += node.damageRadiusBonus || 0;
+		profile.ballMassBonus += node.ballMassBonus || 0;
+		if (node.capability === 'prediction') profile.prediction = true;
+		if (machine && physics.applyMachineMassChange) {
+			physics.applyMachineMassChange(world, machine, physics.machineMass(world, machine) - oldMass, oldMass);
+		}
 		return true;
 	}
 
-	// Research couples added or removed mass to the moving platform exactly like
-	// an equipment installation, so the physics helper is shared.
-	function research(id, world) {
+	function research(id, world, owner) {
 		const node = find(id);
-		if (!node || status(id) !== AVAILABLE) return false;
-		return apply(node, world, false);
+		if (!node || status(id, owner) !== AVAILABLE) return false;
+		return apply(node, world, owner, false);
 	}
 
-	// Test mode grants every node without funds or prerequisite checks, while
-	// retaining the same measured effects and mass/energy bookkeeping.
-	function grant(id, world) {
+	// Test grants retain normal measured effects and mass coupling while skipping
+	// only funds and prerequisites, separately for the requested player.
+	function grant(id, world, owner) {
 		const node = find(id);
-		if (!node || done.has(id)) return false;
-		return apply(node, world, true);
+		if (!node || isResearched(id, owner)) return false;
+		return apply(node, world, owner, true);
 	}
 
-	function researchAll(world) {
+	function researchAll(world, owner) {
 		let granted = 0;
-		for (const node of nodes) if (grant(node.id, world)) granted++;
+		for (const node of nodes) if (grant(node.id, world, owner)) granted++;
 		return granted;
 	}
 
 	function reset() {
-		done.clear();
-		installedMass = 0;
-		installedRetention = 0;
-		installedPulse = 0;
-		installedCooling = 0;
-		installedForce = 0;
-		installedSpeed = 0;
-		installedDamageBonus = 0;
-		installedRockRetentionBonus = 0;
-		installedDamageRadiusBonus = 0;
-		installedBallMassBonus = 0;
-		predictionEnabled = false;
+		profiles.clear();
 	}
 
-	const api = { nodes, state, status, constants: Object.freeze({ LOCKED, AVAILABLE, RESEARCHED }), find, isResearched, research, grant, researchAll, reset };
+	const api = {
+		nodes, state, stateFor, status, constants: Object.freeze({ LOCKED, AVAILABLE, RESEARCHED }),
+		find, isResearched, research, grant, researchAll, reset
+	};
 	root.SteamResearch = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

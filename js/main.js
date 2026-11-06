@@ -8,7 +8,7 @@
 	const context = canvas.getContext('2d');
 	const ids = ['clock', 'drive', 'launch', 'status-bar', 'status-ball', 'status-energy', 'fact-reserve', 'fact-cargo', 'fact-temp', 'prediction-status', 'force', 'force-value', 'piston-angle', 'piston-value',
 		'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'balls', 'ground-bounce', 'commune', 'test-mode', 'view-modes',
-		'platform-spec', 'spec-card', 'progression-tree', 'tree-links', 'progression-status', 'research-progress', 'science-funds',
+		'platform-spec', 'spec-card', 'progression-tree', 'tree-links', 'progression-status', 'research-progress', 'science-funds', 'science-title',
 		'mineral-cell', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price',
 		'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
 		'inventory-rows', 'transaction-status', 'transaction-count', 'ledger',
@@ -258,20 +258,20 @@
 		buildTierSlot(rootBays, {
 			family: 'engines', title: 'ENGINE POWERTRAIN', label: 'Engine upgrades',
 			entries: physics.engines, defaultId: 'electric',
-			installed: function () { return physics.engineNow().id; },
+			installed: function () { return physics.engineNow(activePlayerId()).id; },
 			unlocked: function () { return true; },
-			owned: function (id) { return SteamEquipment.ownsEngine(id); },
-			ready: function () { return SteamEquipment.atShop(world); },
+			owned: function (id) { return SteamEquipment.ownsEngine(id, activePlayerId()); },
+			ready: function () { return SteamEquipment.atShop(world, activePlayerId()); },
 			cost: function (entry) { return SteamEquipment.engineCosts[entry.id]; },
 			entryName: function (entry) { return entry.name + ' engine'; },
 			optionText: function (entry, costText) { return entry.name.toUpperCase() + ' ENGINE · ' + costText; },
 			detailText: function (entry) {
 				return entry.mass + ' kg · ' + (entry.density / 1000) + ' kJ/kg · ' + entry.reload + ' s refill · ' + Math.round(entry.efficiency * 100) + '% eff · ×' + entry.force + ' force · ×' + entry.speed + ' speed · left shop';
 			},
-			install: function (id) { return SteamEquipment.buyEngine(id, world); },
+			install: function (id) { return SteamEquipment.buyEngine(id, world, activePlayerId()); },
 			refuse: function (entry) {
-				if (physics.engineNow().id === entry.id) return entry.name + ' engine is already installed.';
-				if (!SteamEquipment.atShop(world)) return 'Park at the left shop to buy or swap engines.';
+				if (physics.engineNow(activePlayerId()).id === entry.id) return entry.name + ' engine is already installed.';
+				if (!SteamEquipment.atShop(world, activePlayerId())) return 'Park at the left shop to buy or swap engines.';
 				return 'Not enough funds for the ' + entry.name + ' engine (' + SteamEquipment.engineCosts[entry.id] + ' cr needed).';
 			}
 		});
@@ -300,27 +300,27 @@
 		const radiatorSpec = {
 			family: 'radiators', title: 'COOLING RADIATORS', label: 'Radiator upgrades',
 			entries: SteamEquipment.radiators,
-			installed: function () { return SteamEquipment.installedRadiator(); },
-			unlocked: function (id) { return SteamEquipment.radiatorUnlocked(id); },
-			owned: function (id) { return SteamEquipment.ownsRadiator(id); },
+			installed: function () { return SteamEquipment.installedRadiator(activePlayerId()); },
+			unlocked: function (id) { return SteamEquipment.radiatorUnlocked(id, activePlayerId()); },
+			owned: function (id) { return SteamEquipment.ownsRadiator(id, activePlayerId()); },
 			ready: function () { return true; },
 			cost: function (entry) { return entry.cost; },
 			entryName: function (entry) { return entry.name; },
 			optionText: function (entry, costText) { return entry.name.toUpperCase() + ' · ' + costText + massSuffix(entry.mass); },
 			detailText: function (entry) { return '+' + entry.radiatorArea.toFixed(2) + ' m² exposed fins · owned tiers swap free.'; },
-			install: function (id) { return SteamEquipment.installRadiator(id, world); },
+			install: function (id) { return SteamEquipment.installRadiator(id, world, false, activePlayerId()); },
 			refuse: function (entry) {
-				if (!SteamEquipment.radiatorUnlocked(entry.id)) return 'The radiator tiers need the Heat transfer research first.';
-				if (SteamEquipment.installedRadiator() === entry.id) return entry.name + ' is already installed.';
+				if (!SteamEquipment.radiatorUnlocked(entry.id, activePlayerId())) return 'The radiator tiers need the Heat transfer research first.';
+				if (SteamEquipment.installedRadiator(activePlayerId()) === entry.id) return entry.name + ' is already installed.';
 				return 'Not enough funds for ' + entry.name + ' (' + entry.cost + ' cr needed).';
 			}
 		};
 		const ballSpec = {
 			family: 'balls', title: 'STRIKE BALL', label: 'Ball upgrades',
 			entries: SteamEquipment.balls, previewIndex: 1, defaultId: 'standard',
-			installed: function () { return SteamEquipment.installedBall(); },
-			unlocked: function (id) { return SteamEquipment.ballUnlocked(id); },
-			owned: function (id) { return SteamEquipment.ownsBall(id); },
+			installed: function () { return SteamEquipment.installedBall(activePlayerId()); },
+			unlocked: function (id) { return SteamEquipment.ballUnlocked(id, activePlayerId()); },
+			owned: function (id) { return SteamEquipment.ownsBall(id, activePlayerId()); },
 			ready: function () { return true; },
 			cost: function (entry) { return entry.cost; },
 			entryName: function (entry) { return entry.name; },
@@ -331,10 +331,10 @@
 				const rad = (8.775 + (entry.damageRadiusBonus || 0)).toFixed(1);
 				return '×' + dmg + ' fracture · ' + loss + '% rock loss · ' + rad + '-cell splash · owned swap free.';
 			},
-			install: function (id) { return SteamEquipment.installBall(id, world); },
+			install: function (id) { return SteamEquipment.installBall(id, world, false, activePlayerId()); },
 			refuse: function (entry) {
-				if (SteamEquipment.installedBall() === entry.id) return entry.name + ' is already installed.';
-				if (!SteamEquipment.ballUnlocked(entry.id)) return 'The ball upgrades need the Impact forging research first.';
+				if (SteamEquipment.installedBall(activePlayerId()) === entry.id) return entry.name + ' is already installed.';
+				if (!SteamEquipment.ballUnlocked(entry.id, activePlayerId())) return 'The ball upgrades need the Impact forging research first.';
 				return 'Not enough funds for ' + entry.name + ' (' + entry.cost + ' cr needed).';
 			}
 		};
@@ -478,20 +478,27 @@
 		}
 	}
 
+	function activePlayerId() {
+		const player = activePlayer();
+		return player ? player.id : 'rig';
+	}
+
 	function buyEquipment(id) {
+		const owner = activePlayerId();
 		const item = SteamEquipment.find(id);
-		if (SteamEquipment.install(id, world)) setText(ui['progression-status'], 'Installed ' + item.name + ' at ' + world.time.toFixed(1) + ' s.');
-		else if (SteamEquipment.isInstalled(id)) setText(ui['progression-status'], item.name + ' is already installed.');
-		else if (!SteamEquipment.isUnlocked(id)) setText(ui['progression-status'], item.name + ' needs the ' + SteamResearch.find(item.requires).name + ' research first.');
+		if (SteamEquipment.install(id, world, owner)) setText(ui['progression-status'], 'Installed ' + item.name + ' at ' + world.time.toFixed(1) + ' s.');
+		else if (SteamEquipment.isInstalled(id, owner)) setText(ui['progression-status'], item.name + ' is already installed.');
+		else if (!SteamEquipment.isUnlocked(id, owner)) setText(ui['progression-status'], item.name + ' needs the ' + SteamResearch.find(item.requires).name + ' research first.');
 		else setText(ui['progression-status'], 'Not enough funds for ' + item.name + ' (' + item.cost + ' cr needed).');
 		refresh();
 	}
 
 	function buyResearch(id) {
+		const owner = activePlayerId();
 		const node = SteamResearch.find(id);
-		if (SteamResearch.research(id, world)) setText(ui['progression-status'], 'Researched ' + node.name + ' at ' + world.time.toFixed(1) + ' s.');
-		else if (SteamResearch.isResearched(id)) setText(ui['progression-status'], node.name + ' is already researched.');
-		else if (SteamResearch.status(id) === SteamResearch.constants.LOCKED) setText(ui['progression-status'], node.name + ' stays locked until ' + prerequisiteNames(node) + ' is researched.');
+		if (SteamResearch.research(id, world, owner)) setText(ui['progression-status'], 'Researched ' + node.name + ' at ' + world.time.toFixed(1) + ' s.');
+		else if (SteamResearch.isResearched(id, owner)) setText(ui['progression-status'], node.name + ' is already researched.');
+		else if (SteamResearch.status(id, owner) === SteamResearch.constants.LOCKED) setText(ui['progression-status'], node.name + ' stays locked until ' + prerequisiteNames(node) + ' is researched.');
 		else setText(ui['progression-status'], 'Not enough funds for ' + node.name + ' (' + node.cost + ' cr needed).');
 		refresh();
 	}
@@ -508,13 +515,17 @@
 	// Test mode applies all normal research and equipment effects without funds
 	// or progression gates. Turning it off leaves grants intact until New game.
 	function grantTestState() {
-		SteamResearch.researchAll(world);
-		SteamEquipment.installAll(world);
-		SteamEquipment.installRadiator('radiator', world, true);
-		SteamEquipment.installBall('spike', world, true);
-		const researched = SteamResearch.state.completed;
+		const roster = playerApi.state.players;
+		for (let i = 0; i < roster.length; i++) {
+			const owner = roster[i].id;
+			SteamResearch.researchAll(world, owner);
+			SteamEquipment.installAll(world, owner);
+			SteamEquipment.installRadiator('radiator', world, true, owner);
+			SteamEquipment.installBall('spike', world, true, owner);
+		}
+		const researched = SteamResearch.stateFor(activePlayerId()).completed;
 		let installed = 0;
-		for (const item of SteamEquipment.items) if (SteamEquipment.isInstalled(item.id)) installed++;
+		for (const item of SteamEquipment.items) if (SteamEquipment.isInstalled(item.id, activePlayerId())) installed++;
 		setText(ui['progression-status'], 'Test mode · all ' + researched + ' technologies researched and all ' + installed + ' equipment items installed.');
 	}
 
@@ -658,6 +669,12 @@
 
 	function refreshTierSlot(record, funds, commune) {
 		const spec = record.spec;
+		const owner = activePlayerId();
+		if (record.lastOwner !== owner) {
+			record.selectedIndex = -1;
+			record.lastInstalled = undefined;
+			record.lastOwner = owner;
+		}
 		const installed = spec.installed();
 		let selectedIndex = record.selectedIndex;
 		if (selectedIndex < 0 || record.lastInstalled !== installed) {
@@ -689,10 +706,10 @@
 		setText(record.detail, spec.detailText(selected));
 	}
 
-	function refreshTreeLinks(commune) {
+	function refreshTreeLinks(commune, owner) {
 		for (const edge of linkRecords) {
-			const done = edge.from === 'root' || commune || SteamResearch.isResearched(edge.from);
-			const state = done ? 'done' : SteamResearch.status(edge.from) === SteamResearch.constants.AVAILABLE ? 'ready' : 'locked';
+			const done = edge.from === 'root' || commune || SteamResearch.isResearched(edge.from, owner);
+			const state = done ? 'done' : SteamResearch.status(edge.from, owner) === SteamResearch.constants.AVAILABLE ? 'ready' : 'locked';
 			if (edge.path.dataset.state !== state) edge.path.dataset.state = state;
 		}
 	}
@@ -701,11 +718,13 @@
 	// prerequisite edges together through change-only DOM writers.
 	function refreshUpgrades() {
 		const ceiling = window.SteamCeiling.state;
-		const funds = ceiling.funds;
+		const owner = activePlayerId();
+		const funds = playerApi.money(playerApi.state.active);
 		refreshGrader();
+		setText(ui['science-title'], 'SCIENCE + SHOP · ' + activePlayer().name);
 		for (const row of equipmentRows) {
-			const installed = SteamEquipment.isInstalled(row.item.id);
-			const unlocked = SteamEquipment.isUnlocked(row.item.id);
+			const installed = SteamEquipment.isInstalled(row.item.id, owner);
+			const unlocked = SteamEquipment.isUnlocked(row.item.id, owner);
 			setBlocked(row.button, installed || !unlocked || (funds < row.item.cost && !ceiling.commune));
 			setText(row.button, installed ? 'Installed' : unlocked ? 'Buy' : 'Locked');
 			setRowState(row.row, installed ? 'installed' : unlocked ? 'available' : 'locked');
@@ -714,7 +733,7 @@
 		for (const record of tierRows) refreshTierSlot(record, funds, ceiling.commune);
 		let completed = 0;
 		for (const row of researchRows) {
-			const status = SteamResearch.status(row.node.id);
+			const status = SteamResearch.status(row.node.id, owner);
 			if (status === SteamResearch.constants.RESEARCHED) completed++;
 			setBlocked(row.button, status !== SteamResearch.constants.AVAILABLE || (funds < row.node.cost && !ceiling.commune));
 			setText(row.button, status === SteamResearch.constants.RESEARCHED ? 'Done' : status === SteamResearch.constants.AVAILABLE ? 'Research' : 'Locked');
@@ -722,7 +741,7 @@
 			setRowState(row.card, status);
 			setText(row.heading, rowTitle(row));
 		}
-		refreshTreeLinks(ceiling.commune);
+		refreshTreeLinks(ceiling.commune, owner);
 		setText(ui['research-progress'], completed + ' / ' + researchRows.length);
 		setText(ui['science-funds'], ceiling.commune ? 'commons' : funds.toFixed(1) + ' cr');
 	}
@@ -730,24 +749,28 @@
 	// Installed specification: the live result of base tuning plus every equipment
 	// and research delta, which is what the row effects compare against.
 	function specReadout() {
-		setText(specValues[0], physics.dryMass().toFixed(1) + ' kg');
-		setText(specValues[1], physics.forceNow().toFixed(0) + ' N');
-		setText(specValues[2], physics.speedNow().toFixed(0) + ' m/s');
-		setText(specValues[3], physics.pulseNow().toFixed(0) + ' J');
-		setText(specValues[4], (physics.retentionNow() * 100).toFixed(0) + '%');
-		setText(specValues[5], (physics.rockRetentionNow() * 100).toFixed(0) + '%');
-		const dmg = (window.SteamCeiling.state.damageMultiplier).toFixed(1) + '×';
+		const owner = activePlayerId();
+		setText(specValues[0], physics.dryMass(owner).toFixed(1) + ' kg');
+		setText(specValues[1], physics.forceNow(owner).toFixed(0) + ' N');
+		setText(specValues[2], physics.speedNow(owner).toFixed(0) + ' m/s');
+		setText(specValues[3], physics.pulseNow(owner).toFixed(0) + ' J');
+		setText(specValues[4], (physics.retentionNow(owner) * 100).toFixed(0) + '%');
+		setText(specValues[5], (physics.rockRetentionNow(owner) * 100).toFixed(0) + '%');
+		const dmg = window.SteamCeiling.damageMultiplierNow(owner).toFixed(1) + '×';
 		setText(specValues[6], dmg);
-		const rad = window.SteamCeiling.state.damageRadius.toFixed(1) + ' cells';
+		const rad = window.SteamCeiling.damageRadiusNow(owner).toFixed(1) + ' cells';
 		setText(specValues[7], rad);
-		setText(specValues[8], physics.conductanceNow().toFixed(2) + ' W/K');
-		setText(specValues[9], (physics.recoveryNow() * 100).toFixed(0) + '%');
+		setText(specValues[8], physics.conductanceNow(owner).toFixed(2) + ' W/K');
+		setText(specValues[9], (physics.recoveryNow(owner) * 100).toFixed(0) + '%');
 	}
 
 	// The computer is the selected platform's, so its readout names that machine
 	// and describes the deck it will meet the ball on.
 	function predictionReadout() {
-		if (!SteamResearch.state.prediction) {
+		const owner = activePlayerId();
+		const technology = SteamResearch.stateFor(owner);
+		if (!technology.prediction) {
+			window.SteamPrediction.predictAll(world);
 			setHidden(ui['prediction-status'], true);
 			return false;
 		}
@@ -757,7 +780,7 @@
 		const path = computer.predictAll(world);
 		const machine = computer.platformRig ? 'Rig · ' : activePlayer().name + ' · ';
 		if (path.kind === kinds.PARKED) setText(ui['prediction-status'], 'Ballistic computer: ' + machine + (computer.pathCount > 1 ? 'the focused ball is parked; the other flights are drawn.' : 'has no ball in flight, so there is nothing to predict.'));
-		else if (path.kind === kinds.ROCK) setText(ui['prediction-status'], machine + 'predicted rock contact at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + (SteamResearch.state.predictionBounces ? ' s · tier II looks through the rebound to the next landing; fracture and future controls can change them.' : ' s · the rebound depends on fracture, so the path stops there.'));
+		else if (path.kind === kinds.ROCK) setText(ui['prediction-status'], machine + 'predicted rock contact at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + (technology.predictionBounces ? ' s · tier II looks through the rebound to the next landing; fracture and future controls can change them.' : ' s · the rebound depends on fracture, so the path stops there.'));
 		else if (path.kind === kinds.TIMEOUT) setText(ui['prediction-status'], machine + 'still airborne after ' + computer.horizon.toFixed(0) + ' s of prediction.');
 		else setText(ui['prediction-status'], machine + 'landing ' + (path.kind === kinds.DECK ? 'on the deck' : 'on the ground') + ' at ' + path.endX.toFixed(1) + ' m in ' + path.time.toFixed(2) + ' s · ghost coasts to ' + path.ghostX.toFixed(1) + ' m · '
 			+ (path.reachable ? 'intercept reachable at full thrust' : 'intercept short by ' + path.gap.toFixed(1) + ' m at full thrust'));
@@ -1309,6 +1332,7 @@
 		if (!Number.isFinite(degrees)) return;
 		const player = activePlayer();
 		if (playerApi.rigActive()) autopilot.override('angle');
+		else playerApi.overrideMachine(player, 'angle');
 		const before = playerApi.pistonAngleOf(player);
 		playerApi.setPistonAngleOf(player, Math.max(-10, Math.min(10, degrees)) * Math.PI / 180);
 		if (playerApi.pistonAngleOf(player) !== before) sceneDirty = true;
@@ -1464,6 +1488,7 @@
 		const machine = playerApi.machineOf(activePlayer());
 		machine.drive = !machine.drive;
 		if (playerApi.rigActive()) autopilot.override('drive');
+		else playerApi.overrideMachine(activePlayer(), 'drive');
 		refresh();
 	}
 	// The release is the selected platform's: the rig spends its reserve, a

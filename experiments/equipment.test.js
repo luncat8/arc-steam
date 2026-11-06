@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { ceiling, equipment, research, physics, c, near, balanced, sync, run, earnFunds, unlockResearch, buy } = require('./harness.cjs');
+const players = require('../js/players.js');
 
 test('purchase needs funds and the unlocking research, debits once, and appends frozen ledger entries', () => {
 	const w = physics.createWorld();
@@ -126,3 +127,43 @@ test('installed equipment changes retention, pulse and dry mass in the simulatio
 		balanced(w);
 		physics.createWorld();
 	});
+
+test('owned balls and radiators use their player profile without touching the rig', () => {
+	const w = physics.createWorld();
+	players.init(w, 1);
+	players.setBallMode('each');
+	const rival = players.state.rivals[0];
+	const rigBall = w.balls.find(ball => physics.isRigBall(ball));
+	const rivalBall = w.balls.find(ball => ball.owner === rival.id);
+	assert.ok(rigBall && rivalBall);
+	research.grant('impact', w, rival.id);
+	research.grant('thermodynamics', w, rival.id);
+	assert.equal(equipment.installBall('spike', w, true, rival.id), true);
+	assert.equal(equipment.installRadiator('bank', w, true, rival.id), true);
+	assert.equal(equipment.installedBall(rival.id), 'spike');
+	assert.equal(equipment.installedBall(), 'standard');
+	assert.equal(equipment.installedRadiator(rival.id), 'bank');
+	assert.equal(equipment.installedRadiator(), null);
+	near(physics.ballMassFor(rivalBall), c.ballMass + 5);
+	near(physics.ballMassFor(rigBall), c.ballMass);
+	near(physics.rockRetentionNow(rival.id), physics.rockRetentionNow() - 0.10);
+	near(ceiling.damageMultiplierNow(rival.id), ceiling.state.baseDamageMultiplier + 0.7);
+	near(ceiling.damageMultiplierNow(), ceiling.state.baseDamageMultiplier);
+	near(ceiling.damageRadiusNow(rival.id), ceiling.state.baseDamageRadius + 1.4);
+	near(physics.radiatorArea(rival.id), 0.70);
+	near(physics.radiatorArea(), 0);
+	balanced(w);
+
+	// A live rig ball changes mass with its purchased strike head. The energy
+	// difference is explicitly booked rather than appearing as a ledger error.
+	rigBall.state = 'flying';
+	rigBall.holder = null;
+	rigBall.y = 3;
+	rigBall.vx = 1;
+	rigBall.vy = 2;
+	research.grant('impact', w, 'rig');
+	sync(w);
+	assert.equal(equipment.installBall('spike', w, true, 'rig'), true);
+	near(physics.ballMassFor(rigBall), c.ballMass + 5);
+	balanced(w);
+});

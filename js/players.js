@@ -1,10 +1,10 @@
 (function (root) {
 	'use strict';
 	// Players own the platforms in the chamber. Every player drives the same
-	// machine — the same chassis, wheels, deck and retractable 45° tails — so the
-	// rig and its competitors differ in colour, purse and policy only. Player 0
-	// is the mining rig and keeps the reserve, ball, cargo and shop; every other
-	// player works the floor rubble with a blade and banks its own credits.
+	// machine — chassis, wheels, deck and retractable 45° tails — and owns a
+	// separate purse, research tree and installed machinery. Player 0 is the rig
+	// and keeps the shared energy reserve and market ledger; every competitor
+	// settles its own cargo and invests its own credits.
 	//
 	// Two platforms that meet ride rather than collide: the platform applying
 	// more drive power starts the climb, and the other is carved out of its
@@ -49,6 +49,32 @@
 	// one lands this much sooner, so two shared balls never make it dither
 	// between landing points.
 	const ballCommit = 0.6;
+	const keeperInterval = 1 / 20;
+	const tiltIterations = 12;
+	const apexMargin = 0.25;
+	const harvestReach = 1.15;
+	const harvestDeadline = 0.8;
+	let keeperTrial = null;
+	// Sale income buys the next affordable step in this order. The first chain
+	// earns the competitor its own computer before it spends on heavier machinery.
+	const botBuild = Object.freeze([
+		Object.freeze({ research: 'materials' }),
+		Object.freeze({ research: 'electromagnetics' }),
+		Object.freeze({ research: 'ballistics' }),
+		Object.freeze({ equipment: 'coil' }),
+		Object.freeze({ research: 'traction' }),
+		Object.freeze({ equipment: 'motor' }),
+		Object.freeze({ research: 'alloys' }),
+		Object.freeze({ research: 'thermodynamics' }),
+		Object.freeze({ research: 'power' }),
+		Object.freeze({ research: 'ballistics2' }),
+		Object.freeze({ equipment: 'overdrive' }),
+		Object.freeze({ equipment: 'chassis' }),
+		Object.freeze({ equipment: 'pad' }),
+		Object.freeze({ research: 'impact' }),
+		Object.freeze({ research: 'storage' }),
+		Object.freeze({ equipment: 'flywheel' })
+	]);
 
 	function halfWidth() {
 		return (root.SteamPhysics ? root.SteamPhysics.config.platformWidth : 3.6) * 0.5;
@@ -96,6 +122,12 @@
 		if (player.kind === 'rig' && rigWorld && physics) return physics.setPistonAngle(rigWorld, clamped);
 		machineOf(player).pistonAngle = clamped;
 		return clamped;
+	}
+
+	function overrideMachine(player, channel) {
+		if (!player || player.kind !== 'rival') return;
+		if (channel === 'angle') player.tiltManual = manualSeconds;
+		if (channel === 'drive') player.driveManual = manualSeconds;
 	}
 
 	// Drive power is the force setting while the platform is commanding a move.
@@ -237,10 +269,15 @@
 			force: 0.6, x: startSlots[index % startSlots.length], y: 0, angle: 0, vx: 0, spin: 0,
 			direction: 0, target: NaN, braking: false, manual: 0,
 			pistonAngle: 0, pistonOffset: 0, pistonVelocity: 0, pistonImpact: 0,
-			drive: false, bounces: 0, pushes: 0,
-			cargoCells: 0, cargoValue: 0, money: 0, soldValue: 0,
+			drive: false, bounces: 0, pushes: 0, engineId: 'electric',
+			cargoCells: 0, cargoValue: 0, money: 0, spent: 0, soldValue: 0, ledger: [],
+			lastPurchase: '', buildIndex: 0,
 			tailLeft: 0, tailRight: 0,
 			playing: null, mark: NaN, markTime: 0, commanded: false,
+			harvesting: false, harvestTarget: NaN, harvestDirection: 1,
+			tiltManual: 0, driveManual: 0, wantedAngle: 0,
+			keeperAge: keeperInterval, keeperBall: null, keeperState: '', keeperBounces: -1, keeperPushes: -1,
+			contactOnPiston: false, contactVx: 0, contactVy: 0, contactY: 0,
 			previousX: 0, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0
 		};
 		settle(rival);
@@ -305,6 +342,28 @@
 		if (!player) return 0;
 		if (player.kind === 'rig') return root.SteamCeiling ? root.SteamCeiling.state.funds : 0;
 		return player.money;
+	}
+
+	// A competitor has its own money trail. Research and equipment call this one
+	// writer, so a purchase can never debit the rig or another rival by accident.
+	function purchase(id, label, amount, time, type, testGrant) {
+		const player = playerById(id);
+		if (!player || player.kind !== 'rival') return false;
+		const commune = root.SteamCeiling && root.SteamCeiling.state.commune;
+		const credits = testGrant || commune ? 0 : amount;
+		if (!(credits >= 0) || player.money < credits) return false;
+		player.money -= credits;
+		player.spent += credits;
+		player.lastPurchase = label;
+		player.ledger.push(Object.freeze({
+			id: player.ledger.length + 1,
+			type: type || 'buy',
+			time: typeof time === 'number' ? time : 0,
+			label,
+			credits,
+			source: testGrant ? 'test' : undefined
+		}));
+		return true;
 	}
 
 	function load(index) {
@@ -378,6 +437,7 @@
 		player.target = NaN;
 		player.direction = 0;
 		player.braking = false;
+		player.keeperAge = keeperInterval;
 		return value;
 	}
 
@@ -464,8 +524,33 @@
 		rival.cargoValue += harvest.value;
 	}
 
+	function invest(rival) {
+		const research = root.SteamResearch;
+		const equipment = root.SteamEquipment;
+		if (!research || !equipment) return;
+		while (rival.buildIndex < botBuild.length) {
+			const entry = botBuild[rival.buildIndex];
+			if (entry.research) {
+				if (research.isResearched(entry.research, rival.id)) {
+					rival.buildIndex++;
+					continue;
+				}
+				if (research.status(entry.research, rival.id) !== research.constants.AVAILABLE) return;
+				if (!research.research(entry.research, rigWorld, rival.id)) return;
+			} else {
+				if (equipment.isInstalled(entry.equipment, rival.id)) {
+					rival.buildIndex++;
+					continue;
+				}
+				if (!equipment.isUnlocked(entry.equipment, rival.id)) return;
+				if (!equipment.install(entry.equipment, rigWorld, rival.id)) return;
+			}
+			rival.buildIndex++;
+		}
+	}
+
 	// A wall settles the load into this competitor's purse. Nothing is shared:
-	// the competitor keeps its whole takings, unlike the grader service's share.
+	// the competitor keeps its whole takings, then its own bot invests what it can.
 	function sell(rival) {
 		if (rival.cargoCells <= 0 && rival.cargoValue <= 0) return 0;
 		const value = rival.cargoValue;
@@ -473,6 +558,7 @@
 		rival.soldValue += value;
 		rival.cargoCells = 0;
 		rival.cargoValue = 0;
+		if (rival.bot) invest(rival);
 		return value;
 	}
 
@@ -489,7 +575,8 @@
 		const mark = bot ? rival.mark : rival.target;
 		if (!Number.isFinite(mark)) return 0;
 		const distance = mark - rival.x;
-		const reach = Math.abs(distance) - (bot ? deckSlack : approachSlack);
+		const slack = bot && !rival.harvesting ? deckSlack : approachSlack;
+		const reach = Math.abs(distance) - slack;
 		if (reach <= 0) {
 			if (!bot) rival.target = NaN;
 			return 0;
@@ -506,16 +593,16 @@
 
 	// A competitor drives the same engine as the rig: force per mass, speed per
 	// force setting, and the same wheel bounds.
-	function engineAcceleration(forceValue) {
+	function engineAcceleration(rival, forceValue) {
 		const physics = root.SteamPhysics;
 		if (!physics) return 8 * forceValue;
-		return physics.config.force / physics.config.platformMass * forceValue;
+		return physics.forceNow(rival.id) * forceValue / physics.machineMass(rigWorld, rival);
 	}
 
-	function engineSpeed(forceValue) {
+	function engineSpeed(rival, forceValue) {
 		const physics = root.SteamPhysics;
 		if (!physics) return 12 * forceValue;
-		return physics.config.maxSpeed * forceValue;
+		return physics.speedNow(rival.id) * forceValue;
 	}
 
 	// The ball this competitor works. Any ball it may push is playable, shared
@@ -558,70 +645,203 @@
 		return x < physics.config.width * 0.5 ? physics.platformMin() - 1 : physics.platformMax() + 1;
 	}
 
+	function solveKeeper(rival, angle, push) {
+		const physics = root.SteamPhysics;
+		if (!keeperTrial) keeperTrial = physics.contactResult();
+		return physics.solveFace(rigWorld, rival, rival.contactVx, rival.contactVy,
+			rival.angle + angle, push, keeperTrial, undefined, undefined, rival.playing);
+	}
+
+	function replanKeeper(rival) {
+		const computer = root.SteamPrediction;
+		rival.keeperAge = 0;
+		rival.keeperBall = rival.playing;
+		rival.keeperState = rival.playing ? rival.playing.state : '';
+		rival.keeperBounces = rival.bounces;
+		rival.keeperPushes = rival.pushes;
+		rival.contactOnPiston = false;
+		if (!computer || !rival.playing || rival.playing.state !== 'flying') return;
+		const path = computer.predict(rigWorld, rival.playing, rival.id);
+		if (path.kind !== computer.kinds.DECK || path.surface !== computer.surfaces.PISTON) return;
+		rival.contactVx = path.endVx;
+		rival.contactVy = path.endVy;
+		rival.contactY = path.endY;
+		rival.contactOnPiston = true;
+	}
+
+	function advanceKeeper(rival, dt) {
+		rival.keeperAge += dt;
+		const ball = rival.playing;
+		const stale = rival.keeperAge >= keeperInterval || ball !== rival.keeperBall
+			|| (ball ? ball.state : '') !== rival.keeperState
+			|| rival.bounces !== rival.keeperBounces || rival.pushes !== rival.keeperPushes;
+		if (stale) replanKeeper(rival);
+	}
+
+	// Price the next reflected apex, not the apex the ball already has. The
+	// keeper can therefore leave a sufficient passive bounce unpowered.
+	function keeperDrive(rival) {
+		const ball = rival.playing;
+		if (!ball) return false;
+		if (ball.state !== 'flying') return true;
+		const config = root.SteamPhysics.config;
+		const target = config.ceiling - config.radius;
+		if (rival.contactOnPiston) {
+			const bounce = solveKeeper(rival, rival.wantedAngle, 0);
+			const rise = Math.max(0, bounce.vy);
+			const apex = rival.contactY + rise * rise / (2 * config.ballGravity);
+			if (apex < target - apexMargin) return true;
+			if (apex > target) return false;
+			return rival.drive;
+		}
+		const apex = ball.y + ball.vy * ball.vy / (2 * config.ballGravity);
+		if (apex < target - apexMargin) return true;
+		if (apex > target) return false;
+		return rival.drive;
+	}
+
+	// The horizontal reflection is monotonic over the actuator range. Bisection
+	// uses the chamber's own solver on this rival, including its deck and pulse.
+	function keeperTilt(rival) {
+		const physics = root.SteamPhysics;
+		const push = rival.drive ? physics.launchCapacity(rigWorld, rival) : 0;
+		const max = physics.config.pistonMaxAngle;
+		let low = -max;
+		let lowVx = solveKeeper(rival, low, push).vx;
+		const highVx = solveKeeper(rival, max, push).vx;
+		if (lowVx * highVx > 0) return Math.abs(lowVx) < Math.abs(highVx) ? low : max;
+		let high = max;
+		for (let iteration = 0; iteration < tiltIterations; iteration++) {
+			const mid = (low + high) * 0.5;
+			const midVx = solveKeeper(rival, mid, push).vx;
+			if (lowVx * midVx <= 0) high = mid;
+			else { low = mid; lowVx = midVx; }
+		}
+		return (low + high) * 0.5;
+	}
+
+	function stepKeepers(rival, dt) {
+		if (!rival.bot) { rival.contactOnPiston = false; return; }
+		advanceKeeper(rival, dt);
+		if (rival.driveManual <= 0) rival.drive = keeperDrive(rival);
+		if (rival.tiltManual > 0) return;
+		if (rival.contactOnPiston) rival.wantedAngle = keeperTilt(rival);
+		const config = root.SteamPhysics.config;
+		const reach = config.pistonSlewRate * dt;
+		const delta = rival.wantedAngle - rival.pistonAngle;
+		setPistonAngleOf(rival, Math.abs(delta) <= reach ? rival.wantedAngle : rival.pistonAngle + Math.sign(delta) * reach);
+	}
+
+	function clearHarvest(rival) {
+		rival.harvesting = false;
+		rival.harvestTarget = NaN;
+	}
+
+	function rubbleNear(x) {
+		const economy = root.SteamCeiling;
+		const physics = root.SteamPhysics;
+		if (!economy || !physics) return false;
+		const values = economy.state.floorValues;
+		const centre = Math.floor(x / physics.config.width * values.length);
+		for (let offset = -5; offset <= 5; offset++) {
+			const column = centre + offset;
+			if (column >= 0 && column < values.length && values[column] > 0.001) return true;
+		}
+		return false;
+	}
+
+	// A level bounce no longer forces the chassis to wander. While the flight is
+	// safely away, sweep a short mark on either side of it to work the rubble
+	// under the blade; the real landing always takes back priority near contact.
+	function harvestMark(rival, mark) {
+		const physics = root.SteamPhysics;
+		if (!physics || rival.manual > 0 || rival.markTime < harvestDeadline || Math.abs(mark - rival.x) > deckSlack + harvestReach) {
+			clearHarvest(rival);
+			return mark;
+		}
+		if (rival.harvesting) {
+			if (!rubbleNear(rival.x) || Math.abs(rival.harvestTarget - mark) > harvestReach * 1.5) {
+				clearHarvest(rival);
+				return mark;
+			}
+			if (Math.abs(rival.harvestTarget - rival.x) > approachSlack) return rival.harvestTarget;
+			clearHarvest(rival);
+			rival.harvestDirection = -rival.harvestDirection;
+		}
+		if (!rubbleNear(rival.x) || Math.abs(mark - rival.x) > deckSlack) return mark;
+		const min = physics.platformMin();
+		const max = physics.platformMax();
+		let target = mark + rival.harvestDirection * harvestReach;
+		if (target < min || target > max) {
+			rival.harvestDirection = -rival.harvestDirection;
+			target = mark + rival.harvestDirection * harvestReach;
+		}
+		target = Math.max(min, Math.min(max, target));
+		if (Math.abs(target - rival.x) <= approachSlack) return mark;
+		rival.harvesting = true;
+		rival.harvestTarget = target;
+		return target;
+	}
+
 	// A competitor plays the ball with the same machinery as the rig: its
 	// collector catches, its reflector bounces off its own tilt, and it stands
 	// where the flight comes down or drives over a ball on the floor to scoop
 	// it. The drive stays armed only while the passive bounce would fall short
-	// of the rock, exactly the rig's drive-keeper rule at its fixed pulse size.
+	// of the rock, using the rig's drive-keeper rule at this machine's pulse size.
 	// A full hopper sends it to the nearer wall first, like the rig's selling
 	// trip. With no ball in play it holds station instead of wandering.
-	function stepBallPolicy(rival) {
+	function stepBallPolicy(rival, dt) {
 		rival.mark = NaN;
 		rival.markTime = 0;
 		const physics = root.SteamPhysics;
 		if (!physics) return;
 		const config = physics.config;
-		const balls = rigWorld ? rigWorld.balls : null;
-		rival.drive = false;
-		if (balls) {
-			for (let i = 0; i < balls.length; i++) {
-				const other = balls[i];
-				if (!physics.mayPush(other, rival.id) || other.state === 'held') continue;
-				const apex = other.y + other.vy * other.vy / (2 * config.ballGravity);
-				if (apex < config.ceiling - config.radius) { rival.drive = true; break; }
-			}
-		}
 		// A caught ball is this platform's: the bot releases it at once, so a
 		// competitor never parks the only ball in play. The platform under the
 		// controls keeps its catch, because its computer and its release are the
 		// player's to use.
 		const caught = physics.heldBallOf(rigWorld, rival);
+		rival.playing = caught || playBall(rival);
+		stepKeepers(rival, dt);
 		if (caught) {
-			rival.playing = caught;
-			rival.drive = true;
+			clearHarvest(rival);
+			if (rival.bot && rival.driveManual <= 0) rival.drive = true;
 			if (rival.bot && rival.manual <= 0 && players[active] !== rival && physics.canLaunch(rigWorld, caught)) physics.launch(rigWorld, caught, rival);
 			return;
 		}
-		const ball = playBall(rival);
-		rival.playing = ball;
-		if (!ball) return;
-		if (!rival.bot || rival.manual > 0 || rival.braking || rival.direction) return;
+		const ball = rival.playing;
+		if (!ball) { clearHarvest(rival); return; }
+		if (!rival.bot || rival.manual > 0 || rival.braking || rival.direction) { clearHarvest(rival); return; }
 		if (rival.cargoCells >= (root.SteamCeiling ? root.SteamCeiling.state.storageLimit : loadLimitDefault)) {
+			clearHarvest(rival);
 			rival.mark = sellingMark(rival.x);
 			return;
 		}
 		// A ball on the floor is a recovery: stand over it.
 		rival.mark = ball.x;
-		if (ball.state !== 'flying') return;
+		if (ball.state !== 'flying') { clearHarvest(rival); return; }
 		// A flight is met at the deck height, one radius off the deck, so the
 		// landing mark is where a deck bounce would happen.
 		const landing = physics.ballLandingTime(ball, rival.y + config.deck + config.radius);
-		if (!Number.isFinite(landing)) return;
+		if (!Number.isFinite(landing)) { clearHarvest(rival); return; }
 		rival.mark = Math.max(0, Math.min(config.width, ball.x + ball.vx * landing));
 		rival.markTime = landing;
+		rival.mark = harvestMark(rival, rival.mark);
 	}
 
 	function stepRival(rival, dt) {
 		const physics = root.SteamPhysics;
 		if (!physics) return;
 		if (rival.manual > 0) rival.manual = Math.max(0, rival.manual - dt);
-		stepBallPolicy(rival);
+		if (rival.tiltManual > 0) rival.tiltManual = Math.max(0, rival.tiltManual - dt);
+		if (rival.driveManual > 0) rival.driveManual = Math.max(0, rival.driveManual - dt);
+		stepBallPolicy(rival, dt);
 		rival.previousX = rival.x;
 		rival.previousY = rival.y;
 		rival.previousAngle = rival.angle;
 		const power = Math.max(0.1, rival.force);
-		const acceleration = engineAcceleration(power);
-		const limit = engineSpeed(power);
+		const acceleration = engineAcceleration(rival, power);
+		const limit = engineSpeed(rival, power);
 		const previousX = rival.x;
 		const wanted = steerWanted(rival, limit, acceleration * 1.5);
 		// Drive power for the ride-over rule is the platform's own command: a
@@ -856,9 +1076,9 @@
 	});
 
 	const api = {
-		init, update, surfaceAt, draw, renderPlatform, profileAt, money, load, force, activeSpeed, activeTarget, rigActive,
+		init, update, surfaceAt, draw, renderPlatform, profileAt, money, purchase, load, force, activeSpeed, activeTarget, rigActive,
 		setActive, setBot, syncRigBot, command, commandTarget, commandBrake, clearCommand, setForce, setBallMode,
-		machineOf, pistonAngleOf, setPistonAngleOf,
+		machineOf, pistonAngleOf, setPistonAngleOf, overrideMachine,
 		state, bodyTop, bodyBottom, tailAngle, tailReach, tailFullGap, bladeSwath, bladeCut,
 		get halfWidth() { return halfWidth(); }
 	};
