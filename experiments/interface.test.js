@@ -511,7 +511,7 @@ test('the market panel recharges the reserve from measured funds', () => {
 function fillCargo(count) {
 	const state = ceiling.state;
 	const target = state.extractedCells + count;
-	for (let x = 1; x < 23 && state.extractedCells < target; x += 2) ceiling.damage(x, ceiling.state.bottom + 0.2, 20);
+	for (let x = 1; x < 23 && state.extractedCells < target; x += 2) { ceiling.damage(x, ceiling.state.bottom + 0.2, 20); ceiling.collapse(2); }
 	let prepared = 0;
 	for (let i = 0; i < state.active.length && prepared < count; i++) {
 		if (!state.active[i]) continue;

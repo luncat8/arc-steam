@@ -1164,8 +1164,10 @@
 		const offset = index * 3;
 		const remaining = ceiling.strength[index];
 		const initial = ceiling.initialStrength[index];
+		const looseness = ceiling.damageField[index];
 		setText(ui['mineral-cell'], 'Column ' + (selectedColumn + 1) + ' / ' + ceiling.columns + ' · Layer ' + (selectedLayer + 1) + ' / ' + ceiling.rows);
-		setText(ui['mineral-strength'], remaining.toFixed(2) + ' / ' + initial.toFixed(2) + ' J' + (remaining === 0 ? ' · depleted' : ' · remaining strength'));
+		const loose = looseness >= ceiling.collapseLooseFloor ? ' · loose' : ' · sound';
+		setText(ui['mineral-strength'], remaining.toFixed(2) + ' / ' + initial.toFixed(2) + ' J' + (remaining === 0 ? ' · fallen' : ' · remaining strength') + loose);
 		const strengthRatio = initial > 0 ? remaining / initial : 0;
 		if (Number(ui['strength-meter'].value) !== strengthRatio) ui['strength-meter'].value = strengthRatio;
 		setText(ui['mineral-composition'], 'Fe ' + (ceiling.minerals[offset] * 100).toFixed(1) + '% · Cu ' + (ceiling.minerals[offset + 1] * 100).toFixed(1) + '% · Cr ' + (ceiling.minerals[offset + 2] * 100).toFixed(1) + '%');
