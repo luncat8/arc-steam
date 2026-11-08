@@ -247,10 +247,10 @@ plan to make single sci+shop drawer to represent as tree and possible research a
 группируем Частицы определенным образом (область которая начинает ломаться) и с определенной вероятностью время от времени вызываем обрушение некоторого количества пикселей (на этом участке), которые имеют повреждения в диапазоне определенном проверкой вероятности
 
 but i think some minerals should create larger falling groups 50-200% increase and do not fall as 1 pixel sand i think will be better, but need test. make visual settings for it so i can test with slider what is best.
-visual test scene:
+button to generate test rock:
 different minerals from left to right
-damage increase from top to button
-i expect some minerals fall more rarely with lager clusters of cells
+apply damage increase from top (0 damage) to buttom of rock (100% damage)
+i expect some minerals fall more rarely with lager clusters of cells.
 
 
 
