@@ -340,22 +340,22 @@ test('only exposed, damaged pixels detach, and a clump is bounded', () => {
 test('the collapse scheduler is bounded work per tick', () => {
 	ceiling.reset(21);
 	const state = ceiling.state;
-	// Batter the whole ceiling: every horizontal band must still roll at most once
-	// per tick and never detach more than collapseChunkMax cells in a single clump.
+	// Batter the whole ceiling: every horizontal band must still roll at most
+	// once per tick and release no more than one group cap of cells.
 	for (let x = 0; x < 24; x += 2) ceiling.damage(x, state.bottom + 0.2, 40);
 	const before = state.extractedCells;
 	ceiling.collapse(0.25);
+	const cap = ceiling.collapseChunkMax;
 	const maxBands = Math.ceil(state.columns / 16);
-	let clumps = 0;
+	let grains = 0;
 	for (let i = 0; i < state.active.length; i++) {
 		if (!state.active[i]) continue;
-		clumps++;
-		assert.ok(state.debrisCells[i] <= ceiling.collapseChunkMax,
-			'every spawned clump respects collapseChunkMax');
+		grains++;
+		assert.equal(state.debrisCells[i], 1, 'every released cell falls as its own grain');
 	}
-	assert.ok(clumps <= maxBands, 'at most one burst rolls per horizontal band per tick');
-	assert.ok(state.extractedCells - before <= ceiling.collapseChunkMax * maxBands,
-		'one tick never detaches more than one clump cap per band');
+	assert.ok(grains <= cap * maxBands, 'one tick never releases more than one group cap per band');
+	assert.ok(state.extractedCells - before <= cap * maxBands,
+		'one tick never detaches more than one group cap per band');
 });
 
 test('the rock is only ever missing at its free face', () => {
@@ -387,42 +387,40 @@ test('the rock is only ever missing at its free face', () => {
 	ceiling.reset(1);
 });
 
-test('a lump that has just let go is drawn under the ceiling it broke from', () => {
+test('a grain that has just let go is drawn under the ceiling it broke from', () => {
 	ceiling.reset(31);
 	const state = ceiling.state;
 	const columns = state.columns;
 	// A worked shaft: the floor of the chamber is gone along a stretch, and one
-	// column is a few rows deeper. A lump at that column's face is only half under
-	// the drawn surface, and the half over the shallower rock beside it would be
-	// painted on the wall as rubble stuck inside it.
+	// column is a few rows deeper. A grain at that column's face sits at the
+	// drawn face, and it must hang below the rock rather than be painted into it.
 	const shaft = 70;
 	for (let column = 60; column <= 80; column++) for (let row = 0; row < 4; row++) state.strength[row * columns + column] = 0;
 	for (let row = 0; row < 8; row++) state.strength[row * columns + shaft] = 0;
 	state.active[0] = 1;
 	state.debrisCell[0] = 8 * columns + shaft;
-	state.debrisCells[0] = 9;
+	state.debrisCells[0] = 1;
 	state.debrisX[0] = (shaft + 0.5) * state.cell;
 	state.debrisY[0] = state.bottom + 8.5 * state.cell;
 	state.debrisVx[0] = 0;
 	state.debrisVy[0] = 0;
-	state.debrisWidth[0] = state.cell * 2.2;
-	state.debrisHeight[0] = state.cell * 1.4;
 	state.debrisDamage[0] = 0.5;
+	const grain = state.cell * 0.76;
 	const tops = [];
 	const context = {
 		fillStyle: '',
 		fillRect(x, y, width, height) {
-			if (Math.abs(width - state.debrisWidth[0]) > 1e-9 || Math.abs(height - state.debrisHeight[0]) > 1e-9) return;
+			if (Math.abs(width - grain) > 1e-9 || Math.abs(height - grain) > 1e-9) return;
 			tops.push(y + height);
 		},
 		beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}
 	};
 	ceiling.draw(context, 'minerals');
-	assert.equal(tops.length, 1, 'the lump is drawn once');
+	assert.equal(tops.length, 1, 'the released cell is drawn once, at its own cell size');
 	let underside = Infinity;
-	const first = Math.floor((state.debrisX[0] - state.debrisWidth[0] * 0.5) / state.cell);
-	const last = Math.floor((state.debrisX[0] + state.debrisWidth[0] * 0.5) / state.cell);
+	const first = Math.floor((state.debrisX[0] - grain * 0.5) / state.cell);
+	const last = Math.floor((state.debrisX[0] + grain * 0.5) / state.cell);
 	for (let vertex = first; vertex <= last + 1; vertex++) underside = Math.min(underside, state.rockDrawnY(state.heightmap[vertex]));
-	assert.ok(tops[0] <= underside + 1e-9, 'the drawn lump must hang below the rock it left');
+	assert.ok(tops[0] <= underside + 1e-9, 'the drawn grain must hang below the rock it left');
 	ceiling.reset(1);
 });

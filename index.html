@@ -72,11 +72,11 @@
 			<div class="panel-title"><span id="fall-test-title">MINERAL FALL TEST</span><span class="fall-test-summary">Per-mineral growth and release frequency · applied live</span></div>
 			<div class="fall-test-body">
 				<div class="cluster-test-settings">
-					<div class="cluster-setting"><label for="cluster-iron">Iron <output id="cluster-iron-value">+50%</output></label><input id="cluster-iron" type="range" min="50" max="200" step="25" value="50" data-mineral="0" aria-describedby="cluster-iron-note"><small id="cluster-iron-note">Larger clumps release less often</small></div>
-					<div class="cluster-setting"><label for="cluster-copper">Copper <output id="cluster-copper-value">+100%</output></label><input id="cluster-copper" type="range" min="50" max="200" step="25" value="100" data-mineral="1" aria-describedby="cluster-copper-note"><small id="cluster-copper-note">Larger clumps release less often</small></div>
-					<div class="cluster-setting"><label for="cluster-crystal">Crystal <output id="cluster-crystal-value">+200%</output></label><input id="cluster-crystal" type="range" min="50" max="200" step="25" value="200" data-mineral="2" aria-describedby="cluster-crystal-note"><small id="cluster-crystal-note">Larger clumps release less often</small></div>
+					<div class="cluster-setting"><label for="cluster-iron">Iron <output id="cluster-iron-value">300%</output></label><input id="cluster-iron" type="range" min="10" max="500" step="10" value="300" data-mineral="0" aria-describedby="cluster-iron-note"><small id="cluster-iron-note">10% is the plain loose-face clump</small></div>
+					<div class="cluster-setting"><label for="cluster-copper">Copper <output id="cluster-copper-value">100%</output></label><input id="cluster-copper" type="range" min="10" max="500" step="10" value="100" data-mineral="1" aria-describedby="cluster-copper-note"><small id="cluster-copper-note">10% is the plain loose-face clump</small></div>
+					<div class="cluster-setting"><label for="cluster-crystal">Crystal <output id="cluster-crystal-value">10%</output></label><input id="cluster-crystal" type="range" min="10" max="500" step="10" value="10" data-mineral="2" aria-describedby="cluster-crystal-note"><small id="cluster-crystal-note">10% is the plain loose-face clump</small></div>
 				</div>
-				<div class="fall-test-action"><button id="generate-test-rock" type="button">Generate test rock</button><p>Starts a fresh run with Iron → Copper → Crystal bands from left to right. Test damage is 0% at the top and 100% at the bottom; grouping settings carry over.</p><p id="fall-test-status" role="status">Use the sliders to change clump growth; higher growth also lowers release frequency.</p></div>
+				<div class="fall-test-action"><button id="generate-test-rock" type="button">Generate test rock</button><p>Starts a fresh run with Iron → Copper → Crystal bands from left to right. Test damage is 0% at the top and 100% at the bottom; grouping settings carry over.</p><p id="fall-test-status" role="status">Growth mixes the plain loose-face clump into a connected mineral flake; larger groups also release less often.</p></div>
 			</div>
 		</section>
 

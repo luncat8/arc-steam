@@ -307,7 +307,7 @@ function resetRun(withTestRock) {
 
 function mineralClusterChanged(event) {
 	const growth = window.SteamCeiling.setMineralClusterGrowth(Number(event.target.getAttribute('data-mineral')), Number(event.target.value));
-	setText(ui[event.target.id + '-value'], '+' + growth + '%');
+	setText(ui[event.target.id + '-value'], growth + '%');
 	sceneDirty = true;
 }
 

@@ -161,7 +161,7 @@ function miningReadout() {
 		const groups = ceiling.fallGroups[i];
 		setText(ui[clusterNoteIds[i]], groups > 0
 			? groups + ' falls · ' + (cells / groups).toFixed(1) + ' cells/fall'
-			: 'Larger clumps release less often');
+			: '10% is the plain loose-face clump');
 	}
 	setText(ui.extracted, ceiling.extractedCells + ' cells');
 	setText(ui.falling, ceiling.airborneCells + ' cells');

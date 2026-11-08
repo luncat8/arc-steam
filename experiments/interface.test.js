@@ -1447,10 +1447,24 @@ test('the road grader row follows the selected player: Locked for a rival, and t
 
 test('mineral fall sliders and test-rock button wire the controlled setup', () => {
 	const iron = dom.element('cluster-iron');
+	// The sliders span the whole mixed range: 10% is the plain loose-face clump
+	// and 500% the widest group.
+	for (const id of ['cluster-iron', 'cluster-copper', 'cluster-crystal']) {
+		assert.equal(dom.element(id).getAttribute('min'), '10');
+		assert.equal(dom.element(id).getAttribute('max'), '500');
+	}
+	assert.equal(dom.element('cluster-iron').getAttribute('value'), '300');
+	assert.equal(dom.element('cluster-copper').getAttribute('value'), '100');
+	assert.equal(dom.element('cluster-crystal').getAttribute('value'), '10');
 	iron.value = '125';
 	iron.dispatch('input');
 	assert.equal(ceiling.state.mineralClusterGrowth[0], 125);
-	assert.equal(dom.element('cluster-iron-value').textContent, '+125%');
+	assert.equal(dom.element('cluster-iron-value').textContent, '125%');
+	const crystal = dom.element('cluster-crystal');
+	crystal.value = '0';
+	crystal.dispatch('input');
+	assert.equal(ceiling.state.mineralClusterGrowth[2], 10, 'the slider cannot go below the plain clump');
+	assert.equal(dom.element('cluster-crystal-value').textContent, '10%');
 
 	dom.element('generate-test-rock').dispatch('click');
 	assert.equal(ceiling.state.testRock, true);
