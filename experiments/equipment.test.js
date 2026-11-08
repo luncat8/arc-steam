@@ -35,6 +35,9 @@ test('purchase needs funds and the unlocking research, debits once, and appends 
 
 test('installed equipment changes retention, pulse and dry mass in the simulation', () => {
 	const w = physics.createWorld();
+	// Funding is staged settlement, not a thermal endurance run. Keep passive
+	// pulses off so the launch below measures equipment, not inherited cutoff.
+	w.drive = false;
 	earnFunds(w, 100);
 	earnFunds(w, 100);
 	earnFunds(w, 100);
@@ -63,6 +66,9 @@ test('installed equipment changes retention, pulse and dry mass in the simulatio
 	near(physics.dryMass(), beforeCoil + 12 * 1.018);
 	w.ball.state = 'held';
 	w.drive = true;
+	// The staged sales dissipate their own impact heat; this assertion measures
+	// the coil's pulse, so start it below thermal derating.
+	w.heat = 0;
 	sync(w);
 	assert.ok(physics.launch(w));
 	near(w.lastPush, 58);
@@ -237,6 +243,10 @@ test('a working blade keeps the value of what it shaved and settles it once per 
 	// The grader settles the platform, so pan the floor only after the install.
 	state.floorPiles.fill(0.3);
 	state.floorValues.fill(30);
+	// No delayed fall may deposit a different ore density during the measured pass.
+	state.active.fill(0); state.debrisCells.fill(0);
+	state.damageField.fill(0); state.regionDamage.fill(0); state.regionEligible.fill(0);
+	ceiling.collapse(0);
 	// earnFunds' staged fragments are caught into the hopper before the sale, and
 	// the ceiling ledger never counted surfaced rubble as chamber energy; re-base
 	// so the balance below is the blade pass alone, which touches no energy term.

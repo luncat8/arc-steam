@@ -37,6 +37,10 @@
 	let rigWorld = null;
 	let active = 0;
 	let selling = false;
+	let recharging = false;
+	// Hysteresis keeps a low-reserve trip from chattering at the pad threshold.
+	const rechargeStart = 0.2;
+	const rechargeStop = 0.95;
 	let ballMode = 'shared1';
 	// Half the flat deck less a margin: a landing inside this of the platform
 	// centre arrives on the deck, and inside it the mark is left alone instead
@@ -315,6 +319,7 @@
 		}
 		active = 0;
 		selling = false;
+		recharging = false;
 		applyBalls(world);
 		return players;
 	}
@@ -434,6 +439,7 @@
 			autopilot.set('angle', value);
 			if (!value) {
 				selling = false;
+				recharging = false;
 				autopilot.reset();
 			}
 			return value;
@@ -453,7 +459,7 @@
 		if (!rig || !root.SteamAutopilot) return rig ? rig.bot : false;
 		const autopilot = root.SteamAutopilot;
 		rig.bot = autopilot.state.move && autopilot.state.drive && autopilot.state.angle;
-		if (!rig.bot) selling = false;
+		if (!rig.bot) { selling = false; recharging = false; }
 		return rig.bot;
 	}
 
@@ -802,26 +808,26 @@
 		if (!physics) return;
 		const config = physics.config;
 		// A caught ball is this platform's: the bot releases it at once, so a
-		// competitor never parks the only ball in play. The platform under the
-		// controls keeps its catch, because its computer and its release are the
-		// player's to use.
+		// competitor never parks the only ball in play. Selecting it does not
+		// change that policy; only an actual hand command suspends the release.
 		const caught = physics.heldBallOf(rigWorld, rival);
 		rival.playing = caught || playBall(rival);
 		stepKeepers(rival, dt);
 		if (caught) {
 			clearHarvest(rival);
 			if (rival.bot && rival.driveManual <= 0) rival.drive = true;
-			if (rival.bot && rival.manual <= 0 && players[active] !== rival && physics.canLaunch(rigWorld, caught)) physics.launch(rigWorld, caught, rival);
+			if (rival.bot && rival.manual <= 0 && physics.canLaunch(rigWorld, caught)) physics.launch(rigWorld, caught, rival);
 			return;
 		}
-		const ball = rival.playing;
-		if (!ball) { clearHarvest(rival); return; }
 		if (!rival.bot || rival.manual > 0 || rival.braking || rival.direction) { clearHarvest(rival); return; }
+		// A full hopper still sells when the other machine holds every ball.
 		if (rival.cargoCells >= (root.SteamCeiling ? root.SteamCeiling.state.storageLimit : loadLimitDefault)) {
 			clearHarvest(rival);
 			rival.mark = sellingMark(rival.x);
 			return;
 		}
+		const ball = rival.playing;
+		if (!ball) { clearHarvest(rival); return; }
 		// A ball on the floor is a recovery: stand over it.
 		rival.mark = ball.x;
 		if (ball.state !== 'flying') { clearHarvest(rival); return; }
@@ -912,26 +918,40 @@
 		player.tailRight += Math.max(-slew, Math.min(slew, wantRight - player.tailRight));
 	}
 
-	// With a full hopper the rig's bot makes a selling trip. The intercept duty
-	// is suspended through its own override while the drive keeper keeps the
-	// ball in play, so a held or grounded ball is collected again after the sale.
+	// The full rig bot sells a full hopper, then refills a short reserve at the
+	// centre pad. Both trips own travel through the manual override; the ball
+	// keepers stay live. An ordinary hand command prevents starting either trip.
 	function stepRigBot(world, dt) {
 		const rig = players[0];
-		if (!world || !rig || !rig.bot) { selling = false; return; }
+		if (!world || !rig || !rig.bot) { selling = recharging = false; return; }
 		const ceiling = root.SteamCeiling;
 		const autopilot = root.SteamAutopilot;
 		const physics = root.SteamPhysics;
 		if (!ceiling || !autopilot || !physics) return;
-		if (!autopilot.state.move || !autopilot.state.drive) { selling = false; return; }
+		if (!autopilot.state.move || !autopilot.state.drive) { selling = recharging = false; return; }
 		const full = ceiling.state.cargoCells >= ceiling.state.storageLimit;
-		if (!selling) {
-			if (!full) return;
-			selling = true;
+		if (full && !selling) { recharging = false; selling = true; }
+		if (!selling && !recharging) {
+			if (autopilot.suspended('move')) return;
+			if (full) selling = true;
+			else if (world.battery < physics.config.battery * rechargeStart) recharging = true;
+			else return;
+		}
+		if (selling && !full) {
+			selling = false;
+			world.target = NaN;
+			autopilot.resume('move');
+			return;
+		}
+		if (recharging && !full && world.battery >= physics.config.battery * rechargeStop) {
+			recharging = false;
+			world.target = NaN;
+			autopilot.resume('move');
+			return;
 		}
 		autopilot.override('move');
 		world.direction = 0;
-		if (!full) { selling = false; return; }
-		world.target = sellingMark(world.platform.x);
+		world.target = selling ? sellingMark(world.platform.x) : physics.config.width * 0.5;
 	}
 
 	function update(world, dt) {
@@ -1073,6 +1093,7 @@
 		get active() { return active; },
 		get rig() { return players[0]; },
 		get selling() { return selling; },
+		get recharging() { return recharging; },
 		get force() { return players[active] ? forceOf(players[active]) : 0; },
 		get ballMode() { return ballMode; },
 		get world() { return rigWorld; },

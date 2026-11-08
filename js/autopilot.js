@@ -65,6 +65,13 @@
 		const key = duty(channel);
 		if (key === MOVE ? moveOn || smartOn : enabled(key)) overrides[key] = overrideSeconds;
 	}
+	// A service trip relinquishes only the duty it borrowed, never a hand hold.
+	function resume(channel) {
+		const key = duty(channel);
+		if (held[key]) return;
+		overrides[key] = 0;
+		planAge = planInterval;
+	}
 	function hold(channel, on) {
 		const key = duty(channel);
 		if (on || held[key]) override(key);
@@ -660,7 +667,7 @@
 		if (angleOn && !suspended(ANGLE)) commandTilt(world, dt);
 	}
 
-	const api = { state, enabled, set, toggle, override, hold, suspended, overrideSeconds, reset, update, channels: Object.freeze({ MOVE, SMART, DRIVE, ANGLE }) };
+	const api = { state, enabled, set, toggle, override, hold, resume, suspended, overrideSeconds, reset, update, channels: Object.freeze({ MOVE, SMART, DRIVE, ANGLE }) };
 	root.SteamAutopilot = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

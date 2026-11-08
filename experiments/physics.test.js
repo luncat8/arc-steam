@@ -680,7 +680,10 @@ test('rock shape switch cannot tunnel the ball through the rock', () => {
 		return state.heightmap[v] + (state.heightmap[v + 1] - state.heightmap[v]) * t;
 	}
 	function carve() {
-		for (let x = 10; x < 12; x += 0.25) { ceiling.damage(x + 0.06, ceiling.state.bottom + 0.06, 60); ceiling.collapse(1); }
+		// Work through the damaged face rather than assuming one hit clears it.
+		for (let pass = 0; pass < 4; pass++) {
+			for (let x = 10; x < 12; x += 0.25) { ceiling.damage(x + 0.06, ceiling.state.bottom + 0.06, 60); ceiling.collapse(1); }
+		}
 	}
 	// smooth -> square: the smooth surface cuts into square cells at crater
 	// edges, so a ball resting on it is inside the square solid after a switch.

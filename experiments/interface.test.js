@@ -291,9 +291,6 @@ test('the machine keys stay live on the selected platform', () => {
 	list.children[1].children[0].dispatch('click');
 	assert.equal(players.state.active, 1, 'the competitor takes the keys');
 	assert.equal(dom.element('rig-drive').hidden, false, 'and the machine controls with it');
-	wildthrottle: {
-		break wildthrottle;
-	}
 	dom.element('force').value = '50';
 	dom.element('force').dispatch('input');
 	// The drive toggle, the release and the tilt write the machine the keys drive.
@@ -511,6 +508,9 @@ test('the market panel recharges the reserve from measured funds', () => {
 
 // Catch a full load through the real collector, then let the page read it.
 function fillCargo(count) {
+	// Staging a catch is not a wall crash; don't inherit a previous test's speed.
+	world.platform.vx = 0; world.direction = 0; world.target = NaN;
+	harness.sync(world);
 	const state = ceiling.state;
 	const target = state.extractedCells + count;
 	for (let x = 1; x < 23 && state.extractedCells < target; x += 2) { ceiling.damage(x, ceiling.state.bottom + 0.2, 20); ceiling.collapse(2); }
@@ -630,8 +630,10 @@ test('the chamber wheel and slider tilt the selected platform only', () => {
 	rival.pistonAngle = 0;
 });
 
-test('the autopilot switches, shortcuts and manual overrides share one writer', () => {	console.error('T88 INHERIT heat', world.heat, 'temp', 20 + world.heat/300, 'battery', world.battery, 'pushes', world.pushes, 'groundings', world.groundings, 'vx', world.platform.vx, 'x', world.platform.x, 'ball', world.ball.state, 'drive', world.drive, 'enabled', JSON.stringify({m: autopilot.enabled('move'), d: autopilot.enabled('drive'), a: autopilot.enabled('angle')}));
+test('the autopilot switches, shortcuts and manual overrides share one writer', () => {
 	parkRival();
+	world.heat = 0; world.battery = physics.config.battery;
+	harness.sync(world);
 	const panel = dom.element('autopilot');
 	const status = dom.element('autopilot-status');
 	const boxes = { move: 'auto-move', smart: 'auto-smart', drive: 'auto-drive', angle: 'auto-angle' };
@@ -675,7 +677,7 @@ test('the autopilot switches, shortcuts and manual overrides share one writer', 
 	assert.match(status.textContent, /Level bounce · tilt to -?\d+\.\d°/);
 	assert.ok(Math.abs(world.pistonAngle) <= physics.config.pistonMaxAngle + 1e-12, 'the tilt keeper stays inside its range');
 	// The drive keeper releases a caught ball instead of stalling the shift.
-	world.ball.state = 'held'; world.ball.vx = 0; world.ball.vy = 0; world.drive = false;
+	world.ball.state = 'held'; world.ball.holder = 'rig'; world.ball.vx = 0; world.ball.vy = 0; world.drive = false;
 	harness.sync(world);
 	advance(4);
 	assert.equal(world.ball.state, 'flying', 'a held ball goes back up');
@@ -762,10 +764,13 @@ test('telemetry highlights an empty reserve, a full cargo and overheating', () =
 	assert.match(dom.element('cargo-note').textContent, /^Full/);
 });
 
-test('the status bar keeps the facts and only the messages that apply now', () => {	console.error('T91 INHERIT heat', world.heat, 'temp', 20 + world.heat/300, 'battery', world.battery, 'pushes', world.pushes, 'groundings', world.groundings, 'vx', world.platform.vx, 'x', world.platform.x, 'ball', world.ball.state, 'drive', world.drive, 'enabled', JSON.stringify({m: autopilot.enabled('move'), d: autopilot.enabled('drive'), a: autopilot.enabled('angle')}));
+test('the status bar keeps the facts and only the messages that apply now', () => {
+	for (const channel of ['move', 'smart', 'drive', 'angle']) autopilot.set(channel, false);
+	autopilot.reset();
 	world.platform.x = 3; world.platform.vx = 0; world.target = NaN; world.direction = 0;
-	world.ball.state = 'held'; world.drive = true;
+	world.ball.state = 'held'; world.ball.holder = 'rig'; world.drive = true;
 	world.battery = physics.config.battery;
+	harness.sync(world);
 	advance(8);
 	const ball = dom.element('status-ball');
 	const energy = dom.element('status-energy');
@@ -806,7 +811,9 @@ test('the status bar keeps the facts and only the messages that apply now', () =
 	assert.doesNotMatch(html, /click low ground to travel<\/p>/);
 });
 
-test('the centre pad is read as charging and uses the selected source reload rate', () => {	console.error('T92 INHERIT heat', world.heat, 'temp', 20 + world.heat/300, 'battery', world.battery, 'pushes', world.pushes, 'groundings', world.groundings, 'vx', world.platform.vx, 'x', world.platform.x, 'ball', world.ball.state, 'drive', world.drive, 'enabled', JSON.stringify({m: autopilot.enabled('move'), d: autopilot.enabled('drive'), a: autopilot.enabled('angle')}));
+test('the centre pad is read as charging and uses the selected source reload rate', () => {
+	for (const channel of ['move', 'smart', 'drive', 'angle']) autopilot.set(channel, false);
+	autopilot.reset();
 	world.platform.x = 12; world.platform.vx = 0; world.target = NaN; world.direction = 0;
 	world.battery = 0;
 	harness.sync(world);
@@ -950,7 +957,8 @@ test('B and Shift+B hold braking, override travel, and release cleanly', () => {
 	assert.equal(world.brake, false);
 });
 
-test('tier selector bays buy/install engines at left shop and swap owned tiers free', () => {	console.error('T97 INHERIT heat', world.heat, 'temp', 20 + world.heat/300, 'battery', world.battery, 'pushes', world.pushes, 'groundings', world.groundings, 'vx', world.platform.vx, 'x', world.platform.x, 'ball', world.ball.state, 'drive', world.drive, 'enabled', JSON.stringify({m: autopilot.enabled('move'), d: autopilot.enabled('drive'), a: autopilot.enabled('angle')}));
+test('tier selector bays buy/install engines at left shop and swap owned tiers free', () => {
+	for (const channel of ['move', 'smart', 'drive', 'angle']) autopilot.set(channel, false);
 	dom.element('reset').dispatch('click');
 	advance(2);
 	const engines = tierRow('engines');
@@ -1424,7 +1432,7 @@ test('the overlay draws one dotted flight per ball the selected machine may push
 	world.drive = false;
 });
 
-test('the road grader row follows the selected player: Locked for a rival, and the click says why', () => {	console.error('T108 INHERIT heat', world.heat, 'temp', 20 + world.heat/300, 'battery', world.battery, 'pushes', world.pushes, 'groundings', world.groundings, 'vx', world.platform.vx, 'x', world.platform.x, 'ball', world.ball.state, 'drive', world.drive, 'enabled', JSON.stringify({m: autopilot.enabled('move'), d: autopilot.enabled('drive'), a: autopilot.enabled('angle')}));
+test('the road grader row follows the selected player: Locked for a rival, and the click says why', () => {
 	// The row is built once and re-read by the drawer, so this states the rule
 	// directly for both owners instead of depending on the page's selection.
 	players.setActive(0);
@@ -1474,4 +1482,23 @@ test('mineral fall sliders and test-rock button wire the controlled setup', () =
 	assert.equal(dom.element('rock-damage-view').getAttribute('value'), 'damage');
 	advance(3);
 	assert.ok(Math.abs(physics.totalEnergy(world) - world.initialEnergy) < 1e-5);
+});
+
+test('a checked rival keeps releasing its catch after taking its controls', () => {
+	const row = dom.element('player-list').children[1];
+	const box = row.children[1].children[0];
+	const rival = players.state.rivals[0];
+	box.checked = true; box.dispatch('change');
+	rival.x = 12; rival.vx = 0; rival.manual = 0; rival.driveManual = 0;
+	const ball = world.balls[0];
+	ball.state = 'held'; ball.holder = rival.id; ball.vx = 0; ball.vy = 0;
+	world.drive = false;
+	row.children[0].dispatch('click');
+	assert.equal(players.state.active, 1);
+	assert.equal(box.checked, true);
+	assert.equal(rival.bot, true);
+	advance(2);
+	assert.equal(ball.state, 'flying', 'selection does not turn a checked bot into a parked collector');
+	assert.ok(rival.pushes > 0, 'the release used the rival pulse');
+	dom.element('player-list').children[0].children[0].dispatch('click');
 });

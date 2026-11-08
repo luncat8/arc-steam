@@ -1,0 +1,538 @@
+TAP version 13
+# Subtest: both intercepts meet the same mark, and the timed one gets there slower and cheaper
+ok 1 - both intercepts meet the same mark, and the timed one gets there slower and cheaper
+  ---
+  duration_ms: 342.750159
+  type: 'test'
+  ...
+# Subtest: tier II starts a low-speed intercept before rock contact and keeps replanning after a bounce
+ok 2 - tier II starts a low-speed intercept before rock contact and keeps replanning after a bounce
+  ---
+  duration_ms: 214.220921
+  type: 'test'
+  ...
+# Subtest: tier II keeps economy travel after bounces instead of buying a rush-and-brake run
+ok 3 - tier II keeps economy travel after bounces instead of buying a rush-and-brake run
+  ---
+  duration_ms: 3030.532413
+  type: 'test'
+  ...
+# Subtest: the timed intercept rolls through a mark it is already passing instead of stopping on it
+ok 4 - the timed intercept rolls through a mark it is already passing instead of stopping on it
+  ---
+  duration_ms: 119.633701
+  type: 'test'
+  ...
+# Subtest: the drive keeper holds the ball inside one pulse of the ceiling and switches to do it
+ok 5 - the drive keeper holds the ball inside one pulse of the ceiling and switches to do it
+  ---
+  duration_ms: 10137.946456
+  type: 'test'
+  ...
+# Subtest: the tilt keeper leaves the bounce travelling vertically, inside its range and rate
+ok 6 - the tilt keeper leaves the bounce travelling vertically, inside its range and rate
+  ---
+  duration_ms: 5743.303823
+  type: 'test'
+  ...
+# Subtest: the wanted tilt is the zero of the simulation's own contact solver
+ok 7 - the wanted tilt is the zero of the simulation's own contact solver
+  ---
+  duration_ms: 48.410167
+  type: 'test'
+  ...
+# Subtest: a mark no run can reach is still chased when it is the ball chosen, and a grounded ball is collected
+ok 8 - a mark no run can reach is still chased when it is the ball chosen, and a grounded ball is collected
+  ---
+  duration_ms: 322.330263
+  type: 'test'
+  ...
+# Subtest: a landing out of reach never takes the plan from one the rig can meet
+ok 9 - a landing out of reach never takes the plan from one the rig can meet
+  ---
+  duration_ms: 59.964609
+  type: 'test'
+  ...
+# Subtest: with two shared balls a spare on the floor is worked when no landing can be met
+ok 10 - with two shared balls a spare on the floor is worked when no landing can be met
+  ---
+  duration_ms: 40.254678
+  type: 'test'
+  ...
+# Subtest: with two shared balls a desperate landing never takes the plan from a keep the rig can stop on
+ok 11 - with two shared balls a desperate landing never takes the plan from a keep the rig can stop on
+  ---
+  duration_ms: 151.01055
+  type: 'test'
+  ...
+# Subtest: a long trip to a shared ball a rival is parked on never takes the plan from a near keep
+ok 12 - a long trip to a shared ball a rival is parked on never takes the plan from a near keep
+  ---
+  duration_ms: 98.256796
+  type: 'test'
+  ...
+# Subtest: a contested far ball is still worked when there is no near keep to save the energy for
+ok 13 - a contested far ball is still worked when there is no near keep to save the energy for
+  ---
+  duration_ms: 65.896998
+  type: 'test'
+  ...
+# Subtest: with two shared balls a schedule that keeps both landings beats the cheaper single keep
+ok 14 - with two shared balls a schedule that keeps both landings beats the cheaper single keep
+  ---
+  duration_ms: 360.29156
+  type: 'test'
+  ...
+# Subtest: the keepers do nothing at all until a channel is engaged
+ok 15 - the keepers do nothing at all until a channel is engaged
+  ---
+  duration_ms: 35.532474
+  type: 'test'
+  ...
+# Subtest: manual overrides preserve switches, isolate duties, and resume after idle simulation time
+ok 16 - manual overrides preserve switches, isolate duties, and resume after idle simulation time
+  ---
+  duration_ms: 645.458449
+  type: 'test'
+  ...
+# Subtest: switching off during an override stays off and reset clears held overrides
+ok 17 - switching off during an override stays off and reset clears held overrides
+  ---
+  duration_ms: 336.390653
+  type: 'test'
+  ...
+# Subtest: purchase needs funds and the unlocking research, debits once, and appends frozen ledger entries
+ok 18 - purchase needs funds and the unlocking research, debits once, and appends frozen ledger entries
+  ---
+  duration_ms: 177.979089
+  type: 'test'
+  ...
+# Subtest: installed equipment changes retention, pulse and dry mass in the simulation
+ok 19 - installed equipment changes retention, pulse and dry mass in the simulation
+  ---
+  duration_ms: 462.257044
+  type: 'test'
+  ...
+# Subtest: radiator tiers swap one installed unit: mass and cooling area move with it
+ok 20 - radiator tiers swap one installed unit: mass and cooling area move with it
+  ---
+  duration_ms: 528.088325
+  type: 'test'
+  ...
+# Subtest: the piston ram lifts the pulse so a released ball reaches the ceiling on its second powered bounce
+ok 21 - the piston ram lifts the pulse so a released ball reaches the ceiling on its second powered bounce
+  ---
+  duration_ms: 52.104809
+  type: 'test'
+  ...
+# Subtest: owned balls and radiators use their player profile without touching the rig
+ok 22 - owned balls and radiators use their player profile without touching the rig
+  ---
+  duration_ms: 9.063341
+  type: 'test'
+  ...
+# Subtest: the road grader is the rig's tool: no competitor can buy it, and its refusal is not a prerequisite
+ok 23 - the road grader is the rig's tool: no competitor can buy it, and its refusal is not a prerequisite
+  ---
+  duration_ms: 208.783264
+  type: 'test'
+  ...
+# Subtest: a working blade keeps the value of what it shaved and settles it once per stint
+ok 24 - a working blade keeps the value of what it shaved and settles it once per stint
+  ---
+  duration_ms: 283.078733
+  type: 'test'
+  ...
+# Subtest: the page boots, builds every panel, and reports live telemetry
+ok 25 - the page boots, builds every panel, and reports live telemetry
+  ---
+  duration_ms: 4.869383
+  type: 'test'
+  ...
+# Subtest: the player strip lists every player with money, a BOT switch and a control switch
+ok 26 - the player strip lists every player with money, a BOT switch and a control switch
+  ---
+  duration_ms: 5.204219
+  type: 'test'
+  ...
+# Subtest: the BALLS setting changes the chamber between shared and owned balls
+ok 27 - the BALLS setting changes the chamber between shared and owned balls
+  ---
+  duration_ms: 115.451906
+  type: 'test'
+  ...
+# Subtest: the controls and their readouts belong to the selected platform, not the rig
+ok 28 - the controls and their readouts belong to the selected platform, not the rig
+  ---
+  duration_ms: 2.871217
+  type: 'test'
+  ...
+# Subtest: the machine keys stay live on the selected platform
+ok 29 - the machine keys stay live on the selected platform
+  ---
+  duration_ms: 6.505236
+  type: 'test'
+  ...
+# Subtest: settled readouts do not rewrite buttons, status or control state
+ok 30 - settled readouts do not rewrite buttons, status or control state
+  ---
+  duration_ms: 6.368161
+  type: 'test'
+  ...
+# Subtest: locked and unaffordable upgrades say why instead of failing silently
+ok 31 - locked and unaffordable upgrades say why instead of failing silently
+  ---
+  duration_ms: 4.105451
+  type: 'test'
+  ...
+# Subtest: shortcuts drive the simulation without re-triggering focused controls
+ok 32 - shortcuts drive the simulation without re-triggering focused controls
+  ---
+  duration_ms: 38.827569
+  type: 'test'
+  ...
+# Subtest: measured sales fund research, which unlocks equipment and the overlay
+ok 33 - measured sales fund research, which unlocks equipment and the overlay
+  ---
+  duration_ms: 278.742507
+  type: 'test'
+  ...
+# Subtest: the ballistic computer overlay appears only after its research
+ok 34 - the ballistic computer overlay appears only after its research
+  ---
+  duration_ms: 148.569069
+  type: 'test'
+  ...
+# Subtest: the market panel recharges the reserve from measured funds
+ok 35 - the market panel recharges the reserve from measured funds
+  ---
+  duration_ms: 86.465887
+  type: 'test'
+  ...
+# Subtest: hovering rock shows its tooltip and clicking low commands travel, without inspector sliders
+ok 36 - hovering rock shows its tooltip and clicking low commands travel, without inspector sliders
+  ---
+  duration_ms: 9.864098
+  type: 'test'
+  ...
+# Subtest: the piston angle is set by the slider, the chamber wheel and an air drag
+ok 37 - the piston angle is set by the slider, the chamber wheel and an air drag
+  ---
+  duration_ms: 1.077345
+  type: 'test'
+  ...
+# Subtest: the chamber wheel and slider tilt the selected platform only
+ok 38 - the chamber wheel and slider tilt the selected platform only
+  ---
+  duration_ms: 1.751629
+  type: 'test'
+  ...
+# Subtest: the autopilot switches, shortcuts and manual overrides share one writer
+ok 39 - the autopilot switches, shortcuts and manual overrides share one writer
+  ---
+  duration_ms: 1652.732596
+  type: 'test'
+  ...
+# Subtest: held tilt survives the grace period and pause freezes override time
+ok 40 - held tilt survives the grace period and pause freezes override time
+  ---
+  duration_ms: 414.690524
+  type: 'test'
+  ...
+# Subtest: telemetry highlights an empty reserve, a full cargo and overheating
+ok 41 - telemetry highlights an empty reserve, a full cargo and overheating
+  ---
+  duration_ms: 44.599095
+  type: 'test'
+  ...
+# Subtest: the status bar keeps the facts and only the messages that apply now
+ok 42 - the status bar keeps the facts and only the messages that apply now
+  ---
+  duration_ms: 32.450368
+  type: 'test'
+  ...
+# Subtest: the centre pad is read as charging and uses the selected source reload rate
+ok 43 - the centre pad is read as charging and uses the selected source reload rate
+  ---
+  duration_ms: 205.818777
+  type: 'test'
+  ...
+# Subtest: reset clears research, equipment and the overlay together
+ok 44 - reset clears research, equipment and the overlay together
+  ---
+  duration_ms: 183.150683
+  type: 'test'
+  ...
+# Subtest: the rock view switches by click or mouse hover through one writer, redrawing only when dirty
+ok 45 - the rock view switches by click or mouse hover through one writer, redrawing only when dirty
+  ---
+  duration_ms: 11.424081
+  type: 'test'
+  ...
+# Subtest: test mode grants all upgrades, preserves credits, and reapplies them on New game
+ok 46 - test mode grants all upgrades, preserves credits, and reapplies them on New game
+  ---
+  duration_ms: 66.809696
+  type: 'test'
+  ...
+# Subtest: B and Shift+B hold braking, override travel, and release cleanly
+ok 47 - B and Shift+B hold braking, override travel, and release cleanly
+  ---
+  duration_ms: 318.807314
+  type: 'test'
+  ...
+# Subtest: tier selector bays buy/install engines at left shop and swap owned tiers free
+ok 48 - tier selector bays buy/install engines at left shop and swap owned tiers free
+  ---
+  duration_ms: 463.867565
+  type: 'test'
+  ...
+# Subtest: commercial grader button toggles call/dismiss and can cancel a return
+ok 49 - commercial grader button toggles call/dismiss and can cancel a return
+  ---
+  duration_ms: 796.275591
+  type: 'test'
+  ...
+# Subtest: telemetry cards open the market and science drawers
+ok 50 - telemetry cards open the market and science drawers
+  ---
+  duration_ms: 1.615763
+  type: 'test'
+  ...
+# Subtest: context help lives in one drawer, and the panels keep short lines only
+ok 51 - context help lives in one drawer, and the panels keep short lines only
+  ---
+  duration_ms: 1.675925
+  type: 'test'
+  ...
+# Subtest: holding a panel opens that panel's topic, and a moving pointer cancels the hold
+ok 52 - holding a panel opens that panel's topic, and a moving pointer cancels the hold
+  ---
+  duration_ms: 2102.07701
+  type: 'test'
+  ...
+# Subtest: a held key stays with the platform it was pressed for and never drives both
+ok 53 - a held key stays with the platform it was pressed for and never drives both
+  ---
+  duration_ms: 73.590151
+  type: 'test'
+  ...
+# Subtest: switching platforms changes the title and nothing else in the menu
+ok 54 - switching platforms changes the title and nothing else in the menu
+  ---
+  duration_ms: 1.201957
+  type: 'test'
+  ...
+# Subtest: the science and shop drawer spends the selected rival purse only
+ok 55 - the science and shop drawer spends the selected rival purse only
+  ---
+  duration_ms: 36.471948
+  type: 'test'
+  ...
+# Subtest: the computer, the release and the ball readout belong to the selected platform
+ok 56 - the computer, the release and the ball readout belong to the selected platform
+  ---
+  duration_ms: 883.598368
+  type: 'test'
+  ...
+# Subtest: the GROUND selector changes the chamber rule and keeps it across New game
+ok 57 - the GROUND selector changes the chamber rule and keeps it across New game
+  ---
+  duration_ms: 174.436343
+  type: 'test'
+  ...
+# Subtest: the overlay draws one dotted flight per ball the selected machine may push
+ok 58 - the overlay draws one dotted flight per ball the selected machine may push
+  ---
+  duration_ms: 179.97063
+  type: 'test'
+  ...
+# Subtest: the road grader row follows the selected player: Locked for a rival, and the click says why
+ok 59 - the road grader row follows the selected player: Locked for a rival, and the click says why
+  ---
+  duration_ms: 6.218094
+  type: 'test'
+  ...
+# Subtest: mineral fall sliders and test-rock button wire the controlled setup
+ok 60 - mineral fall sliders and test-rock button wire the controlled setup
+  ---
+  duration_ms: 31.707746
+  type: 'test'
+  ...
+# Subtest: a checked rival keeps releasing its catch after taking its controls
+ok 61 - a checked rival keeps releasing its catch after taking its controls
+  ---
+  duration_ms: 30.625834
+  type: 'test'
+  ...
+# Subtest: every player drives the same platform body, told apart by opacity only
+ok 62 - every player drives the same platform body, told apart by opacity only
+  ---
+  duration_ms: 26.631383
+  type: 'test'
+  ...
+# Subtest: both platforms are one drawing and the dim is the only difference
+ok 63 - both platforms are one drawing and the dim is the only difference
+  ---
+  duration_ms: 14.30566
+  type: 'test'
+  ...
+# Subtest: tails stay folded far apart and open to a 45° plate as they close
+ok 64 - tails stay folded far apart and open to a 45° plate as they close
+  ---
+  duration_ms: 153.22433
+  type: 'test'
+  ...
+# Subtest: the plate swings at a limited rate instead of snapping open
+ok 65 - the plate swings at a limited rate instead of snapping open
+  ---
+  duration_ms: 31.729887
+  type: 'test'
+  ...
+# Subtest: the platform applying more drive power is the one that rides on top
+ok 66 - the platform applying more drive power is the one that rides on top
+  ---
+  duration_ms: 12.273646
+  type: 'test'
+  ...
+# Subtest: a driving competitor with a stronger setting rides over a parked rig
+ok 67 - a driving competitor with a stronger setting rides over a parked rig
+  ---
+  duration_ms: 145.969678
+  type: 'test'
+  ...
+# Subtest: the rig rides over a competitor tail instead of stopping at its side
+ok 68 - the rig rides over a competitor tail instead of stopping at its side
+  ---
+  duration_ms: 116.779203
+  type: 'test'
+  ...
+# Subtest: a competitor blade takes floor value into its own load and honours capacity
+ok 69 - a competitor blade takes floor value into its own load and honours capacity
+  ---
+  duration_ms: 10.03504
+  type: 'test'
+  ...
+# Subtest: the competitor bot holds station when there is nothing it may play
+ok 70 - the competitor bot holds station when there is nothing it may play
+  ---
+  duration_ms: 80.627561
+  type: 'test'
+  ...
+# Subtest: the competitor bot banks rubble it drives over at a wall, for its own credits
+ok 71 - the competitor bot banks rubble it drives over at a wall, for its own credits
+  ---
+  duration_ms: 1700.048943
+  type: 'test'
+  ...
+# Subtest: a full competitor hopper makes its own selling trip and then resumes the ball
+ok 72 - a full competitor hopper makes its own selling trip and then resumes the ball
+  ---
+  duration_ms: 76.125349
+  type: 'test'
+  ...
+# Subtest: a manual travel click silences the competitor bot, then its ball policy resumes
+ok 73 - a manual travel click silences the competitor bot, then its ball policy resumes
+  ---
+  duration_ms: 95.852448
+  type: 'test'
+  ...
+# Subtest: a held direction key outranks the competitor bot until it is released
+ok 74 - a held direction key outranks the competitor bot until it is released
+  ---
+  duration_ms: 53.746402
+  type: 'test'
+  ...
+# Subtest: selecting a checked bot does not suppress its automatic release
+ok 75 - selecting a checked bot does not suppress its automatic release
+  ---
+  duration_ms: 4.593548
+  type: 'test'
+  ...
+# Subtest: a full bot sells even when every ball belongs to the other collector
+ok 76 - a full bot sells even when every ball belongs to the other collector
+  ---
+  duration_ms: 52.977747
+  type: 'test'
+  ...
+# Subtest: the full rig bot visits the pad on a short reserve and resumes intercept
+ok 77 - the full rig bot visits the pad on a short reserve and resumes intercept
+  ---
+  duration_ms: 2687.781758
+  type: 'test'
+  ...
+# Subtest: the rig bot engages the autopilot and sells a full hopper at the wall
+ok 78 - the rig bot engages the autopilot and sells a full hopper at the wall
+  ---
+  duration_ms: 835.262747
+  type: 'test'
+  ...
+# Subtest: each platform owns its machine controls, so a tilt never crosses platforms
+ok 79 - each platform owns its machine controls, so a tilt never crosses platforms
+  ---
+  duration_ms: 6.987584
+  type: 'test'
+  ...
+# Subtest: a command stays with the platform it was given to
+ok 80 - a command stays with the platform it was given to
+  ---
+  duration_ms: 6.86979
+  type: 'test'
+  ...
+# Subtest: switching players moves the controls and the force setting with them
+ok 81 - switching players moves the controls and the force setting with them
+  ---
+  duration_ms: 7.196504
+  type: 'test'
+  ...
+# Subtest: a platform riding over another never sinks into it and never stutters
+ok 82 - a platform riding over another never sinks into it and never stutters
+  ---
+  duration_ms: 66.177501
+  type: 'test'
+  ...
+# Subtest: a mid-crossing power change keeps the hull already on top
+ok 83 - a mid-crossing power change keeps the hull already on top
+  ---
+  duration_ms: 104.093527
+  type: 'test'
+  ...
+# Subtest: a rival buys and installs its own research, coil and engine with sale proceeds
+ok 84 - a rival buys and installs its own research, coil and engine with sale proceeds
+  ---
+  duration_ms: 4.579537
+  type: 'test'
+  ...
+# Subtest: a bot rival automatically invests its own takings and preserves sale accounting
+ok 85 - a bot rival automatically invests its own takings and preserves sale accounting
+  ---
+  duration_ms: 9.803107
+  type: 'test'
+  ...
+# Subtest: the page computer belongs to the selected player rather than to a shared research pool
+ok 86 - the page computer belongs to the selected player rather than to a shared research pool
+  ---
+  duration_ms: 29.041383
+  type: 'test'
+  ...
+# Subtest: the rival tilt keeper bisects its own contact face and leaves the rig alone
+ok 87 - the rival tilt keeper bisects its own contact face and leaves the rig alone
+  ---
+  duration_ms: 7.734503
+  type: 'test'
+  ...
+# Subtest: a bot rival spends on its own machine before page-only research
+ok 88 - a bot rival spends on its own machine before page-only research
+  ---
+  duration_ms: 27.225005
+  type: 'test'
+  ...
+1..88
+# tests 88
+# suites 0
+# pass 88
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 39042.910109

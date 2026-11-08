@@ -112,3 +112,7 @@ cd /home/user/arc-steam && LD_LIBRARY_PATH=/tmp/al/lib PLAYWRIGHT_PATH=/tmp/pw/n
 - `git push` may report "Invalid username or token"; that is expected here and the change is applied manually.
 - Worklogs live in `archive/`, one per milestone, ending with a next-step suggestion. `0.1.0-plan.md` is the standalone design artifact, not a log: update its calibration and rules so a fork could reimplement from it alone.
 - Measurement scripts stay out of `node --test` by using a `.cjs` extension (`mine-trips.cjs`, `dom.cjs`, `harness.cjs`), and useful output is kept under `experiments/logs/`.
+
+- A selected bot is still a bot. Selection changes which machine receives hand input; it must not silently suppress that machine's automatic release. Gate the release on the manual window, not on the active-player index.
+- Interface tests share one live world. A thermal-cutoff or motion setup must be cleared before a later pulse/shop assertion, and a failed duty test must not leave its switches enabled for the reset test. Prefer explicit scene setup over advancing a few frames and hoping the 100 ms readout cadence lands inside the window.
+- Floor smoothing must transport value with height. Rebuilding only the height profile changes ore density even when the blade's own cut is priced correctly; use a second preallocated value buffer and move each edge's height/value share together.

@@ -1,0 +1,6 @@
+selected bot           catch released on the first step; BOT remains checked
+blocked sale           full hopper sold in 4.75 s with no playable ball
+pad recovery           8.07 s, reserve 21.65 kJ
+two balls x=4          bounces=18 focus switches=5 longest both grounded=0.00 s
+two balls x=12         bounces=21 focus switches=11 longest both grounded=0.00 s
+two balls x=20         bounces=21 focus switches=8 longest both grounded=0.00 s

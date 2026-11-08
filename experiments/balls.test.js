@@ -229,7 +229,11 @@ test('a competitor ball mines the ceiling and the competitor banks the rubble', 
 	const rival = players.state.rivals[0];
 	const ball = world.balls.find(b => b.owner === rival.id);
 	const before = ceiling.state.extractedCells;
-	run(world, 90);
+	// The current tree is a multi-shift investment; wait for the first affordable
+	// upgrade instead of assuming one 90-second rally funds the old first node.
+	for (let i = 0; i < 240 * 360 && rival.spent === 0; i++) {
+		players.update(world, c.step); physics.step(world, c.step);
+	}
 	assert.ok(ceiling.state.extractedCells > before, 'the competitor ball broke rock');
 	assert.ok(rival.soldValue > 0, 'the competitor harvested the rubble and sold it');
 	assert.ok(rival.spent > 0, 'the working bot reinvested its own sale proceeds');

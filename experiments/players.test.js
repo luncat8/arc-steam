@@ -390,6 +390,60 @@ test('a held direction key outranks the competitor bot until it is released', ()
 	assert.ok(rival.vx < 0, 'and it drives back toward the ball');
 });
 
+test('selecting a checked bot does not suppress its automatic release', () => {
+	const world = fresh();
+	const rival = players.state.rivals[0];
+	const ball = world.balls[0];
+	rival.x = 12; rival.vx = 0;
+	ball.state = 'held'; ball.holder = rival.id;
+	players.setBot(1, true);
+	players.setActive(1);
+	players.update(world, c.step);
+	assert.equal(rival.bot, true);
+	assert.equal(ball.state, 'flying');
+	assert.equal(ball.holder, null);
+	assert.equal(rival.pushes, 1);
+	assert.equal(world.pushes, 0, 'the rival release never spends the rig pulse');
+	// A real hand command still owns the catch until its grace period expires.
+	ball.state = 'held'; ball.holder = rival.id;
+	players.command(0);
+	players.update(world, c.step);
+	assert.equal(ball.state, 'held');
+});
+
+test('a full bot sells even when every ball belongs to the other collector', () => {
+	const world = fresh();
+	const rival = players.state.rivals[0];
+	const ball = world.balls[0];
+	ball.state = 'held'; ball.holder = 'rig';
+	rival.x = 12; rival.vx = 0; rival.cargoCells = 100; rival.cargoValue = 200;
+	players.update(world, c.step);
+	assert.ok(rival.mark < physics.platformMin() || rival.mark > physics.platformMax(), 'the sale takes priority over having no playable ball');
+	for (let i = 0; i < 240 * 12 && rival.cargoCells > 0; i++) players.update(world, c.step);
+	assert.equal(rival.cargoCells, 0);
+	assert.equal(rival.soldValue, 200);
+});
+
+test('the full rig bot visits the pad on a short reserve and resumes intercept', () => {
+	const world = fresh();
+	world.platform.x = 4; world.platform.vx = 0;
+	world.battery = c.battery * 0.1;
+	world.initialEnergy = physics.totalEnergy(world);
+	players.setBot(0, true);
+	for (let i = 0; i < 240 * 20 && !players.state.recharging; i++) {
+		autopilot.update(world, c.step); players.update(world, c.step); physics.step(world, c.step);
+	}
+	assert.equal(players.state.recharging, true);
+	assert.equal(world.target, c.width * 0.5);
+	for (let i = 0; i < 240 * 30 && players.state.recharging; i++) {
+		autopilot.update(world, c.step); players.update(world, c.step); physics.step(world, c.step);
+	}
+	assert.equal(players.state.recharging, false);
+	assert.ok(world.battery >= c.battery * 0.95);
+	assert.ok(world.chargedEnergy > 0);
+	assert.equal(autopilot.suspended('move'), false, 'the service trip returns travel without a dead wait');
+});
+
 test('the rig bot engages the autopilot and sells a full hopper at the wall', () => {
 	const world = fresh();
 	fillCargo(world, 100);

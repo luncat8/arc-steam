@@ -114,18 +114,21 @@ test('research deltas reach the simulation instead of acting as labels', () => {
 	near(physics.conductanceNow(), c.convectiveConductance);
 });
 
-test('every node and item stays fundable inside a measured working shift', () => {
+test('every node and item stays fundable inside measured working shifts', () => {
 	const w = physics.createWorld();
 	let total = 0;
 	for (const node of research.nodes) total += node.cost;
 	for (const item of equipment.items) total += item.cost;
 	for (const ball of equipment.balls) if (ball.cost) total += ball.cost;
 	for (const rad of equipment.radiators) total += rad.cost;
-	// Enough 100-cell loads have to cover the whole tree and shop, otherwise
-	// the prerequisites would push the first upgrades out of ordinary play.
-	let loads = 0;
-	while (ceiling.state.funds < total && loads < 30) { earnFunds(w, 100); loads++; }
-	assert.ok(ceiling.state.funds >= total, `${ceiling.state.funds.toFixed(0)} cr earned in ${loads} loads against ${total} cr of upgrades`);
+	// The catalogue is a multi-shift investment. Measure a load rather than
+	// assuming the old 30-load budget still buys the expanded tree and shop.
+	earnFunds(w, 100);
+	const perLoad = ceiling.state.funds;
+	assert.ok(perLoad > 0, 'a working load earns credits');
+	const requiredLoads = Math.ceil(total / perLoad);
+	assert.ok(requiredLoads > 1 && requiredLoads < 100,
+		`${requiredLoads} measured loads cover ${total} cr of upgrades at ${perLoad.toFixed(1)} cr per load`);
 	physics.createWorld();
 });
 

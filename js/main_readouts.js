@@ -80,9 +80,13 @@ function workingBall() {
 
 function autopilotText(plan, ball) {
 	let text = '';
-	if (plan.move || plan.smart) text = autopilotApi.suspended('move') ? 'Intercept · manual override' : travelClause(plan, ball);
-	if (plan.drive) text += (text ? ' · ' : '') + 'Drive keeper · ' + (autopilotApi.suspended('drive') ? 'manual override' : plan.wantedDrive ? 'pulse armed' : 'pulse held');
-	if (plan.angle) text += (text ? ' · ' : '') + 'Level bounce · ' + (autopilotApi.suspended('angle') ? 'manual override' : 'tilt to ' + (plan.wantedAngle * 180 / Math.PI).toFixed(1) + '°');
+	if (plan.move || plan.smart) {
+		text = playerApi.state.selling ? 'Rig · selling full cargo · wall trip'
+			: playerApi.state.recharging ? 'Rig · recharging · centre pad trip'
+			: autopilotApi.suspended('move') ? 'Intercept · manual override' : travelClause(plan, ball);
+	}
+	if (plan.drive) text += (text ? ' · ' : 'Rig · ') + 'Drive keeper · ' + (autopilotApi.suspended('drive') ? 'manual override' : plan.wantedDrive ? 'pulse armed' : 'pulse held');
+	if (plan.angle) text += (text ? ' · ' : 'Rig · ') + 'Level bounce · ' + (autopilotApi.suspended('angle') ? 'manual override' : 'tilt to ' + (plan.wantedAngle * 180 / Math.PI).toFixed(1) + '°');
 	return text;
 }
 

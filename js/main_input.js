@@ -10,6 +10,7 @@ let paused = false;
 let accumulator = 0;
 let previous = 0;
 let lastReadout = -1;
+let readoutPlayer = -1;
 let leftHeld = false;
 let rightHeld = false;
 // An air drag tilts the piston from the angle it had when the drag began.
@@ -22,7 +23,7 @@ let pistonDragAngle = 0;
 let sceneDirty = true;
 const moveClickHeight = 1.7;
 // Event-driven readouts also mark the scene, so a paused chamber reflects the change.
-function refresh() { syncPistonControl(); readout(); sceneDirty = true; }
+function refresh() { readoutPlayer = playerApi.state.active; syncPistonControl(); readout(); sceneDirty = true; }
 
 // Single writer for the piston angle: slider, chamber wheel and air drag
 // all set the selected platform's angle through here, and the controls only
@@ -275,7 +276,7 @@ function frame(now) {
 	if (!paused && !document.hidden) accumulator += elapsed * Number(ui.speed.value);
 	while (accumulator >= config.step) { autopilotApi.update(world, config.step); playerApi.update(world, config.step); physics.step(world, config.step); accumulator -= config.step; sceneDirty = true; }
 	if (sceneDirty) { draw(); sceneDirty = false; }
-	if (now - lastReadout > 100) { readout(); lastReadout = now; }
+	if (now - lastReadout > 100 || readoutPlayer !== playerApi.state.active) { refresh(); lastReadout = now; }
 	requestAnimationFrame(frame);
 }
 

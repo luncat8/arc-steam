@@ -257,6 +257,7 @@
 		context.fill();
 	}
 	const floorScratch = new Float64Array(columns);
+	const floorValueScratch = new Float64Array(columns);
 	const elementColors = new Array(count);
 	const mineralStyles = new Array(count);
 	const priceColors = new Array(count);
@@ -1279,34 +1280,37 @@
 		const last = Math.min(columns - 2, Math.floor(Math.max(left, right) / cell));
 		if (first > last) return;
 		floorScratch.set(floorPiles);
+		floorValueScratch.set(floorValues);
 		const ease = Math.min(1, graderSmooth * dt);
+		// Smoothing is transport, not creation: move each edge's share of height
+		// and its value together. Include the two boundary edges whose neighbours
+		// feed the working swath, so the whole floor conserves both quantities.
+		for (let column = first; column <= last + 1; column++) {
+			const left = column - 1;
+			const difference = floorPiles[left] - floorPiles[column];
+			if (!difference) continue;
+			const source = difference > 0 ? left : column;
+			const destination = difference > 0 ? column : left;
+			const amount = Math.abs(difference) * ease * 0.5;
+			const value = amount * floorValues[source] / floorPiles[source];
+			floorScratch[source] -= amount;
+			floorScratch[destination] += amount;
+			floorValueScratch[source] -= value;
+			floorValueScratch[destination] += value;
+		}
 		const cut = graderCut * dt;
-		let changed = false;
 		for (let column = first; column <= last; column++) {
-			const height = floorPiles[column];
-			const neighbours = (floorPiles[column - 1] + floorPiles[column + 1]) * 0.5;
-			const graded = Math.max(0, height + (neighbours - height) * ease - cut);
-			if (graded === height) continue;
-			floorScratch[column] = graded;
-			changed = true;
+			const height = floorScratch[column];
+			if (height <= 0) continue;
+			const amount = Math.min(height, cut);
+			const shaved = amount * floorValueScratch[column] / height;
+			floorScratch[column] = height - amount;
+			floorValueScratch[column] = Math.max(0, floorValueScratch[column] - shaved);
+			blade.value += shaved;
+			blade.idle = 0;
 		}
-		if (!changed) return;
-		for (let column = first; column <= last; column++) {
-			const height = floorPiles[column];
-			const graded = floorScratch[column];
-			// Every column keeps its value density, so the blade accrues exactly
-			// the value the floor lost and the ledger can never invent credits.
-			// Material the smoothing hands to a neighbour raises that column's
-			// height at the value it already had; nothing is created either way.
-			if (height > 0 && graded < height) {
-				const density = floorValues[column] / height;
-				const shaved = density * (height - graded);
-				blade.value += shaved;
-				blade.idle = 0;
-				floorValues[column] -= shaved;
-			}
-			floorPiles[column] = graded;
-		}
+		floorPiles.set(floorScratch);
+		floorValues.set(floorValueScratch);
 		updateFloor();
 	}
 
