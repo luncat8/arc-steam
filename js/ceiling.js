@@ -88,6 +88,11 @@
 	const collapseClumpLimit = collapseChunkMax * 3;
 	const clumpDepthCost = 2;
 	const maxSurfaceStep = 1;
+	// A blow that would finish a cell with rock still under it leaves it hanging
+	// at this share of its original strength instead. The free face is the only
+	// rock that can be missing, so a fall always starts on the visible surface
+	// and never out of the middle of a column.
+	const heldCellShare = 0.12;
 	const regionDamage = new Float32Array(regionCount);
 	const regionEligible = new Int32Array(regionCount);
 	// Each horizontal band tracks its loose free-surface columns, and a cluster
@@ -531,26 +536,18 @@
 			damageField[index] = Math.min(1, damageField[index] + amount / before * loosedPerWeakened);
 			removed += amount / mult;
 			if (strength[index] > 0.0001) continue;
+			// Only the free face lets go. A cell with rock still under it has
+			// nothing to fall into, so the blow leaves it standing shattered at a
+			// held share of its strength until the face above it is worked away;
+			// the collapse scheduler then releases it from the surface.
+			if (row > 0 && strength[index - columns] > 0) {
+				strength[index] = initialStrength[index] * heldCellShare;
+				continue;
+			}
 			removed += strength[index] / mult;
 			strength[index] = 0;
+			damageField[index] = 0;
 			spawn(index);
-		}
-		// Anything left hanging over a fresh gap lets go at once: a crater has to
-		// read as a crater, not as an island of rock floating above it.
-		const minCol = Math.max(0, centerColumn - range);
-		const maxCol = Math.min(columns - 1, centerColumn + range);
-		for (let column = minCol; column <= maxCol; column++) {
-			let highestBroken = -1;
-			for (let row = rows - 1; row >= 0; row--) {
-				if (strength[row * columns + column] <= 0) { highestBroken = row; break; }
-			}
-			for (let row = 0; row < highestBroken; row++) {
-				const index = row * columns + column;
-				if (strength[index] <= 0) continue;
-				removed += strength[index] / mult;
-				strength[index] = 0;
-				spawn(index);
-			}
 		}
 		updateHeightmap();
 		scanRegions();
@@ -702,6 +699,28 @@
 		return mineral;
 	}
 
+	// Whether a column of the lump being peeled already holds this cell: a
+	// column is always taken from its own face inward, so its lump cells are the
+	// run of rows starting at firstRow.
+	function lumpHolds(row, column) {
+		if (row < 0 || row >= rows || column < 0 || column >= columns || !peeled[column]) return false;
+		return row >= firstRow[column] && row < firstRow[column] + peeled[column];
+	}
+
+	// A candidate cell may join only while it touches rock the lump already
+	// holds: the next cell of a column it took, or a cell beside one it holds
+	// (faces may differ by a row, so a step counts as touching). The lump is then
+	// one connected flake off the face, so its centre of mass lies in the notch
+	// it opens and never in the rock around it.
+	function touchesLump(row, column) {
+		if (peeled[column]) return true;
+		for (let side = -1; side <= 1; side += 2) {
+			const beside = column + side;
+			for (let offset = -1; offset <= 1; offset++) if (lumpHolds(row + offset, beside)) return true;
+		}
+		return false;
+	}
+
 	// Grow a connected mineral-matched clump strictly from firstRow[column]
 	// inward, preferring wide surface flakes and protruding teeth before going
 	// deeper, so no fall ever hollows rock behind an intact face.
@@ -721,9 +740,8 @@
 			const from = Math.max(0, minCol - 1);
 			const to = Math.min(columns - 1, maxCol + 1);
 			for (let col = from; col <= to; col++) {
-				if (!peeled[col] && (col === 0 || !peeled[col - 1]) && (col === columns - 1 || !peeled[col + 1])) continue;
 				const row = firstRow[col] + peeled[col];
-				if (row >= rows) continue;
+				if (row >= rows || !touchesLump(row, col)) continue;
 				const index = row * columns + col;
 				if (strength[index] <= 0 || damageField[index] < collapseLooseFloor) continue;
 				if (!compatibleMineral(index, seedIndex, mineral) || !canStepSurface(col, row)) continue;
@@ -1591,6 +1609,26 @@
 		return cellHeights[rockRowAt(y)] / cell;
 	}
 
+	// The underside of the rock across a footprint of this half width, in drawn
+	// space: the lowest ceiling a lump of that width can still hang from. A lump
+	// that has just let go sits at the face it broke from, and half of a wide one
+	// would otherwise be painted over the higher rock beside it and read as
+	// rubble inside the wall.
+	function ceilingUnder(x, halfWidth) {
+		const firstColumn = Math.max(0, Math.floor((x - halfWidth) / cell));
+		const lastColumn = Math.min(columns - 1, Math.floor((x + halfWidth) / cell));
+		if (rockShape === 'square') {
+			let underside = top;
+			for (let column = firstColumn; column <= lastColumn; column++) {
+				if (firstRow[column] < rows) underside = Math.min(underside, drawnRowY[firstRow[column]]);
+			}
+			return underside;
+		}
+		let lowest = top;
+		for (let vertex = firstColumn; vertex <= Math.min(columns, lastColumn + 1); vertex++) lowest = Math.min(lowest, heightmap[vertex]);
+		return rockDrawnY(lowest);
+	}
+
 	function draw(context, mode) {
 		if (rockShape === 'square') {
 			for (let index = 0; index < count; index++) {
@@ -1642,20 +1680,10 @@
 		for (let i = 0; i < maxDebris; i++) if (active[i]) {
 			const fragmentWidth = debrisWidth[i] || cell * 0.76;
 			const fragmentHeight = debrisHeight[i] || cell * 0.76;
-			let drawnY = debrisY[i] > bottom ? rockDrawnY(debrisY[i]) : debrisY[i];
-			if (debrisY[i] > bottom - fragmentHeight) {
-				const col = Math.max(0, Math.min(columns - 1, Math.floor(debrisX[i] / cell)));
-				if (firstRow[col] < rows) {
-					let ceilingY = drawnRowY[firstRow[col]];
-					if (rockShape !== 'square') {
-						const t = Math.max(0, Math.min(1, (debrisX[i] - col * cell) / cell));
-						ceilingY = rockDrawnY(heightmap[col] + (heightmap[col + 1] - heightmap[col]) * t);
-					}
-					drawnY = Math.min(drawnY, ceilingY - fragmentHeight * 0.5);
-				}
-			}
+			const half = fragmentHeight * 0.5;
+			const drawnY = Math.min(debrisY[i] > bottom ? rockDrawnY(debrisY[i]) : debrisY[i], ceilingUnder(debrisX[i], fragmentWidth * 0.5) - half);
 			context.fillStyle = colorFor(debrisCell[i], mode, debrisDamage[i]);
-			context.fillRect(debrisX[i] - fragmentWidth * 0.5, drawnY - fragmentHeight * 0.5, fragmentWidth, fragmentHeight);
+			context.fillRect(debrisX[i] - fragmentWidth * 0.5, drawnY - half, fragmentWidth, fragmentHeight);
 		}
 		drawCollapse(context);
 	}

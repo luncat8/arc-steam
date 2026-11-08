@@ -357,3 +357,72 @@ test('the collapse scheduler is bounded work per tick', () => {
 	assert.ok(state.extractedCells - before <= ceiling.collapseChunkMax * maxBands,
 		'one tick never detaches more than one clump cap per band');
 });
+
+test('the rock is only ever missing at its free face', () => {
+	// Rock can crumble away at the face the ball works on; nothing behind that
+	// face may vanish, so a fall always starts on the visible surface instead of
+	// inside the rock.
+	ceiling.reset(53);
+	const state = ceiling.state;
+	const columns = state.columns;
+	const rows = state.rows;
+	const world = { platform: { x: -100, vx: 0 }, heat: 0 };
+	const check = () => {
+		for (let column = 0; column < columns; column++) {
+			const face = state.firstRow[column];
+			for (let row = 0; row < rows; row++) {
+				const intact = state.strength[row * columns + column] > 0;
+				assert.equal(intact, row >= face, `column ${column} row ${row} is not a face removal`);
+			}
+		}
+	};
+	for (let k = 0; k < 240; k++) {
+		ceiling.damage(0.5 + (k * 0.61) % 23, state.bottom + 0.2, 45);
+		ceiling.collapse(0.5);
+		ceiling.step(world, 0.05, 0);
+		if (k % 60 === 0) check();
+	}
+	check();
+	assert.ok(state.extractedCells > 0);
+	ceiling.reset(1);
+});
+
+test('a lump that has just let go is drawn under the ceiling it broke from', () => {
+	ceiling.reset(31);
+	const state = ceiling.state;
+	const columns = state.columns;
+	// A worked shaft: the floor of the chamber is gone along a stretch, and one
+	// column is a few rows deeper. A lump at that column's face is only half under
+	// the drawn surface, and the half over the shallower rock beside it would be
+	// painted on the wall as rubble stuck inside it.
+	const shaft = 70;
+	for (let column = 60; column <= 80; column++) for (let row = 0; row < 4; row++) state.strength[row * columns + column] = 0;
+	for (let row = 0; row < 8; row++) state.strength[row * columns + shaft] = 0;
+	state.active[0] = 1;
+	state.debrisCell[0] = 8 * columns + shaft;
+	state.debrisCells[0] = 9;
+	state.debrisX[0] = (shaft + 0.5) * state.cell;
+	state.debrisY[0] = state.bottom + 8.5 * state.cell;
+	state.debrisVx[0] = 0;
+	state.debrisVy[0] = 0;
+	state.debrisWidth[0] = state.cell * 2.2;
+	state.debrisHeight[0] = state.cell * 1.4;
+	state.debrisDamage[0] = 0.5;
+	const tops = [];
+	const context = {
+		fillStyle: '',
+		fillRect(x, y, width, height) {
+			if (Math.abs(width - state.debrisWidth[0]) > 1e-9 || Math.abs(height - state.debrisHeight[0]) > 1e-9) return;
+			tops.push(y + height);
+		},
+		beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}
+	};
+	ceiling.draw(context, 'minerals');
+	assert.equal(tops.length, 1, 'the lump is drawn once');
+	let underside = Infinity;
+	const first = Math.floor((state.debrisX[0] - state.debrisWidth[0] * 0.5) / state.cell);
+	const last = Math.floor((state.debrisX[0] + state.debrisWidth[0] * 0.5) / state.cell);
+	for (let vertex = first; vertex <= last + 1; vertex++) underside = Math.min(underside, state.rockDrawnY(state.heightmap[vertex]));
+	assert.ok(tops[0] <= underside + 1e-9, 'the drawn lump must hang below the rock it left');
+	ceiling.reset(1);
+});
