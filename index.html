@@ -34,7 +34,7 @@
 					<span><i class="key-color collector"></i> COLLECTOR · CATCH & STORE</span>
 					<span><i class="key-color reflector"></i> REFLECTOR PISTON · POWERED BOUNCE</span>
 					<span><i class="key-color pad"></i> CHARGE PAD · 3 kW</span>
-					<div class="view-switch"><span id="view-label">ROCK VIEW</span><div id="view-modes" class="view-modes" role="radiogroup" aria-labelledby="view-label"><label><input type="radio" name="rock-view" value="minerals" autocomplete="off" checked>Minerals</label><label><input type="radio" name="rock-view" value="elements" autocomplete="off">Elements R/G/B</label><label><input type="radio" name="rock-view" value="price" autocomplete="off">Price</label><label><input type="radio" name="rock-view" value="strength" autocomplete="off">Remaining strength</label></div><button id="help-chamber" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: the chamber and its markers">?</button></div>
+					<div class="view-switch"><span id="view-label">ROCK VIEW</span><div id="view-modes" class="view-modes" role="radiogroup" aria-labelledby="view-label"><label><input type="radio" name="rock-view" value="minerals" autocomplete="off" checked>Minerals</label><label><input type="radio" name="rock-view" value="elements" autocomplete="off">Elements R/G/B</label><label><input type="radio" name="rock-view" value="price" autocomplete="off">Price</label><label><input type="radio" name="rock-view" value="strength" autocomplete="off">Remaining strength</label><label><input id="rock-damage-view" type="radio" name="rock-view" value="damage" autocomplete="off">Damage</label></div><button id="help-chamber" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: the chamber and its markers">?</button></div>
 				</div>
 			</section>
 			<aside class="controls-panel panel" data-topic="movement">
@@ -66,6 +66,18 @@
 					<div class="table-wrap"><table><caption>Material quantities in kg; prices in credits per cell (0.6 kg)</caption><thead><tr><th>Material</th><th>cr/cell</th><th>Cargo</th><th>Sold</th></tr></thead><tbody id="inventory-rows"></tbody></table></div>
 				</div>
 			</article>
+		</section>
+
+		<section class="fall-test panel" aria-labelledby="fall-test-title" data-topic="chamber">
+			<div class="panel-title"><span id="fall-test-title">MINERAL FALL TEST</span><span class="fall-test-summary">Per-mineral growth and release frequency · applied live</span></div>
+			<div class="fall-test-body">
+				<div class="cluster-test-settings">
+					<div class="cluster-setting"><label for="cluster-iron">Iron <output id="cluster-iron-value">+50%</output></label><input id="cluster-iron" type="range" min="50" max="200" step="25" value="50" data-mineral="0" aria-describedby="cluster-iron-note"><small id="cluster-iron-note">Larger clumps release less often</small></div>
+					<div class="cluster-setting"><label for="cluster-copper">Copper <output id="cluster-copper-value">+100%</output></label><input id="cluster-copper" type="range" min="50" max="200" step="25" value="100" data-mineral="1" aria-describedby="cluster-copper-note"><small id="cluster-copper-note">Larger clumps release less often</small></div>
+					<div class="cluster-setting"><label for="cluster-crystal">Crystal <output id="cluster-crystal-value">+200%</output></label><input id="cluster-crystal" type="range" min="50" max="200" step="25" value="200" data-mineral="2" aria-describedby="cluster-crystal-note"><small id="cluster-crystal-note">Larger clumps release less often</small></div>
+				</div>
+				<div class="fall-test-action"><button id="generate-test-rock" type="button">Generate test rock</button><p>Starts a fresh run with Iron → Copper → Crystal bands from left to right. Test damage is 0% at the top and 100% at the bottom; grouping settings carry over.</p><p id="fall-test-status" role="status">Use the sliders to change clump growth; higher growth also lowers release frequency.</p></div>
+			</div>
 		</section>
 
 		<aside id="science-drawer" class="tool-drawer science-drawer" aria-labelledby="science-title" data-topic="progression" hidden>

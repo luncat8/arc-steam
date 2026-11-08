@@ -282,15 +282,41 @@ function frame(now) {
 
 function endPistonDrag() { pistonDragActive = false; autopilotApi.hold('angle', false); }
 
+function resetRun(withTestRock) {
+	world = physics.createWorld();
+	playerApi.init(world);
+	window.SteamCeiling.setShape(ui.shape.value);
+	ui.balls.value = playerApi.state.ballMode;
+	physics.setGroundBounce(ui['ground-bounce'].value);
+	renderedSales = -1;
+	clearInput();
+	endPistonDrag();
+	setForce(world.forceSetting);
+	autopilotApi.reset();
+	accumulator = 0;
+	syncActiveControls();
+	for (const row of tierRows) row.selectedIndex = -1;
+	if (testMode) grantTestState();
+	if (withTestRock) {
+		window.SteamCeiling.generateTestRock();
+		setText(ui['fall-test-status'], 'Test rock ready · Iron → Copper → Crystal · damage rises from 0% at the top to 100% at the bottom.');
+	} else setText(ui['fall-test-status'], 'New run · mineral grouping settings carry over.');
+	setModeStatus();
+	refresh();
+}
+
+function mineralClusterChanged(event) {
+	const growth = window.SteamCeiling.setMineralClusterGrowth(Number(event.target.getAttribute('data-mineral')), Number(event.target.value));
+	setText(ui[event.target.id + '-value'], '+' + growth + '%');
+	sceneDirty = true;
+}
+
 function bindInput() {
-	document.getElementById('reset').addEventListener('click', function () {
-		world = physics.createWorld(); playerApi.init(world); window.SteamCeiling.setShape(ui.shape.value); ui.balls.value = playerApi.state.ballMode; physics.setGroundBounce(ui['ground-bounce'].value); renderedSales = -1; clearInput(); endPistonDrag(); setForce(world.forceSetting); autopilotApi.reset(); accumulator = 0;
-		syncActiveControls();
-		for (const row of tierRows) row.selectedIndex = -1;
-		if (testMode) grantTestState();
-		setModeStatus();
-		refresh();
-	});
+	document.getElementById('reset').addEventListener('click', function () { resetRun(false); });
+	ui['generate-test-rock'].addEventListener('click', function () { resetRun(true); });
+	ui['cluster-iron'].addEventListener('input', mineralClusterChanged);
+	ui['cluster-copper'].addEventListener('input', mineralClusterChanged);
+	ui['cluster-crystal'].addEventListener('input', mineralClusterChanged);
 	ui.drive.addEventListener('click', toggleDrive);
 	ui.commune.addEventListener('change', function () { setCommune(ui.commune.checked); });
 	ui['test-mode'].addEventListener('change', function () { setTestMode(ui['test-mode'].checked); });

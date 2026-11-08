@@ -32,8 +32,10 @@ function earnFunds(world, cells) {
 		state.debrisY[i] = 0.701;
 		state.debrisVx[i] = 0;
 		state.debrisVy[i] = -1;
-		prepared++;
+		prepared += state.debrisCells[i] || 1;
 	}
+	// Moving fragments directly is a test setup teleport, not simulated work.
+	sync(world);
 	physics.step(world, c.step);
 	ceiling.sellCargo(0, world.time);
 	// Later damage lets rock go in delayed collapse bursts, so a load can keep

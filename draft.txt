@@ -252,6 +252,7 @@ different minerals from left to right
 apply damage increase from top (0 damage) to buttom of rock (100% damage)
 i expect some minerals fall more rarely with lager clusters of cells.
 
+should fall from free surface but not from inside of rock.
 
 
 добавить при каждом отскоке генерацию одной строки скалы сверху, то есть она растет сверху и постепенно опускается вниз.

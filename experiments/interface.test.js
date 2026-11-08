@@ -487,12 +487,14 @@ test('the ballistic computer overlay appears only after its research', () => {
 test('the market panel recharges the reserve from measured funds', () => {
 	world.battery = harness.c.battery;
 	world.drive = false;
+	harness.sync(world);
 	advance(8);
 	assert.equal(dom.element('fuel-price').textContent, String(ceiling.state.fuelPrice));
 	assert.equal(dom.element('refuel-cost').textContent, '0.0 cr');
 	assert.equal(dom.element('refuel').textContent, 'Reserve full');
 	assert.equal(dom.element('refuel').disabled, true, 'a full reserve cannot be recharged');
 	world.battery = 2000;
+	harness.sync(world);
 	fund(400);
 	advance(8);
 	assert.equal(dom.element('refuel-cost').textContent, ceiling.rechargeCost(world).toFixed(1) + ' cr');
@@ -519,8 +521,9 @@ function fillCargo(count) {
 		state.debrisY[i] = 0.701;
 		state.debrisVx[i] = 0;
 		state.debrisVy[i] = -1;
-		prepared++;
+		prepared += state.debrisCells[i] || 1;
 	}
+	harness.sync(world);
 	physics.step(world, physics.config.step);
 }
 
@@ -1440,4 +1443,21 @@ test('the road grader row follows the selected player: Locked for a rival, and t
 	assert.match(dom.element('progression-status').textContent, /grades under the rig's centre/);
 	assert.equal(equipment.isInstalled('grader', rival.id), false);
 	assert.equal(equipment.isUnlocked('grader', rival.id), false);
+});
+
+test('mineral fall sliders and test-rock button wire the controlled setup', () => {
+	const iron = dom.element('cluster-iron');
+	iron.value = '125';
+	iron.dispatch('input');
+	assert.equal(ceiling.state.mineralClusterGrowth[0], 125);
+	assert.equal(dom.element('cluster-iron-value').textContent, '+125%');
+
+	dom.element('generate-test-rock').dispatch('click');
+	assert.equal(ceiling.state.testRock, true);
+	assert.equal(ceiling.state.extractedCells, 0, 'the generator starts from a clean run');
+	assert.equal(ceiling.state.mineralClusterGrowth[0], 125, 'the live setting carries into the new run');
+	assert.match(dom.element('fall-test-status').textContent, /Iron → Copper → Crystal/);
+	assert.equal(dom.element('rock-damage-view').getAttribute('value'), 'damage');
+	advance(3);
+	assert.ok(Math.abs(physics.totalEnergy(world) - world.initialEnergy) < 1e-5);
 });
