@@ -7,6 +7,7 @@ const { test } = require('node:test');
 const { physics, prediction, ceiling, c, balanced, sync } = require('./harness.cjs');
 const autopilot = require('../js/autopilot.js');
 const research = require('../js/research.js');
+const players = require('../js/players.js');
 const all = ['move', 'smart', 'drive', 'angle'];
 
 function engage(...channels) {
@@ -439,6 +440,65 @@ test('with two shared balls a desperate landing never takes the plan from a keep
 	assert.ok(furthest > 9, `the rig never crossed the chamber for the far ball (got to ${furthest.toFixed(1)} m)`);
 	balanced(world);
 	engage();
+});
+
+test('a long trip to a shared ball a rival is parked on never takes the plan from a near keep', () => {
+	// The far ball lands sooner across the chamber and the rig could stop on
+	// it, but a rival is already standing on its mark: the run there is a
+	// long, contested trip for a fight the rival is set to win. The near
+	// ball lands a little later beside the rig, so the plan keeps its energy
+	// for that keep and fights for the far ball afterwards.
+	const world = twoBallWorld(5, dropHeight(2.2), 13.5, dropHeight(2.5));
+	players.init(world, 1);
+	players.setBallMode('shared2');
+	// setBallMode re-seats the balls, so stage the flights again on the new set.
+	const contested = world.balls[0];
+	const kept = world.balls[1];
+	world.platform.x = 12;
+	world.platform.vx = 0;
+	const rival = players.state.rivals[0];
+	rival.x = 4.4;
+	rival.vx = 0;
+	rival.bot = false;
+	contested.x = 5; contested.y = dropHeight(2.2); contested.vx = 0; contested.vy = 0; contested.state = 'flying';
+	kept.x = 13.5; kept.y = dropHeight(2.5); kept.vx = 0; kept.vy = 0; kept.state = 'flying';
+	sync(world);
+	engage('move');
+	autopilot.update(world, c.step);
+	assert.equal(physics.focusBall(world), kept, 'the uncontested near keep is the one it works');
+	assert.equal(autopilot.state.focus, kept);
+	assert.equal(autopilot.state.contested, false, 'the worked ball carries no contest penalty');
+	assert.equal(autopilot.state.recovering, false);
+	assert.ok(Math.abs(autopilot.state.interceptX + c.pistonCentre - kept.x) < 1, 'the face is put under the near landing');
+	balanced(world);
+	engage();
+	players.init(physics.createWorld(), 0);
+});
+
+test('a contested far ball is still worked when there is no near keep to save the energy for', () => {
+	// One shared ball, far away, with a rival parked on its mark: contested
+	// only ever demotes a ball below an uncontested alternative, so with
+	// nothing else to work the rig still goes and fights for it.
+	const world = physics.createWorld();
+	players.init(world, 1);
+	players.setBallMode('shared1');
+	world.platform.x = 12;
+	world.platform.vx = 0;
+	const rival = players.state.rivals[0];
+	rival.x = 4.4;
+	rival.vx = 0;
+	rival.bot = false;
+	const ball = world.balls[0];
+	ball.x = 5; ball.y = dropHeight(2.6); ball.vx = 0; ball.vy = 0; ball.state = 'flying';
+	sync(world);
+	engage('move');
+	autopilot.update(world, c.step);
+	assert.equal(autopilot.state.focus, ball, 'the only ball is still the one it works');
+	assert.equal(autopilot.state.contested, true, 'and the plan knows the trip is contested');
+	assert.ok(autopilot.state.contest > 1, `the rival head start is priced in (${autopilot.state.contest.toFixed(2)} s)`);
+	balanced(world);
+	engage();
+	players.init(physics.createWorld(), 0);
 });
 
 test('with two shared balls a schedule that keeps both landings beats the cheaper single keep', () => {

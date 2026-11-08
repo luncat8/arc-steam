@@ -164,9 +164,11 @@ function buildUpgrades() {
 	treeRootEl.append(rootTitle, rootBays);
 	tree.insertBefore(treeRootEl, ui['spec-card']);
 
+	// One node can unlock several items (Power electronics gates both the
+	// overdrive and the piston ram), so each node keeps its whole list.
 	const itemsByResearch = {};
 	for (const item of SteamEquipment.items) {
-		if (item.requires) itemsByResearch[item.requires] = item;
+		if (item.requires) (itemsByResearch[item.requires] = itemsByResearch[item.requires] || []).push(item);
 	}
 	const graderItem = SteamEquipment.find('grader');
 	const graderSlot = buildSlot(rootBays, 'upgrade-row node-buy', graderItem.name, graderItem.cost, graderItem.mass || 0, 'Buy', graderItem.effect,
@@ -282,13 +284,15 @@ function buildUpgrades() {
 		}
 		researchRows.push(sci);
 
-		const unlockedItem = itemsByResearch[node.id];
-		if (unlockedItem) {
-			const buy = buildSlot(card, 'upgrade-row node-buy', unlockedItem.name, unlockedItem.cost, unlockedItem.mass || 0, 'Locked', unlockedItem.effect,
-				function () { buyEquipment(unlockedItem.id); });
-			buy.row.dataset.item = unlockedItem.id;
-			buy.item = unlockedItem;
-			equipmentRows.push(buy);
+		const unlockedItems = itemsByResearch[node.id];
+		if (unlockedItems) {
+			for (const unlockedItem of unlockedItems) {
+				const buy = buildSlot(card, 'upgrade-row node-buy', unlockedItem.name, unlockedItem.cost, unlockedItem.mass || 0, 'Locked', unlockedItem.effect,
+					function () { buyEquipment(unlockedItem.id); });
+				buy.row.dataset.item = unlockedItem.id;
+				buy.item = unlockedItem;
+				equipmentRows.push(buy);
+			}
 		} else if (node.id === 'thermodynamics') {
 			buildTierSlot(card, radiatorSpec);
 		} else if (node.id === 'impact') {

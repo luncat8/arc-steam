@@ -74,6 +74,7 @@
 		Object.freeze({ equipment: 'chassis' }),
 		Object.freeze({ research: 'thermodynamics' }),
 		Object.freeze({ research: 'power' }),
+		Object.freeze({ equipment: 'ram' }),
 		Object.freeze({ equipment: 'overdrive' }),
 		Object.freeze({ research: 'ballistics' }),
 		Object.freeze({ research: 'ballistics2' }),

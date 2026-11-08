@@ -128,6 +128,32 @@ test('installed equipment changes retention, pulse and dry mass in the simulatio
 		physics.createWorld();
 	});
 
+test('the piston ram lifts the pulse so a released ball reaches the ceiling on its second powered bounce', () => {
+	const w = physics.createWorld();
+	assert.equal(equipment.isUnlocked('ram'), false, 'the ram is locked before its research');
+	assert.equal(equipment.install('ram', w), false, 'and it cannot be bought before that research');
+	assert.equal(equipment.grant('ram', w), true, 'a test grant fits it for measurement');
+	assert.ok(equipment.isInstalled('ram'));
+	// Stock 42 J plus the ram's 26 J, before any research pulse bonus.
+	near(physics.pulseNow(), 68);
+	near(equipment.state.pulseBonus, 26);
+	// Feed the solver the flight the release starts: each powered bounce
+	// comes back to the face at the speed the previous one left at.
+	const out = physics.contactResult();
+	const target = c.ceiling - c.radius - (c.deck + c.radius);
+	let incoming = Math.sqrt(2 * physics.pulseNow() / c.ballMass);
+	const apexes = [];
+	for (let bounce = 0; bounce < 2; bounce++) {
+		assert.ok(physics.deckBounce(0, -incoming, 0, 0, 0, physics.pulseNow(), out), 'the face returns the ball');
+		apexes.push(out.vy * out.vy / (2 * c.ballGravity));
+		incoming = out.vy;
+	}
+	assert.ok(apexes[0] < target, `the first powered bounce still falls short (${apexes[0].toFixed(2)} m of ${target.toFixed(2)} m)`);
+	assert.ok(apexes[1] >= target, `the second powered bounce reaches the ceiling (${apexes[1].toFixed(2)} m of ${target.toFixed(2)} m)`);
+	balanced(w);
+	physics.createWorld();
+});
+
 test('owned balls and radiators use their player profile without touching the rig', () => {
 	const w = physics.createWorld();
 	players.init(w, 1);

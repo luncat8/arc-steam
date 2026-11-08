@@ -45,6 +45,17 @@
 	// still a keep, but a centre keep is worth this much travel over it: the
 	// edge has no margin left for the prediction to be wrong by.
 	const edgePenalty = 0.35;
+	// A shared ball a rival platform is already close to is a fight the rig
+	// will probably lose, and a long trip to it costs the energy a near ball
+	// could have been worked with instead. Past this trip length (metres of
+	// travel beyond the reflector slack) the rival's head start is priced in
+	// seconds, growing with the trip and with how much of it the rival has
+	// already covered; past `contestThreshold` seconds of it the ball counts
+	// as contested, and a contested long trip never takes the plan from an
+	// uncontested keep, however the landing order falls. An owned ball is
+	// nobody else's to take, so it is never contested.
+	const longTrip = 4;
+	const contestThreshold = 1;
 	const overrides = { move: 0, drive: 0, angle: 0 };
 	const held = { move: false, drive: false, angle: false };
 
@@ -110,6 +121,7 @@
 		out.edge = false;
 		out.kept = 0;
 		out.counted = false;
+		out.contest = 0;
 		return out;
 	}
 	const plan = blankPlan({});
@@ -151,6 +163,11 @@
 		get edge() { return plan.edge; },
 		// No landing predicted at all (rock strike, horizon); the ball is shadowed.
 		get uncertain() { return plan.uncertain; },
+		// Seconds of rival head start priced into the plan's trip, and whether
+		// that prices the ball as contested: a long trip a nearer rival is
+		// already set to win.
+		get contest() { return plan.contest; },
+		get contested() { return plan.contest > contestThreshold; },
 		get wantedDrive() { return wantedDrive; },
 		get wantedAngle() { return wantedAngle; }
 	});
@@ -195,6 +212,7 @@
 		plan.recovering = false;
 		plan.uncertain = false;
 		plan.edge = false;
+		plan.contest = 0;
 	}
 
 	// Solve the cached upcoming contact with the simulation's own solver, so the
@@ -251,6 +269,29 @@
 		return reach / pace + pace / acceleration;
 	}
 
+	// Seconds of head start a nearer rival has on a shared ball's mark, priced
+	// only once the rig's own trip is a long one: the longer the trip and the
+	// larger the share of it the rival has already covered, the dearer the
+	// trip. Measured centre to centre, since every platform puts the same
+	// reflector under the same mark. Zero when no rival is closer, when the
+	// trip is short enough to fight for cheaply, or when the ball is owned.
+	function contestPenalty(world, ball, markX) {
+		if (!ball || ball.owner) return 0;
+		const physics = root.SteamPhysics;
+		const rigReach = Math.max(0, Math.abs(markX - world.platform.x) - interceptTolerance);
+		const excess = rigReach - longTrip;
+		if (!(excess > 0)) return 0;
+		let rivalReach = Infinity;
+		const machines = physics.machinesOf(world);
+		for (let i = 0; i < machines.length; i++) {
+			const body = physics.machineBody(machines[i]);
+			if (body.id === world.platform.id) continue;
+			rivalReach = Math.min(rivalReach, Math.max(0, Math.abs(markX - body.x) - interceptTolerance));
+		}
+		if (!(rivalReach < rigReach)) return 0;
+		return excess / physics.config.approachSpeed * (rigReach - rivalReach) / rigReach;
+	}
+
 	// The mark, the deadline and the control cost of one ball. A landing the
 	// platform can cover in the time it has is an intercept with that deadline,
 	// the only outcome that keeps the ball in play. Everything else is a recovery:
@@ -272,6 +313,7 @@
 		out.effort = Infinity;
 		out.edge = false;
 		out.kept = 0;
+		out.contest = 0;
 		// A held ball is already under control and has no flight to meet.
 		out.cost = 0;
 		out.effort = 0;
@@ -283,7 +325,8 @@
 			out.interceptX = clampTravel(ball.x);
 			out.tier = RECOVER;
 			out.recovering = true;
-			out.cost = pacingTime(Math.abs(ball.x - world.platform.x) - interceptTolerance, acceleration);
+			out.contest = contestPenalty(world, ball, out.interceptX);
+			out.cost = pacingTime(Math.abs(ball.x - world.platform.x) - interceptTolerance, acceleration) + out.contest;
 			out.effort = out.cost;
 			return out;
 		}
@@ -301,7 +344,8 @@
 			out.tier = RECOVER;
 			out.uncertain = true;
 			out.recovering = true;
-			out.cost = Math.max(path.time, pacingTime(Math.abs(out.interceptX - world.platform.x) - interceptTolerance, acceleration)) + uncertainPenalty;
+			out.contest = contestPenalty(world, ball, out.interceptX);
+			out.cost = Math.max(path.time, pacingTime(Math.abs(out.interceptX - world.platform.x) - interceptTolerance, acceleration)) + uncertainPenalty + out.contest;
 			out.effort = out.cost;
 			return out;
 		}
@@ -336,8 +380,9 @@
 		const distance = out.interceptX - world.platform.x;
 		const reach = Math.abs(distance) - interceptTolerance;
 		const towards = Math.sign(distance) * world.platform.vx;
+		out.contest = contestPenalty(world, ball, out.interceptX);
 		out.arrival = physics.travelTime(reach, towards, acceleration, physics.speedNow());
-		out.effort = physics.stopTime(reach, towards, acceleration, physics.speedNow());
+		out.effort = physics.stopTime(reach, towards, acceleration, physics.speedNow()) + out.contest;
 		if (out.arrival <= out.contactIn) {
 			out.cost = out.contactIn;
 			return out;
@@ -349,7 +394,7 @@
 		const edgeReach = Math.abs(distance) - config.pistonHalf;
 		if (physics.travelTime(edgeReach, towards, acceleration, physics.speedNow()) <= out.contactIn) {
 			out.cost = out.contactIn;
-			out.effort = physics.stopTime(edgeReach, towards, acceleration, physics.speedNow()) + edgePenalty;
+			out.effort = physics.stopTime(edgeReach, towards, acceleration, physics.speedNow()) + edgePenalty + out.contest;
 			out.edge = true;
 			return out;
 		}
@@ -362,7 +407,7 @@
 		// only spends that run when no landing can be kept instead.
 		out.tier = RECOVER;
 		out.recovering = true;
-		out.cost = Math.max(out.contactIn, pacingTime(reach, acceleration)) + recoveryPenalty;
+		out.cost = Math.max(out.contactIn, pacingTime(reach, acceleration)) + recoveryPenalty + out.contest;
 		out.effort = out.cost;
 		return out;
 	}
@@ -390,6 +435,11 @@
 			if (next < 0) return chain;
 			const entry = candidatePool[next];
 			entry.counted = true;
+			// A landing a nearer rival is already set to take is not a keep
+			// this schedule can bank on: it neither counts nor moves the
+			// platform, so the chain prices the landings after it from the
+			// mark the platform actually holds.
+			if (entry.contest > contestThreshold) continue;
 			const reach = Math.abs(entry.interceptX - chain.endX) - interceptTolerance;
 			if (physics.travelTime(reach, 0, acceleration, physics.speedNow()) > entry.contactIn - time) continue;
 			chain.kept++;
@@ -436,6 +486,14 @@
 			if (entry.tier !== MEET || entry.ball.state === 'held') continue;
 			if (bestMeet < 0) { bestMeet = i; continue; }
 			const best = candidatePool[bestMeet];
+			// A contested long trip is a fight a nearer rival is set to win:
+			// the energy is kept for an uncontested keep instead, and the
+			// contested ball is fought for afterwards from wherever that
+			// keep leaves the platform. Only when every keep is contested
+			// (or none is) does the rest of the pricing decide.
+			const contested = entry.contest > contestThreshold ? 1 : 0;
+			const bestContested = best.contest > contestThreshold ? 1 : 0;
+			if (contested !== bestContested) { if (contested < bestContested) bestMeet = i; continue; }
 			if (entry.kept !== best.kept) { if (entry.kept > best.kept) bestMeet = i; continue; }
 			// A keep is desperate when the platform can only cross its mark at
 			// speed — the stopped arrival does not fit the flight, or only the

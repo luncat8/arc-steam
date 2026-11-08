@@ -909,7 +909,7 @@ test('test mode grants all upgrades, preserves credits, and reapplies them on Ne
 	assert.equal(dom.element('research-progress').textContent, research.nodes.length + ' / ' + research.nodes.length);
 	assert.ok(research.nodes.every(node => techRow(node.id).dataset.state === 'researched'));
 	assert.ok(equipment.items.every(item => gearRow(item.id).dataset.state === 'installed'));
-	assert.match(dom.element('progression-status').textContent, /all 10 technologies researched and all 7 equipment items installed/);
+	assert.match(dom.element('progression-status').textContent, /all 10 technologies researched and all 8 equipment items installed/);
 	assert.ok(ceiling.state.ledger.filter(entry => entry.source === 'test').length >= research.nodes.length + equipment.items.length);
 	assert.match(dom.element('ledger').children[0].textContent, /Test installed /);
 	assert.match(dom.element('transaction-status').textContent, /Test mode installed /);

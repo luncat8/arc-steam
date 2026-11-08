@@ -18,6 +18,11 @@
 			effect: 'Bounce drive pulse +12 J per contact.'
 		}),
 		Object.freeze({
+			id: 'ram', name: 'Piston ram', cost: 850, mass: 10, requires: 'power',
+			pulseBonus: 26,
+			effect: 'Heavy piston push: bounce drive pulse +26 J per contact (68 J on the stock tune). A ball released from the platform reaches the ceiling on its second powered bounce — on the first once the coil chain is fitted too.'
+		}),
+		Object.freeze({
 			id: 'motor', name: 'High-torque motor', cost: 550, mass: 6, requires: 'traction',
 			forceBonus: 360, speedBonus: 6,
 			effect: 'Engine force +360 N and top speed +6 m/s.'
