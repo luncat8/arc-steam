@@ -125,6 +125,17 @@ function spent(credits, digits) {
 	return credits > 0 ? '−' + credits.toFixed(digits) + ' cr' : 'free';
 }
 
+const clusterNoteIds = ['cluster-iron-note', 'cluster-copper-note', 'cluster-crystal-note'];
+const renderedFallCells = new Float64Array([-1, -1, -1]);
+
+function mineralStateTag(ceiling, remaining, looseness) {
+	if (remaining === 0) return ' · fallen';
+	if (looseness < ceiling.collapseLooseFloor) return ' · remaining strength · sound';
+	return selectedLayer === ceiling.firstRow[selectedColumn]
+		? ' · remaining strength · loose'
+		: ' · remaining strength · weakened (held)';
+}
+
 function mineralReadout() {
 	const ceiling = window.SteamCeiling.state;
 	const index = selectedLayer * ceiling.columns + selectedColumn;
@@ -133,8 +144,7 @@ function mineralReadout() {
 	const initial = ceiling.initialStrength[index];
 	const looseness = ceiling.damageField[index];
 	setText(ui['mineral-cell'], 'Column ' + (selectedColumn + 1) + ' / ' + ceiling.columns + ' · Layer ' + (selectedLayer + 1) + ' / ' + ceiling.rows);
-	const loose = looseness >= ceiling.collapseLooseFloor ? ' · loose' : ' · sound';
-	setText(ui['mineral-strength'], remaining.toFixed(2) + ' / ' + initial.toFixed(2) + ' J' + (remaining === 0 ? ' · fallen' : ' · remaining strength') + loose);
+	setText(ui['mineral-strength'], remaining.toFixed(2) + ' / ' + initial.toFixed(2) + ' J' + mineralStateTag(ceiling, remaining, looseness));
 	const strengthRatio = initial > 0 ? remaining / initial : 0;
 	if (Number(ui['strength-meter'].value) !== strengthRatio) ui['strength-meter'].value = strengthRatio;
 	setText(ui['mineral-composition'], 'Fe ' + (ceiling.minerals[offset] * 100).toFixed(1) + '% · Cu ' + (ceiling.minerals[offset + 1] * 100).toFixed(1) + '% · Cr ' + (ceiling.minerals[offset + 2] * 100).toFixed(1) + '%');
@@ -144,6 +154,15 @@ function mineralReadout() {
 function miningReadout() {
 	const ceiling = window.SteamCeiling.state;
 	mineralReadout();
+	for (let i = 0; i < 3; i++) {
+		const cells = ceiling.fallCells[i];
+		if (renderedFallCells[i] === cells) continue;
+		renderedFallCells[i] = cells;
+		const groups = ceiling.fallGroups[i];
+		setText(ui[clusterNoteIds[i]], groups > 0
+			? groups + ' falls · ' + (cells / groups).toFixed(1) + ' cells/fall'
+			: 'Larger clumps release less often');
+	}
 	setText(ui.extracted, ceiling.extractedCells + ' cells');
 	setText(ui.falling, ceiling.airborneCells + ' cells');
 	setText(ui.caught, ceiling.caughtCells + ' cells');

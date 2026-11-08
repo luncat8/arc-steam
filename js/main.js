@@ -14,7 +14,7 @@ const ids = ['clock', 'drive', 'launch', 'status-bar', 'status-ball', 'status-en
 	'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'balls', 'ground-bounce', 'commune', 'test-mode', 'view-modes',
 	'platform-spec', 'spec-card', 'progression-tree', 'tree-links', 'progression-status', 'research-progress', 'science-funds', 'science-title',
 	'mineral-cell', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price', 'rock-damage-view',
-	'cluster-iron', 'cluster-iron-value', 'cluster-copper', 'cluster-copper-value', 'cluster-crystal', 'cluster-crystal-value', 'generate-test-rock', 'fall-test-status',
+	'cluster-iron', 'cluster-iron-value', 'cluster-iron-note', 'cluster-copper', 'cluster-copper-value', 'cluster-copper-note', 'cluster-crystal', 'cluster-crystal-value', 'cluster-crystal-note', 'generate-test-rock', 'fall-test-status',
 	'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
 	'inventory-rows', 'transaction-status', 'transaction-count', 'ledger',
 	'refuel', 'refuel-cost', 'fuel-price', 'reserve-note', 'cargo-note',

@@ -85,12 +85,16 @@
 	const collapseChanceSaturation = 1;
 	const collapseChunkMin = 1;
 	const collapseChunkMax = 4;
+	const collapseClumpLimit = collapseChunkMax * 3;
+	const clumpDepthCost = 2;
+	const maxSurfaceStep = 1;
 	const regionDamage = new Float32Array(regionCount);
 	const regionEligible = new Int32Array(regionCount);
-	// The collapse builder grows a mineral-matched cluster from one exposed seed.
-	const eligibleCells = new Int32Array(collapseRegionCells + 1);
-	const clusterCells = new Int32Array(collapseRegionCells);
-	const clusterSelected = new Uint8Array(count);
+	// Each horizontal band tracks its loose free-surface columns, and a cluster
+	// peels columns inward from firstRow so interior holes can never form.
+	const bandLoose = new Int32Array(bandColumns);
+	const clusterCells = new Int32Array(collapseClumpLimit);
+	const peeled = new Uint8Array(columns);
 	let collapseClock = 0;
 	// One increment per pass, so the same rock does not keep rolling the same
 	// number and a damaged region both fails and, later, succeeds.
@@ -99,8 +103,8 @@
 	const dustCount = 96;
 	const dustX = new Float64Array(dustCount);
 	const dustY = new Float64Array(dustCount);
-	const dustAge = new Float64Array(dustCount);
 	const dustLife = 0.55;
+	const dustAge = new Float64Array(dustCount).fill(dustLife);
 	let dustCursor = 0;
 	function installed(channel, owner) {
 		const id = owner || 'rig';
@@ -268,6 +272,8 @@
 	const damagePalette = new Array(101);
 	const cargoMinerals = new Float64Array(3);
 	const soldMinerals = new Float64Array(3);
+	const fallGroups = new Float64Array(3);
+	const fallCells = new Float64Array(3);
 	for (let i = 0; i <= 100; i++) {
 		const remaining = i / 100;
 		strengthPalette[i] = 'rgb(' + Math.round(75 + remaining * 130) + ' ' + Math.round(45 + remaining * 125) + ' ' + Math.round(38 + remaining * 82) + ')';
@@ -370,7 +376,11 @@
 		testRock = true;
 		collapseClock = 0;
 		collapseRoll = 0;
-		clusterSelected.fill(0);
+		dustCursor = 0;
+		dustAge.fill(dustLife);
+		peeled.fill(0);
+		fallGroups.fill(0);
+		fallCells.fill(0);
 		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
 			const index = row * columns + column;
 			const mineral = Math.min(2, Math.floor(column * 3 / columns));
@@ -389,10 +399,8 @@
 			const priceRatio = (prices[index] - mineralPrices[0]) / (mineralPrices[2] - mineralPrices[0]);
 			priceColors[index] = 'rgb(' + Math.round(48 + priceRatio * 190) + ' ' + Math.round(72 + priceRatio * 150) + ' ' + Math.round(91 - priceRatio * 45) + ')';
 		}
-		regionDamage.fill(0);
-		regionEligible.fill(0);
 		updateHeightmap();
-		for (let region = 0; region < regionCount; region++) scanRegion(region, true);
+		scanRegions();
 		return true;
 	}
 
@@ -428,6 +436,8 @@
 		ledger = [];
 		cargoMinerals[0] = cargoMinerals[1] = cargoMinerals[2] = 0;
 		soldMinerals[0] = soldMinerals[1] = soldMinerals[2] = 0;
+		fallGroups.fill(0);
+		fallCells.fill(0);
 		active.fill(0);
 		debrisCells.fill(0);
 		debrisValue.fill(0);
@@ -435,7 +445,7 @@
 		debrisWidth.fill(0);
 		debrisHeight.fill(0);
 		debrisDamage.fill(0);
-		clusterSelected.fill(0);
+		peeled.fill(0);
 		floorPiles.fill(0);
 		floorValues.fill(0);
 		graderBot.active = false;
@@ -481,6 +491,7 @@
 			mineralStyles[index] = 'rgb(' + Math.round(mineralRed) + ' ' + Math.round(mineralGreen) + ' ' + Math.round(mineralBlue) + ')';
 		}
 		updateHeightmap();
+		scanRegions();
 		updateFloor();
 	}
 
@@ -542,12 +553,27 @@
 			}
 		}
 		updateHeightmap();
+		scanRegions();
 		return Math.min(impactJ, removed);
 	}
 
-	// The ceiling gives way a region at a time. Every region is examined on the
-	// same slow clock, and a region whose rock is loose enough rolls once. A
-	// success releases one connected, mineral-matched clump. Bounded work:
+	// Only the rock's free bottom face may let go, and across a uniformly loose
+	// span no column runs far ahead of equally loose neighbours — keeping broad
+	// falls cohesive without letting an unworked wall freeze a vertical shaft.
+	function canStepSurface(column, row) {
+		if (row >= rows) return false;
+		const floor = Math.max(collapseLooseFloor, damageField[row * columns + column] * 0.5);
+		if (column > 0) {
+			const left = firstRow[column - 1] + peeled[column - 1];
+			if (left < rows && damageField[left * columns + column - 1] >= floor && row > left + maxSurfaceStep) return false;
+		}
+		if (column < columns - 1) {
+			const right = firstRow[column + 1] + peeled[column + 1];
+			if (right < rows && damageField[right * columns + column + 1] >= floor && row > right + maxSurfaceStep) return false;
+		}
+		return true;
+	}
+
 	// Advance the collapse scheduler by a span of chamber time. The chamber
 	// calls it from step(); exposing it lets a measurement or a test turn
 	// loosened rock into falling rock without running the whole simulation.
@@ -556,60 +582,119 @@
 		const steps = Math.max(1, Math.round(span / collapseChanceSeconds));
 		for (let i = 0; i < steps; i++) collapseTick(collapseChanceSeconds);
 	}
-	// A scheduler pass examines each region once and releases at most one cluster from it.
+
+	function cellWeakness(index) {
+		const initial = initialStrength[index];
+		const lost = initial > 0 ? 1 - strength[index] / initial : 0;
+		return damageField[index] + lost * 2;
+	}
+
+	function compatibleMineral(index, seedIndex, mineral) {
+		if (dominantMineral(index) === mineral) return true;
+		const a = index * 3;
+		const b = seedIndex * 3;
+		const diff = Math.abs(minerals[a] - minerals[b])
+			+ Math.abs(minerals[a + 1] - minerals[b + 1])
+			+ Math.abs(minerals[a + 2] - minerals[b + 2]);
+		return diff < 0.22;
+	}
+
+	// Each horizontal surface band rolls at most once per tick over its live
+	// free-surface front, so crossing a vertical row multiple never accelerates
+	// a recessed column into an interior shaft.
 	function collapseTick(dt) {
 		collapseClock += dt;
 		if (collapseClock < collapseChanceSeconds) return;
 		collapseClock = 0;
 		let rolled = 0;
-		for (let region = 0; region < regionCount; region++) {
-			const damage = scanRegion(region, true);
-			const loose = regionEligible[region];
-			if (damage < collapseLooseFloor || !loose) continue;
-			const excess = Math.min(1, (damage - collapseLooseFloor) / (collapseChanceSaturation - collapseLooseFloor));
-			const seedPosition = Math.min(loose - 1, Math.floor(hash(region, collapseRoll + region, 7) * loose));
-			const seed = eligibleCells[seedPosition];
+		for (let band = 0; band < collapseRegionsX; band++) {
+			const looseness = scanSurfaceBand(band);
+			if (looseness < collapseLooseFloor || !bandLooseCount) continue;
+			const excess = Math.min(1, (looseness - collapseLooseFloor) / (collapseChanceSaturation - collapseLooseFloor));
+			const seedColumn = pickBandSeed(band);
+			const seed = firstRow[seedColumn] * columns + seedColumn;
 			const mineral = dominantMineral(seed);
-			const releaseFactor = 100 / (100 + mineralClusterGrowth[mineral]);
-			if (hash(region, collapseRoll + region, 5) >= collapseChanceMax * excess * releaseFactor) continue;
-			if (!collapseRegion(region, excess, seedPosition, mineral)) continue;
+			const growth = mineralClusterGrowth[mineral];
+			const releaseFactor = 100 / (100 + growth);
+			if (hash(band, collapseRoll + band, 5) >= collapseChanceMax * excess * releaseFactor) continue;
+			const baseChunk = collapseChunkMin + excess * (collapseChunkMax - collapseChunkMin);
+			const target = Math.max(1, Math.min(collapseClumpLimit, Math.round(baseChunk * (1 + growth / 100))));
+			if (!peelSurfaceCluster(seedColumn, mineral, target)) continue;
 			rolled++;
 			collapseBursts++;
 		}
 		collapseRoll++;
 		if (rolled) updateHeightmap();
+		scanRegions();
 	}
 
-	// A region's looseness is the mean damage of the rock it has actually been
-	// hit in: a well-battered pocket of a band counts as much as a band that is
-	// loose everywhere, and untouched rock neither holds a collapse back nor
-	// causes one. The same walk lists the exposed cells loose enough to fall, so
-	// the roll and the falling clump always describe the same rock.
-	function scanRegion(region, collect) {
-		const rowStart = Math.floor(region / collapseRegionsX) * bandRows;
-		const columnStart = (region % collapseRegionsX) * bandColumns;
-		const rowEnd = Math.min(rows, rowStart + bandRows);
+	let bandLooseCount = 0;
+	let bandWeightTotal = 0;
+	function scanSurfaceBand(band) {
+		const columnStart = band * bandColumns;
 		const columnEnd = Math.min(columns, columnStart + bandColumns);
 		let total = 0;
 		let touched = 0;
-		let loose = 0;
-		for (let row = rowStart; row < rowEnd; row++) for (let column = columnStart; column < columnEnd; column++) {
-			const index = row * columns + column;
-			if (strength[index] <= 0) continue;
-			const damage = damageField[index];
-			if (damage <= 0) continue;
-			total += damage;
-			touched++;
-			if (collect && damage >= collapseLooseFloor && exposed(index, row, column)) eligibleCells[loose++] = index;
+		bandLooseCount = 0;
+		bandWeightTotal = 0;
+		for (let column = columnStart; column < columnEnd; column++) {
+			const face = firstRow[column];
+			if (face >= rows) continue;
+			const rowEnd = Math.min(rows, face + bandRows);
+			for (let row = face; row < rowEnd; row++) {
+				const index = row * columns + column;
+				if (strength[index] <= 0 || damageField[index] <= 0) continue;
+				total += damageField[index];
+				touched++;
+			}
+			const faceIndex = face * columns + column;
+			if (damageField[faceIndex] >= collapseLooseFloor && canStepSurface(column, face)) {
+				const w = cellWeakness(faceIndex);
+				bandLoose[bandLooseCount++] = column;
+				bandWeightTotal += w * w;
+			}
 		}
-		regionDamage[region] = touched ? total / touched : 0;
-		regionEligible[region] = loose;
-		return regionDamage[region];
+		return touched ? total / touched : 0;
+	}
+
+	function pickBandSeed(band) {
+		let draw = hash(band, collapseRoll + band, 7) * bandWeightTotal;
+		for (let i = 0; i < bandLooseCount - 1; i++) {
+			const col = bandLoose[i];
+			const w = cellWeakness(firstRow[col] * columns + col);
+			draw -= w * w;
+			if (draw <= 0) return col;
+		}
+		return bandLoose[bandLooseCount - 1];
+	}
+
+	// Keep the 12x6 region diagnostics synchronized with the live free surface.
+	function scanRegions() {
+		for (let region = 0; region < regionCount; region++) {
+			const rowStart = Math.floor(region / collapseRegionsX) * bandRows;
+			const columnStart = (region % collapseRegionsX) * bandColumns;
+			const rowEnd = Math.min(rows, rowStart + bandRows);
+			const columnEnd = Math.min(columns, columnStart + bandColumns);
+			let total = 0;
+			let touched = 0;
+			let loose = 0;
+			for (let row = rowStart; row < rowEnd; row++) for (let column = columnStart; column < columnEnd; column++) {
+				const index = row * columns + column;
+				if (strength[index] <= 0) continue;
+				const damage = damageField[index];
+				if (damage <= 0) continue;
+				total += damage;
+				touched++;
+				if (row === firstRow[column] && damage >= collapseLooseFloor && canStepSurface(column, row)) loose++;
+			}
+			regionDamage[region] = touched ? total / touched : 0;
+			regionEligible[region] = loose;
+		}
 	}
 
 	// The dominant mineral sets both the cluster growth and how often its region
-	// releases. Growth is added to the old damage-sized clump; its inverse scales
-	// the roll chance, trading frequent grains for rarer, heavier falls.
+	// releases. Growth scales the damage-sized clump; its inverse scales the
+	// roll chance, trading frequent grains for rarer, heavier falls.
 	function dominantMineral(index) {
 		const offset = index * 3;
 		let mineral = minerals[offset + 1] > minerals[offset] ? 1 : 0;
@@ -617,48 +702,61 @@
 		return mineral;
 	}
 
-	function touchesCluster(index) {
-		const row = Math.floor(index / columns);
-		const column = index % columns;
-		if (column > 0 && clusterSelected[index - 1]) return true;
-		if (column < columns - 1 && clusterSelected[index + 1]) return true;
-		if (row > 0 && clusterSelected[index - columns]) return true;
-		return row < rows - 1 && clusterSelected[index + columns] > 0;
-	}
-
-	// A clump of loose rock lets go as one falling fragment. Its centre of mass,
-	// value and mineral mix preserve the cells' exact mass and potential energy.
-	function collapseRegion(region, excess, seedPosition, mineral) {
-		const loose = regionEligible[region];
-		if (!loose) return 0;
-		const baseChunk = collapseChunkMin + Math.round(excess * (collapseChunkMax - collapseChunkMin));
-		const growth = mineralClusterGrowth[mineral];
-		const target = Math.min(loose, baseChunk + Math.round(baseChunk * growth / 100));
-		let selectedCount = 1;
-		clusterCells[0] = eligibleCells[seedPosition];
-		clusterSelected[clusterCells[0]] = 1;
-		for (let added = 1; added < target; added++) {
-			let found = false;
-			for (let offset = 1; offset <= loose; offset++) {
-				const candidate = eligibleCells[(seedPosition + offset) % loose];
-				if (clusterSelected[candidate] || dominantMineral(candidate) !== mineral || !touchesCluster(candidate)) continue;
-				clusterCells[selectedCount++] = candidate;
-				clusterSelected[candidate] = 1;
-				found = true;
-				break;
+	// Grow a connected mineral-matched clump strictly from firstRow[column]
+	// inward, preferring wide surface flakes and protruding teeth before going
+	// deeper, so no fall ever hollows rock behind an intact face.
+	function peelSurfaceCluster(seedColumn, mineral, target) {
+		const seedRow = firstRow[seedColumn];
+		if (seedRow >= rows) return 0;
+		const seedIndex = seedRow * columns + seedColumn;
+		const lean = hash(seedColumn, collapseRoll, 9) < 0.5 ? -1 : 1;
+		clusterCells[0] = seedIndex;
+		peeled[seedColumn] = 1;
+		let minCol = seedColumn;
+		let maxCol = seedColumn;
+		let size = 1;
+		while (size < target) {
+			let bestCol = -1;
+			let bestCost = Infinity;
+			const from = Math.max(0, minCol - 1);
+			const to = Math.min(columns - 1, maxCol + 1);
+			for (let col = from; col <= to; col++) {
+				if (!peeled[col] && (col === 0 || !peeled[col - 1]) && (col === columns - 1 || !peeled[col + 1])) continue;
+				const row = firstRow[col] + peeled[col];
+				if (row >= rows) continue;
+				const index = row * columns + col;
+				if (strength[index] <= 0 || damageField[index] < collapseLooseFloor) continue;
+				if (!compatibleMineral(index, seedIndex, mineral) || !canStepSurface(col, row)) continue;
+				const across = Math.abs(col - seedColumn);
+				const tie = (col - seedColumn) * lean > 0 ? -0.05 : 0.05;
+				const cost = across + peeled[col] * clumpDepthCost + (row - seedRow) * 1.25 - cellWeakness(index) * 0.6 + tie;
+				if (cost >= bestCost) continue;
+				bestCost = cost;
+				bestCol = col;
 			}
-			if (!found) break;
+			if (bestCol < 0) break;
+			const pickedRow = firstRow[bestCol] + peeled[bestCol];
+			clusterCells[size++] = pickedRow * columns + bestCol;
+			peeled[bestCol]++;
+			if (bestCol < minCol) minCol = bestCol;
+			if (bestCol > maxCol) maxCol = bestCol;
 		}
-		spawnCluster(selectedCount, clusterCells[0]);
-		for (let i = 0; i < selectedCount; i++) {
+		spawnCluster(size, clusterCells[0]);
+		for (let i = 0; i < size; i++) {
 			const index = clusterCells[i];
 			strength[index] = 0;
-			relieve(index);
+			damageField[index] = 0;
 			puff(index);
-			clusterSelected[index] = 0;
 			collapseCells++;
 		}
-		return selectedCount;
+		for (let col = minCol; col <= maxCol; col++) {
+			if (!peeled[col]) continue;
+			const nextRow = firstRow[col] + peeled[col];
+			firstRow[col] = nextRow;
+			if (!testRock && nextRow < rows) damageField[nextRow * columns + col] *= 0.7;
+			peeled[col] = 0;
+		}
+		return size;
 	}
 
 	function spawnCluster(size, representative) {
@@ -700,6 +798,10 @@
 			copperMass += cellMass * minerals[offset + 1];
 			crystalMass += cellMass * minerals[offset + 2];
 		}
+		const spanX = maxColumn - minColumn + 1;
+		const spanY = maxRow - minRow + 1;
+		const aspect = Math.max(0.5, Math.min(2, spanX / spanY));
+		const side = Math.sqrt(size) * cell * 0.76;
 		active[target] = 1;
 		debrisCell[target] = representative;
 		debrisCells[target] = size;
@@ -711,83 +813,58 @@
 		debrisY[target] = totalY / size;
 		debrisVx[target] = 0;
 		debrisVy[target] = 0;
-		debrisWidth[target] = (maxColumn - minColumn + 1) * cell * 0.76;
-		debrisHeight[target] = (maxRow - minRow + 1) * cell * 0.76;
+		debrisWidth[target] = side * Math.sqrt(aspect);
+		debrisHeight[target] = side / Math.sqrt(aspect);
 		debrisDamage[target] = totalDamage / size;
 		extractedCells += size;
-	}
-
-	// The rock around a fresh gap is unloaded: the cells that hung beside the
-	// fallen clump shed half their looseness, so one battered spot cannot grind
-	// the whole band away pass after pass. Bounded to one cell either side.
-	function relieve(index) {
-		const row = Math.floor(index / columns);
-		const column = index % columns;
-		damageField[index] = 0;
-		if (row > 0) damageField[index - columns] *= 0.5;
-		if (row < rows - 1) damageField[index + columns] *= 0.5;
-		if (column > 0) damageField[index - 1] *= 0.5;
-		if (column < columns - 1) damageField[index + 1] *= 0.5;
+		const mineral = dominantMineral(representative);
+		fallGroups[mineral]++;
+		fallCells[mineral] += size;
 	}
 
 	// The clump's dust: a short-lived ring where the rock let go, drawn from a
 	// fixed pool so a collapse never allocates and never leaves anything behind
 	// but its own fall.
 	function puff(index) {
+		const row = Math.floor(index / columns);
 		const slot = dustCursor;
 		dustCursor = (dustCursor + 1) % dustCount;
 		dustX[slot] = (index % columns + 0.5) * cell;
-		dustY[slot] = bottom + (Math.floor(index / columns) + 0.5) * cell;
+		dustY[slot] = drawnRowY[row];
 		dustAge[slot] = 0;
 	}
 	function ageDust(dt) {
 		for (let i = 0; i < dustCount; i++) if (dustAge[i] < dustLife) dustAge[i] += dt;
 	}
 
-	// Loose rock is drawn as a hairline of falling grit on the cell's own face:
-	// the sign that this part of the ceiling is about to go.
+	// Loose rock is drawn as a hairline of falling grit on the exposed free
+	// surface: the sign that this part of the ceiling is about to go.
 	function drawCollapse(context) {
-		const area = cell * cell * 0.5;
-		for (let region = 0; region < regionCount; region++) {
-			const loose = regionEligible[region];
-			if (!loose) continue;
-			context.fillStyle = 'rgba(226, 196, 138, 0.5)';
-			const rowStart = Math.floor(region / collapseRegionsX) * bandRows;
-			const columnStart = (region % collapseRegionsX) * bandColumns;
-			const rowEnd = Math.min(rows, rowStart + bandRows);
-			const columnEnd = Math.min(columns, columnStart + bandColumns);
-			for (let row = rowStart; row < rowEnd; row++) for (let column = columnStart; column < columnEnd; column++) {
-				const index = row * columns + column;
-				if (strength[index] <= 0 || damageField[index] < collapseLooseFloor) continue;
-				if (!exposed(index, row, column)) continue;
-				context.fillRect(column * cell, drawnRowY[row] - cell * 0.18, cell, cell * 0.12);
-			}
+		context.fillStyle = 'rgba(226, 196, 138, 0.5)';
+		for (let column = 0; column < columns; column++) {
+			const row = firstRow[column];
+			if (row >= rows || damageField[row * columns + column] < collapseLooseFloor) continue;
+			if (!canStepSurface(column, row)) continue;
+			const faceY = rockShape === 'square'
+				? drawnRowY[row]
+				: rockDrawnY((heightmap[column] + heightmap[column + 1]) * 0.5);
+			context.fillRect(column * cell, faceY - cell * 0.18, cell, cell * 0.12);
 		}
 		for (let i = 0; i < dustCount; i++) {
 			if (dustAge[i] >= dustLife) continue;
 			const fade = 1 - dustAge[i] / dustLife;
 			context.fillStyle = 'rgba(214, 189, 148, ' + (fade * 0.55).toFixed(3) + ')';
-			context.fillRect(dustX[i] - area * 0.5, dustY[i] - dustAge[i] * 1.4, cell * 0.9, cell * 0.9);
+			context.fillRect(dustX[i] - cell * 0.45, dustY[i] - dustAge[i] * 1.4 - cell * 0.45, cell * 0.9, cell * 0.9);
 		}
 	}
 
 	function looseCells() {
 		let total = 0;
-		for (let region = 0; region < regionCount; region++) total += regionEligible[region];
+		for (let column = 0; column < columns; column++) {
+			const row = firstRow[column];
+			if (row < rows && damageField[row * columns + column] >= collapseLooseFloor && canStepSurface(column, row)) total++;
+		}
 		return total;
-	}
-
-	// Only the rock's face may let go: a cell with empty space next to it. An
-	// interior cell would leave the column reading as solid from its own surface
-	// down while it paid out as rubble, so a collapse always opens the face the
-	// player can see.
-	function exposed(index, row, column) {
-		if (row === firstRow[column]) return true;
-		if (row > 0 && strength[index - columns] <= 0) return true;
-		if (row < rows - 1 && strength[index + columns] <= 0) return true;
-		if (column > 0 && strength[index - 1] <= 0) return true;
-		if (column < columns - 1 && strength[index + 1] <= 0) return true;
-		return false;
 	}
 
 	function fragmentCells(i) {
@@ -805,6 +882,7 @@
 
 	function spawn(index) {
 		const offset = index * 3;
+		const mineral = dominantMineral(index);
 		const x = (index % columns + 0.5) * cell;
 		const y = bottom + (Math.floor(index / columns) + 0.5) * cell;
 		for (let i = 0; i < maxDebris; i++) {
@@ -825,6 +903,8 @@
 			debrisHeight[i] = cell * 0.76;
 			debrisDamage[i] = damageField[index];
 			extractedCells++;
+			fallGroups[mineral]++;
+			fallCells[mineral]++;
 			return;
 		}
 		// If every slot was externally marked active, aggregate into the closest
@@ -867,6 +947,7 @@
 		debrisMinerals[mOffset + 2] += cellMass * minerals[offset + 2];
 		exportedEnergy += beforeE - fragmentMechanical(target);
 		extractedCells++;
+		fallCells[mineral]++;
 	}
 
 	function traceSmooth(x, y, vx, vy, duration, radius, traceGravity) {
@@ -1561,8 +1642,20 @@
 		for (let i = 0; i < maxDebris; i++) if (active[i]) {
 			const fragmentWidth = debrisWidth[i] || cell * 0.76;
 			const fragmentHeight = debrisHeight[i] || cell * 0.76;
+			let drawnY = debrisY[i] > bottom ? rockDrawnY(debrisY[i]) : debrisY[i];
+			if (debrisY[i] > bottom - fragmentHeight) {
+				const col = Math.max(0, Math.min(columns - 1, Math.floor(debrisX[i] / cell)));
+				if (firstRow[col] < rows) {
+					let ceilingY = drawnRowY[firstRow[col]];
+					if (rockShape !== 'square') {
+						const t = Math.max(0, Math.min(1, (debrisX[i] - col * cell) / cell));
+						ceilingY = rockDrawnY(heightmap[col] + (heightmap[col + 1] - heightmap[col]) * t);
+					}
+					drawnY = Math.min(drawnY, ceilingY - fragmentHeight * 0.5);
+				}
+			}
 			context.fillStyle = colorFor(debrisCell[i], mode, debrisDamage[i]);
-			context.fillRect(debrisX[i] - fragmentWidth * 0.5, debrisY[i] - fragmentHeight * 0.5, fragmentWidth, fragmentHeight);
+			context.fillRect(debrisX[i] - fragmentWidth * 0.5, drawnY - fragmentHeight * 0.5, fragmentWidth, fragmentHeight);
 		}
 		drawCollapse(context);
 	}
@@ -1607,7 +1700,7 @@
 		mineralNames, mineralPrices, fuelPrice,
 		strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
 		debrisMinerals, debrisWidth, debrisHeight, debrisDamage,
-		cargoMinerals, soldMinerals,
+		cargoMinerals, soldMinerals, fallGroups, fallCells,
 		get ledger() { return ledger; },
 		get extractedCells() { return extractedCells; },
 		get caughtCells() { return caughtCells; },

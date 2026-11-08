@@ -23,7 +23,12 @@ function run(world, seconds) {
 // chamber settle so later measurements start with empty storage.
 function earnFunds(world, cells) {
 	const target = ceiling.state.extractedCells + cells;
-	for (let x = 1; x < 23 && ceiling.state.extractedCells < target; x += 2) { ceiling.damage(x, ceiling.state.bottom + 0.2, 20); ceiling.collapse(2); }
+	for (let x = 1; x < 23 && ceiling.state.extractedCells < target; x += 2) {
+		if (Math.abs(x - world.platform.x) < 3.5) continue;
+		ceiling.damage(x, ceiling.state.bottom + 0.2, 20);
+		ceiling.collapse(4);
+	}
+	ceiling.collapse(30);
 	const state = ceiling.state;
 	let prepared = 0;
 	for (let i = 0; i < state.active.length && prepared < cells; i++) {
@@ -38,10 +43,8 @@ function earnFunds(world, cells) {
 	sync(world);
 	physics.step(world, c.step);
 	ceiling.sellCargo(0, world.time);
-	// Later damage lets rock go in delayed collapse bursts, so a load can keep
-	// trickling down after the first one: wait for the chamber to actually clear.
 	let stable = 0;
-	for (let i = 0; i < 240 * 60 && stable < 240; i++) {
+	for (let i = 0; i < 240 * 60 && stable < 60; i++) {
 		physics.step(world, c.step);
 		if (ceiling.state.airborneCells === 0) stable++; else stable = 0;
 	}

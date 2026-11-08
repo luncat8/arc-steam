@@ -14,16 +14,21 @@ function run(world, seconds) {
 	for (let i = 0; i < Math.round(seconds / c.step); i++) physics.step(world, c.step);
 }
 function prepareCargo(world, count, fragmentVx = 0) {
-	for (let x = 1; x < 23 && ceiling.state.extractedCells < count; x += 2) ceiling.damage(x, ceiling.state.bottom + 0.2, 20);
+	for (let x = 1; x < 23 && ceiling.state.extractedCells < count + 40; x += 1.5) {
+		ceiling.damage(x, ceiling.state.bottom + 0.2, 8);
+		ceiling.collapse(4);
+	}
 	const state = ceiling.state;
 	let prepared = 0;
 	for (let i = 0; i < state.active.length && prepared < count; i++) {
 		if (!state.active[i]) continue;
+		const cells = state.debrisCells[i] || 1;
+		if (count < state.storageLimit && prepared + cells > count) continue;
 		state.debrisX[i] = world.platform.x - 1;
 		state.debrisY[i] = 0.701;
 		state.debrisVx[i] = fragmentVx;
 		state.debrisVy[i] = -1;
-		prepared++;
+		prepared += Math.min(cells, state.storageLimit - prepared);
 	}
 	return prepared;
 }
@@ -575,17 +580,7 @@ test('touching either sell wall empties cargo without losing mass-energy account
 	assert.equal(ceiling.state.ledger.length, 1);
 	balanced(w);
 	const v = physics.createWorld();
-	const state = ceiling.state;
-	for (let x = 1; x < 23 && state.extractedCells < 8; x += 2) ceiling.damage(x, ceiling.state.bottom + 0.2, 20);
-	let prepared = 0;
-	for (let i = 0; i < state.active.length && prepared < 8; i++) {
-		if (!state.active[i]) continue;
-		state.debrisX[i] = v.platform.x - 1;
-		state.debrisY[i] = 0.701;
-		state.debrisVx[i] = 0;
-		state.debrisVy[i] = -1;
-		prepared++;
-	}
+	assert.equal(prepareCargo(v, 8), 8);
 	physics.step(v, c.step);
 	assert.equal(ceiling.state.cargoCells, 8);
 	v.platform.x = physics.platformMax();

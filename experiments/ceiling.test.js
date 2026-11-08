@@ -67,14 +67,14 @@ test('radial 2D damage weakens nearby cells and the loosened ring falls later', 
 	const state = ceiling.state;
 	assert.ok(removed > 0);
 	assert.ok(state.strength.some((value, index) => value < before[index]));
+	assert.equal(state.extractedCells, 0);
+	assert.equal(state.lostCells, 0);
+	assert.equal(state.airborneCells, 0);
+	// The weakened ring around the crater lets go in a later collapse burst.
+	ceiling.collapse(10);
 	const extracted = state.extractedCells;
 	assert.ok(extracted > 0);
-	assert.equal(state.lostCells, 0);
 	assert.equal(state.airborneCells, extracted);
-	// The weakened ring around the crater lets go in a later collapse burst.
-	const beforeCollapse = state.extractedCells;
-	ceiling.collapse(10);
-	assert.ok(state.extractedCells >= beforeCollapse);
 	ceiling.damage(6.25, ceiling.state.bottom + 0.06, 3);
 	ceiling.collapse(10);
 	assert.ok(state.extractedCells >= extracted);
@@ -264,7 +264,7 @@ test('lost fragments pile up on the floor heightmap under their landing point', 
 	const state = ceiling.state;
 	const world = { platform: { x: -5, vx: 0 }, heat: 0 };
 	ceiling.damage(6.25, state.bottom + 0.5, 12);
-	ceiling.collapse(10);
+	ceiling.collapse(30);
 	const extracted = state.extractedCells;
 	assert.ok(extracted > 0);
 	for (let i = 0; i < state.active.length; i++) if (state.active[i]) {
@@ -273,9 +273,10 @@ test('lost fragments pile up on the floor heightmap under their landing point', 
 		state.debrisVx[i] = 0;
 		state.debrisVy[i] = -1;
 	}
-	for (let step = 0; step < 240 * 4 && state.airborneCells > 0; step++) ceiling.step(world, 1 / 240, 60);
+	for (let step = 0; step < 240 * 8 && state.airborneCells > 0; step++) ceiling.step(world, 1 / 240, 60);
 	assert.equal(state.airborneCells, 0);
-	assert.equal(state.lostCells, extracted);
+	assert.ok(state.lostCells >= extracted);
+	assert.equal(state.lostCells, state.extractedCells);
 	assert.equal(state.extractedCells, state.airborneCells + state.caughtCells + state.lostCells);
 	assert.ok(world.heat > 0, 'landing energy is booked as heat');
 	const column = Math.floor(6.25 / state.cell);
@@ -302,7 +303,7 @@ test('a single impact does not detach pixels immediately', () => {
 	assert.equal(state.extractedCells, before);
 	assert.ok(state.looseCells > beforeLoose, 'the hit must leave loose cells');
 	assert.ok(state.airborneCells === 0, 'nothing falls yet');
-	assert.ok(state.strength.some((value, index) => value < ceiling.initialStrength[index]),
+	assert.ok(state.strength.some((value, index) => value < state.initialStrength[index]),
 		'weakened but standing cells remain');
 });
 
@@ -339,11 +340,20 @@ test('only exposed, damaged pixels detach, and a clump is bounded', () => {
 test('the collapse scheduler is bounded work per tick', () => {
 	ceiling.reset(21);
 	const state = ceiling.state;
-	// Batter the whole ceiling: every region must still roll at most once per tick
-	// and never more than collapseChunkMax cells at a time.
+	// Batter the whole ceiling: every horizontal band must still roll at most once
+	// per tick and never detach more than collapseChunkMax cells in a single clump.
 	for (let x = 0; x < 24; x += 2) ceiling.damage(x, state.bottom + 0.2, 40);
 	const before = state.extractedCells;
 	ceiling.collapse(0.25);
-	assert.ok(state.extractedCells - before <= ceiling.collapseChunkMax,
-		'one tick never detaches more than the clump cap');
+	const maxBands = Math.ceil(state.columns / 16);
+	let clumps = 0;
+	for (let i = 0; i < state.active.length; i++) {
+		if (!state.active[i]) continue;
+		clumps++;
+		assert.ok(state.debrisCells[i] <= ceiling.collapseChunkMax,
+			'every spawned clump respects collapseChunkMax');
+	}
+	assert.ok(clumps <= maxBands, 'at most one burst rolls per horizontal band per tick');
+	assert.ok(state.extractedCells - before <= ceiling.collapseChunkMax * maxBands,
+		'one tick never detaches more than one clump cap per band');
 });
