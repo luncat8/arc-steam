@@ -630,7 +630,7 @@ test('the chamber wheel and slider tilt the selected platform only', () => {
 	rival.pistonAngle = 0;
 });
 
-test('the autopilot switches, shortcuts and manual overrides share one writer', () => {
+test('the autopilot switches, shortcuts and manual overrides share one writer', () => {	console.error('T88 INHERIT heat', world.heat, 'temp', 20 + world.heat/300, 'battery', world.battery, 'pushes', world.pushes, 'groundings', world.groundings, 'vx', world.platform.vx, 'x', world.platform.x, 'ball', world.ball.state, 'drive', world.drive, 'enabled', JSON.stringify({m: autopilot.enabled('move'), d: autopilot.enabled('drive'), a: autopilot.enabled('angle')}));
 	parkRival();
 	const panel = dom.element('autopilot');
 	const status = dom.element('autopilot-status');
@@ -762,7 +762,7 @@ test('telemetry highlights an empty reserve, a full cargo and overheating', () =
 	assert.match(dom.element('cargo-note').textContent, /^Full/);
 });
 
-test('the status bar keeps the facts and only the messages that apply now', () => {
+test('the status bar keeps the facts and only the messages that apply now', () => {	console.error('T91 INHERIT heat', world.heat, 'temp', 20 + world.heat/300, 'battery', world.battery, 'pushes', world.pushes, 'groundings', world.groundings, 'vx', world.platform.vx, 'x', world.platform.x, 'ball', world.ball.state, 'drive', world.drive, 'enabled', JSON.stringify({m: autopilot.enabled('move'), d: autopilot.enabled('drive'), a: autopilot.enabled('angle')}));
 	world.platform.x = 3; world.platform.vx = 0; world.target = NaN; world.direction = 0;
 	world.ball.state = 'held'; world.drive = true;
 	world.battery = physics.config.battery;
@@ -806,7 +806,7 @@ test('the status bar keeps the facts and only the messages that apply now', () =
 	assert.doesNotMatch(html, /click low ground to travel<\/p>/);
 });
 
-test('the centre pad is read as charging and uses the selected source reload rate', () => {
+test('the centre pad is read as charging and uses the selected source reload rate', () => {	console.error('T92 INHERIT heat', world.heat, 'temp', 20 + world.heat/300, 'battery', world.battery, 'pushes', world.pushes, 'groundings', world.groundings, 'vx', world.platform.vx, 'x', world.platform.x, 'ball', world.ball.state, 'drive', world.drive, 'enabled', JSON.stringify({m: autopilot.enabled('move'), d: autopilot.enabled('drive'), a: autopilot.enabled('angle')}));
 	world.platform.x = 12; world.platform.vx = 0; world.target = NaN; world.direction = 0;
 	world.battery = 0;
 	harness.sync(world);
@@ -950,7 +950,7 @@ test('B and Shift+B hold braking, override travel, and release cleanly', () => {
 	assert.equal(world.brake, false);
 });
 
-test('tier selector bays buy/install engines at left shop and swap owned tiers free', () => {
+test('tier selector bays buy/install engines at left shop and swap owned tiers free', () => {	console.error('T97 INHERIT heat', world.heat, 'temp', 20 + world.heat/300, 'battery', world.battery, 'pushes', world.pushes, 'groundings', world.groundings, 'vx', world.platform.vx, 'x', world.platform.x, 'ball', world.ball.state, 'drive', world.drive, 'enabled', JSON.stringify({m: autopilot.enabled('move'), d: autopilot.enabled('drive'), a: autopilot.enabled('angle')}));
 	dom.element('reset').dispatch('click');
 	advance(2);
 	const engines = tierRow('engines');
@@ -1424,7 +1424,7 @@ test('the overlay draws one dotted flight per ball the selected machine may push
 	world.drive = false;
 });
 
-test('the road grader row follows the selected player: Locked for a rival, and the click says why', () => {
+test('the road grader row follows the selected player: Locked for a rival, and the click says why', () => {	console.error('T108 INHERIT heat', world.heat, 'temp', 20 + world.heat/300, 'battery', world.battery, 'pushes', world.pushes, 'groundings', world.groundings, 'vx', world.platform.vx, 'x', world.platform.x, 'ball', world.ball.state, 'drive', world.drive, 'enabled', JSON.stringify({m: autopilot.enabled('move'), d: autopilot.enabled('drive'), a: autopilot.enabled('angle')}));
 	// The row is built once and re-read by the drawer, so this states the rule
 	// directly for both owners instead of depending on the page's selection.
 	players.setActive(0);
