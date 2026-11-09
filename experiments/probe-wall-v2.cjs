@@ -77,7 +77,7 @@ for (let step = 0; step < steps; step++) {
 			' balls=[' + balls.map(b => b.state.charAt(0) + (b.holder ? 'h' : '.') + b.x.toFixed(1)).join(',') + ']' +
 			' worldB=' + (ball ? ball.state.charAt(0) + (ball.holder ? 'h' : '-') : '-') +
 			' canL=' + (ball && ball.state === 'held' ? (physics.canLaunch(world) ? 'Y' : 'N') : '-') +
-			' tip=' + (ball && ball.tipReleased ? 'T' : '-'));
+			' rel=' + (physics.releaseReady(world) ? 'Y' : 'N'));
 	}
 	travel += Math.abs(world.platform.x - previousX);
 	previousX = world.platform.x;

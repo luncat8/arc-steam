@@ -56,6 +56,13 @@
 	// nobody else's to take, so it is never contested.
 	const longTrip = 4;
 	const contestThreshold = 1;
+	// Clear air a stand-off point keeps beyond the face half-width, so a grounded
+	// ball is never inside the machine's column while the rig waits out the heat.
+	const standOffMargin = 0.3;
+	// Headroom over the bare lift the rig waits for before it works a grounded
+	// ball: the drive back to it costs heat of its own, and a release that only
+	// just balances the ball would be refused again on arrival.
+	const releaseMargin = 1.2;
 	const overrides = { move: 0, drive: 0, angle: 0 };
 	const held = { move: false, drive: false, angle: false };
 
@@ -546,24 +553,42 @@
 		else blankPlan(plan);
 	}
 
-	function commandTravel(world) {
-	const tierTwo = root.SteamResearch.state.predictionBounces;
-	if (moveOn && !tierTwo) {
-		// The plain chase hands the mark to the platform's own target following:
-		// full thrust to it, then a brake to a standstill on it.
-		// A ball just tipped off the face without a pulse sits at the machine's
-		// feet: drive off it to the centre instead of parking on the wall on top
-		// of it, so the ball can be scooped on the return once the machine has
-// cooled enough to launch it again.
-if (plan.ball && plan.ball.state === 'grounded' && plan.ball.tipReleased) {
-	world.direction = 0;
-	world.target = clampTravel(root.SteamPhysics.config.width * 0.5);
-	return;
-}
-		world.direction = 0;
-		world.target = plan.interceptX;
-		return;
+	// Where the rig waits while no ball can be released: the charge pad in the
+	// middle, moved off the column of a grounded ball so the face never stands
+	// over a ball it would only scoop up and have to sit on.
+	function standOffTarget(world) {
+		const physics = root.SteamPhysics;
+		const config = physics.config;
+		const centre = config.width * 0.5;
+		const ball = plan.ball;
+		if (!ball || ball.state !== 'grounded') return clampTravel(centre);
+		const span = config.platformWidth * 0.5 + standOffMargin;
+		if (Math.abs(ball.x - centre) > span) return clampTravel(centre);
+		return clampTravel(ball.x + (ball.x < centre ? span : -span));
 	}
+
+	function commandTravel(world) {
+		const physics = root.SteamPhysics;
+		// A ball only goes back in the air by a pulse, so a refused release makes a
+		// collection pointless: the rig waits out the heat on the pad instead of
+		// driving onto a grounded ball it cannot lift. A ball already held rides
+		// along and is released the moment the tank allows it, and a ball still in
+		// flight is kept in play, because catching it costs nothing and the landing
+		// is the only chance to keep working it.
+		const ball = plan.ball;
+		if (!physics.releaseReady(world, null, releaseMargin) && ball && ball.state !== 'flying') {
+			world.direction = 0;
+			world.target = standOffTarget(world);
+			return;
+		}
+		const tierTwo = root.SteamResearch.state.predictionBounces;
+		if (moveOn && !tierTwo) {
+			// The plain chase hands the mark to the platform's own target following:
+			// full thrust to it, then a brake to a standstill on it.
+			world.direction = 0;
+			world.target = plan.interceptX;
+			return;
+		}
 		// Tier II always uses the economical controller, including uncertain
 		// approaches and the new plan immediately after a bounce. A known contact
 		// gets a just-in-time run; timed travel owns direction and never buys an
@@ -573,22 +598,12 @@ if (plan.ball && plan.ball.state === 'grounded' && plan.ball.tipReleased) {
 		const platform = world.platform;
 		const distance = plan.interceptX - platform.x;
 		if (!Number.isFinite(distance)) { world.direction = 0; return; }
-		const physics = root.SteamPhysics;
 		const acceleration = accelerationOf(world);
 		// Offsets inside the reflector face do not change the outcome, so they are
 		// not worth a manoeuvre: inside that slack the platform is left alone, which
 		// is also why it never has to stand still on the mark.
 		const reach = Math.abs(distance) - interceptTolerance;
-if (reach <= 0) {
-	// A ball just tipped off the face without a pulse sits at the machine's
-	// feet: drive off it to the centre instead of parking on it.
-	if (plan.ball && plan.ball.state === 'grounded' && plan.ball.tipReleased) {
-		world.target = clampTravel(root.SteamPhysics.config.width * 0.5);
-		return;
-	}
-	world.direction = 0;
-	return;
-}
+		if (reach <= 0) { world.direction = 0; return; }
 		const sign = Math.sign(distance);
 		const speed = physics.arrivalSpeed(reach, plan.contactIn, acceleration);
 		// Braking with a flywheel is recuperated, so tracking is tight; without one
@@ -623,13 +638,13 @@ if (reach <= 0) {
 		world.drive = wantedDrive;
 		const ball = world.ball;
 		// A caught ball has no flight energy at all, so the keeper's own rule sends
-		// it back up instead of letting the shift stall on a held ball. If the
-		// release is refused - above the thermal cutoff the pulse cannot lift the
-		// ball, and on an empty reserve there is nothing to spend - tip it off the
-		// face without a pulse instead of hammering a launch that cannot succeed:
-		// the collector is free and the machine is not pinned on a ball it cannot
-		// release, so the intercept can work another ball while the machine cools.
-		if (wantedDrive && ball && ball.state === 'held' && !root.SteamPhysics.launch(world)) root.SteamPhysics.tipHeldBall(world, ball);
+		// it back up instead of letting the shift stall on a held ball. A release
+		// the pulse cannot pay for - above the derate curve, or on an empty reserve
+		// - is not attempted: the ball stays in the collector and rides to the
+		// charge pad, where travel waits out the heat, and leaves on the first step
+		// the tank allows it. Hammering the launch would only burn the reserve the
+		// release is waiting for.
+		if (wantedDrive && ball && ball.state === 'held' && root.SteamPhysics.canLaunch(world)) root.SteamPhysics.launch(world);
 	}
 
 	// The tilt that leaves the upcoming contact travelling straight up. Raising the

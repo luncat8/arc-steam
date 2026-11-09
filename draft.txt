@@ -115,6 +115,16 @@ c - auto change angle to keep upcoming ball reflection vertical up. should respe
 autopilot should use add 2nd tier computer after available but not wait fall of ball so it has more time to move.
 2nd tier should move not only  during the descent but after bounce to move with minimal speed and save fuel
 
+
+make auto and bot more aggressive use piston push force. and/or increase it. currently it is barely reaches the edge of rock. it is safe when engine is weak but when speed is enough it is more profit bounce with more power
+
+### research, buy upgrade
+
+move live preview to the top of panel and show preview before research and buy as difference +- green/red near characteristics while pointer over research/buy buttons.
+for touch devices add something like small buttons '*' near it to show preview on click 
+
+
+
 ### TODO deferred need improve (partially solved):
   
 bot behavior in case of 2+ shared balls: autopilot move it in position where it cant reach in time, miss ball, then return to other ball and cant reach it also because time spend on unreachable target, etc . this cause no ball got at all. need improve autopilot.

@@ -335,38 +335,17 @@ test('drive cannot create energy with an empty reserve off the charge pad', () =
 	assert.equal(physics.launch(w), false);
 });
 
-test('a held ball that cannot be launched is tipped off the face without a pulse', () => {
+test('a keeper can ask whether the release could lift a ball at all', () => {
 	const w = physics.createWorld();
-	w.ball.state = 'held';
-	w.ball.holder = 'rig';
-	w.ball.vx = 0;
-	w.ball.vy = 0;
-	w.platform.vx = 2;
 	w.platform.x = 12;
-	w.platform.y = 0;
-	// Above the thermal cutoff the pulse cannot lift the ball.
-	w.heat = (c.thermalCutoff - c.ambientTemperature + 10) * c.heatCapacity;
-	w.drive = true;
+	w.heat = 0;
 	sync(w);
-	assert.equal(physics.canLaunch(w), false);
-	physics.tipHeldBall(w, w.ball);
-	assert.equal(w.ball.state, 'grounded');
-	assert.equal(w.ball.holder, null);
-	assert.equal(w.ball.tipReleased, true);
-	// The tip leaves the ledger unchanged: carried motion becomes heat and the
-	// resting height is work by the surface.
-	balanced(w);
-	// The rig does not scoop its own tip straight back.
-	physics.step(w, c.step);
-	assert.equal(w.ball.state, 'grounded');
-	// Once the machine has left the column, the ball is a normal grounded ball
-	// to collect on the return.
-	w.platform.x = 20;
-	physics.step(w, c.step);
-	assert.equal(w.ball.state, 'grounded');
-	w.platform.x = w.ball.x;
-	physics.step(w, c.step);
-	assert.equal(w.ball.state, 'held');
+	assert.equal(physics.releaseReady(w), true, 'ambient air lifts a ball');
+	// The keeper may also ask for headroom over the bare lift.
+	assert.equal(physics.releaseReady(w, null, 8), false, 'eight times the lift is not there');
+	w.heat = (c.thermalCutoff - c.ambientTemperature + 10) * c.heatCapacity;
+	sync(w);
+	assert.equal(physics.releaseReady(w), false, 'above the cutoff no pulse lifts a ball');
 	balanced(w);
 });
 

@@ -571,7 +571,7 @@ test('manual overrides preserve switches, isolate duties, and resume after idle 
 	assert.notEqual(world.pistonAngle, 0.1, 'automatic tilt resumes');
 });
 
-	test('the drive keeper tips a held ball it cannot launch instead of pinning on it', () => {
+	test('a held ball waits in the collector for a release the tank can pay for', () => {
 		const world = physics.createWorld();
 		world.ball.state = 'held';
 		world.ball.holder = 'rig';
@@ -579,23 +579,70 @@ test('manual overrides preserve switches, isolate duties, and resume after idle 
 		world.ball.vy = 0;
 		world.platform.vx = 0;
 		world.platform.x = 22;
-		// Above the thermal cutoff the pulse cannot lift the ball.
-		world.heat = (c.thermalCutoff - c.ambientTemperature + 20) * c.heatCapacity;
+		// Above the derate curve the pulse cannot lift the ball, though the machine
+		// can still drive.
+		world.heat = (c.thermalCutoff - c.ambientTemperature - 5) * c.heatCapacity;
 		world.drive = true;
 		sync(world);
-		engage('drive');
-		// The keeper retries the release every step: above the cutoff it is
-		// refused every time, so the ball is tipped off the face without a
-		// pulse instead of leaving the machine pinned on it.
-		let tipped = false;
-		for (let i = 0; i < 240 * 10 && !tipped; i++) {
+		engage('move', 'drive', 'angle');
+		for (let i = 0; i < 240 * 6; i++) {
 			autopilot.update(world, c.step);
 			physics.step(world, c.step);
-			if (world.ball.tipReleased) tipped = true;
+			// A refused release never throws the ball out of the collector.
+			assert.equal(world.ball.state, 'held');
 		}
-		assert.ok(tipped, 'the held ball is tipped off the face');
-		assert.equal(world.ball.state, 'grounded');
-		assert.equal(world.ball.holder, null);
+		// Nor does it pin the rig on the wall: travel takes the held ball to the pad
+		// and waits out the heat there.
+		assert.ok(world.platform.x < 20, 'the rig leaves the wall with the ball aboard');
+		// Cooled to a release the pulse can pay for, the keeper fires it.
+		world.heat = 0;
+		sync(world);
+		let flown = false;
+		for (let i = 0; i < 240 && !flown; i++) {
+			autopilot.update(world, c.step);
+			physics.step(world, c.step);
+			flown = world.ball.state === 'flying';
+		}
+		assert.ok(flown, 'the cooled tank releases the ball it kept');
+		balanced(world);
+	});
+
+	test('a refused release keeps the rig off a grounded ball until it cools', () => {
+		const world = physics.createWorld();
+		// One ball, so the stand-off is measured against the ball it is waiting for.
+		physics.setBallMode(world, 'shared1');
+		world.ball.state = 'grounded';
+		world.ball.holder = null;
+		world.ball.x = 13;
+		world.ball.y = c.radius;
+		world.ball.vx = 0;
+		world.ball.vy = 0;
+		// Clear of the ball to begin with, so the scoop is a decision and not the
+		// first contact of the step.
+		world.platform.x = 11;
+		world.platform.vx = 0;
+		// Hot enough that a pulse cannot lift a ball, though still cool enough to
+		// drive: a collection now would only pin the rig on a ball it cannot fire.
+		world.heat = (c.thermalCutoff - c.ambientTemperature - 5) * c.heatCapacity;
+		sync(world);
+		engage('move', 'drive', 'angle');
+		assert.equal(physics.releaseReady(world), false);
+		for (let i = 0; i < 240 * 6; i++) {
+			autopilot.update(world, c.step);
+			physics.step(world, c.step);
+			assert.equal(world.ball.state, 'grounded', 'the rig does not collect a ball it cannot release');
+		}
+		assert.ok(Math.abs(world.platform.x - world.ball.x) > c.platformWidth * 0.5, 'the rig waits clear of the ball');
+		// Cooled down, the same ball is a normal recovery again.
+		world.heat = 0;
+		sync(world);
+		let collected = false;
+		for (let i = 0; i < 240 * 8 && !collected; i++) {
+			autopilot.update(world, c.step);
+			physics.step(world, c.step);
+			if (world.ball.state !== 'grounded') collected = true;
+		}
+		assert.ok(collected, 'a cooled rig comes back for the ball');
 		balanced(world);
 	});
 
