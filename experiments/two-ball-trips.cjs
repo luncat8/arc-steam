@@ -15,7 +15,7 @@ const starts = [3, 6, 9, 12, 15, 18, 21];
 
 function prepare(startX) {
 	const world = physics.createWorld();
-	players.init(world, 1);
+	players.init(world, 0); // one platform: a parked, unstepped competitor would catch a shared ball and never release it
 	players.setBallMode('shared2');
 	world.platform.x = startX;
 	world.platform.vx = 0;

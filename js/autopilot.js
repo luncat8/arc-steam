@@ -101,9 +101,10 @@
 	// Bisection of the ±10° tilt range: 20° / 2^12 is far finer than the actuator
 	// can reach in a step, so the answer is the range limit, not the iteration count.
 	const tiltIterations = 12;
-	// Drive keeper band, in metres of apex. The pulse is a fixed chunk of energy,
-	// so it is spent only when the passive bounce would fall short of the top of
-	// the chamber; the margin stops the switch chattering at the threshold.
+	// Drive keeper band, in metres of apex below the strike line. The pulse is
+	// a fixed chunk of energy, so it is spent only when the passive bounce would
+	// fall short of a full strike on the rock; the margin stops the switch
+	// chattering at the threshold.
 	const apexMargin = 0.25;
 
 	let moveOn = false;
@@ -614,20 +615,31 @@
 		world.direction = platform.vx < demand - deadband ? 1 : platform.vx > demand + deadband ? -1 : 0;
 	}
 
-	// Enough energy to reach the top of the chamber and no more. The pulse is a
-	// fixed chunk, so spending it only when the passive bounce falls short bounds
-	// the ball's apex at one pulse above the ceiling, where an always-on drive
-	// would accelerate the ball every bounce until it is unplayably fast.
+	// Drive the ball into the rock with real speed, not a bare touch. The pulse
+	// is a fixed chunk of energy, so the keeper spends it until the passive
+	// bounce would clear the ceiling by one pulse of apex height — a strike the
+	// rock fractures quadratically harder than a feather touch — and holds once
+	// the strike line is met. One pulse of headroom above the line is the most a
+	// single contact can add, so the ball is bounded exactly the way it was
+	// before, one pulse higher, and an always-on drive remains the failure mode
+	// the keeper exists to prevent. The overshoot scales with this machine's own
+	// pulse, so a fitted drive coil or piston ram aims proportionally higher.
+	function strikeHeight(pulse) {
+		const config = root.SteamPhysics.config;
+		return pulse / (config.ballMass * config.ballGravity);
+	}
+
 	function driveDecision(world) {
 		// A held or grounded ball must stay launchable, so the drive is on.
 		const ball = world.ball;
 		if (!ball || ball.state !== 'flying') return true;
 		if (!plan.contactOnPiston) return wantedDrive;
-		const config = root.SteamPhysics.config;
+		const physics = root.SteamPhysics;
+		const config = physics.config;
 		const bounce = solve(world, angleOn && !suspended(ANGLE) ? wantedAngle : world.pistonAngle, 0);
 		const rise = Math.max(0, bounce.vy);
 		const apex = plan.contactY + rise * rise / (2 * config.ballGravity);
-		const target = config.ceiling - config.radius;
+		const target = config.ceiling - config.radius + strikeHeight(physics.pulseNow());
 		if (apex < target - apexMargin) return true;
 		if (apex > target) return false;
 		return wantedDrive;

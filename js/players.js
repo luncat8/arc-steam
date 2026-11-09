@@ -704,14 +704,23 @@
 		if (stale) replanKeeper(rival);
 	}
 
+	// The same strike rule the rig's keeper flies, at this machine's pulse size:
+	// spend the pulse until the reflected apex would clear the ceiling by one
+	// pulse of apex height, then leave the strike to the rock.
+	function strikeHeight(pulse) {
+		const config = root.SteamPhysics.config;
+		return pulse / (config.ballMass * config.ballGravity);
+	}
+
 	// Price the next reflected apex, not the apex the ball already has. The
 	// keeper can therefore leave a sufficient passive bounce unpowered.
 	function keeperDrive(rival) {
 		const ball = rival.playing;
 		if (!ball) return false;
 		if (ball.state !== 'flying') return true;
-		const config = root.SteamPhysics.config;
-		const target = config.ceiling - config.radius;
+		const physics = root.SteamPhysics;
+		const config = physics.config;
+		const target = config.ceiling - config.radius + strikeHeight(physics.pulseNow(rival.id));
 		if (rival.contactOnPiston) {
 			const bounce = solveKeeper(rival, rival.wantedAngle, 0);
 			const rise = Math.max(0, bounce.vy);
@@ -812,8 +821,9 @@
 	// A competitor plays the ball with the same machinery as the rig: its
 	// collector catches, its reflector bounces off its own tilt, and it stands
 	// where the flight comes down or drives over a ball on the floor to scoop
-	// it. The drive stays armed only while the passive bounce would fall short
-	// of the rock, using the rig's drive-keeper rule at this machine's pulse size.
+	// it. The drive stays armed only while the reflected apex would fall short
+	// of a full strike on the rock, using the rig's strike-line rule at this
+	// machine's pulse size.
 	// A full hopper sends it to the nearer wall first, like the rig's selling
 	// trip. With no ball in play it holds station instead of wandering.
 	function stepBallPolicy(rival, dt) {

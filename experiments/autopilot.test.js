@@ -192,30 +192,39 @@ test('the timed intercept rolls through a mark it is already passing instead of 
 	balanced(world);
 });
 
-test('the drive keeper holds the ball inside one pulse of the ceiling and switches to do it', () => {
+test('the drive keeper drives the ball past the bare ceiling line, inside one pulse of the strike line, and switches by the line', () => {
 	const world = flight(physics.createWorld(), 8.63, 6, 8);
 	world.drive = true;
 	engage('move', 'drive', 'angle');
 	const measure = untilBounces(world, 25, 120);
 	const gain = physics.pulseNow() / (c.ballMass * c.ballGravity);
-	const target = c.ceiling - c.radius;
+	const target = c.ceiling - c.radius + gain;
 	assert.ok(measure.contacts.length >= 20, 'the ball stays in play');
-	assert.ok(measure.driveOn > 0 && measure.driveOn < measure.steps, 'the keeper switches the drive instead of leaving it on');
+	assert.ok(measure.driveOn > 0, 'the keeper keeps the drive on for the weak bounces');
 	assert.ok(measure.maxApex <= target + gain + 0.05,
-		`apex ${measure.maxApex.toFixed(2)} m stays within one pulse (${(target + gain).toFixed(2)} m) of the ceiling`);
-	assert.ok(measure.maxApex > ceiling.state.bottom - c.radius, 'and it still reaches the rock');
-	assert.ok(world.pushes < measure.contacts.length, 'the keeper leaves bounces that already reach the ceiling passive');
+		`apex ${measure.maxApex.toFixed(2)} m stays within one pulse (${(target + gain).toFixed(2)} m) of the strike line`);
+	assert.ok(measure.maxApex > c.ceiling - c.radius, 'the passive bounce is driven past the bare ceiling line, into the rock');
+	assert.ok(measure.maxApex > ceiling.state.bottom - c.radius, 'and it reaches the rock');
 	balanced(world);
-	// The same ball with the drive simply left on pays for every contact and
-	// every release; the pulse band is the ceiling's, but the reserve cost is not.
-	const loose = flight(physics.createWorld(), 8.63, 6, 8);
-	loose.drive = true;
-	engage('move', 'angle');
-	const unchecked = untilBounces(loose, 25, 120);
-	assert.ok(unchecked.contacts.length >= 20, 'the always-on run stays in play as well');
-	assert.ok(loose.pushes > world.pushes,
-		`an always-on drive spends ${loose.pushes} pulses against the keeper's ${world.pushes}`);
-	balanced(loose);
+	// The keeper switches by the strike line, not by the bare ceiling: a
+	// descent that would clear the line on its own is left passive, one that
+	// falls short of it is powered. Set both up on a live piston contact.
+	for (const [vy, wanted] of [[-1, true], [-12, false]]) {
+		const wired = flight(physics.createWorld(), 8.63, 4, 8);
+		wired.ball.vy = vy;
+		sync(wired);
+		engage('drive', 'angle');
+		const verdicts = [];
+		for (let i = 0; i < Math.round(0.5 / c.step); i++) {
+			autopilot.update(wired, c.step);
+			const path = prediction.predict(wired);
+			if (path.surface === prediction.surfaces.PISTON) verdicts.push(autopilot.state.wantedDrive);
+			physics.step(wired, c.step);
+		}
+		assert.ok(verdicts.length > 0, 'the piston contact is priced');
+		assert.ok(verdicts.every(verdict => verdict === wanted), `a descent at ${vy} m/s reads as ${wanted ? 'pulse' : 'passive'}`);
+		balanced(wired);
+	}
 });
 
 test('the tilt keeper leaves the bounce travelling vertically, inside its range and rate', () => {

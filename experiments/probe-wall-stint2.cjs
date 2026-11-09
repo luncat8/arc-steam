@@ -7,7 +7,7 @@ const players = require('../js/players.js');
 const c = physics.config;
 
 const world = physics.createWorld();
-players.init(world, 1);
+players.init(world, 0); // one platform: a parked, unstepped competitor would catch a shared ball and never release it
 players.setBallMode('shared2');
 world.platform.x = 15;
 world.platform.vx = 0;

@@ -10,7 +10,7 @@ const c = physics.config;
 const startX = Number(process.argv[2] || 15);
 
 const world = physics.createWorld();
-players.init(world, 1);
+players.init(world, 0); // one platform: a parked, unstepped competitor would catch a shared ball and never release it
 players.setBallMode('shared2');
 world.platform.x = startX;
 world.platform.vx = 0;

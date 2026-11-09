@@ -667,6 +667,11 @@ test('rock reflection keeps the ball impulse: speed never grows beyond gravity',
 		ceiling.reset(11);
 		ceiling.setShape(shape);
 		for (let x = 2; x < 22; x += 2.5) ceiling.damage(x + 0.06, ceiling.state.bottom + 0.06, 35);
+		// Drive the delayed collapse to quiescence before the flight is measured,
+		// so the impulse invariant never depends on when the in-step clock
+		// happens to release hidden loose cells into the flight path.
+		ceiling.collapse(30);
+		for (let i = 0; i < Math.round(60 / c.step) && ceiling.state.airborneCells > 0; i++) physics.step(w, c.step);
 		w.ball.x = 10.2; w.ball.y = ceiling.state.bottom - 0.8; w.ball.vx = 5; w.ball.vy = 9;
 		w.ball.state = 'flying';
 		w.drive = false;
