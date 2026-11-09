@@ -1084,6 +1084,44 @@ function spend(world, useful) {
 		return true;
 	}
 
+	// The release is refused: above the thermal cutoff the pulse cannot lift
+	// the ball, and on an empty reserve there is nothing to spend. Tip the
+	// held ball off the face without a pulse instead: it settles on the
+	// rubble at the machine's feet with no motion of its own, so the
+	// collector is free and the machine is not pinned on a ball it cannot
+	// release. The ball's carried motion becomes heat and its resting height
+	// is work by the surface, so the tip leaves the energy ledger unchanged.
+	// The rig does not scoop its own tip straight back: the ball stays down
+	// until the machine has left its column and is then a normal grounded
+	// ball to collect on the return (see advanceBall).
+	function tipHeldBall(world, ball) {
+		const machine = machineById(world, ball.holder);
+		const platform = machineBody(machine);
+		const rig = platform.id === world.platform.id;
+		const mass = ballMassFor(ball);
+		const floor = root.SteamCeiling ? root.SteamCeiling.floorAt(ball.x) : 0;
+		const rest = floor + config.radius;
+		// The point of the reflector face the ball would leave from.
+		const baseAngle = platform.angle;
+		const faceAngle = baseAngle + machinePistonAngle(machine);
+		const along = config.platformWidth * 0.25 - config.pistonCentre;
+		const centreX = platform.x + Math.cos(baseAngle) * config.pistonCentre - Math.sin(baseAngle) * config.deck;
+		const centreY = platform.y + Math.sin(baseAngle) * config.pistonCentre + Math.cos(baseAngle) * config.deck;
+		ball.holder = null;
+		ball.state = 'grounded';
+		ball.x = centreX + Math.cos(faceAngle) * along - Math.sin(faceAngle) * config.radius;
+		ball.y = rest;
+		ball.vx = 0;
+		ball.vy = 0;
+		ball.tipReleased = true;
+		if (rig) {
+			// Gentle set-down: the carried motion is dissipated as heat, and
+			// the potential of the resting height is work by the surface.
+			world.heat += 0.5 * mass * platform.vx * platform.vx;
+			world.terrainWork += mass * config.ballGravity * floor;
+		}
+	}
+
 	function movePlatform(world, dt) {
 		const platform = world.platform;
 		platform.previousX = platform.x;
@@ -1341,12 +1379,16 @@ function spend(world, useful) {
 				if (delta > 0) world.terrainWork += delta;
 				else world.heat -= delta;
 			}
-			ball.y = rest;
-			// The rig catches a ball it lies under unless it already holds one; a
-			// competitor pushes its ball back up by driving over it.
-			if (rigBall && !heldBall(world) && Math.abs(ball.x - world.platform.x) <= config.platformWidth * 0.5) capture(world, world, ball);
-			else scoop(world, ball);
-			return;
+		ball.y = rest;
+		// A ball the autopilot tipped off the face without a pulse stays down
+		// until the machine has left its column, so it is not scooped straight
+		// back into the collector the very next step.
+		if (ball.tipReleased && Math.abs(ball.x - world.platform.x) > config.platformWidth * 0.5) ball.tipReleased = false;
+		// The rig catches a ball it lies under unless it already holds one; a
+		// competitor pushes its ball back up by driving over it.
+		if (rigBall && !heldBall(world) && !ball.tipReleased && Math.abs(ball.x - world.platform.x) <= config.platformWidth * 0.5) capture(world, world, ball);
+		else scoop(world, ball);
+		return;
 		}
 		let remaining = dt;
 		let elapsed = 0;
@@ -1586,8 +1628,9 @@ function spend(world, useful) {
 		setGroundBounce, groundRetentionNow, get groundBounceMode() { return groundMode; },
 		settlePose, setPistonAngle, pistonContactTime, solvePiston, solveFace, reflectOnDeck, contactResult, deckBounce,
 		setBallMode, mayPush, isRigBall, ballLandingTime, focusBall, heldBall, heldBallMass,
-		machineBody, machineById, machinesOf, machineDrive, machinePistonAngle, heldBallOf, focusBallOf
-	};
+	machineBody, machineById, machinesOf, machineDrive, machinePistonAngle, heldBallOf, focusBallOf,
+	tipHeldBall
+};
 	root.SteamPhysics = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

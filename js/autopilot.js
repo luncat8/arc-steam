@@ -547,14 +547,23 @@
 	}
 
 	function commandTravel(world) {
-		const tierTwo = root.SteamResearch.state.predictionBounces;
-		if (moveOn && !tierTwo) {
-			// The plain chase hands the mark to the platform's own target following:
-			// full thrust to it, then a brake to a standstill on it.
-			world.direction = 0;
-			world.target = plan.interceptX;
-			return;
-		}
+	const tierTwo = root.SteamResearch.state.predictionBounces;
+	if (moveOn && !tierTwo) {
+		// The plain chase hands the mark to the platform's own target following:
+		// full thrust to it, then a brake to a standstill on it.
+		// A ball just tipped off the face without a pulse sits at the machine's
+		// feet: drive off it to the centre instead of parking on the wall on top
+		// of it, so the ball can be scooped on the return once the machine has
+// cooled enough to launch it again.
+if (plan.ball && plan.ball.state === 'grounded' && plan.ball.tipReleased) {
+	world.direction = 0;
+	world.target = clampTravel(root.SteamPhysics.config.width * 0.5);
+	return;
+}
+		world.direction = 0;
+		world.target = plan.interceptX;
+		return;
+	}
 		// Tier II always uses the economical controller, including uncertain
 		// approaches and the new plan immediately after a bounce. A known contact
 		// gets a just-in-time run; timed travel owns direction and never buys an
@@ -570,7 +579,16 @@
 		// not worth a manoeuvre: inside that slack the platform is left alone, which
 		// is also why it never has to stand still on the mark.
 		const reach = Math.abs(distance) - interceptTolerance;
-		if (reach <= 0) { world.direction = 0; return; }
+if (reach <= 0) {
+	// A ball just tipped off the face without a pulse sits at the machine's
+	// feet: drive off it to the centre instead of parking on it.
+	if (plan.ball && plan.ball.state === 'grounded' && plan.ball.tipReleased) {
+		world.target = clampTravel(root.SteamPhysics.config.width * 0.5);
+		return;
+	}
+	world.direction = 0;
+	return;
+}
 		const sign = Math.sign(distance);
 		const speed = physics.arrivalSpeed(reach, plan.contactIn, acceleration);
 		// Braking with a flywheel is recuperated, so tracking is tight; without one
@@ -603,9 +621,15 @@
 	function commandDrive(world) {
 		wantedDrive = driveDecision(world);
 		world.drive = wantedDrive;
+		const ball = world.ball;
 		// A caught ball has no flight energy at all, so the keeper's own rule sends
-		// it back up instead of letting the shift stall on a held ball.
-		if (wantedDrive && world.ball && world.ball.state === 'held') root.SteamPhysics.launch(world);
+		// it back up instead of letting the shift stall on a held ball. If the
+		// release is refused - above the thermal cutoff the pulse cannot lift the
+		// ball, and on an empty reserve there is nothing to spend - tip it off the
+		// face without a pulse instead of hammering a launch that cannot succeed:
+		// the collector is free and the machine is not pinned on a ball it cannot
+		// release, so the intercept can work another ball while the machine cools.
+		if (wantedDrive && ball && ball.state === 'held' && !root.SteamPhysics.launch(world)) root.SteamPhysics.tipHeldBall(world, ball);
 	}
 
 	// The tilt that leaves the upcoming contact travelling straight up. Raising the

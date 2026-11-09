@@ -571,7 +571,35 @@ test('manual overrides preserve switches, isolate duties, and resume after idle 
 	assert.notEqual(world.pistonAngle, 0.1, 'automatic tilt resumes');
 });
 
-test('switching off during an override stays off and reset clears held overrides', () => {
+	test('the drive keeper tips a held ball it cannot launch instead of pinning on it', () => {
+		const world = physics.createWorld();
+		world.ball.state = 'held';
+		world.ball.holder = 'rig';
+		world.ball.vx = 0;
+		world.ball.vy = 0;
+		world.platform.vx = 0;
+		world.platform.x = 22;
+		// Above the thermal cutoff the pulse cannot lift the ball.
+		world.heat = (c.thermalCutoff - c.ambientTemperature + 20) * c.heatCapacity;
+		world.drive = true;
+		sync(world);
+		engage('drive');
+		// The keeper retries the release every step: above the cutoff it is
+		// refused every time, so the ball is tipped off the face without a
+		// pulse instead of leaving the machine pinned on it.
+		let tipped = false;
+		for (let i = 0; i < 240 * 10 && !tipped; i++) {
+			autopilot.update(world, c.step);
+			physics.step(world, c.step);
+			if (world.ball.tipReleased) tipped = true;
+		}
+		assert.ok(tipped, 'the held ball is tipped off the face');
+		assert.equal(world.ball.state, 'grounded');
+		assert.equal(world.ball.holder, null);
+		balanced(world);
+	});
+
+	test('switching off during an override stays off and reset clears held overrides', () => {
 	const world = flight(physics.createWorld(), 11, 8, 8);
 	engage('move', 'drive', 'angle');
 	autopilot.override('drive');
