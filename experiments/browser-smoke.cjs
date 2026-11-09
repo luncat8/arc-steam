@@ -73,7 +73,7 @@ async function main() {
 		assert.notEqual(await page.locator('#c').evaluate(canvas => canvas.toDataURL()), priceImage);
 		await page.locator('#view-modes input[value="strength"]').focus();
 		await page.keyboard.press('ArrowRight');
-		assert.equal(await page.locator('#view-modes input[value="minerals"]').isChecked(), true, 'arrow keys cycle the radios');
+		assert.equal(await page.locator('#view-modes input[value="damage"]').isChecked(), true, 'arrow keys move focus and selection to the next radio');
 		await page.locator('#science-open').click();
 		await page.locator('#pause').click();
 		const nodeCount = await page.evaluate(() => SteamResearch.nodes.length);
@@ -90,7 +90,43 @@ async function main() {
 		}), true, 'the whole progression tree fits inside 1440x1000 without overflow');
 		assert.equal(await page.locator('#commercial-grader').count(), 1);
 		assert.equal(await page.locator('#research-progress').textContent(), '0 / ' + nodeCount);
-		assert.equal(await page.locator('#platform-spec').evaluate(node => node.children.length), 20, 'ten specification labels with their values');
+		assert.equal(await page.locator('#platform-spec > div').count(), 10, 'ten specification measures, each label over its value');
+		// The strip leads the tree, and a hovered row previews its difference
+		// without buying: the row is marked, the strip gains signed deltas, and
+		// the strip's own height does not move.
+		const stripBox = await page.locator('#spec-card').boundingBox();
+		const stripTop = await page.locator('#spec-card').evaluate(node => node.getBoundingClientRect().top);
+		const nodeTop = await page.locator('#progression-tree .tree-node').first().evaluate(node => node.getBoundingClientRect().top);
+		assert.ok(stripTop < nodeTop, 'the specification strip sits above every tree card');
+		// Each measure is name, value and change in three fixed columns: the
+		// value keeps its own track, so a preview's delta and a changing number
+		// never re-measure the line.
+		const columns = () => page.evaluate(() => Array.from(document.querySelectorAll('#platform-spec .spec-value'))
+			.map(value => [Math.round(value.getBoundingClientRect().left * 100) / 100, Math.round(value.getBoundingClientRect().right * 100) / 100]));
+		const liveColumns = await columns();
+		assert.equal(await page.evaluate(() => new Set(Array.from(document.querySelectorAll('#platform-spec .spec-value'))
+			.map(value => value.getBoundingClientRect().width)).size), 1, 'every value keeps one width');
+		const materialsButton = page.locator('[data-technology="materials"] > .row-actions > button:not(.preview-mark)');
+		await materialsButton.hover();
+		assert.equal(await page.locator('[data-technology="materials"]').getAttribute('data-preview'), 'true');
+		assert.equal(await page.locator('#spec-card').getAttribute('data-preview'), 'true');
+		assert.equal(await page.locator('#platform-spec > div').nth(4).locator('.spec-delta').textContent(), '+1%');
+		assert.equal(await page.locator('#platform-spec > div').nth(4).locator('.spec-delta').getAttribute('data-tone'), 'gain');
+		const previewBox = await page.locator('#spec-card').boundingBox();
+		assert.equal(Math.abs(previewBox.height - stripBox.height) < 1, true, 'a preview never changes the strip height');
+		assert.deepEqual(await columns(), liveColumns, 'a preview never moves the value column');
+		await page.locator('#science-title').hover();
+		assert.equal(await page.locator('#platform-spec > div').nth(4).locator('.spec-delta').textContent(), '', 'the live value comes back');
+		// The mark pins the same preview for touch, and pins again to release.
+		const treeButtonBox = await materialsButton.boundingBox();
+		await page.locator('[data-technology="materials"] .preview-mark').click();
+		assert.equal(await page.locator('[data-technology="materials"] .preview-mark').getAttribute('aria-pressed'), 'true');
+		assert.equal(await page.locator('#platform-spec > div').nth(4).locator('.spec-delta').textContent(), '+1%');
+		await page.locator('[data-technology="materials"] .preview-mark').click();
+		assert.equal(await page.locator('#platform-spec > div').nth(4).locator('.spec-delta').textContent(), '');
+		assert.equal(await page.locator('[data-technology="materials"] .preview-mark').getAttribute('aria-pressed'), 'false');
+		assert.equal(await materialsButton.evaluate(button => { const box = button.getBoundingClientRect(); return box.width > 0 && box.height > 0; }), true);
+		assert.ok(treeButtonBox.width > 0);
 		await page.locator('#science-close').click();
 		assert.equal(await page.locator('#refuel').isDisabled(), true, 'a full reserve needs no recharge');
 		assert.equal(await page.locator('#prediction-status').isHidden(), true, 'the overlay waits for its research');
@@ -157,11 +193,11 @@ async function main() {
 		// Locked upgrades explain themselves instead of failing silently: blocked buttons are
 		// aria-disabled, so the click reaches the handler (force skips Playwright's enabled check).
 		await page.locator('#science-open').click();
-		await page.locator('[data-technology="ballistics2"] button').click({ force: true });
+		await page.locator('[data-technology="ballistics2"] .row-actions > button:not(.preview-mark)').click({ force: true });
 		assert.match(await page.locator('#progression-status').textContent(), /stays locked until/);
 		// The road grader sits in the base chassis root and needs no research, so the
 		// pad slot inside Rebound materials explains its research prerequisite.
-		await page.locator('[data-item="pad"] button').click({ force: true });
+		await page.locator('[data-item="pad"] .row-actions > button:not(.preview-mark)').click({ force: true });
 		assert.match(await page.locator('#progression-status').textContent(), /needs the .* research first/);
 		await page.locator('#science-close').click();
 		await page.locator('#c').scrollIntoViewIfNeeded();
@@ -175,8 +211,8 @@ async function main() {
 		await page.waitForTimeout(300);
 		assert.equal(await page.locator('#motion').textContent(), '0.00 m/s', 'a rock click does not command travel');
 		await chamberClick(page, 5, 0.5);
-		await page.waitForTimeout(400);
-		assert.notEqual(await page.locator('#motion').textContent(), '0.00 m/s');
+		// Travel ramps up, so wait for the readout instead of guessing a delay.
+		await page.waitForFunction(() => document.getElementById('motion').textContent !== '0.00 m/s', null, { timeout: 2000 });
 		assert.equal(await page.locator('#launch').isDisabled(), true);
 		assert.match(await page.locator('#mineral-cell').textContent(), cellPattern, 'travel does not change the selected cell');
 		assert.ok(Math.abs(parseFloat(await page.locator('#error').textContent())) < 0.00001);
@@ -189,8 +225,8 @@ async function main() {
 		assert.equal(await page.locator('#science-funds').textContent(), 'commons');
 		assert.equal(await page.locator('#refuel-cost').textContent(), 'free');
 		assert.match(await page.locator('[data-item="grader"] b').textContent(), /ROAD GRADER · FREE/);
-		assert.equal(await page.locator('[data-technology="ballistics2"] button').getAttribute('aria-disabled'), 'false', 'a gated node is open in the commons');
-		await page.locator('[data-item="flywheel"] button').click({ force: true });
+		assert.equal(await page.locator('[data-technology="ballistics2"] .row-actions > button:not(.preview-mark)').getAttribute('aria-disabled'), 'false', 'a gated node is open in the commons');
+		await page.locator('[data-item="flywheel"] .row-actions > button:not(.preview-mark)').click({ force: true });
 		assert.match(await page.locator('#progression-status').textContent(), /^Installed Brake flywheel at /);
 		assert.match(await page.locator('#ledger').locator('li').first().textContent(), /Bought Brake flywheel · free/);
 		assert.equal(await page.evaluate(() => SteamCeiling.state.funds), 0, 'the commons charges nothing');

@@ -1,5 +1,5 @@
 // Research tree, equipment bays, progression actions and their refresh state.
-// provides: buildUpgrades, refreshUpgrades, buyEquipment, buyResearch, setCommune, setTestMode, layoutTreeLinks, specReadout
+// provides: buildUpgrades, refreshUpgrades, buyEquipment, buyResearch, setCommune, setTestMode, layoutTreeLinks, specReadout, dropPinnedPreview
 // depends: main.js bindings, player helpers, refresh
 
 'use strict';
@@ -12,6 +12,7 @@ const linkRecords = [];
 let treeRootEl = null;
 let commercialGraderButton = null;
 const specValues = [];
+const specDeltas = [];
 const specLabels = ['Dry mass', 'Engine force', 'Top speed', 'Bounce pulse', 'Retention', 'Rock retention', 'Rock damage', 'Damage radius', 'Convective cooling', 'Brake recovery'];
 const SVG_NS = 'http://www.w3.org/2000/svg';
 // Planar 3-column grid coordinates: Strike/Ballistics (col 1), Bounce/Drive
@@ -49,6 +50,220 @@ const treeEdges = Object.freeze([
 	Object.freeze({ from: 'power', to: 'ballistics2', kind: 'side' })
 ]);
 
+// --------------------------------------------------------------- preview state
+// A preview is a hypothetical delta over the installed profile: the channels
+// the tree would have if one more research or purchase were applied. Nothing
+// here touches a real profile, so hovering or tapping a mark can never buy,
+// research or apply anything, and the specification has one writer per render.
+const previewDeltas = {
+	massDelta: 0, retentionBonus: 0, pulseBonus: 0, coolingBonus: 0, forceBonus: 0,
+	speedBonus: 0, damageBonus: 0, rockRetentionBonus: 0, damageRadiusBonus: 0,
+	ballMassBonus: 0, recoveryFraction: 0, radiatorArea: 0, engine: null
+};
+const previewHover = window.matchMedia('(hover: hover) and (pointer: fine)');
+let previewRecord = null;
+let pinnedRecord = null;
+let previewOwner = null;
+let previewRendered = false;
+
+function resetPreviewDeltas() {
+	for (const channel in previewDeltas) {
+		previewDeltas[channel] = channel === 'engine' ? null : 0;
+	}
+}
+
+function addPreview(field, value) {
+	if (value) previewDeltas[field] += value;
+}
+
+// One row owns the name of the thing that would be installed, so a tier family
+// previews the selected tier and nothing else.
+function previewResearch(node) {
+	addPreview('massDelta', node.massDelta);
+	addPreview('retentionBonus', node.retentionBonus);
+	addPreview('pulseBonus', node.pulseBonus);
+	addPreview('coolingBonus', node.coolingBonus);
+	addPreview('forceBonus', node.forceBonus);
+	addPreview('speedBonus', node.speedBonus);
+	addPreview('damageBonus', node.damageBonus);
+	addPreview('rockRetentionBonus', node.rockRetentionBonus);
+	addPreview('damageRadiusBonus', node.damageRadiusBonus);
+	addPreview('ballMassBonus', node.ballMassBonus);
+}
+
+function previewEquipment(item) {
+	addPreview('massDelta', item.mass);
+	addPreview('retentionBonus', item.retentionBonus);
+	addPreview('pulseBonus', item.pulseBonus);
+	addPreview('forceBonus', item.forceBonus);
+	addPreview('speedBonus', item.speedBonus);
+	addPreview('recoveryFraction', item.recoveryFraction);
+}
+
+// An installed tier is swapped out for the previewed one, so the hypothetical
+// channels carry the difference between the two units and not their sum.
+function previewRadiator(installedId, entry) {
+	const old = installedId ? SteamEquipment.radiatorEntry(installedId) : null;
+	previewDeltas.massDelta = entry.mass - (old ? old.mass : 0);
+	previewDeltas.radiatorArea = entry.radiatorArea - (old ? old.radiatorArea : 0);
+}
+
+function previewBall(entry) {
+	const old = SteamEquipment.ballEntry(SteamEquipment.installedBall(activePlayerId()));
+	previewDeltas.massDelta = entry.mass - old.mass;
+	previewDeltas.damageBonus = entry.damageBonus - old.damageBonus;
+	previewDeltas.rockRetentionBonus = entry.rockRetentionBonus - old.rockRetentionBonus;
+	previewDeltas.damageRadiusBonus = entry.damageRadiusBonus - old.damageRadiusBonus;
+}
+
+function previewFlag(record, on) {
+	if (record.row.dataset.preview !== on) record.row.dataset.preview = on;
+}
+
+function showPreview(previous, next) {
+	if (previous === next) return;
+	if (previous) previewFlag(previous, 'false');
+	if (next) previewFlag(next, 'true');
+	const flag = next ? 'true' : 'false';
+	if (ui['spec-card'].dataset.preview !== flag) ui['spec-card'].dataset.preview = flag;
+}
+
+// Pointer hover previews while it is over the button; a tap on the mark pins
+// the same preview so a touch device can read the specification hands free.
+function setPreview(record) {
+	if (record && record.previewable === false) record = null;
+	if (pinnedRecord && record !== pinnedRecord) return;
+	if (record === previewRecord) return;
+	showPreview(previewRecord, record);
+	previewRecord = record;
+	renderSpec();
+}
+
+function unpin() {
+	if (pinnedRecord) pinnedRecord.mark.setAttribute('aria-pressed', 'false');
+	showPreview(previewRecord, null);
+	pinnedRecord = null;
+	previewRecord = null;
+	renderSpec();
+}
+
+function togglePreviewPin(record) {
+	if (record.previewable === false) return;
+	if (pinnedRecord === record) { unpin(); return; }
+	if (pinnedRecord) pinnedRecord.mark.setAttribute('aria-pressed', 'false');
+	pinnedRecord = record;
+	record.mark.setAttribute('aria-pressed', 'true');
+	showPreview(previewRecord, record);
+	previewRecord = record;
+	renderSpec();
+}
+
+// A pinned preview only survives while its row still has something to show and
+// while the selected player is the one it was opened for, so a purchase or a
+// player switch drops it instead of leaving a stale delta on screen.
+function dropForeignPreview() {
+	if (!pinnedRecord) return;
+	if (previewOwner === activePlayerId()) return;
+	dropPinnedPreview();
+}
+
+function dropPinnedPreview() {
+	if (pinnedRecord) unpin();
+}
+
+// Tier families preview the tier selected in their own list; a research row or
+// a shop row previews exactly the one effect it would apply.
+function applyPreview(record) {
+	if (record.spec) {
+		const entry = record.spec.entries[record.selectedIndex >= 0 ? record.selectedIndex : 0];
+		if (entry) record.spec.preview(entry);
+		return;
+	}
+	if (record.node) previewResearch(record.node);
+	else if (record.item) previewEquipment(record.item);
+}
+
+function renderSpec() {
+	const owner = activePlayerId();
+	if (!previewRecord) {
+		resetPreviewDeltas();
+		previewRendered = false;
+		writeSpec(owner, null);
+		return;
+	}
+	resetPreviewDeltas();
+	applyPreview(previewRecord);
+	previewOwner = owner;
+	previewRendered = true;
+	writeSpec(owner, previewDeltas);
+}
+
+// Live and hypothetical values share one formatter table: the specification
+// text and its signed difference are the same arithmetic read twice.
+const specFormats = [
+	function (value) { return value.toFixed(1) + ' kg'; },
+	function (value) { return value.toFixed(0) + ' N'; },
+	function (value) { return value.toFixed(0) + ' m/s'; },
+	function (value) { return value.toFixed(0) + ' J'; },
+	function (value) { return (value * 100).toFixed(0) + '%'; },
+	function (value) { return (value * 100).toFixed(0) + '%'; },
+	function (value) { return value.toFixed(1) + '×'; },
+	function (value) { return value.toFixed(1) + ' cells'; },
+	function (value) { return value.toFixed(2) + ' W/K'; },
+	function (value) { return (value * 100).toFixed(0) + '%'; }
+];
+// Displayed precision per measure, which is also the smallest difference the
+// strip is willing to call a change.
+const specDigits = [1, 0, 0, 0, 2, 2, 1, 1, 2, 2];
+
+// One reader per measure, in `specLabels` order: the strip, the preview and
+// the difference all address the machine through this table.
+const specReads = [
+	function (owner, extra) { return physics.dryMass(owner, extra); },
+	function (owner, extra) { return physics.forceNow(owner, extra); },
+	function (owner, extra) { return physics.speedNow(owner, extra); },
+	function (owner, extra) { return physics.pulseNow(owner, extra); },
+	function (owner, extra) { return physics.retentionNow(owner, extra); },
+	function (owner, extra) { return physics.rockRetentionNow(owner, extra); },
+	function (owner, extra) { return window.SteamCeiling.damageMultiplierNow(owner, extra); },
+	function (owner, extra) { return window.SteamCeiling.damageRadiusNow(owner, extra); },
+	function (owner, extra) { return physics.conductanceNow(owner, extra); },
+	function (owner, extra) { return physics.recoveryNow(owner, extra); }
+];
+
+// + is a gain and − a loss for every measure but the mass, where the lighter
+// chassis is the better machine: the tone follows the measure, the sign the
+// number.
+const specLowerIsBetter = [true, false, false, false, false, false, false, false, false, false];
+
+function writeSpec(owner, extra) {
+	for (let i = 0; i < specValues.length; i++) {
+		const live = specReads[i](owner, null);
+		const next = extra ? specReads[i](owner, extra) : live;
+		setText(specValues[i], specFormats[i](next));
+		const delta = next - live;
+		const step = Math.pow(10, -specDigits[i]);
+		const changed = Math.abs(delta) >= step * 0.5;
+		const tone = !changed ? '' : (delta > 0) !== specLowerIsBetter[i] ? 'gain' : 'loss';
+		setText(specDeltas[i], !changed ? '' : (delta > 0 ? '+' : '−') + specFormats[i](Math.abs(delta)));
+		if (!tone) {
+			if (specDeltas[i].dataset.tone !== undefined) delete specDeltas[i].dataset.tone;
+			continue;
+		}
+		if (specDeltas[i].dataset.tone !== tone) specDeltas[i].dataset.tone = tone;
+	}
+}
+
+// Installed specification: the live result of base tuning plus every equipment
+// and research delta, which is what the row effects compare against.
+function specReadout() {
+	const owner = activePlayerId();
+	// The row under a pointer is only entered once: a readout tick must not
+	// withdraw a preview the pointer is still resting on.
+	if (previewRecord && !pinnedRecord && previewOwner === owner) return;
+	if (previewRendered) return;
+	writeSpec(owner, null);
+}
 function svgNode(tag) { return document.createElementNS(SVG_NS, tag); }
 
 // Row titles show list prices, FREE in Communism mode, or TEST for grants.
@@ -70,6 +285,32 @@ function prerequisiteNames(node) {
 	return names;
 }
 
+// A row's action cell holds the purchase button and the touch preview mark side
+// by side. The mark always exists and only folds away, so enabling a preview
+// never changes the row's height, wrapping or button position.
+function actionCell(button, name) {
+	const cell = document.createElement('span');
+	cell.className = 'row-actions';
+	const mark = document.createElement('button');
+	mark.type = 'button';
+	mark.className = 'preview-mark';
+	mark.textContent = '✱';
+	mark.setAttribute('aria-pressed', 'false');
+	mark.setAttribute('aria-label', 'Preview ' + name + ' without buying it');
+	mark.title = 'Preview · shows the specification difference without buying';
+	cell.append(button, mark);
+	return { cell, mark };
+}
+
+function bindPreview(record) {
+	record.mark.addEventListener('click', function (event) { event.stopPropagation(); togglePreviewPin(record); });
+	if (!previewHover.matches) return;
+	record.button.addEventListener('pointerenter', function () { if (!pinnedRecord) setPreview(record); });
+	record.button.addEventListener('pointerleave', function () { if (!pinnedRecord) setPreview(null); });
+	record.button.addEventListener('focus', function () { if (!pinnedRecord) setPreview(record); });
+	record.button.addEventListener('blur', function () { if (!pinnedRecord) setPreview(null); });
+}
+
 function buildSlot(container, className, name, cost, mass, action, effect, activate) {
 	const row = document.createElement('div');
 	row.className = className;
@@ -79,10 +320,11 @@ function buildSlot(container, className, name, cost, mass, action, effect, activ
 	button.textContent = action;
 	const detail = document.createElement('small');
 	detail.textContent = effect;
-	row.append(heading, button, detail);
+	const actions = actionCell(button, name);
+	row.append(heading, actions.cell, detail);
 	container.appendChild(row);
 	button.addEventListener('click', activate);
-	return { row, button, heading, detail, name, cost, mass };
+	return { row, heading, button, mark: actions.mark, detail, name, cost, mass };
 }
 
 // Engines, radiators and strike balls each fit one unit at a time and swap
@@ -105,12 +347,16 @@ function buildTierSlot(container, spec) {
 		select.appendChild(option);
 	}
 	const detail = document.createElement('small');
-	slot.append(heading, button, select, detail);
+	const actions = actionCell(button, spec.title);
+	slot.append(heading, actions.cell, select, detail);
 	container.appendChild(slot);
-	const record = { slot, heading, button, select, detail, options, spec, selectedIndex: -1, lastInstalled: undefined };
+	const record = { row: slot, heading, button, mark: actions.mark, select, detail, options, spec, selectedIndex: -1, lastInstalled: undefined };
 	select.addEventListener('change', function () {
 		record.selectedIndex = spec.entries.findIndex(function (entry) { return entry.id === select.value; });
 		refresh();
+		// A tier list that changes under an open preview re-reads the strip, so
+		// the difference always describes the tier the list now shows.
+		if (previewRecord === record) renderSpec();
 	});
 	button.addEventListener('click', function () {
 		const entry = spec.entries[record.selectedIndex >= 0 ? record.selectedIndex : 0];
@@ -162,7 +408,7 @@ function buildUpgrades() {
 	const rootBays = document.createElement('div');
 	rootBays.className = 'tree-root-bays';
 	treeRootEl.append(rootTitle, rootBays);
-	tree.insertBefore(treeRootEl, ui['spec-card']);
+	tree.appendChild(treeRootEl);
 
 	// One node can unlock several items (Power electronics gates both the
 	// overdrive and the piston ram), so each node keeps its whole list.
@@ -175,6 +421,8 @@ function buildUpgrades() {
 		function () { buyEquipment(graderItem.id); });
 	graderSlot.row.dataset.item = graderItem.id;
 	graderSlot.item = graderItem;
+	graderSlot.fillPreview = function () { previewEquipment(graderItem); };
+	bindPreview(graderSlot);
 	equipmentRows.push(graderSlot);
 
 	buildTierSlot(rootBays, {
@@ -191,6 +439,7 @@ function buildUpgrades() {
 			return entry.mass + ' kg · ' + (entry.density / 1000) + ' kJ/kg · ' + entry.reload + ' s refill · ' + Math.round(entry.efficiency * 100) + '% eff · ×' + entry.force + ' force · ×' + entry.speed + ' speed · left shop';
 		},
 		install: function (id) { return SteamEquipment.buyEngine(id, world, activePlayerId()); },
+		preview: function (entry) { previewDeltas.engine = entry; },
 		refuse: function (entry) {
 			if (physics.engineNow(activePlayerId()).id === entry.id) return entry.name + ' engine is already installed.';
 			if (!SteamEquipment.atShop(world, activePlayerId())) return 'Park at the left shop to buy or swap engines.';
@@ -231,6 +480,7 @@ function buildUpgrades() {
 		optionText: function (entry, costText) { return entry.name.toUpperCase() + ' · ' + costText + massSuffix(entry.mass); },
 		detailText: function (entry) { return '+' + entry.radiatorArea.toFixed(2) + ' m² exposed fins · owned tiers swap free.'; },
 		install: function (id) { return SteamEquipment.installRadiator(id, world, false, activePlayerId()); },
+		preview: function (entry) { previewRadiator(SteamEquipment.installedRadiator(activePlayerId()), entry); },
 		refuse: function (entry) {
 			if (!SteamEquipment.radiatorUnlocked(entry.id, activePlayerId())) return 'The radiator tiers need the Heat transfer research first.';
 			if (SteamEquipment.installedRadiator(activePlayerId()) === entry.id) return entry.name + ' is already installed.';
@@ -254,6 +504,7 @@ function buildUpgrades() {
 			return '×' + dmg + ' fracture · ' + loss + '% rock loss · ' + rad + '-cell splash · owned swap free.';
 		},
 		install: function (id) { return SteamEquipment.installBall(id, world, false, activePlayerId()); },
+		preview: function (entry) { previewBall(entry); },
 		refuse: function (entry) {
 			if (SteamEquipment.installedBall(activePlayerId()) === entry.id) return entry.name + ' is already installed.';
 			if (!SteamEquipment.ballUnlocked(entry.id, activePlayerId())) return 'The ball upgrades need the Impact forging research first.';
@@ -276,6 +527,8 @@ function buildUpgrades() {
 		sci.row.dataset.technology = node.id;
 		sci.node = node;
 		sci.card = card;
+		sci.fillPreview = function () { previewResearch(node); };
+		bindPreview(sci);
 		if (node.requires.length) {
 			const req = document.createElement('small');
 			req.className = 'mobile-req';
@@ -291,12 +544,16 @@ function buildUpgrades() {
 					function () { buyEquipment(unlockedItem.id); });
 				buy.row.dataset.item = unlockedItem.id;
 				buy.item = unlockedItem;
+				buy.fillPreview = function () { previewEquipment(unlockedItem); };
+				bindPreview(buy);
 				equipmentRows.push(buy);
 			}
 		} else if (node.id === 'thermodynamics') {
-			buildTierSlot(card, radiatorSpec);
+			const record = buildTierSlot(card, radiatorSpec);
+			bindPreview(record);
 		} else if (node.id === 'impact') {
-			buildTierSlot(card, ballSpec);
+			const record = buildTierSlot(card, ballSpec);
+			bindPreview(record);
 		} else {
 			const cap = document.createElement('div');
 			cap.className = 'node-cap';
@@ -306,19 +563,33 @@ function buildUpgrades() {
 		card.addEventListener('pointerenter', function () { focusNodeLinks(node.id); });
 		card.addEventListener('pointerleave', function () { focusNodeLinks(''); });
 		nodeCards[node.id] = card;
-		tree.insertBefore(card, ui['spec-card']);
+		tree.appendChild(card);
 	}
 
-	for (const label of specLabels) {
+	// The engine bay lives at the root, so it is wired after the node cards and
+	// reads its selected tier the same way the in-node families do.
+	const engineRecord = tierRows.find(function (record) { return record.spec.family === 'engines'; });
+	bindPreview(engineRecord);
+
+	// One cell per measure: label over value, so the strip can lay ten measures
+	// out across as many columns as the drawer has room for.
+	for (let i = 0; i < specLabels.length; i++) {
+		const cell = document.createElement('div');
 		const term = document.createElement('dt');
-		term.textContent = label;
+		term.textContent = specLabels[i];
 		const value = document.createElement('dd');
-		value.textContent = '—';
-		ui['platform-spec'].append(term, value);
-		specValues.push(value);
+		const shown = document.createElement('span');
+		shown.className = 'spec-value';
+		const delta = document.createElement('i');
+		delta.className = 'spec-delta';
+		value.append(shown, delta);
+		cell.append(term, value);
+		ui['platform-spec'].appendChild(cell);
+		specValues.push(shown);
+		specDeltas.push(delta);
 	}
+	writeSpec(activePlayerId(), null);
 }
-
 function localBox(el, treeBox) {
 	const r = el.getBoundingClientRect();
 	return {
@@ -482,6 +753,17 @@ function refreshGrader() {
 	if (commercialGraderButton.getAttribute('aria-pressed') !== pressed) commercialGraderButton.setAttribute('aria-pressed', pressed);
 }
 
+// Rows whose effect is already installed have nothing left to preview, so
+// their mark folds away and any pinned preview from them is dropped.
+function setPreviewable(record, previewable) {
+	if (record.previewable === previewable) return;
+	record.previewable = previewable;
+	record.row.dataset.previewable = previewable ? 'true' : 'false';
+	record.mark.setAttribute('aria-disabled', previewable ? 'false' : 'true');
+	if (previewable) return;
+	unpin();
+}
+
 function refreshTierSlot(record, funds, commune) {
 	const spec = record.spec;
 	const owner = activePlayerId();
@@ -516,8 +798,9 @@ function refreshTierSlot(record, funds, commune) {
 	const cost = spec.cost(selected);
 	const blocked = active || !unlocked || !spec.ready() || (!owned && funds < cost && !commune);
 	setBlocked(record.button, blocked);
+	setPreviewable(record, !active);
 	setText(record.button, active ? 'Installed' : !unlocked ? 'Locked' : owned ? 'Install free' : 'Buy & install');
-	setRowState(record.slot, !unlocked && !active ? 'locked' : active && selected.id !== spec.defaultId ? 'installed' : 'available');
+	setRowState(record.row, !unlocked && !active ? 'locked' : active && selected.id !== spec.defaultId ? 'installed' : 'available');
 	setText(record.detail, spec.detailText(selected));
 }
 
@@ -530,17 +813,21 @@ function refreshTreeLinks(commune, owner) {
 }
 
 // Locked, available and researched states drive buttons, node cards and
-// prerequisite edges together through change-only DOM writers.
+// prerequisite edges together through change-only DOM writers. A research or
+// purchase that lands invalidates any pinned preview, so the card never shows
+// a difference against a state that no longer exists.
 function refreshUpgrades() {
 	const ceiling = window.SteamCeiling.state;
 	const owner = activePlayerId();
 	const funds = playerApi.money(playerApi.state.active);
 	refreshGrader();
+	dropForeignPreview();
 	setText(ui['science-title'], 'SCIENCE + SHOP · ' + activePlayer().name);
 	for (const row of equipmentRows) {
 		const installed = SteamEquipment.isInstalled(row.item.id, owner);
 		const unlocked = SteamEquipment.isUnlocked(row.item.id, owner);
 		setBlocked(row.button, installed || !unlocked || (funds < row.item.cost && !ceiling.commune));
+		setPreviewable(row, !installed);
 		setText(row.button, installed ? 'Installed' : unlocked ? 'Buy' : 'Locked');
 		setRowState(row.row, installed ? 'installed' : unlocked ? 'available' : 'locked');
 		setText(row.heading, rowTitle(row));
@@ -551,6 +838,7 @@ function refreshUpgrades() {
 		const status = SteamResearch.status(row.node.id, owner);
 		if (status === SteamResearch.constants.RESEARCHED) completed++;
 		setBlocked(row.button, status !== SteamResearch.constants.AVAILABLE || (funds < row.node.cost && !ceiling.commune));
+		setPreviewable(row, status !== SteamResearch.constants.RESEARCHED);
 		setText(row.button, status === SteamResearch.constants.RESEARCHED ? 'Done' : status === SteamResearch.constants.AVAILABLE ? 'Research' : 'Locked');
 		setRowState(row.row, status);
 		setRowState(row.card, status);
@@ -559,22 +847,4 @@ function refreshUpgrades() {
 	refreshTreeLinks(ceiling.commune, owner);
 	setText(ui['research-progress'], completed + ' / ' + researchRows.length);
 	setText(ui['science-funds'], ceiling.commune ? 'commons' : funds.toFixed(1) + ' cr');
-}
-
-// Installed specification: the live result of base tuning plus every equipment
-// and research delta, which is what the row effects compare against.
-function specReadout() {
-	const owner = activePlayerId();
-	setText(specValues[0], physics.dryMass(owner).toFixed(1) + ' kg');
-	setText(specValues[1], physics.forceNow(owner).toFixed(0) + ' N');
-	setText(specValues[2], physics.speedNow(owner).toFixed(0) + ' m/s');
-	setText(specValues[3], physics.pulseNow(owner).toFixed(0) + ' J');
-	setText(specValues[4], (physics.retentionNow(owner) * 100).toFixed(0) + '%');
-	setText(specValues[5], (physics.rockRetentionNow(owner) * 100).toFixed(0) + '%');
-	const dmg = window.SteamCeiling.damageMultiplierNow(owner).toFixed(1) + '×';
-	setText(specValues[6], dmg);
-	const rad = window.SteamCeiling.damageRadiusNow(owner).toFixed(1) + ' cells';
-	setText(specValues[7], rad);
-	setText(specValues[8], physics.conductanceNow(owner).toFixed(2) + ' W/K');
-	setText(specValues[9], (physics.recoveryNow(owner) * 100).toFixed(0) + '%');
 }

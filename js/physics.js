@@ -538,37 +538,41 @@
 		if (typeof owner === 'string') return owner;
 		return owner.id || (owner.platform && owner.platform.id) || 'rig';
 	}
-	function installed(channel, owner) {
+	// `extra` is a hypothetical channel map used by the shop preview: it adds to
+	// the installed deltas without touching any player's profile, so a hovered
+	// row can report the specification it would produce and change nothing.
+	function installed(channel, owner, extra) {
 		const id = ownerId(owner);
 		const machinery = root.SteamEquipment;
 		const technology = root.SteamResearch;
 		const equipmentState = machinery ? machinery.stateFor(id) : null;
 		const researchState = technology ? technology.stateFor(id) : null;
-		return (equipmentState ? equipmentState[channel] || 0 : 0) + (researchState ? researchState[channel] || 0 : 0);
+		const base = (equipmentState ? equipmentState[channel] || 0 : 0) + (researchState ? researchState[channel] || 0 : 0);
+		return extra ? base + (extra[channel] || 0) : base;
 	}
-	function retentionNow(owner) { return config.retention + installed('retentionBonus', owner); }
-	function rockRetentionNow(owner) {
-		const r = retentionNow(owner) + installed('rockRetentionBonus', owner);
+	function retentionNow(owner, extra) { return config.retention + installed('retentionBonus', owner, extra); }
+	function rockRetentionNow(owner, extra) {
+		const r = retentionNow(owner, extra) + installed('rockRetentionBonus', owner, extra);
 		return Math.max(0, Math.min(0.995, r));
 	}
-	function ballMassNow(owner) { return config.ballMass + installed('ballMassBonus', owner); }
-	function damageBonusNow(owner) { return installed('damageBonus', owner); }
-	function damageRadiusBonusNow(owner) { return installed('damageRadiusBonus', owner); }
-	function pulseNow(owner) { return config.pulse + installed('pulseBonus', owner); }
-	function forceNow(owner) {
+	function ballMassNow(owner, extra) { return config.ballMass + installed('ballMassBonus', owner, extra); }
+	function damageBonusNow(owner, extra) { return installed('damageBonus', owner, extra); }
+	function damageRadiusBonusNow(owner, extra) { return installed('damageRadiusBonus', owner, extra); }
+	function pulseNow(owner, extra) { return config.pulse + installed('pulseBonus', owner, extra); }
+	function forceNow(owner, extra) {
 		const id = ownerId(owner);
-		return (config.force + installed('forceBonus', id)) * engineNow(id).force;
+		return (config.force + installed('forceBonus', id, extra)) * engineNow(id, extra).force;
 	}
-	function speedNow(owner) {
+	function speedNow(owner, extra) {
 		const id = ownerId(owner);
-		return (config.maxSpeed + installed('speedBonus', id)) * engineNow(id).speed;
+		return (config.maxSpeed + installed('speedBonus', id, extra)) * engineNow(id, extra).speed;
 	}
-	function packMass() { return reserveNow() / engine.density; }
-	function dryMass(owner) {
+	function packMass(owner, extra) { return reserveNow(owner, extra) / engineNow(owner, extra).density; }
+	function dryMass(owner, extra) {
 		const id = ownerId(owner);
-		const selected = engineNow(id);
-		const pack = id === 'rig' ? packMass() - basePackMass : 0;
-		return config.platformMass + selected.mass - 18 + installed('massDelta', id) + pack;
+		const selected = engineNow(id, extra);
+		const pack = id === 'rig' ? packMass(id, extra) - basePackMass : 0;
+		return config.platformMass + selected.mass - 18 + installed('massDelta', id, extra) + pack;
 	}
 	// The speed a platform commands to cover `reach` metres: the slowest run
 	// that still arrives in `time` seconds, or a gentle approach when no
@@ -642,16 +646,19 @@
 		return (topSpeed - start) / acceleration + cruise / topSpeed + topSpeed / acceleration;
 	}
 
-	function reserveNow() {
+	function reserveNow(owner, extra) {
 		// Four full-throttle, wall-to-wall starts; acceleration distance caps
 		// the kinetic cost when the map is too short to attain rated speed.
-		const mass = config.platformMass + engine.mass - 18 + installed('massDelta') + ballMassNow();
-		const speed = speedNow();
-		const kinetic = Math.min(0.5 * mass * speed * speed, forceNow() * (platformMax() - platformMin()));
-		return 4 * kinetic / engine.efficiency;
-	}
-	function engineNow(owner) {
 		const id = ownerId(owner);
+		const source = engineNow(id, extra);
+		const mass = config.platformMass + source.mass - 18 + installed('massDelta', id, extra) + ballMassNow(id, extra);
+		const speed = speedNow(id, extra);
+		const kinetic = Math.min(0.5 * mass * speed * speed, forceNow(id, extra) * (platformMax() - platformMin()));
+		return 4 * kinetic / source.efficiency;
+	}
+	function engineNow(owner, extra) {
+		const id = ownerId(owner);
+		if (extra && extra.engine) return extra.engine;
 		if (id === 'rig') return engine;
 		const rivals = rivalBodies();
 		for (let i = 0; i < rivals.length; i++) {
@@ -678,10 +685,10 @@
 		}
 		return true;
 	}
-	function recoveryNow(owner) { return installed('recoveryFraction', owner); }
-	function radiatorArea(owner) { return installed('radiatorArea', owner); }
-	function conductanceNow(owner) {
-		return config.convectiveConductance + installed('coolingBonus', owner) + config.radiatorConvectionCoefficient * radiatorArea(owner);
+	function recoveryNow(owner, extra) { return installed('recoveryFraction', owner, extra); }
+	function radiatorArea(owner, extra) { return installed('radiatorArea', owner, extra); }
+	function conductanceNow(owner, extra) {
+		return config.convectiveConductance + installed('coolingBonus', owner, extra) + config.radiatorConvectionCoefficient * radiatorArea(owner, extra);
 	}
 
 	// Added or removed machinery couples to the moving platform: momentum is

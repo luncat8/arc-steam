@@ -120,16 +120,17 @@
 	const dustLife = 0.55;
 	const dustAge = new Float64Array(dustCount).fill(dustLife);
 	let dustCursor = 0;
-	function installed(channel, owner) {
+	function installed(channel, owner, extra) {
 		const id = owner || 'rig';
 		const machinery = root.SteamEquipment;
 		const technology = root.SteamResearch;
 		const equipmentState = machinery ? machinery.stateFor(id) : null;
 		const researchState = technology ? technology.stateFor(id) : null;
-		return (equipmentState ? equipmentState[channel] || 0 : 0) + (researchState ? researchState[channel] || 0 : 0);
+		const base = (equipmentState ? equipmentState[channel] || 0 : 0) + (researchState ? researchState[channel] || 0 : 0);
+		return extra ? base + (extra[channel] || 0) : base;
 	}
-	function damageRadiusNow(owner) { return baseDamageRadius + installed('damageRadiusBonus', owner); }
-	function damageMultiplierNow(owner) { return baseDamageMultiplier + installed('damageBonus', owner); }
+	function damageRadiusNow(owner, extra) { return baseDamageRadius + installed('damageRadiusBonus', owner, extra); }
+	function damageMultiplierNow(owner, extra) { return baseDamageMultiplier + installed('damageBonus', owner, extra); }
 	function damageRangeNow(owner) { return Math.ceil(damageRadiusNow(owner)); }
 	const initialStrength = new Float32Array(count);
 	const strength = new Float32Array(count);

@@ -120,7 +120,7 @@ make auto and bot more aggressive use piston push force. and/or increase it. cur
 
 ### research, buy upgrade
 
-move live preview to the top of panel and show preview before research and buy as difference +- green/red near characteristics while pointer over research/buy buttons.
+move live preview to the top of panel and show preview before research and buy as highlight difference +- green/red near characteristics while pointer over research/buy buttons.
 for touch devices add something like small buttons '*' near it to show preview on click 
 
 

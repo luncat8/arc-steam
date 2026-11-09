@@ -119,8 +119,8 @@ test('the system-bar switch turns the commons on and the panels follow', () => {
 	// Nothing is short of credits: the titles read FREE and no button is blocked.
 	assert.match(gearRow('grader').children[0].textContent, /ROAD GRADER · FREE/);
 	assert.match(techRow('materials').children[0].textContent, /REBOUND MATERIALS · FREE/);
-	assert.equal(gearRow('pad').children[1].getAttribute('aria-disabled'), 'false', 'a research gate is waived');
-	assert.equal(techRow('ballistics').children[1].getAttribute('aria-disabled'), 'false', 'a prerequisite is waived');
+	assert.equal(gearRow('pad').children[1].children[0].getAttribute('aria-disabled'), 'false', 'a research gate is waived');
+	assert.equal(techRow('ballistics').children[1].children[0].getAttribute('aria-disabled'), 'false', 'a prerequisite is waived');
 	assert.match(dom.element('progression-status').textContent, /The commons shares every technology and machine · nothing costs credits\./);
 	assert.equal(dom.element('credits').textContent, 'commons');
 	assert.equal(dom.element('science-funds').textContent, 'commons');
@@ -147,7 +147,7 @@ test('a free purchase installs and is booked as free', () => {
 	const pad = gearRow('pad');
 	// The pad needs the rebound materials research, which the mode waives.
 	assert.equal(dom.element('research-progress').textContent, '0 / ' + research.nodes.length);
-	pad.children[1].dispatch('click');
+	pad.children[1].children[0].dispatch('click');
 	advance(4);
 	assert.equal(equipment.isInstalled('pad'), true);
 	assert.match(dom.element('progression-status').textContent, /^Installed Rebound pad at /);

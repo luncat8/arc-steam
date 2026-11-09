@@ -76,8 +76,13 @@ function nodeCard(id) { return findRow(dom.element('progression-tree'), 'node', 
 function techRow(id) { return findRow(dom.element('progression-tree'), 'technology', id); }
 function gearRow(id) { return findRow(dom.element('progression-tree'), 'item', id); }
 function tierRow(family) { return findRow(dom.element('progression-tree'), 'family', family); }
-function buttonOf(target) { return target.children[1]; }
+// A row is heading, action cell, then detail; the action cell holds the
+// purchase button and its preview mark side by side.
+function buttonOf(target) { return target.children[1].children[0]; }
+function previewMarkOf(target) { return target.children[1].children[1]; }
 function selectOf(target) { return target.children[2]; }
+function specValue(target, index) { return target.children[index].children[1].children[0].textContent; }
+function specDelta(target, index) { return target.children[index].children[1].children[1].textContent; }
 function fund(cost) {
 	let guard = 0;
 	while (ceiling.state.funds < cost) {
@@ -124,7 +129,7 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	assert.equal(nodeCard('ballistics2').dataset.linked, 'true');
 	nodeCard('power').dispatch('pointerleave');
 	assert.equal(dom.element('tree-links').children.filter(edge => edge.dataset.focus === 'true').length, 0);
-	assert.equal(dom.element('platform-spec').children.length, 20);
+	assert.equal(dom.element('platform-spec').children.length, 10);
 	assert.equal(dom.element('inventory-rows').children.length, ceiling.state.mineralNames.length);
 	assert.match(dom.element('battery').textContent, /kJ$/);
 	assert.match(dom.element('temperature').textContent, /°C$/);
@@ -140,12 +145,12 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	assert.equal(dom.element('prediction-status').hidden, true, 'the overlay stays hidden before its research');
 	// The installed specification starts at base tuning.
 	const spec = dom.element('platform-spec').children;
-	assert.equal(spec[1].textContent, physics.dryMass().toFixed(1) + ' kg');
-	assert.equal(spec[3].textContent, physics.config.force.toFixed(0) + ' N');
-	assert.equal(spec[5].textContent, physics.config.maxSpeed.toFixed(0) + ' m/s');
-	assert.equal(spec[7].textContent, '42 J');
-	assert.equal(spec[9].textContent, '90%');
-	assert.equal(spec[19].textContent, '0%');
+	assert.equal(spec[0].children[1].children[0].textContent, physics.dryMass().toFixed(1) + ' kg');
+	assert.equal(spec[1].children[1].children[0].textContent, physics.config.force.toFixed(0) + ' N');
+	assert.equal(spec[2].children[1].children[0].textContent, physics.config.maxSpeed.toFixed(0) + ' m/s');
+	assert.equal(spec[3].children[1].children[0].textContent, '42 J');
+	assert.equal(spec[4].children[1].children[0].textContent, '90%');
+	assert.equal(spec[9].children[1].children[0].textContent, '0%');
 });
 
 test('the player strip lists every player with money, a BOT switch and a control switch', () => {
@@ -436,8 +441,8 @@ test('measured sales fund research, which unlocks equipment and the overlay', ()
 	assert.match(dom.element('progression-status').textContent, /^Installed Rebound pad at /);
 	assert.equal(pad.dataset.state, 'installed');
 	const spec = dom.element('platform-spec').children;
-	assert.equal(spec[1].textContent, physics.dryMass().toFixed(1) + ' kg');
-	assert.equal(spec[9].textContent, '94%', 'research and pad retention stack');
+	assert.equal(spec[0].children[1].children[0].textContent, physics.dryMass().toFixed(1) + ' kg');
+	assert.equal(spec[4].children[1].children[0].textContent, '94%', 'research and pad retention stack');
 	// One ledger carries sales, research and purchases, newest first.
 	assert.match(dom.element('ledger').children[0].textContent, /Bought Rebound pad · −250 cr/);
 	assert.match(dom.element('ledger').children[1].textContent, /Researched Rebound materials · −180 cr/);
@@ -838,7 +843,7 @@ test('reset clears research, equipment and the overlay together', () => {
 	assert.equal(dom.element('research-progress').textContent, '0 / ' + research.nodes.length);
 	assert.equal(techRow('materials').dataset.state, 'available');
 	assert.equal(gearRow('pad').dataset.state, 'locked');
-	assert.equal(dom.element('platform-spec').children[1].textContent, physics.config.platformMass.toFixed(1) + ' kg');
+	assert.equal(specValue(dom.element('platform-spec'), 0), physics.config.platformMass.toFixed(1) + ' kg');
 	assert.equal(dom.element('prediction-status').hidden, true);
 	assert.equal(dom.element('progression-status').textContent, 'Sell cargo at a wall to fund research and shop gear.');
 	assert.equal(dom.element('transaction-count').textContent, '(0)');
@@ -1501,4 +1506,87 @@ test('a checked rival keeps releasing its catch after taking its controls', () =
 	assert.equal(ball.state, 'flying', 'selection does not turn a checked bot into a parked collector');
 	assert.ok(rival.pushes > 0, 'the release used the rival pulse');
 	dom.element('player-list').children[0].children[0].dispatch('click');
+});
+
+// The specification strip leads the tree, and a hovered or pinned row reports
+// the difference it would make without installing anything.
+test('the specification leads the tree and previews a hovered row without buying it', () => {
+	dom.element('reset').dispatch('click');
+	advance(8);
+	const spec = dom.element('platform-spec');
+	const materials = techRow('materials');
+	const funds = ceiling.state.funds;
+	assert.equal(specDelta(spec, 4), '', 'a resting readout carries no difference');
+	buttonOf(materials).dispatch('pointerenter');
+	assert.equal(materials.dataset.preview, 'true');
+	assert.equal(dom.element('spec-card').dataset.preview, 'true');
+	assert.equal(specValue(spec, 4), '91%', 'the strip shows the retention the research would deliver');
+	assert.equal(specDelta(spec, 4), '+1%');
+	assert.equal(spec.children[4].children[1].children[1].dataset.tone, 'gain', 'a gain is toned as well as signed');
+	assert.equal(ceiling.state.funds, funds, 'a preview never spends anything');
+	assert.equal(research.state.completed, 0, 'a preview never researches');
+	buttonOf(materials).dispatch('pointerleave');
+	assert.equal(materials.dataset.preview, 'false');
+	assert.equal(dom.element('spec-card').dataset.preview, 'false');
+	assert.equal(specValue(spec, 4), '90%', 'the live value comes back');
+	assert.equal(specDelta(spec, 4), '');
+});
+
+test('a preview mark pins the same difference for touch, and a purchase clears it', () => {
+	dom.element('reset').dispatch('click');
+	advance(8);
+	const spec = dom.element('platform-spec');
+	const pad = gearRow('pad');
+	const materials = techRow('materials');
+	assert.equal(previewMarkOf(pad).getAttribute('aria-disabled'), 'false', 'a locked row still previews what it would give');
+	previewMarkOf(materials).dispatch('click');
+	advance(2);
+	assert.equal(materials.dataset.preview, 'true', 'the mark pins the preview');
+	assert.equal(previewMarkOf(materials).getAttribute('aria-pressed'), 'true');
+	assert.equal(specValue(spec, 4), '91%');
+	// A pinned preview owns the strip: hovering another row does not steal it.
+	buttonOf(pad).dispatch('pointerenter');
+	assert.notEqual(pad.dataset.preview, 'true', 'the pinned row keeps the strip');
+	assert.equal(specValue(spec, 4), '91%');
+	// It is dropped as soon as the row's state changes under it.
+	study('materials');
+	assert.equal(materials.dataset.preview, 'false');
+	assert.equal(previewMarkOf(materials).getAttribute('aria-pressed'), 'false');
+	assert.equal(previewMarkOf(materials).getAttribute('aria-disabled'), 'true', 'a researched row cannot preview itself');
+	assert.equal(specValue(spec, 4), '91%', 'the researched value is now the live one');
+	assert.equal(specDelta(spec, 4), '');
+	// A loss is toned like a loss, whichever way the number moves.
+	fund(equipment.find('pad').cost);
+	buttonOf(pad).dispatch('pointerenter');
+	assert.equal(specValue(spec, 4), '94%');
+	assert.equal(specDelta(spec, 4), '+3%');
+	buttonOf(pad).dispatch('pointerleave');
+	const grader = gearRow('grader');
+	fund(equipment.find('grader').cost);
+	buttonOf(grader).dispatch('pointerenter');
+	assert.equal(specDelta(spec, 0), '+10.2 kg');
+	assert.equal(spec.children[0].children[1].children[1].dataset.tone, 'loss', 'heavier is worse for the mass');
+	buttonOf(grader).dispatch('pointerleave');
+});
+
+test('a tier family previews the selected tier as a swap, not as a stack', () => {
+	study('thermodynamics');
+	advance(4);
+	const spec = dom.element('platform-spec');
+	const bay = tierRow('radiators');
+	const select = selectOf(bay);
+	buttonOf(bay).dispatch('pointerenter');
+	assert.equal(select.value, 'vent', 'the first unowned tier is preselected');
+	assert.equal(specValue(spec, 8), '9.10 W/K', 'the strip shows the cooling the vent would add');
+	assert.equal(spec.children[8].children[1].children[1].textContent, '+7.50 W/K');
+	assert.equal(spec.children[0].children[1].children[1].textContent, '+4.1 kg');
+	// Changing the tier under an open preview re-reads the strip at once.
+	select.value = 'bank';
+	select.dispatch('change');
+	assert.equal(spec.children[8].children[1].children[1].textContent, '+35.00 W/K', 'the swap carries the whole bank, not a stack of both');
+	assert.equal(spec.children[0].children[1].children[1].textContent, '+16.3 kg');
+	buttonOf(bay).dispatch('pointerleave');
+	advance(2);
+	assert.equal(spec.children[8].children[1].children[1].textContent, '');
+	assert.equal(specValue(spec, 8), '1.60 W/K', 'the live cooling comes back');
 });
