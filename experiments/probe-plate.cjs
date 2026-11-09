@@ -1,12 +1,15 @@
 'use strict';
 // Measurement: how the wheels meet a 45° plate and stepped ground.
 //
-// Two numbers matter for "a wheel hanging in the air":
+// Three numbers matter for "a wheel hanging in the air":
 //   support  - which contact actually holds the body up (a wheel, or the hull
 //              underside beached on something);
-//   float    - how far each wheel's contact point hangs above the ground under
-//              it. Positive is a wheel in the air, so a platform supported on
-//              one wheel reports the other one's float.
+//   strut    - how far that wheel's strut extended to reach the ground under it,
+//              which is how a hull carried by its belly keeps its wheels down;
+//   float    - how far a wheel's contact point still hangs above the ground
+//              under it once the strut has reached. Positive is a wheel really
+//              in the air, so a platform supported on one wheel reports the
+//              other one's float.
 //
 // The wheels ride at ±platformWheelHalfSpan and the underside between them is
 // the chamfer `hullDepthAt` describes, so a probe has to read both from the
@@ -34,7 +37,7 @@ function wheelFloat(body, id) {
 		const localX = (k ? 1 : -1) * span;
 		const groundX = body.x + localX * cosine - radius * sine;
 		const bottom = body.y + localX * sine + radius * cosine - radius;
-		out[k] = bottom - groundAt(groundX, id);
+		out[k] = bottom - body.wheelDrop[k] - groundAt(groundX, id);
 	}
 	return out;
 }
@@ -67,11 +70,12 @@ function report(label, tally) {
 	const share = value => (value / frames * 100).toFixed(1) + '%';
 	console.log(`${label.padEnd(26)} wheel-supported ${share(tally.wheel)}  beached ${share(tally.belly)}  ` +
 		`one wheel in air ${share(tally.oneAir)}  both wheels in air ${share(tally.bothAir)}  ` +
-		`worst float ${tally.worst.toFixed(2)} m` + (tally.label ? `  (${tally.label})` : ''));
+		`worst float ${tally.worst.toFixed(2)} m  worst strut ${tally.drop.toFixed(2)} m` +
+		(tally.label ? `  (${tally.label})` : ''));
 }
 
 function tallyOf() {
-	return { frames: 0, wheel: 0, belly: 0, oneAir: 0, bothAir: 0, worst: 0 };
+	return { frames: 0, wheel: 0, belly: 0, oneAir: 0, bothAir: 0, worst: 0, drop: 0 };
 }
 
 function record(tally, body, id) {
@@ -85,6 +89,8 @@ function record(tally, body, id) {
 	if (state.kind === 'belly' && low > 0.02) tally.bothAir++;
 	else if (state.kind === 'wheel' && high > 0.02) tally.oneAir++;
 	if (high > tally.worst) tally.worst = high;
+	const drop = Math.max(body.wheelDrop[0], body.wheelDrop[1]);
+	if (drop > tally.drop) tally.drop = drop;
 }
 
 // Drive at a parked competitor from a standing start and record the crossing.

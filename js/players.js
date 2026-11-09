@@ -301,7 +301,8 @@
 			tiltManual: 0, driveManual: 0, wantedAngle: 0,
 			keeperAge: keeperInterval, keeperBall: null, keeperState: '', keeperBounces: -1, keeperPushes: -1,
 			contactOnPiston: false, contactVx: 0, contactVy: 0, contactY: 0,
-			previousX: 0, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0
+			previousX: 0, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0,
+			wheelDrop: [0, 0]
 		};
 		settle(rival);
 		// The ball solves a deck contact against this body between steps, so the
@@ -897,24 +898,38 @@
 	// the reach, fully down at the full gap and continuous in between. The slew
 	// limit is what makes it a mechanism: the plate swings at 90°/s and never
 	// snaps, so a fold or an unfold is visible as motion.
-	function deployFor(gap) {
+	function deployFor(gap, reach) {
 		if (gap <= tailFullGap) return 1;
-		if (gap >= tailReach) return 0;
-		return (tailReach - gap) / (tailReach - tailFullGap);
+		if (gap >= reach) return 0;
+		return (reach - gap) / (reach - tailFullGap);
 	}
 
+	// Seconds one plate needs to swing the whole way down: the angle it travels
+	// over the rate it travels at. A ramp that is still swinging when a wheel
+	// reaches it is a wall, so the unfold has to start this long before contact.
+	const tailSwing = tailAngle / tailSlew;
+
 	// A plate comes down as a hull arrives — closing, or simply within a reach
-	// that its own width cannot cover — and stays down while the two hulls
-	// overlap, because that is when one of them is climbing the other. It only
-	// folds once the other hull has cleared the plate's footprint or stopped
-	// beside it. Deployment used to need a closing speed, which left the plate
-	// folded exactly while a rider sat on it and then popped it open under the
-	// wheel as the pair came to rest.
+	// that its own width cannot cover — and stays down while the other hull has
+	// any part of itself over the plate, because that is when one of them is
+	// climbing the other. It folds only once the other hull's near edge has
+	// cleared the plate's tip, or the pair has stopped beside each other.
+	//
+	// The reach it unfolds over is the closing speed's own: a plate swung down at
+	// 90°/s needs half a second, so the ramp starts coming out two swings out —
+	// one for the swing itself and one because a hull under drive is still
+	// accelerating over that distance. A crawling approach keeps the standing
+	// 2.6 m reach. A fixed reach left a fast approach climbing a half-folded
+	// plate, which is a 0.3 m face rather than a ramp, and popped the hull higher
+	// than the deck it was riding onto.
 	function stepTails(player, dt) {
 		const body = posOf(player);
 		if (!Number.isFinite(body.x)) return;
 		const half = halfWidth();
+		// The plate's tip, and the centre-to-centre distance at which the other
+		// hull's near edge has passed it.
 		const plateFoot = half + tailPlate * Math.sin(tailAngle);
+		const clear = plateFoot + half;
 		let left = 0;
 		let right = 0;
 		for (let i = 0; i < players.length; i++) {
@@ -923,12 +938,13 @@
 			const target = posOf(other);
 			if (!Number.isFinite(target.x)) continue;
 			// A plate only answers a platform on its own side of the body: the
-			// gap is measured edge to edge, and a hull already inside the other
-			// hull's footprint keeps the plate down whatever the speeds are.
+			// gap is measured edge to edge, and a hull already over the plate
+			// keeps it down whatever the speeds are.
 			const leftwards = target.x >= body.x;
 			const raw = leftwards ? target.x - body.x : body.x - target.x;
 			const gap = raw - half * 2;
-			const closing = leftwards ? target.vx - body.vx < -0.02 : body.vx - target.vx < -0.02;
+			const approach = leftwards ? body.vx - target.vx : target.vx - body.vx;
+			const closing = approach > 0.02;
 			// A hull riding on this deck will drive off one of its ends, and it
 			// cannot wait for the plate to swing down under its wheels: both ends
 			// come down as soon as something rides here, so the rider rolls off a
@@ -938,10 +954,22 @@
 				right = 1;
 				break;
 			}
-			if (raw >= plateFoot && !(closing && gap < tailReach)) continue;
-			// Overlapping hulls always present the ramp; a hull still outside it
-			// is answered by the same gap schedule as before.
-			const deployment = raw < plateFoot ? 1 : deployFor(gap);
+			// Ground the other hull covers in one plate swing.
+			const swing = approach * tailSwing;
+			const reach = closing ? Math.max(tailReach, swing * 2 + tailFullGap) : tailReach;
+			if (raw >= clear && !(closing && gap < reach)) continue;
+			// A hull fast enough to cross this deck inside one swing has to find
+			// the far ramp already down: by the time it is on the deck there is no
+			// swing left, and its leading wheel would go over the far edge onto a
+			// plate still on its way out. Both ends come out to meet it.
+			if (closing && half * 2 < swing) {
+				left = 1;
+				right = 1;
+				break;
+			}
+			// A hull still over the plate always gets the ramp; one outside it is
+			// answered by the gap schedule on its own approach speed.
+			const deployment = raw < clear ? 1 : deployFor(gap, reach);
 			if (leftwards) right = Math.max(right, deployment);
 			else left = Math.max(left, deployment);
 		}
@@ -1028,21 +1056,38 @@
 		}
 	}
 
+	// A wheel hangs on its strut: the hub sits its drop below the hull, so the
+	// wheel the pose solve put on the ground is the wheel the player sees there.
+	// The strut shows only once the wheel has dropped clear of the hull line, so
+	// an ordinary frame draws the same two circles it always drew.
 	function drawWheels(context, player) {
 		const body = posOf(player);
 		const radius = wheelRadius();
 		const offset = wheelOffset();
+		const drops = body.wheelDrop;
+		context.strokeStyle = '#10191d';
+		context.lineWidth = 0.07;
+		for (let wheel = 0; wheel < 2; wheel++) {
+			const drop = drops[wheel];
+			if (drop <= radius * 2 - bodyBottom) continue;
+			context.beginPath();
+			context.moveTo(wheel ? offset : -offset, bodyBottom);
+			context.lineTo(wheel ? offset : -offset, radius - drop);
+			context.stroke();
+		}
 		context.fillStyle = '#10191d';
 		for (let wheel = 0; wheel < 2; wheel++) {
+			const drop = drops[wheel];
 			context.beginPath();
-			context.arc(wheel ? offset : -offset, radius, radius, 0, Math.PI * 2);
+			context.arc(wheel ? offset : -offset, radius - drop, radius, 0, Math.PI * 2);
 			context.fill();
 		}
 		context.strokeStyle = '#39494e';
 		context.lineWidth = 0.035;
 		for (let wheel = 0; wheel < 2; wheel++) {
+			const drop = drops[wheel];
 			context.save();
-			context.translate(wheel ? offset : -offset, radius);
+			context.translate(wheel ? offset : -offset, radius - drop);
 			context.rotate(-body.spin);
 			context.beginPath();
 			for (let spoke = 0; spoke < 4; spoke++) {
@@ -1055,8 +1100,9 @@
 		}
 		context.fillStyle = '#596a70';
 		for (let wheel = 0; wheel < 2; wheel++) {
+			const drop = drops[wheel];
 			context.beginPath();
-			context.arc(wheel ? offset : -offset, radius, radius * 0.2, 0, Math.PI * 2);
+			context.arc(wheel ? offset : -offset, radius - drop, radius * 0.2, 0, Math.PI * 2);
 			context.fill();
 		}
 	}

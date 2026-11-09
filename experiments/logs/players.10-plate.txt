@@ -1,0 +1,15 @@
+probe-plate.cjs · hull, wheels and struts against a 45° plate and stepped ground
+run after: wheels at the hull's ends, the arching keel, wheel struts (0.24 m travel)
+
+support  - which contact holds the body up: a wheel, or the underside beached
+float    - how far a wheel's contact hangs above the ground under it, after the
+           strut has reached down, so a positive float is a wheel really in air
+strut    - how far the strut extended to keep that wheel on the ground
+
+resting on a deck, both stopped: plate 45°, rig y 0.31, wheel floats 0.00, -0.00
+0.2 m stairs               wheel-supported 100.0%  beached 0.0%  one wheel in air 0.0%  both wheels in air 0.0%  worst float 0.00 m  worst strut 0.03 m
+  reached x 22.2 at 1.60 m
+0.5 m stairs               wheel-supported 99.9%  beached 0.1%  one wheel in air 0.0%  both wheels in air 0.0%  worst float 0.00 m  worst strut 0.21 m
+  reached x 22.2 at 1.60 m
+ride over at 2 m/s         wheel-supported 96.7%  beached 3.3%  one wheel in air 0.0%  both wheels in air 0.0%  worst float 0.00 m  worst strut 0.12 m  (climb took 3.76 s)
+ride over at 5 m/s         wheel-supported 97.2%  beached 2.8%  one wheel in air 0.0%  both wheels in air 0.0%  worst float 0.00 m  worst strut 0.12 m  (climb took 1.51 s)

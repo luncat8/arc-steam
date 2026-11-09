@@ -274,7 +274,8 @@ test('the rig rides over a competitor tail instead of stopping at its side', () 
 });
 
 // How far each wheel hangs above the ground under its contact point: positive
-// is a wheel in the air.
+// is a wheel in the air. The strut's own reach is spent first, so this is the
+// gap a player would see, not the gap the rigid wheel line leaves.
 function wheelFloat(body, id) {
 	const cosine = Math.cos(body.angle);
 	const sine = Math.sin(body.angle);
@@ -284,9 +285,14 @@ function wheelFloat(body, id) {
 		const groundX = body.x + localX * cosine - c.platformWheelRadius * sine;
 		const bottom = body.y + localX * sine + c.platformWheelRadius * cosine - c.platformWheelRadius;
 		const ground = Math.max(ceiling.floorAt(groundX), players.surfaceAt(groundX, id));
-		out[k] = bottom - ground;
+		out[k] = bottom - body.wheelDrop[k] - ground;
 	}
 	return out;
+}
+
+// How far each strut has extended, in the same order wheelFloat reports.
+function wheelDrop(body) {
+	return [body.wheelDrop[0], body.wheelDrop[1]];
 }
 
 test('the wheels, not the keel corner, meet a 45° plate first', () => {
@@ -399,6 +405,149 @@ test('a deck carrying a rider brings both of its ends down, so the rider rolls o
 	}
 	assert.ok(plateWhileRidden > players.tailAngle * 0.9, 'the far end comes down under the rider, measured ' + (plateWhileRidden * 180 / Math.PI).toFixed(0) + '\u00b0');
 	assert.ok(highest < 0.25, 'the rider rolls down the far ramp instead of dropping off a ledge, measured ' + highest.toFixed(3));
+});
+
+// Even steps of half a metre, the stair a wheel cannot roll up: the hull is
+// carried over the face and the wheels have to reach the tread behind it.
+function stairFloor(height) {
+	const state = ceiling.state;
+	state.floorPiles.fill(0);
+	for (let column = 0; column < state.floorPiles.length; column++) {
+		const x = (column + 0.5) * state.cell;
+		if (x > 6) state.floorPiles[column] = Math.min(1.6, Math.floor((x - 6) / 1.2) * height);
+	}
+	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} });
+}
+
+test('a wheel drops onto its strut instead of hanging over the tread behind it', () => {
+	const world = fresh();
+	players.state.rivals[0].x = 22;
+	stairFloor(0.5);
+	world.platform.x = 4;
+	world.platform.vx = 0;
+	world.direction = 1;
+	world.target = NaN;
+	let worstFloat = 0;
+	let deepest = 0;
+	for (let i = 0; i < 240 * 6; i++) {
+		physics.step(world, c.step);
+		const floats = wheelFloat(world.platform, 'rig');
+		const drops = wheelDrop(world.platform);
+		worstFloat = Math.max(worstFloat, floats[0], floats[1]);
+		deepest = Math.max(deepest, drops[0], drops[1]);
+		for (const drop of drops) assert.ok(drop <= c.platformWheelTravel + 1e-9, 'a strut stops at its travel');
+	}
+	assert.ok(world.platform.y > 1.5, 'the machine climbed the stair');
+	assert.ok(deepest > 0.1, 'the stair really did take a wheel past its strut, measured ' + deepest.toFixed(3));
+	assert.ok(worstFloat < 0.08, 'no wheel is left in the air over a tread, worst ' + worstFloat.toFixed(3) + ' m');
+});
+
+test('the struts are slack while the hull sits level on the floor', () => {
+	const world = fresh();
+	const rival = players.state.rivals[0];
+	rival.bot = false;
+	rival.x = 22;
+	rival.target = NaN;
+	rival.direction = 0;
+	fillFloor(0, 0);
+	world.platform.x = 6;
+	world.platform.vx = 0;
+	world.direction = 1;
+	world.target = NaN;
+	// Level ground under drive: the pose is the wheel line, so a strut that
+	// extends here is a wheel the solve has lifted for no reason.
+	for (let i = 0; i < 240 * 2; i++) {
+		players.update(world, c.step);
+		physics.step(world, c.step);
+		assert.ok(world.platform.x < rival.x - players.halfWidth * 2, 'the run stays clear of the competitor');
+		for (const drop of wheelDrop(world.platform)) near(drop, 0, 1e-9);
+		for (const value of wheelFloat(world.platform, 'rig')) near(value, 0, 1e-6);
+	}
+});
+
+test('the drawn wheel sits where the strut put it', () => {
+	const world = fresh();
+	const rig = players.state.players[0];
+	const span = c.platformWheelHalfSpan;
+	const radius = c.platformWheelRadius;
+	const at = (x, y) => x.toFixed(4) + ' ' + y.toFixed(4);
+	world.platform.x = 7;
+	world.platform.angle = 0;
+	world.platform.wheelDrop[0] = 0;
+	world.platform.wheelDrop[1] = 0;
+	// Slack struts: the wheel is the plain circle at the hull's own radius, and
+	// nothing is drawn between the hull line and the hub.
+	const slack = painting(rig, true, null);
+	assert.ok(slack.geometry.includes('arc ' + at(-span, radius) + ' ' + radius.toFixed(4)), 'the level wheel is where the pose puts it');
+	assert.ok(!slack.geometry.includes('moveTo ' + at(-span, players.bodyBottom)), 'a slack strut is not drawn');
+	// One wheel extended: its hub, its spokes and its hub cap all follow it down,
+	// and the strut that carries it is drawn from the hull line.
+	const drop = radius * 2 - players.bodyBottom + 0.04;
+	world.platform.wheelDrop[0] = drop;
+	const extended = painting(rig, true, null);
+	assert.ok(extended.geometry.includes('arc ' + at(-span, radius - drop) + ' ' + radius.toFixed(4)), 'the dropped wheel is drawn at its strut');
+	assert.ok(extended.geometry.includes('arc ' + at(-span, radius - drop) + ' ' + (radius * 0.2).toFixed(4)), 'and so is its hub');
+	assert.ok(extended.geometry.includes('translate ' + at(-span, radius - drop)), 'and so are its spokes');
+	assert.ok(extended.geometry.includes('moveTo ' + at(-span, players.bodyBottom)), 'the strut starts at the hull line');
+	assert.ok(extended.geometry.includes('lineTo ' + at(-span, radius - drop)), 'and ends at the hub');
+	assert.ok(extended.geometry.includes('arc ' + at(span, radius) + ' ' + radius.toFixed(4)), 'the other wheel is untouched');
+});
+
+test('a plate is down before a fast hull reaches it, on both ends of the crossing', () => {
+	const world = fresh();
+	const rival = players.state.rivals[0];
+	rival.bot = false;
+	rival.x = 16;
+	rival.vx = 0;
+	rival.target = NaN;
+	rival.direction = 0;
+	rival.tailLeft = 0;
+	rival.tailRight = 0;
+	world.platform.x = 5;
+	world.platform.vx = 0;
+	world.direction = 1;
+	world.target = NaN;
+	const run = players.bodyTop * Math.tan(players.tailAngle);
+	const tip = rival.x - players.halfWidth - run;
+	const farEdge = rival.x + players.halfWidth;
+	let onApproach = NaN;
+	let onRunOff = NaN;
+	for (let i = 0; i < 240 * 6; i++) {
+		// A hull under drive, arriving at the plate faster than it can swing.
+		world.platform.vx = Math.min(10, world.platform.vx + 4 * c.step);
+		players.update(world, c.step);
+		physics.step(world, c.step);
+		const leading = world.platform.x + c.platformWheelHalfSpan * Math.cos(world.platform.angle);
+		if (!Number.isFinite(onApproach) && leading >= tip) onApproach = rival.tailLeft;
+		if (!Number.isFinite(onRunOff) && leading >= farEdge) onRunOff = rival.tailRight;
+		if (Number.isFinite(onRunOff)) break;
+	}
+	const degrees = value => (value * 180 / Math.PI).toFixed(0) + '\u00b0';
+	assert.ok(onApproach > players.tailAngle * 0.97, 'the ramp the leading wheel meets is a ramp, measured ' + degrees(onApproach));
+	assert.ok(onRunOff > players.tailAngle * 0.97, 'the far ramp is down before the rider crosses the deck, measured ' + degrees(onRunOff));
+});
+
+test('a plate holds until the hull beside it has passed the ramp, then folds', () => {
+	const world = fresh();
+	const rival = players.state.rivals[0];
+	rival.bot = false;
+	rival.x = 14;
+	rival.vx = 0;
+	rival.target = NaN;
+	rival.direction = 0;
+	world.platform.vx = 0;
+	world.platform.direction = 0;
+	world.platform.target = NaN;
+	const clear = players.halfWidth * 2 + players.bodyTop * Math.tan(players.tailAngle);
+	// Stopped with its near edge still over the ramp: the plate stays down, since
+	// that is the plate a departing wheel is standing on.
+	world.platform.x = rival.x - clear + 0.1;
+	for (let i = 0; i < 240 * 2; i++) { players.update(world, c.step); physics.step(world, c.step); }
+	near(rival.tailLeft, players.tailAngle, 1e-3);
+	// Past it: nothing is over the plate any more, so it folds.
+	world.platform.x = rival.x - clear - 0.1;
+	for (let i = 0; i < 240 * 2; i++) { players.update(world, c.step); physics.step(world, c.step); }
+	near(rival.tailLeft, 0, 1e-6);
 });
 
 test('a competitor blade takes floor value into its own load and honours capacity', () => {

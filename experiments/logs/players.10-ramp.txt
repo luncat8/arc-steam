@@ -1,0 +1,18 @@
+probe-ramp.cjs · does a climbing wheel ever meet a folded plate?
+run after: the unfold reach follows the closing speed, the plate holds until the
+other hull's near edge has passed the ramp's tip, and a hull fast enough to cross
+the deck inside one plate swing brings both ends down at once
+
+approach - the plate angle at the moment a wheel leaves the floor onto the plate
+run-off  - the plate angle at the moment a wheel leaves the deck onto the plate
+"over N" - the worst of N wheel crossings in that run; 45° is the full ramp
+
+rig rides over at 1 m/s        approach plate 45° over 2     run-off plate 45° over 1     peak ride 0.60 m
+rig rides over at 4 m/s        approach plate 45° over 2     run-off plate 45° over 2     peak ride 0.60 m
+rig rides over at 8 m/s        approach plate 45° over 2     run-off plate 45° over 2     peak ride 0.70 m
+rig rides over at 12 m/s       approach plate 45° over 2     run-off plate 45° over 2     peak ride 0.76 m
+rig rides over leftwards 1     approach plate 45° over 2     run-off plate 45° over 2     peak ride 0.60 m
+rig rides over leftwards 4     approach plate 45° over 2     run-off plate 45° over 2     peak ride 0.60 m
+rig stops on the deck, then off approach plate 45° over 2     run-off plate 45° over 2     peak ride 0.60 m
+rig climbs on, reverses off    approach plate 45° over 2     run-off plate 45° over 2     peak ride 0.60 m
+bot rival rides over the rig   approach plate 45° over 2     run-off plate 45° over 2     peak ride 0.68 m

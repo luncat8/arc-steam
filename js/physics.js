@@ -24,6 +24,13 @@
 		platformWheelHalfSpan: 1.6, platformWheelRadius: 0.18, platformBodyBottom: 0.2, platformBodyTop: 0.6,
 		// How far the underside arches up between the wheels; see hullDepthAt.
 		platformKeelArch: 0.25,
+		// Strut travel: the wheels hang below the hull on struts, so a wheel whose
+		// ground has fallen away reaches down for it instead of hanging in the air.
+		// The hull's pose is still the wheel line and the belly arch — a strut only
+		// follows the ground down, it never lifts the machine. Sized for the worst
+		// case a wheel meets: a 0.5 m stair taken at speed, and the deck corner the
+		// belly rides while the machine crests another hull.
+		platformWheelTravel: 0.24,
 		platformMaxPitch: Math.PI / 6, platformPitchRate: Math.PI / 2, platformDropRate: 3,
 		// The reflector is a sprung piston: its face tilts to steer reflections
 		// (centre and half-width follow from the collector/reflector split) and
@@ -170,6 +177,24 @@
 		return Math.max(0, height);
 	}
 
+	// Strut extension per wheel, index 0 at -platformWheelHalfSpan and 1 at +.
+	// The ground is read at the rigid contact: a strut slides along the hull's
+	// own vertical, so the reach moves that contact by less than a cell.
+	function wheelDrops(body, exceptId) {
+		const drops = body.wheelDrop;
+		const cosine = Math.cos(body.angle);
+		const sine = Math.sin(body.angle);
+		const radius = config.platformWheelRadius;
+		const span = config.platformWheelHalfSpan;
+		const travel = config.platformWheelTravel;
+		for (let wheel = 0; wheel < 2; wheel++) {
+			const localX = wheel ? span : -span;
+			const groundX = body.x + localX * cosine - radius * sine;
+			const gap = body.y + localX * sine + radius * cosine - radius - platformGroundAt(groundX, exceptId);
+			drops[wheel] = gap > travel ? travel : gap > 0 ? gap : 0;
+		}
+	}
+
 	function settlePose(body, dt, exceptId) {
 		const wantedAngle = platformPitchAt(body.x, exceptId);
 		const turn = config.platformPitchRate * dt;
@@ -217,6 +242,7 @@
 		body.stepOmega = (body.angle - body.previousAngle) / dt;
 		body.vy = body.stepVy;
 		body.omega = body.stepOmega;
+		wheelDrops(body, exceptId);
 	}
 
 	function updatePlatformTerrain(world, dt) {
@@ -871,7 +897,7 @@
 			initialEnergy: 0,
 			brake: false, drive: true, forceSetting: 0.6, direction: 0, target: NaN,
 			pistonAngle: 0, pistonOffset: 0, pistonVelocity: 0, pistonImpact: 0,
-			platform: { id: 'rig', x: 12, y: 0, vx: 0, vy: 0, angle: 0, omega: 0, spin: 0, previousX: 12, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0 },
+			platform: { id: 'rig', x: 12, y: 0, vx: 0, vy: 0, angle: 0, omega: 0, spin: 0, previousX: 12, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0, wheelDrop: [0, 0] },
 			balls: [], ballMode: 'shared1', focus: null,
 			bounces: 0, pushes: 0, lastPush: 0, groundings: 0, sales: 0, lastSale: 0
 		};

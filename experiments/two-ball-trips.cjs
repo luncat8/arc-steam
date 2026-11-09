@@ -51,10 +51,17 @@ function run(label, startX, policy) {
 	let worstDry = 0;
 	let dry = 0;
 	let inPlaySteps = 0;
+	// Time pinned against a selling wall. A selling trip is wall time by design,
+	// so this is read next to `any`: a long stint with a ball in play is a
+	// machine standing still while the chamber is playable.
+	let wall = 0;
+	let worstWall = 0;
 	let bothDown = 0;
 	let bothDownSteps = 0;
 	const wait = [0, 0];
 	const steps = Math.round(seconds / c.step);
+	const minX = physics.platformMin();
+	const maxX = physics.platformMax();
 	for (let step = 0; step < steps; step++) {
 		autopilot.update(world, c.step);
 		const focus = physics.focusBall(world);
@@ -74,6 +81,9 @@ function run(label, startX, policy) {
 		}
 		dry = inPlay ? 0 : dry + c.step;
 		if (inPlay) inPlaySteps++;
+		const atWall = Math.abs(world.platform.x - minX) < 0.05 || Math.abs(world.platform.x - maxX) < 0.05;
+		wall = atWall ? wall + c.step : 0;
+		if (wall > worstWall) worstWall = wall;
 		if (dry > worstDry) worstDry = dry;
 		// Both balls on the floor at once: the state the report is about.
 		if (down) { bothDownSteps++; if (dry === c.step) bothDown++; }
@@ -90,6 +100,7 @@ function run(label, startX, policy) {
 		travel,
 		draw: c.battery - world.battery + world.importedEnergy,
 		worstDry,
+		worstWall,
 		worstAbandon,
 		bothDown,
 		bothDownSteps,
@@ -105,6 +116,7 @@ function run(label, startX, policy) {
 		'fly=' + (100 * flying[0] / seconds).toFixed(0).padStart(3) + '/' + (100 * flying[1] / seconds).toFixed(0).padStart(3) + '%',
 		'grd=' + (100 * grounded[0] / seconds).toFixed(0).padStart(3) + '/' + (100 * grounded[1] / seconds).toFixed(0).padStart(3) + '%',
 		'drymax=' + worstDry.toFixed(1).padStart(5) + 's',
+		'wallmax=' + worstWall.toFixed(1).padStart(5) + 's',
 		'waitmax=' + worstAbandon.toFixed(1).padStart(5) + 's',
 		'bnc=' + String(world.bounces).padStart(3),
 		'grd-n=' + String(world.groundings).padStart(2),
@@ -121,7 +133,7 @@ function run(label, startX, policy) {
 }
 
 function sweep(label, policy) {
-	const total = { any: 0, mined: 0, funds: 0, bounces: 0, groundings: 0, switches: 0, travel: 0, draw: 0, worstDry: 0, worstAbandon: 0, temperature: 0, bothDown: 0, bothDownSteps: 0, runs: 0 };
+	const total = { any: 0, mined: 0, funds: 0, bounces: 0, groundings: 0, switches: 0, travel: 0, draw: 0, worstDry: 0, worstWall: 0, worstAbandon: 0, temperature: 0, bothDown: 0, bothDownSteps: 0, runs: 0 };
 	for (const start of starts) {
 		const stat = run(label, start, policy);
 		total.any += stat.any;
@@ -136,6 +148,7 @@ function sweep(label, policy) {
 		total.bothDown += stat.bothDown;
 		total.bothDownSteps += stat.bothDownSteps;
 		total.worstDry = Math.max(total.worstDry, stat.worstDry);
+		total.worstWall = Math.max(total.worstWall, stat.worstWall);
 		total.worstAbandon = Math.max(total.worstAbandon, stat.worstAbandon);
 		total.runs++;
 	}
@@ -154,6 +167,7 @@ function sweep(label, policy) {
 		'cr=' + (total.funds / runs).toFixed(0).padStart(5),
 		'T=' + (total.temperature / runs).toFixed(0).padStart(3),
 		'drymax=' + total.worstDry.toFixed(1) + 's',
+		'wallmax=' + total.worstWall.toFixed(1) + 's',
 		'waitmax=' + total.worstAbandon.toFixed(1) + 's'
 	].join(' '));
 	console.log('');
