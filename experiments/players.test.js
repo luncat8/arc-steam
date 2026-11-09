@@ -273,6 +273,134 @@ test('the rig rides over a competitor tail instead of stopping at its side', () 
 	near(rival.y, 0, 0.02);
 });
 
+// How far each wheel hangs above the ground under its contact point: positive
+// is a wheel in the air.
+function wheelFloat(body, id) {
+	const cosine = Math.cos(body.angle);
+	const sine = Math.sin(body.angle);
+	const out = [0, 0];
+	for (let k = 0; k < 2; k++) {
+		const localX = (k ? 1 : -1) * c.platformWheelHalfSpan;
+		const groundX = body.x + localX * cosine - c.platformWheelRadius * sine;
+		const bottom = body.y + localX * sine + c.platformWheelRadius * cosine - c.platformWheelRadius;
+		const ground = Math.max(ceiling.floorAt(groundX), players.surfaceAt(groundX, id));
+		out[k] = bottom - ground;
+	}
+	return out;
+}
+
+test('the wheels, not the keel corner, meet a 45° plate first', () => {
+	// The wheels ride at the hull's ends and the underside arches up between
+	// them, so a wheel takes the ramp. A wheel set in from the nose used to put
+	// the keel's corner on the plate first and beach the whole hull there.
+	const world = fresh();
+	const rival = players.state.rivals[0];
+	rival.bot = false;
+	rival.x = 16;
+	rival.vx = 0;
+	rival.target = NaN;
+	rival.direction = 0;
+	world.platform.x = 5;
+	world.platform.vx = 0;
+	world.direction = 1;
+	world.target = NaN;
+	// What holds the body up on the whole crossing: a wheel, or the underside
+	// beached on the ramp. A beached hull is the failure this pins — it rides the
+	// corner of its keel with the wheels hanging in the air.
+	let beached = 0;
+	let frames = 0;
+	for (let i = 0; i < 240 * 8 && world.platform.x < rival.x + players.halfWidth * 2; i++) {
+		players.update(world, c.step);
+		physics.step(world, c.step);
+		if (world.platform.y <= 0.02) continue;
+		frames++;
+		const floats = wheelFloat(world.platform, 'rig');
+		let own = Math.min(floats[0], floats[1]);
+		for (let localX = -players.halfWidth; localX <= players.halfWidth + 1e-9; localX += 0.02) {
+			const depth = physics.hullDepthAt(localX);
+			const cosine = Math.cos(world.platform.angle);
+			const sine = Math.sin(world.platform.angle);
+			const groundX = world.platform.x + localX * cosine - depth * sine;
+			const ground = Math.max(ceiling.floorAt(groundX), players.surfaceAt(groundX, 'rig'));
+			own = Math.min(own, world.platform.y + localX * sine + depth * cosine - ground);
+		}
+		if (own < Math.min(floats[0], floats[1]) - 1e-6) beached++;
+	}
+	assert.ok(world.platform.x > rival.x + players.halfWidth * 2, 'the rig crossed the competitor');
+	assert.ok(frames > 0, 'the rig climbed onto the competitor');
+	assert.ok(beached / frames < 0.1, 'the wheels carry the machine up the ramp; beached ' + (beached / frames * 100).toFixed(1) + '% of the climb');
+	// Down off the far ramp: a wheel still hanging is a wheel the plate dropped.
+	for (let i = 0; i < 240 * 2; i++) { players.update(world, c.step); physics.step(world, c.step); }
+	for (const value of wheelFloat(world.platform, 'rig')) near(value, 0, 0.01);
+});
+
+test('a keel that arches between the wheels keeps a deck corner from beaching the hull', () => {
+	// The underside is deepest at each wheel and rises between them, so the
+	// sharp corner of a deck being ridden over cannot pry the keel up and hang
+	// both wheels. A flat keel at bodyBottom is the shape that failed this.
+	const span = c.platformWheelHalfSpan;
+	const half = players.halfWidth;
+	near(physics.hullDepthAt(0), c.platformBodyBottom + c.platformKeelArch, 1e-9);
+	near(physics.hullDepthAt(span), c.platformBodyBottom, 1e-9);
+	near(physics.hullDepthAt(half), c.platformBodyTop, 1e-9);
+	assert.ok(physics.hullDepthAt(0) > physics.hullDepthAt(span), 'the arch rises away from the wheels');
+	for (let x = 0; x <= span; x += 0.1) assert.ok(physics.hullDepthAt(x) >= physics.hullDepthAt(x + 0.1) - 1e-9, 'the arch is monotone');
+});
+
+test('a plate stays down while it carries a rider and folds once the hull clears', () => {
+	const world = fresh();
+	const rival = players.state.rivals[0];
+	rival.bot = false;
+	rival.x = 14;
+	rival.vx = 0;
+	rival.target = NaN;
+	rival.direction = 0;
+	world.platform.x = 12.4;
+	world.platform.vx = 0;
+	world.direction = 0;
+	world.target = NaN;
+	world.platform.y = players.bodyTop;
+	// Both hulls at rest and overlapping: the ramp under the rider is a ramp,
+	// not a face that swings shut under its wheels.
+	for (let i = 0; i < 240 * 2; i++) { players.update(world, c.step); physics.step(world, c.step); }
+	near(rival.tailLeft, players.tailAngle, 1e-3);
+	// Once the rider is off the deck and away, the plate folds.
+	world.platform.x = 22;
+	for (let i = 0; i < 240 * 3; i++) { players.update(world, c.step); physics.step(world, c.step); }
+	near(rival.tailLeft, 0, 1e-6);
+});
+
+test('a deck carrying a rider brings both of its ends down, so the rider rolls off a ramp', () => {
+	const world = fresh();
+	const rival = players.state.rivals[0];
+	rival.bot = false;
+	rival.x = 12;
+	rival.vx = 0;
+	rival.target = NaN;
+	rival.direction = 0;
+	rival.tailLeft = 0;
+	rival.tailRight = 0;
+	world.platform.x = 12;
+	world.platform.y = players.bodyTop;
+	world.platform.vx = 0;
+	world.direction = 1;
+	world.target = NaN;
+	// The rider sits on the deck centre and drives right; record the far plate
+	// while it carries the rider, and how far a wheel hangs as it leaves.
+	let plateWhileRidden = 0;
+	let highest = 0;
+	for (let i = 0; i < 240 * 4; i++) {
+		players.update(world, c.step);
+		physics.step(world, c.step);
+		const riding = world.platform.y > rival.y + 0.2 && Math.abs(world.platform.x - rival.x) <= players.halfWidth * 2;
+		if (riding) plateWhileRidden = Math.max(plateWhileRidden, rival.tailRight);
+		if (world.platform.x > rival.x + players.halfWidth && world.platform.y > 0.05) highest = Math.max(highest, ...wheelFloat(world.platform, 'rig'));
+		if (world.platform.x > rival.x + players.halfWidth * 3) break;
+	}
+	assert.ok(plateWhileRidden > players.tailAngle * 0.9, 'the far end comes down under the rider, measured ' + (plateWhileRidden * 180 / Math.PI).toFixed(0) + '\u00b0');
+	assert.ok(highest < 0.25, 'the rider rolls down the far ramp instead of dropping off a ledge, measured ' + highest.toFixed(3));
+});
+
 test('a competitor blade takes floor value into its own load and honours capacity', () => {
 	fresh();
 	const state = ceiling.state;
@@ -543,14 +671,15 @@ test('switching players moves the controls and the force setting with them', () 
 });
 
 // How deep any underside point of the upper hull is inside the lower body, over
-// one pose. A point above the plate or the deck is not penetration.
+// one pose. The underside is the machine's own chamfered profile, so a point
+// above the plate or the deck is not penetration.
 function hullPenetration(upper, lower, lowerPlayer) {
 	let deepest = 0;
 	const half = players.halfWidth;
-	const bottom = players.bodyBottom;
 	const cosine = Math.cos(upper.angle);
 	const sine = Math.sin(upper.angle);
 	for (let localX = -half; localX <= half + 1e-9; localX += 0.02) {
+		const bottom = physics.hullDepthAt(localX);
 		const x = upper.x + cosine * localX - sine * bottom;
 		const y = upper.y + sine * localX + cosine * bottom;
 		const dx = x - lower.x;

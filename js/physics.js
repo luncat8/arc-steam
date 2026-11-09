@@ -17,7 +17,13 @@
 		width: 24, ceiling: 15, gravity, ballGravity: gravity * ballSpeedScale * ballSpeedScale,
 		ballMass: 1 / (ballSpeedScale * ballSpeedScale), ballSpeedScale, radius: 0.18,
 		platformWidth: 3.6, deck: 0.7, collectorFraction: 0.35,
-		platformWheelHalfSpan: 1.3, platformWheelRadius: 0.18, platformBodyBottom: 0.2, platformBodyTop: 0.6,
+		// The wheels sit at the hull's ends, not 0.5 m inboard of them: a wheel
+		// leads the 45° plate up the ramp, so the machine climbs on its wheels. A
+		// wheel set in from the nose put the flat belly's corner on the ramp first
+		// and beached the hull there, with a wheel left hanging in the air.
+		platformWheelHalfSpan: 1.6, platformWheelRadius: 0.18, platformBodyBottom: 0.2, platformBodyTop: 0.6,
+		// How far the underside arches up between the wheels; see hullDepthAt.
+		platformKeelArch: 0.25,
 		platformMaxPitch: Math.PI / 6, platformPitchRate: Math.PI / 2, platformDropRate: 3,
 		// The reflector is a sprung piston: its face tilts to steer reflections
 		// (centre and half-width follow from the collector/reflector split) and
@@ -106,9 +112,32 @@
 		return Math.max(-config.platformMaxPitch, Math.min(config.platformMaxPitch, Math.atan2(rise, span * 2)));
 	}
 
+	// Depth of the hull below its origin at a local x: the arch between the
+	// wheels, then the chamfer up to the hull's ends. One profile serves the pose
+	// solve and the drawing, so the shape a player sees is the shape that rides
+	// the ground.
+	//
+	// The wheels are the deepest points: the underside rises from the wheel line
+	// both ways. Between them a shallow arch keeps a sharp corner — the deck edge
+	// of a hull being ridden over, a rock shoulder — from prying the flat keel up
+	// and hanging both wheels in the air; the corner has to reach the arch to
+	// touch the hull at all, and by then the wheels are already over it.
+	function hullDepthAt(localX) {
+		const span = config.platformWheelHalfSpan;
+		const distance = Math.abs(localX);
+		const halfWidth = config.platformWidth * 0.5;
+		if (distance <= span) {
+			const fraction = distance / span;
+			return config.platformBodyBottom + config.platformKeelArch * (1 - fraction * fraction);
+		}
+		const fraction = Math.min(1, (distance - span) / Math.max(1e-6, halfWidth - span));
+		return config.platformBodyBottom + (config.platformBodyTop - config.platformBodyBottom) * fraction;
+	}
+
 	// The chassis origin puts both wheels on the ground under the lean, and never
-	// lets the body under them sink into anything it is riding: the belly points
-	// between the wheels are the same hull, so they can only raise the base.
+	// lets the body under them sink into anything it is riding: the underside
+	// points between the wheels are the same hull, so they can only raise the
+	// base.
 	function platformBaseAt(x, angle, exceptId) {
 		const cosine = Math.cos(angle);
 		const sine = Math.sin(angle);
@@ -133,8 +162,9 @@
 		const sampleWidth = halfWidth * 2 / sampleCount;
 		for (let sample = 0; sample <= sampleCount; sample++) {
 			const localX = -halfWidth + sampleWidth * sample;
-			const groundX = x + localX * cosine - bodyBottom * sine;
-			const required = platformGroundAt(groundX, exceptId) - localX * sine - bodyBottom * cosine;
+			const depth = hullDepthAt(localX);
+			const groundX = x + localX * cosine - depth * sine;
+			const required = platformGroundAt(groundX, exceptId) - localX * sine - depth * cosine;
 			if (required > bellyHeight) height = Math.max(height, required);
 		}
 		return Math.max(0, height);
@@ -1524,7 +1554,7 @@ function spend(world, useful) {
 		engines, engineNow, selectEngine, reserveNow, packMass,
 		config, createWorld, step, launch, canLaunch, launchCapacity, ballEnergy, totalEnergy, temperature,
 		thermalFactor, coolingPower, platformMass, machineMass, applyMachineMassChange, platformMin, platformMax, dryMass,
-		platformPitchAt, platformBaseAt, platformPointAt, platformSurfaceAt, planeContactTime,
+		platformPitchAt, platformBaseAt, platformPointAt, platformSurfaceAt, planeContactTime, hullDepthAt,
 		chargePadMin, chargePadMax, onChargePad, charging,
 		retentionNow, rockRetentionNow, ballMassNow, ballMassFor, damageBonusNow, damageRadiusBonusNow, pulseNow, forceNow, speedNow, arrivalSpeed, coverage, travelTime, stopTime, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
 		setGroundBounce, groundRetentionNow, get groundBounceMode() { return groundMode; },

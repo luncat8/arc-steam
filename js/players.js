@@ -89,6 +89,20 @@
 		return (root.SteamPhysics ? root.SteamPhysics.config.platformWidth : 3.6) * 0.5;
 	}
 
+	// The drawing reads the machine's own wheel and hull numbers, so a wheel can
+	// never be drawn somewhere the pose solve does not put it.
+	function wheelOffset() {
+		return root.SteamPhysics ? root.SteamPhysics.config.platformWheelHalfSpan : halfWidth() - 0.18;
+	}
+
+	function wheelRadius() {
+		return root.SteamPhysics ? root.SteamPhysics.config.platformWheelRadius : 0.18;
+	}
+
+	function depthAt(localX) {
+		return root.SteamPhysics ? root.SteamPhysics.hullDepthAt(localX) : bodyBottom;
+	}
+
 	function terrainHeight(x) {
 		return root.SteamCeiling ? root.SteamCeiling.floorAt(x) : 0;
 	}
@@ -889,10 +903,18 @@
 		return (tailReach - gap) / (tailReach - tailFullGap);
 	}
 
+	// A plate comes down as a hull arrives — closing, or simply within a reach
+	// that its own width cannot cover — and stays down while the two hulls
+	// overlap, because that is when one of them is climbing the other. It only
+	// folds once the other hull has cleared the plate's footprint or stopped
+	// beside it. Deployment used to need a closing speed, which left the plate
+	// folded exactly while a rider sat on it and then popped it open under the
+	// wheel as the pair came to rest.
 	function stepTails(player, dt) {
 		const body = posOf(player);
 		if (!Number.isFinite(body.x)) return;
 		const half = halfWidth();
+		const plateFoot = half + tailPlate * Math.sin(tailAngle);
 		let left = 0;
 		let right = 0;
 		for (let i = 0; i < players.length; i++) {
@@ -901,15 +923,27 @@
 			const target = posOf(other);
 			if (!Number.isFinite(target.x)) continue;
 			// A plate only answers a platform on its own side of the body: the
-			// gap is measured edge to edge, and only a closing gap is a reason
-			// to unfold. A platform moving away folds back.
-			if (target.x >= body.x) {
-				const gap = target.x - half - (body.x + half);
-				if (gap < tailReach && target.vx - body.vx < -0.02) right = Math.max(right, deployFor(gap));
-			} else {
-				const gap = body.x - half - (target.x + half);
-				if (gap < tailReach && body.vx - target.vx < -0.02) left = Math.max(left, deployFor(gap));
+			// gap is measured edge to edge, and a hull already inside the other
+			// hull's footprint keeps the plate down whatever the speeds are.
+			const leftwards = target.x >= body.x;
+			const raw = leftwards ? target.x - body.x : body.x - target.x;
+			const gap = raw - half * 2;
+			const closing = leftwards ? target.vx - body.vx < -0.02 : body.vx - target.vx < -0.02;
+			// A hull riding on this deck will drive off one of its ends, and it
+			// cannot wait for the plate to swing down under its wheels: both ends
+			// come down as soon as something rides here, so the rider rolls off a
+			// ramp instead of dropping off a ledge.
+			if (target.y > body.y + layerThreshold) {
+				left = 1;
+				right = 1;
+				break;
 			}
+			if (raw >= plateFoot && !(closing && gap < tailReach)) continue;
+			// Overlapping hulls always present the ramp; a hull still outside it
+			// is answered by the same gap schedule as before.
+			const deployment = raw < plateFoot ? 1 : deployFor(gap);
+			if (leftwards) right = Math.max(right, deployment);
+			else left = Math.max(left, deployment);
 		}
 		const slew = tailSlew * dt;
 		const wantLeft = left * tailAngle;
@@ -996,8 +1030,8 @@
 
 	function drawWheels(context, player) {
 		const body = posOf(player);
-		const radius = root.SteamPhysics ? root.SteamPhysics.config.platformWheelRadius : 0.18;
-		const offset = halfWidth() - 0.5;
+		const radius = wheelRadius();
+		const offset = wheelOffset();
 		context.fillStyle = '#10191d';
 		for (let wheel = 0; wheel < 2; wheel++) {
 			context.beginPath();
@@ -1045,8 +1079,26 @@
 		context.translate(body.x, body.y);
 		context.rotate(body.angle);
 		drawTails(context, rig, player, body);
+		// The hull is drawn from the same underside profile the pose solve rides,
+		// so the chamfer a player sees is the chamfer that guides the machine over
+		// a rock shoulder or another hull's plate.
+		const wheels = wheelOffset();
 		context.fillStyle = rig.body;
-		context.fillRect(-half, bodyBottom, half * 2, bodyTop - bodyBottom);
+		context.beginPath();
+		context.moveTo(-half, bodyTop);
+		if (wheels > 0) {
+			context.lineTo(-half, depthAt(-half));
+			context.lineTo(-wheels, depthAt(-wheels));
+			context.lineTo(0, depthAt(0));
+			context.lineTo(wheels, depthAt(wheels));
+			context.lineTo(half, depthAt(half));
+		} else {
+			context.lineTo(-half, bodyBottom);
+			context.lineTo(half, bodyBottom);
+		}
+		context.lineTo(half, bodyTop);
+		context.closePath();
+		context.fill();
 		context.fillStyle = rig.deck;
 		context.fillRect(-half, bodyTop - 0.05, half * 2, 0.05);
 		drawWheels(context, player);
