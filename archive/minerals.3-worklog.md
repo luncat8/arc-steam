@@ -150,11 +150,9 @@ follow-up rather than a formation change.
   `git diff --check` clean; baseline constants reverted, diff shows only the
   additive `extractedMinerals` tracking.
 
-## Next step
+## Decision
 
-Decide the square stock-trip dip (−10% cells/min, crystal banked about the
-same): either accept the formation as-is with the dip documented, or attack
-the catch side — the pad-aware progression already shows the pattern
-(extraction 115.5 → 120.4 cells/min, crystal banked 1.56 → 2.00 kg per shift
-on a 7.2% → 10.2% catch rate), so a pad-aware stock policy is the natural
-place to close the gap without touching the formation.
+Keep the current formation and stock policy. The square stock-trip extraction
+dip is not important enough to justify a policy change; it remains documented
+as an observed trade-off. No pad-aware stock-policy variant will be pursued
+for this result, and no formation or physics changes are needed.
