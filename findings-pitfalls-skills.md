@@ -121,3 +121,24 @@ cd /home/user/arc-steam && LD_LIBRARY_PATH=/tmp/al/lib PLAYWRIGHT_PATH=/tmp/pw/n
 - A selected bot is still a bot. Selection changes which machine receives hand input; it must not silently suppress that machine's automatic release. Gate the release on the manual window, not on the active-player index.
 - Interface tests share one live world. A thermal-cutoff or motion setup must be cleared before a later pulse/shop assertion, and a failed duty test must not leave its switches enabled for the reset test. Prefer explicit scene setup over advancing a few frames and hoping the 100 ms readout cadence lands inside the window.
 - Floor smoothing must transport value with height. Rebuilding only the height profile changes ore density even when the blade's own cut is priced correctly; use a second preallocated value buffer and move each edge's height/value share together.
+
+## Slow market noise and generated opening prices
+
+- Value-noise lattice knots that alternate high and low, with seeded amplitudes,
+  guarantee a full boom→glut swing every two knots without a repeating sine;
+  free-noise octaves on top break the regularity. Bound the log-price drift with
+  `tanh` so a run of tall knots widens the swing instead of printing an absurd
+  quote, and keep the fastest octave shallow: the one-second slope is roughly
+  `depth / scale`.
+- A seed-generated opening demand table gives each run its own market at t = 0.
+  Ramp the slow noise in over the first minute so the opening quote *is* that
+  table: starting at a random point of full-amplitude noise can open a fresh run
+  in a deep glut and starve every test that funds research from a measured sale.
+- A sale's supply term must divide the quote. Multiplying by `(1 + pressure)`
+  raises the price of exactly the ore just dumped; a test that only asserts
+  "pressure increased" and "price did not grow by 50%" will happily pass. Assert
+  the direction of the price move.
+- Changing a mineral formation changes the rock's strength histogram, which
+  changes extraction rate and rubble piles. Tests that pin a pile height, a
+  predicted distance or income per load then fail for physics reasons. Match the
+  measured strength distribution and extraction count, not just the mean mix.

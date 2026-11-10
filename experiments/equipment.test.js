@@ -7,7 +7,9 @@ test('purchase needs funds and the unlocking research, debits once, and appends 
 	const w = physics.createWorld();
 	assert.equal(equipment.install('pad', w), false, 'no funds yet');
 	assert.equal(equipment.isUnlocked('pad'), false, 'the pad is locked before its research');
-	const earned = earnFunds(w, 60);
+	// A live quote pays about 5–8 cr per cell, so a full hopper is the load that
+	// funds a research node and its item together.
+	const earned = earnFunds(w, 100);
 	assert.ok(earned > 180 + 250);
 	assert.equal(equipment.install('pad', w), false, 'funds alone do not unlock it');
 	near(ceiling.state.funds, earned);

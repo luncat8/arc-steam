@@ -90,6 +90,9 @@ test('research deltas reach the simulation instead of acting as labels', () => {
 	w.ball.vx = 0;
 	w.ball.vy = 0;
 	w.platform.vx = 0;
+	// The sales that funded the research left the rig hot, and a derated engine
+	// cannot show a mass delta. Cool it before measuring full-force acceleration.
+	w.heat = 0;
 	w.direction = 1;
 	sync(w);
 	run(w, 0.25);

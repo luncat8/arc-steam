@@ -533,8 +533,21 @@ test('demand drifts each price slowly and by large moves, at its own pace', () =
 		const low = Math.min(...values);
 		const high = Math.max(...values);
 		// Every ore more than doubles and reverses across ten minutes, so a shift
-		// can be timed: crystal swings widest, iron least.
+		// can be timed: on this seed, crystal swings widest and iron least.
 		assert.ok(high / low > 2, 'mineral ' + m + ' swings ' + (high / low).toFixed(1) + '× over ten minutes');
+		let widestWindow = 1;
+		for (let start = 0; start + 180 < values.length; start++) {
+			let windowLow = Infinity;
+			let windowHigh = 0;
+			for (let second = start; second <= start + 180; second++) {
+				windowLow = Math.min(windowLow, values[second]);
+				windowHigh = Math.max(windowHigh, values[second]);
+			}
+			widestWindow = Math.max(widestWindow, windowHigh / windowLow);
+		}
+		// The big move happens inside a few minutes of play, not over a whole
+		// shift and not in a single flicker.
+		assert.ok(widestWindow > 1.8, 'mineral ' + m + ' moves ' + widestWindow.toFixed(1) + '× within three minutes');
 		for (let second = 1; second < values.length; second++) {
 			const move = Math.abs(values[second] / values[second - 1] - 1);
 			if (move > largestMove[m]) largestMove[m] = move;
@@ -543,13 +556,13 @@ test('demand drifts each price slowly and by large moves, at its own pace', () =
 	}
 	// One second never moves a price by more than a few percent: the change is a
 	// drift over minutes, not a flicker.
-	for (let m = 0; m < 3; m++) assert.ok(largestMove[m] < 0.035, 'mineral ' + m + ' one-second move ' + (largestMove[m] * 100).toFixed(1) + '%');
+	for (let m = 0; m < 3; m++) assert.ok(largestMove[m] < 0.025, 'mineral ' + m + ' one-second move ' + (largestMove[m] * 100).toFixed(1) + '%');
 	// Iron turns over more often than crystal, and crystal fewer times than iron:
 	// each ore has its own pace, so not every quote moves together.
 	assert.ok(upTurns[0] > upTurns[2], 'iron cycles fastest, crystal slowest');
 	assert.ok(upTurns[2] >= 3, 'crystal completes more than one cycle in ten minutes');
 	const swing = series.map(values => Math.max(...values) / Math.min(...values));
-	assert.ok(swing[2] > swing[0], 'the slow rare ore swings widest');
+	assert.ok(swing[2] > swing[0], 'the slow rare ore swings widest on this seed');
 });
 
 test('a wall sale softens its own ore and the market recovers', () => {
@@ -571,8 +584,12 @@ test('a wall sale softens its own ore and the market recovers', () => {
 	ceiling.sellCargo(0, 1);
 	assert.ok(state.supplyPressure[0] > pressureBefore[0], 'the wall absorbed iron and marked it down');
 	assert.ok(state.supplyPressure[2] >= pressureBefore[2], 'the crystal share of the load was marked down too');
+	// The sale re-quotes on the same market clock, so the only change is the
+	// supply discount: the ore in the load must actually get cheaper.
+	assert.ok(state.mineralPrices[0] < before[0] * 0.97, 'iron is discounted ' + (100 * (1 - state.mineralPrices[0] / before[0])).toFixed(1) + '%');
+	assert.ok(state.mineralPrices[2] < before[2], 'crystal is discounted too');
 	// A glut is a discount, never a free ore.
-	for (let m = 0; m < 3; m++) assert.ok(state.mineralPrices[m] > 0 && state.mineralPrices[m] < before[m] * 1.5);
+	for (let m = 0; m < 3; m++) assert.ok(state.mineralPrices[m] > 0 && state.mineralPrices[m] < before[m]);
 	const discounted = Array.from(state.mineralPrices);
 	// Demand keeps moving while the pressure decays, so compare against the same
 	// instant with no sale: the pressure itself must fall back to the noise.
@@ -601,4 +618,87 @@ test('cargo keeps the value the cells were worth when they were caught', () => {
 	const paid = ceiling.sellCargo(0, 1);
 	near(paid, caught, 1e-9);
 	assert.equal(state.cargoCells, 0);
+});
+
+test('each ore forms from its own element range, so the element view predicts the mix', () => {
+	for (const seed of [1, 7, 42]) {
+		ceiling.reset(seed);
+		const state = ceiling.state;
+		const cells = state.columns * state.rows;
+		// Pearson correlation between the R/G/B shares and the Fe/Cu/Cr shares.
+		const sums = [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0]];
+		let crystalRich = 0;
+		let blueLed = 0;
+		for (let index = 0; index < cells; index++) {
+			const offset = index * 3;
+			for (let m = 0; m < 3; m++) {
+				const element = state.elements[offset + m];
+				const ore = state.minerals[offset + m];
+				sums[m][0] += element;
+				sums[m][1] += ore;
+				sums[m][2] += element * element;
+				sums[m][3] += ore * ore;
+				sums[m][4] += element * ore;
+			}
+			if (state.minerals[offset + 2] > 0.35) {
+				crystalRich++;
+				if (state.elements[offset + 2] > state.elements[offset] && state.elements[offset + 2] > state.elements[offset + 1]) blueLed++;
+			}
+		}
+		for (let m = 0; m < 3; m++) {
+			const t = sums[m];
+			const correlation = (cells * t[4] - t[0] * t[1]) / Math.sqrt((cells * t[2] - t[0] * t[0]) * (cells * t[3] - t[1] * t[1]));
+			assert.ok(correlation > 0.65, 'seed ' + seed + ' element ' + m + ' predicts ore ' + m + ': r = ' + correlation.toFixed(2));
+		}
+		assert.ok(crystalRich > cells * 0.02, 'seed ' + seed + ' has crystal-bearing cells');
+		assert.ok(blueLed / crystalRich > 0.9, 'seed ' + seed + ' grows crystal where B leads');
+	}
+});
+
+test('the element view paints a colour for every cell of the field', () => {
+	ceiling.reset(7);
+	const painted = [];
+	const context = {
+		fillStyle: '',
+		fillRect() { painted.push(this.fillStyle); },
+		beginPath() {}, moveTo() {}, lineTo() {}, closePath() {},
+		fill() { painted.push(this.fillStyle); }
+	};
+	ceiling.draw(context, 'elements');
+	assert.ok(painted.length > 100, 'the rock face is painted');
+	assert.ok(painted.every(color => /^rgb\(\d+ \d+ \d+\)$/.test(color)), 'every cell has an R/G/B colour');
+	assert.ok(new Set(painted).size > 100, 'the element field is not one flat colour');
+});
+
+test('the opening demand table makes the rare ore usually dearest, but a common ore can open hot', () => {
+	let rareDearest = 0;
+	let commonDearest = 0;
+	let commonBooms = 0;
+	const openings = [];
+	for (let seed = 1; seed <= 60; seed++) {
+		ceiling.reset(seed);
+		const quotes = Array.from(ceiling.state.mineralPrices);
+		if (quotes[2] > quotes[1] && quotes[2] > quotes[0]) rareDearest++;
+		else commonDearest++;
+		if (quotes[1] > ceiling.state.referencePrices[1] * 2 || quotes[0] > ceiling.state.referencePrices[0] * 2) commonBooms++;
+		openings.push(Array.from(ceiling.state.startupDemand).join('/'));
+	}
+	assert.ok(rareDearest > 40, 'crystal is dearest on ' + rareDearest + ' of 60 seeds');
+	assert.ok(commonDearest >= 3, 'a common ore is dearest on ' + commonDearest + ' seeds');
+	assert.ok(commonBooms > 8, 'a common ore opens above twice its list on ' + commonBooms + ' seeds');
+	assert.ok(new Set(openings).size > 40, 'each seed generates its own demand table');
+	// The table is part of the seed, and its rush fades into the slow noise:
+	// seed 42 opens hot for copper and cool for crystal, then unwinds that rush
+	// over three minutes of chamber time.
+	ceiling.reset(42);
+	const opening = Array.from(ceiling.state.startupDemand);
+	const hot = Array.from(ceiling.state.mineralPrices);
+	assert.ok(opening[1] > 1, 'seed 42 generates a copper rush');
+	ceiling.reset(42);
+	assert.deepEqual(Array.from(ceiling.state.startupDemand), opening);
+	const world = { platform: { x: -40, vx: 0 }, heat: 0, time: 0, direction: 0 };
+	for (let second = 0; second < 180; second++) ceiling.step(world, 1, 60);
+	assert.equal(ceiling.state.marketTime, 180);
+	assert.ok(ceiling.state.mineralPrices[1] < hot[1] * 0.7, 'the copper rush has faded');
+	assert.ok(ceiling.state.mineralPrices[2] > hot[2] * 1.5, 'the crystal glut has cleared');
 });

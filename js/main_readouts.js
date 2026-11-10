@@ -13,7 +13,8 @@ const inventoryPrices = [];
 function marketText(price, reference, trend) {
 	const move = (price / reference - 1) * 100;
 	const sign = move >= 0 ? '+' : '';
-	const arrow = trend > 0.004 ? ' ▲' : trend < -0.004 ? ' ▼' : ' ·';
+	// A ten-second lookahead reads the slow drift; near a crest the arrow rests.
+	const arrow = trend > 0.012 ? ' ▲' : trend < -0.012 ? ' ▼' : ' ·';
 	return price.toFixed(2) + ' · ' + sign + move.toFixed(0) + '%' + arrow;
 }
 function buildInventory() {

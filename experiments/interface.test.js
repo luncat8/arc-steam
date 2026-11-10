@@ -862,8 +862,9 @@ test('the market table shows each live quote, its move and its trend', () => {
 		assert.match(priceCell(mineral), pattern, 'row ' + mineral + ' reads ' + priceCell(mineral));
 		assert.ok(parseFloat(priceCell(mineral)) > 0, 'a quote is never free');
 	}
-	// The rare ore is the dearest and the bulk ore the cheapest, whatever the
-	// run's demand is doing.
+	// On the default run's generated opening table the rare ore is dearest and
+	// the bulk ore cheapest. Other seeds can open a common ore in a rush; the
+	// distribution is pinned in ceiling.test.js.
 	const quotes = rows().map((row, mineral) => parseFloat(priceCell(mineral)));
 	assert.ok(quotes[2] > quotes[1] && quotes[1] > quotes[0], 'quote order ' + quotes.join(' < '));
 	// A minute of chamber time moves the market under the table; the quote is
