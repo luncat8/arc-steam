@@ -13,16 +13,19 @@ Preserve the measured economy: the mean value of a rock cell stays about
 ### Elements are three independent concentrations, minerals are probabilities
 
 - The rock keeps three element channels. Each is its own seeded smooth noise
-  field in `0..1`, at its own spatial frequency. They are **not** normalised
-  against each other: an element concentration is an absolute quantity, so a
-  narrow band on one channel stays narrow instead of being stretched by the
-  other two.
+  field in `0..1`, at its own spatial frequency, **compressed in Y by 3×** so
+  deposits are flat horizontal seams rather than round patches. They are
+  **not** normalised against each other: an element concentration is an
+  absolute quantity, so a narrow band on one channel stays narrow instead of
+  being stretched by the other two.
 - A mineral is a **soft box** in the element cube: a `[low, high]` range per
-  element plus a feather. A cell's membership is the product of the three
-  per-channel window weights; the memberships are then normalised into the
-  cell's mineral mix. Overlapping boxes blend, and a cell outside every box is
-  still pulled to the nearest one by the window tails, so the field has no
-  holes.
+  element plus a feather. A channel contributes its normalised distance
+  outside the range (0 inside); the three distances are **summed before the
+  exponential kernel**, not multiplied. Multiplying per-channel tails lets one
+  broad box with a single channel barely outside swamp a nearby narrow box by
+  orders of magnitude. The summed form blends overlapping boxes and still
+  pulls a cell outside every box toward the nearest one, with no holes in the
+  field.
 - Rarity is therefore geometric: a wide box is common, a narrow box is rare.
   The table uses three common, one uncommon and two rare minerals:
   Iron, Copper, Crystal, Fluorite, Silver, Gold.
@@ -34,17 +37,21 @@ Preserve the measured economy: the mean value of a rock cell stays about
 ### Prices are generated from abundance, then move with demand
 
 - After a run's rock is generated, the mean mineral fraction of the whole
-  field is measured. The base price is `targetCellValue / (mineralCount ×
-  meanFraction)`, clamped. The target is what one cell is worth on average, so
-  the economy stays calibrated whatever the ranges are. Rare minerals get a
-  high base price automatically; a pure rare cell is a jackpot, a trace of one
-  is a normal cell.
+  field is measured. Base prices follow a rarity curve
+  `price ∝ share^-1.3`, normalised so the mean cell is worth
+  `targetCellValue`. The elasticity above 1 makes a rare mineral dearer than
+  its share alone; a pure rare cell is a jackpot, a trace is a normal cell.
+  `targetCellValue = 12.5` is calibrated against a **sold load of 60–100
+  cells from the free face**, not the field average, because the mineable
+  surface is biased toward common ore and the old economy was tuned on that
+  realised income (about 7 cr/cell sold).
 - Startup demand is random per run: each mineral gets a persistent bias and a
   noise phase derived from the seed. A common mineral can therefore start
   expensive.
-- Demand is one-dimensional value noise per mineral, sampled in chamber time.
-  Each mineral has its own period (130–300 s at 1×) and depth. Prices move
-  enough to matter over a few minutes and never jump.
+- Demand is two octaves of one-dimensional value noise per mineral, sampled
+  in chamber time. Each mineral has its own period (130–300 s at 1×) and
+  depth; the shorter octave stops a quote resting on a flat lattice point.
+  Prices move enough to matter over a few minutes and never jump.
 - The market revalues every 0.5 s of simulation. Rock cell prices, the price
   view and the market table follow it. A fragment books the price of the
   moment it breaks, so cargo, rubble and ledger values stay internally exact;
@@ -71,9 +78,11 @@ Preserve the measured economy: the mean value of a rock cell stays about
 - `index.html` / `js/main.js`: one slider container instead of three inputs.
 - `experiments/dom.cjs`: register dynamically created elements by id.
 - Tests and probes: generalise the existing mineral tests and add
-  `experiments/mineral-market.test.js` for formation rarity, price order,
-  demand drift/smoothness and booking at break time. Update
-  `experiments/mineral-mix-probe.cjs` and add a market probe.
+  `experiments/mineral-market.test.js` for formation rarity, the Y-flattened
+  field, price order, demand drift/smoothness and booking at break time.
+  Update `experiments/mineral-mix-probe.cjs` and add
+  `experiments/mineral-market-probe.cjs`; keep their output in
+  `experiments/logs/minerals.1-*.txt`.
 
 ## Acceptance
 
@@ -83,5 +92,6 @@ Preserve the measured economy: the mean value of a rock cell stays about
   prices; seed changes change both the field and the startup market.
 - Over a few simulated minutes prices move materially, per-second movement is
   small, and the per-mineral periods differ.
-- One cell is worth about `targetCellValue` on average before demand.
+- The field average at base prices is about `targetCellValue`; a normal sold
+  load from the free face still earns close to the pre-change cr/cell.
 - The full test suite and the interface run pass.

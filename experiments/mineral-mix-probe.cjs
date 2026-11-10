@@ -5,13 +5,14 @@ const ceiling = require('../js/ceiling.js');
 
 function bed(growth, seconds) {
 	ceiling.reset(73);
-	for (let mineral = 0; mineral < 3; mineral++) ceiling.setMineralClusterGrowth(mineral, growth);
+	const mineralCount = ceiling.state.mineralNames.length;
+	for (let mineral = 0; mineral < mineralCount; mineral++) ceiling.setMineralClusterGrowth(mineral, growth);
 	ceiling.generateTestRock();
 	ceiling.collapse(seconds);
 	const s = ceiling.state;
 	let cells = 0;
 	let groups = 0;
-	for (let mineral = 0; mineral < 3; mineral++) {
+	for (let mineral = 0; mineral < mineralCount; mineral++) {
 		cells += s.fallCells[mineral];
 		groups += s.fallGroups[mineral];
 	}
@@ -22,7 +23,8 @@ function bed(growth, seconds) {
 
 function natural(growth) {
 	ceiling.reset(31);
-	for (let mineral = 0; mineral < 3; mineral++) ceiling.setMineralClusterGrowth(mineral, growth);
+	const mineralCount = ceiling.state.mineralNames.length;
+	for (let mineral = 0; mineral < mineralCount; mineral++) ceiling.setMineralClusterGrowth(mineral, growth);
 	const s = ceiling.state;
 	const world = { platform: { x: -50, vx: 0 }, heat: 0, time: 0, direction: 0 };
 	for (let k = 0; k < 300; k++) {
@@ -32,7 +34,7 @@ function natural(growth) {
 	}
 	let cells = 0;
 	let groups = 0;
-	for (let mineral = 0; mineral < 3; mineral++) {
+	for (let mineral = 0; mineral < mineralCount; mineral++) {
 		cells += s.fallCells[mineral];
 		groups += s.fallGroups[mineral];
 	}

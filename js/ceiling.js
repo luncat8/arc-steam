@@ -173,7 +173,6 @@
 	const mineralNames = mineralTable.map(mineral => mineral.name);
 	const mineralSymbols = mineralTable.map(mineral => mineral.symbol);
 	const mineralIds = mineralTable.map(mineral => mineral.id);
-	const mineralColors = mineralTable.map(mineral => mineral.color);
 	// A cell is worth this much on average before demand. Base prices follow a
 	// rarity curve over the measured abundance, normalised back to this target,
 	// so the spread between ores can change without moving the economy. The
@@ -186,6 +185,7 @@
 	const mineralBasePrices = new Float64Array(mineralCount);
 	const mineralPrices = new Float64Array(mineralCount);
 	const mineralAbundance = new Float64Array(mineralCount);
+	const mineralDistance = new Float64Array(mineralCount);
 	const demandBias = new Float64Array(mineralCount);
 	const demandDepth = new Float64Array(mineralCount);
 	const demandPeriod = new Float64Array(mineralCount);
@@ -409,31 +409,34 @@
 	// once: the normalised memberships are the mineral mix.
 	function writeMineralMix(index, red, green, blue) {
 		const offset = index * mineralCount;
-		let total = 0;
-		let best = 0;
-		let bestWeight = -1;
+		let nearest = Infinity;
 		for (let m = 0; m < mineralCount; m++) {
 			const bands = mineralTable[m].bands;
 			const distance = bandDistance(red, bands[0]) + bandDistance(green, bands[1]) + bandDistance(blue, bands[2]);
-			const weight = Math.exp(-distance * 1.4);
+			mineralDistance[m] = distance;
+			if (distance < nearest) nearest = distance;
+		}
+		// Subtract the nearest distance before the kernel: it cancels in the
+		// normalisation and keeps the nearest mineral at weight 1 far outside
+		// every box, where the other exponentials would underflow to zero.
+		let total = 0;
+		for (let m = 0; m < mineralCount; m++) {
+			const weight = Math.exp(-(mineralDistance[m] - nearest) * 1.4);
 			minerals[offset + m] = weight;
 			total += weight;
-			if (weight > bestWeight) { bestWeight = weight; best = m; }
-		}
-		if (total <= 1e-30) {
-			for (let m = 0; m < mineralCount; m++) minerals[offset + m] = m === best ? 1 : 0;
-			return;
 		}
 		for (let m = 0; m < mineralCount; m++) minerals[offset + m] /= total;
 	}
 
-	// Demand is one-dimensional value noise in chamber time: each mineral has
-	// its own period and depth, so some prices wander quickly and some slowly.
-	// The bias and phase come from the seed, which makes a run open with its own
-	// random market.
+	// Demand is two octaves of one-dimensional value noise in chamber time: the
+	// slow wave is the mineral's own cycle, the shorter one keeps a quote from
+	// sitting on a flat lattice point for a whole minute. The bias and phase come
+	// from the seed, which makes a run open with its own random market.
 	function demandFactorAt(m, time) {
-		const wave = noise(time / demandPeriod[m] + demandPhase[m], m * 0.37, 31 + m);
-		return demandBias[m] * (1 + demandDepth[m] * (wave * 2 - 1));
+		const period = demandPeriod[m];
+		const slow = noise(time / period + demandPhase[m], m * 0.37, 31 + m) * 2 - 1;
+		const quick = noise(time / (period * 0.41) + demandPhase[m] * 2.3, m * 0.61, 61 + m) * 2 - 1;
+		return demandBias[m] * (1 + demandDepth[m] * (slow * 0.85 + quick * 0.35));
 	}
 
 	// Repaint what the market says each cell and each mineral is worth now. A
@@ -1888,10 +1891,11 @@
 		graderBot, blade, graderShare, floorValues,
 		get shape() { return rockShape; }, heightmap, firstRow, floorPiles, floorHeight,
 		garageHeight, garageDepth, garageParkX, graderSpeed,
-		mineralTable, mineralNames, mineralSymbols, mineralPrices, mineralBasePrices, mineralAbundance, fuelPrice,
+		mineralTable, mineralNames, mineralSymbols, mineralPrices, mineralBasePrices, mineralAbundance,
+		targetCellValue, priceElasticity, mineralPriceCap, fuelPrice,
 		get marketTime() { return marketClock; },
 		strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
-		debrisMinerals, debrisDamage,
+		debrisValue, debrisMinerals, debrisDamage,
 		cargoMinerals, soldMinerals, fallGroups, fallCells,
 		get ledger() { return ledger; },
 		get extractedCells() { return extractedCells; },

@@ -632,26 +632,34 @@ test('left pocket lets the reflector cover the wall without a wedge obstruction'
 });
 
 test('ball reflects at an angle off a smooth heightmap crater and conserves energy', () => {
+	// The crater is carved directly so the contact geometry does not depend on
+	// the mineral field or on a collapse producing the intended shape.
+	const blank = {
+		fillStyle: '', fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}, stroke() {}
+	};
+	function carve() {
+		const state = ceiling.state;
+		for (let column = 76; column <= 84; column++) for (let row = 0; row < 3; row++) state.strength[row * state.columns + column] = 0;
+		ceiling.draw(blank, 'minerals');
+	}
 	const w = physics.createWorld();
 	ceiling.setShape('smooth');
-	ceiling.damage(10.06, ceiling.state.bottom + 0.06, 6);
-	ceiling.collapse(10);
+	carve();
 	w.ball.x = 9.75; w.ball.y = ceiling.state.bottom - 0.25; w.ball.vx = 0; w.ball.vy = 8;
 	w.ball.state = 'flying';
 	sync(w);
-	run(w, 0.05);
+	run(w, 0.08);
 	assert.ok(w.ball.vx > 0.5);
 	assert.ok(w.ball.vy < 0);
 	balanced(w);
 	// Optional square mode also reflects and conserves energy
 	const sq = physics.createWorld();
 	ceiling.setShape('square');
-	ceiling.damage(10.06, ceiling.state.bottom + 0.06, 6);
-	ceiling.collapse(10);
+	carve();
 	sq.ball.x = 9.75; sq.ball.y = ceiling.state.bottom - 0.25; sq.ball.vx = 0; sq.ball.vy = 8;
 	sq.ball.state = 'flying';
 	sync(sq);
-	run(sq, 0.05);
+	run(sq, 0.08);
 	assert.ok(sq.ball.vy < 0);
 	balanced(sq);
 	ceiling.setShape('smooth');

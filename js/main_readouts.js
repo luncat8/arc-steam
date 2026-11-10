@@ -7,6 +7,7 @@
 let renderedSales = -1;
 const inventoryCells = [];
 const inventoryPrices = [];
+const inventoryBasePrices = [];
 function buildInventory() {
 	const ceiling = window.SteamCeiling.state;
 	for (let i = 0; i < ceiling.mineralNames.length; i++) {
@@ -20,6 +21,7 @@ function buildInventory() {
 		price.title = 'base ' + ceiling.mineralBasePrices[i].toFixed(2) + ' cr/cell';
 		row.appendChild(price);
 		inventoryPrices.push(price);
+		inventoryBasePrices.push(ceiling.mineralBasePrices[i]);
 		for (let k = 0; k < 2; k++) {
 			const cell = document.createElement('td');
 			cell.textContent = '0.000';
@@ -235,6 +237,10 @@ function miningReadout() {
 	setText(ui.refuel, deficit >= 1 ? 'Recharge ' + (deficit / 1000).toFixed(2) + ' kJ' : 'Reserve full');
 	for (let i = 0; i < inventoryPrices.length; i++) {
 		setText(inventoryPrices[i], ceiling.mineralPrices[i].toFixed(2));
+		if (inventoryBasePrices[i] !== ceiling.mineralBasePrices[i]) {
+			inventoryBasePrices[i] = ceiling.mineralBasePrices[i];
+			inventoryPrices[i].title = 'base ' + inventoryBasePrices[i].toFixed(2) + ' cr/cell';
+		}
 		setText(inventoryCells[i * 2], ceiling.cargoMinerals[i].toFixed(3));
 		setText(inventoryCells[i * 2 + 1], ceiling.soldMinerals[i].toFixed(3));
 	}
