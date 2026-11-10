@@ -140,7 +140,8 @@
 	const damageField = new Float32Array(count);
 	const elements = new Float32Array(count * 3);
 	const minerals = new Float32Array(count * 3);
-	const prices = new Float32Array(count);
+	// Double precision so a pure cell is worth exactly its ore's quote.
+	const prices = new Float64Array(count);
 	const firstRow = new Uint8Array(columns);
 	const heightmap = new Float64Array(columns + 1);
 	const floorPiles = new Float64Array(columns);
@@ -275,7 +276,83 @@
 	const debrisDamage = new Float32Array(maxDebris);
 	const hit = { time: Infinity, x: 0, y: 0, nx: 0, ny: 0, index: -1 };
 	const mineralColors = [[184, 91, 64], [65, 174, 133], [133, 153, 202]];
-	const mineralPrices = [3, 7, 11];
+	// Live list quotes: rarity x demand, re-quoted on the chamber clock. The
+	// buffer is the game's only mineral price table, so the market readout, the
+	// rock price view and every sale read the same three numbers.
+	const marketPrices = [1, 1, 1];
+	const mineralPrices = marketPrices;
+	// Each mineral is its own value-noise field, three octaves deep, so iron,
+	// copper and crystal form their own veins instead of three tints of one
+	// shape. A mineral's weight at a cell is what its field has above a
+	// threshold: every cell therefore carries some of the common ore, copper
+	// shows only where its own field crests, and crystal only where its rarer
+	// crest is reached. That is what makes crystal a pocket to hunt rather than
+	// a thin tint spread over the whole face.
+	const fieldScale = 0.075;
+	const fieldOctaves = 3;
+	const mineralThreshold = [0.02, 0.30, 0.46];
+	const mineralWeight = [1, 1.3, 1.3];
+	// Iron's field is pulled towards its own mean, so the bulk ore is a steady
+	// grey body with only soft variation while copper and crystal keep their
+	// full contrast. That is what a face of ore reads as: one dull wall with a
+	// handful of seams worth working.
+	const ironContrast = 0.5;
+	// List prices are the price of a reference mix and are re-quoted for the run's
+	// own field: an ore this seed is short of pays more. Iron is the bulk ore at
+	// half its old price, crystal the rare one at four times its old price.
+	const referencePrices = [1.5, 7, 44];
+	const referenceShares = [0.64, 0.27, 0.1];
+	const rarityExponent = 0.5;
+	const rarityFloor = 0.6;
+	const rarityCeiling = 2.2;
+	// Rarity is the field's own mean supply against the reference mix, so a seed
+	// short of crystal pays more for it and a rich one pays less.
+	const fieldRarity = [1, 1, 1];
+	// Iron's demand swing is damped: the bulk ore moves, but it never pays more
+	// than the ore above it. Crystal's swing is the full market's, because that
+	// is the ore worth waiting for.
+	const demandReachByOre = [0.55, 0.65, 0.8];
+	let cheapPrice = 1;
+	let priceSpread = 4;
+	// Demand rides on the rarity price with slow per-mineral noise. The slow
+	// octave is the ore's cycle: iron peaks every 2.5 minutes, copper every 4 and
+	// crystal every 6, so a price climbs its range over a minute or two of play
+	// rather than over a shift. A smaller, faster octave over the same phase adds
+	// the notch that turns a simple wave into a boom and a glut.
+	// The two are summed in log space, so the same move is the same percentage
+	// up or down, and the reach decides how far a peak gets from the list price.
+	const demandPeriod = [150, 240, 380];
+	const demandSlowDepth = 0.75;
+	const demandFastDepth = 0.18;
+	const demandFastRatio = 0.55;
+	const demandReach = 0.8;
+	// A quote never falls to nothing: even a glut pays this share of the list.
+	const demandFloor = 0.25;
+	// Selling feeds the market: a load of one ore softens its own price for a
+	// while as the wall digests it, and the pressure decays back to the noise.
+	// A full hopper of one ore moves that quote by about 8%, and a rush of the
+	// same ore can leave it visibly cheap until the wall clears it.
+	const supplyImpact = 0.08;
+	const supplyCap = 0.3;
+	const supplyDecay = 60;
+	// Prices are re-quoted four times a second on the chamber clock: far finer
+	// than the demand periods, so a quote is smooth, and cheap enough to run from
+	// the simulation step rather than per frame.
+	const marketQuoteSeconds = 0.25;
+	let marketTime = 0;
+	let demandClock = 0;
+	const demandPhase = new Float64Array(3);
+	const supplyPressure = new Float64Array(3);
+	const fieldShare = new Float64Array(3);
+	// A wall sale is booked at the prices the cells were worth when they were
+	// picked up; the market learns about the load once, after the sale.
+	let saleCells = 0;
+	const saleShares = new Float64Array(3);
+	// The direction each demand cycle is heading, sampled a little ahead, so the
+	// market can show a rising or falling quote without the player watching for
+	// a minute to work it out.
+	const demandTrend = new Float64Array(3);
+	const demandTrendLookahead = 4;
 	// Bought energy is the only import into the closed system: 25 cr per kJ of
 	// reserve, measured against a scripted shift grossing roughly 560 cr.
 	const fuelPrice = 25;
@@ -406,16 +483,18 @@
 			elements[offset] = minerals[offset] = mineral === 0 ? 1 : 0;
 			elements[offset + 1] = minerals[offset + 1] = mineral === 1 ? 1 : 0;
 			elements[offset + 2] = minerals[offset + 2] = mineral === 2 ? 1 : 0;
-			prices[index] = mineralPrices[mineral];
 			initialStrength[index] = mineral === 0 ? 5 : (mineral === 1 ? 3.9 : 5.8);
 			strength[index] = initialStrength[index];
 			damageField[index] = damage;
 			const color = mineralColors[mineral];
 			mineralStyles[index] = 'rgb(' + color[0] + ' ' + color[1] + ' ' + color[2] + ')';
 			elementColors[index] = mineral === 0 ? 'rgb(255 0 0)' : (mineral === 1 ? 'rgb(0 255 0)' : 'rgb(0 0 255)');
-			const priceRatio = (prices[index] - mineralPrices[0]) / (mineralPrices[2] - mineralPrices[0]);
-			priceColors[index] = 'rgb(' + Math.round(48 + priceRatio * 190) + ' ' + Math.round(72 + priceRatio * 150) + ' ' + Math.round(91 - priceRatio * 45) + ')';
 		}
+		// The test bed is pure ore, so the market quotes it the same way it quotes
+		// the field: each band is worth its own ore's price.
+		fieldShare[0] = fieldShare[1] = fieldShare[2] = 1 / 3;
+		quotePrices();
+		priceField();
 		updateHeightmap();
 		scanRegions();
 		return true;
@@ -430,6 +509,176 @@
 	function setCommune(value) {
 		commune = Boolean(value);
 		return commune;
+	}
+
+	// A field of one channel: three octaves of the same hash noise, each half the
+	// amplitude and about twice the frequency of the last, so a vein has a body
+	// and a broken outline instead of a blur.
+	function vein(x, y, channel) {
+		let value = 0;
+		let amplitude = 1;
+		let total = 0;
+		let scale = 1;
+		for (let octave = 0; octave < fieldOctaves; octave++) {
+			value += noise(x * scale + channel * 17.3, y * scale + channel * 29.1, channel * 13 + octave * 7) * amplitude;
+			total += amplitude;
+			amplitude *= 0.55;
+			scale *= 2.2;
+		}
+		return value / total;
+	}
+
+	// The rock's minerals: one field per ore, thresholded so the common ore is
+	// everywhere and the rare ones only where their own vein crests. The element
+	// channels stay a separate, correlated triple, so the elemental view and the
+	// mineral view read different structures of the same rock.
+	function generateField() {
+		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
+			const index = row * columns + column;
+			const offset = index * 3;
+			const x = column * fieldScale;
+			const y = row * fieldScale;
+			const ironVein = vein(x, y, 0);
+			const iron = Math.max(0, mineralWeight[0] * (0.5 + (ironVein - 0.5) * ironContrast - mineralThreshold[0]));
+			const copper = Math.max(0, mineralWeight[1] * (vein(x, y, 1) - mineralThreshold[1]));
+			const crystal = Math.max(0, mineralWeight[2] * (vein(x, y, 2) - mineralThreshold[2]));
+			const mineralTotal = iron + copper + crystal;
+			const red = 0.08 + noise(x, y, 0) * 0.92;
+			const green = 0.08 + noise(x + 13.7, y + 5.1, 1) * 0.92;
+			const blue = 0.08 + noise(x + 29.3, y + 11.9, 2) * 0.92;
+			const elementTotal = red + green + blue;
+			elements[offset] = red / elementTotal;
+			elements[offset + 1] = green / elementTotal;
+			elements[offset + 2] = blue / elementTotal;
+			minerals[offset] = iron / mineralTotal;
+			minerals[offset + 1] = copper / mineralTotal;
+			minerals[offset + 2] = crystal / mineralTotal;
+			initialStrength[index] = 2.2 + minerals[offset] * 2.8 + minerals[offset + 1] * 1.7 + minerals[offset + 2] * 3.6;
+			strength[index] = initialStrength[index];
+			const mineralRed = minerals[offset] * mineralColors[0][0] + minerals[offset + 1] * mineralColors[1][0] + minerals[offset + 2] * mineralColors[2][0];
+			const mineralGreen = minerals[offset] * mineralColors[0][1] + minerals[offset + 1] * mineralColors[1][1] + minerals[offset + 2] * mineralColors[2][1];
+			const mineralBlue = minerals[offset] * mineralColors[0][2] + minerals[offset + 1] * mineralColors[1][2] + minerals[offset + 2] * mineralColors[2][2];
+			mineralStyles[index] = 'rgb(' + Math.round(mineralRed) + ' ' + Math.round(mineralGreen) + ' ' + Math.round(mineralBlue) + ')';
+		}
+		// The mean mix of the field sets each ore's rarity, so the run's own rock
+		// decides which ore is worth chasing this seed.
+		fieldShare[0] = fieldShare[1] = fieldShare[2] = 0;
+		for (let index = 0; index < count; index++) {
+			fieldShare[0] += minerals[index * 3];
+			fieldShare[1] += minerals[index * 3 + 1];
+			fieldShare[2] += minerals[index * 3 + 2];
+		}
+		for (let m = 0; m < 3; m++) fieldShare[m] /= count;
+		// Rarity is the field's own mean supply against the reference mix: a seed
+		// that happens to hold less crystal pays more for it on every sale, and one
+		// that is rich in it pays less. Iron's term is gentler, so the bulk ore
+		// never drifts far from its cheap band.
+		for (let m = 0; m < 3; m++) {
+			const rarity = referenceShares[m] / Math.max(0.02, fieldShare[m]);
+			fieldRarity[m] = Math.min(rarityCeiling, Math.max(rarityFloor, Math.pow(rarity, m === 0 ? rarityExponent * 0.4 : rarityExponent)));
+		}
+	}
+
+	// Demand is the slow noise a mineral's price rides on: one LFO per ore at its
+	// own period (iron fastest, crystal slowest) plus a faster second octave, so a
+	// price changes over minutes, can swing far enough to turn an ore into a boom
+	// or a glut, and never flickers. Shares are the running-mean mix the field is
+	// measured against, and selling a load softens that ore's own quote for a
+	// while. Returns the multiplier a list price is quoted with this instant.
+	function demandAt(mineral, time) {
+		const period = demandPeriod[mineral];
+		const slow = Math.sin((time / period + demandPhase[mineral]) * Math.PI * 2);
+		const fast = Math.sin((time / (period * demandFastRatio) + demandPhase[mineral] * 1.7) * Math.PI * 2);
+		const swing = slow * demandSlowDepth + fast * demandFastDepth;
+		return Math.max(demandFloor, Math.exp(swing * demandReach * demandReachByOre[mineral]));
+	}
+
+	// Recompute the three list prices from the field's own rarity, the demand
+	// noise at this instant and the supply pressure from recent sales. Called on
+	// the chamber clock and after every sale, so the market readout and the cargo
+	// it pays always agree.
+	function quotePrices() {
+		for (let m = 0; m < 3; m++) {
+			const base = referencePrices[m] * fieldRarity[m];
+			// A sale's supply pressure scales the quote, so two loads of the same
+			// ore cut its price by twice as much of itself.
+			marketPrices[m] = base * demandAt(m, marketTime) * (1 + supplyPressure[m]);
+		}
+		// The price palette spans the cheapest mix on the face to the dearest ore,
+		// so a quote that swings still fills its gradient.
+		cheapPrice = marketPrices[0];
+		for (let m = 1; m < 3; m++) if (marketPrices[m] < cheapPrice) cheapPrice = marketPrices[m];
+		priceSpread = Math.max(0.35, Math.log(Math.max(marketPrices[0], marketPrices[1], marketPrices[2]) / cheapPrice));
+		for (let m = 0; m < 3; m++) {
+			const here = demandAt(m, marketTime);
+			const ahead = demandAt(m, marketTime + demandTrendLookahead);
+			demandTrend[m] = here > 0 ? ahead / here - 1 : 0;
+		}
+	}
+
+	// Every rock cell is worth its mix at the current list price. The price view
+	// and the tooltip read this buffer, so a quote changes what the face is worth
+	// without touching the rock itself.
+	function priceField() {
+		for (let index = 0; index < count; index++) {
+			const offset = index * 3;
+			const value = minerals[offset] * marketPrices[0] + minerals[offset + 1] * marketPrices[1] + minerals[offset + 2] * marketPrices[2];
+			prices[index] = value;
+			// The palette runs over the ore prices in log space, so a cheap bulk
+			// cell and a crystal pocket are both visible on the same scale.
+			const weight = Math.max(0, Math.min(1, Math.log(value / cheapPrice) / priceSpread));
+			priceColors[index] = 'rgb(' + Math.round(46 + weight * 196) + ' ' + Math.round(78 + weight * 138) + ' ' + Math.round(96 - weight * 56) + ')';
+		}
+	}
+
+	// The market clock advances with the chamber, so prices follow simulation time
+	// (and the speed setting) rather than wall time.
+	function advanceMarket(dt) {
+		marketTime += dt;
+		for (let m = 0; m < 3; m++) {
+			if (supplyPressure[m] <= 0) continue;
+			supplyPressure[m] *= Math.exp(-dt / supplyDecay);
+			if (supplyPressure[m] < 1e-4) supplyPressure[m] = 0;
+		}
+		demandClock += dt;
+		if (demandClock < marketQuoteSeconds) return;
+		demandClock = 0;
+		quotePrices();
+		priceField();
+		// A grain in the air is still the market's: a quote moves its value with
+		// the wall until it is caught or lands.
+		refreshDebrisValues();
+	}
+
+	// A wall sale feeds the market: each ore's share of the load eases that ore's
+	// quote for the next minute or so. The wall's own credits are paid at the
+	// prices the cells were worth, so a sale never re-prices itself.
+	function bookSupply() {
+		if (saleCells <= 0) return;
+		// A full hopper of one ore is the reference load; half of it moves the
+		// quote about half as far.
+		const load = Math.min(1, saleCells / storageLimit);
+		for (let m = 0; m < 3; m++) {
+			const share = saleShares[m] / saleCells;
+			supplyPressure[m] = Math.min(supplyCap, supplyPressure[m] + share * supplyImpact * load);
+		}
+		saleCells = 0;
+		saleShares[0] = saleShares[1] = saleShares[2] = 0;
+	}
+
+	function refreshDebrisValues() {
+		for (let i = 0; i < maxDebris; i++) {
+			if (!active[i]) continue;
+			const cells = debrisCells[i];
+			if (cells) {
+				const mOffset = i * 3;
+				debrisValue[i] = debrisMinerals[mOffset] / cellMass * marketPrices[0]
+					+ debrisMinerals[mOffset + 1] / cellMass * marketPrices[1]
+					+ debrisMinerals[mOffset + 2] / cellMass * marketPrices[2];
+				continue;
+			}
+			debrisValue[i] = prices[debrisCell[i]];
+		}
 	}
 
 	function reset(newSeed) {
@@ -475,36 +724,16 @@
 		regionDamage.fill(0);
 		regionEligible.fill(0);
 		collapseClock = 0;
-		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
-			const index = row * columns + column;
-			const x = column * 0.075;
-			const y = row * 0.075;
-			const red = 0.08 + noise(x, y, 0) * 0.92;
-			const green = 0.08 + noise(x + 13.7, y + 5.1, 1) * 0.92;
-			const blue = 0.08 + noise(x + 29.3, y + 11.9, 2) * 0.92;
-			const elementTotal = red + green + blue;
-			const offset = index * 3;
-			elements[offset] = red / elementTotal;
-			elements[offset + 1] = green / elementTotal;
-			elements[offset + 2] = blue / elementTotal;
-			const iron = elements[offset] * elements[offset] + elements[offset + 1] * 0.1;
-			const copper = elements[offset + 1] * elements[offset + 1] + elements[offset + 2] * 0.12;
-			const crystal = elements[offset + 2] * elements[offset + 2] + elements[offset] * 0.08;
-			const mineralTotal = iron + copper + crystal;
-			minerals[offset] = iron / mineralTotal;
-			minerals[offset + 1] = copper / mineralTotal;
-			minerals[offset + 2] = crystal / mineralTotal;
-			prices[index] = minerals[offset] * mineralPrices[0] + minerals[offset + 1] * mineralPrices[1] + minerals[offset + 2] * mineralPrices[2];
-			initialStrength[index] = 2.2 + minerals[offset] * 2.8 + minerals[offset + 1] * 1.7 + minerals[offset + 2] * 3.6;
-			strength[index] = initialStrength[index];
-			elementColors[index] = 'rgb(' + Math.round(elements[offset] * 255) + ' ' + Math.round(elements[offset + 1] * 255) + ' ' + Math.round(elements[offset + 2] * 255) + ')';
-			const priceRatio = (prices[index] - mineralPrices[0]) / (mineralPrices[2] - mineralPrices[0]);
-			priceColors[index] = 'rgb(' + Math.round(48 + priceRatio * 190) + ' ' + Math.round(72 + priceRatio * 150) + ' ' + Math.round(91 - priceRatio * 45) + ')';
-			const mineralRed = minerals[offset] * mineralColors[0][0] + minerals[offset + 1] * mineralColors[1][0] + minerals[offset + 2] * mineralColors[2][0];
-			const mineralGreen = minerals[offset] * mineralColors[0][1] + minerals[offset + 1] * mineralColors[1][1] + minerals[offset + 2] * mineralColors[2][1];
-			const mineralBlue = minerals[offset] * mineralColors[0][2] + minerals[offset + 1] * mineralColors[1][2] + minerals[offset + 2] * mineralColors[2][2];
-			mineralStyles[index] = 'rgb(' + Math.round(mineralRed) + ' ' + Math.round(mineralGreen) + ' ' + Math.round(mineralBlue) + ')';
-		}
+		// Each run opens at a seed-chosen point of every demand cycle. A phase is a
+		// whole turn of the slow cycle, so the fast octave starts where the slow
+		// one does instead of somewhere unrelated on its own period.
+		for (let m = 0; m < 3; m++) demandPhase[m] = Math.floor(hash(m * 7 + 3, seed, 13) * 4) / 4;
+		supplyPressure.fill(0);
+		marketTime = 0;
+		demandClock = 0;
+		generateField();
+		quotePrices();
+		priceField();
 		updateHeightmap();
 		scanRegions();
 		updateFloor();
@@ -1424,6 +1653,7 @@
 		ageDust(dt);
 		if (root.SteamEquipment && root.SteamEquipment.isInstalled('grader')) grade(world, dt);
 		stepGraderBot(world, dt);
+		advanceMarket(dt);
 	}
 
 	// Purchases and research debit funds and append a ledger entry; false when
@@ -1505,6 +1735,16 @@
 			soldMinerals[m] += cargoMinerals[m];
 			cargoMinerals[m] = 0;
 		}
+		// The wall has just absorbed the load: the market's quote for each ore in
+		// it eases for the next minute or so.
+		saleCells = cargoCells;
+		saleShares[0] = quantities[0] / cellMass;
+		saleShares[1] = quantities[1] / cellMass;
+		saleShares[2] = quantities[2] / cellMass;
+		bookSupply();
+		quotePrices();
+		priceField();
+		refreshDebrisValues();
 		ledger.push(Object.freeze({
 			id: ledger.length + 1,
 			type: 'sell',
@@ -1714,6 +1954,12 @@
 		get shape() { return rockShape; }, heightmap, firstRow, floorPiles, floorHeight,
 		garageHeight, garageDepth, garageParkX, graderSpeed,
 		mineralNames, mineralPrices, fuelPrice,
+		// The live market: the same three numbers every sale and price view read,
+		// plus the demand and supply terms behind them.
+		get marketTime() { return marketTime; },
+		get referencePrices() { return referencePrices; },
+		fieldShare, supplyPressure, demandTrend,
+		get demand() { return [demandAt(0, marketTime), demandAt(1, marketTime), demandAt(2, marketTime)]; },
 		strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
 		debrisMinerals, debrisDamage,
 		cargoMinerals, soldMinerals, fallGroups, fallCells,

@@ -1,0 +1,41 @@
+FIELD FORMATION (per seed)
+seed | mix Fe/Cu/Cr      | dominant %        | median cell | p90 cell | mean cr/cell
+   1 | 0.64 / 0.25 / 0.11 |  90/ 10/  0 | 0.62 | 0.90 | 7.43
+   2 | 0.62 / 0.25 / 0.12 |  90/  9/  1 | 0.60 | 0.87 | 8.18
+   3 | 0.64 / 0.27 / 0.10 |  91/  8/  1 | 0.61 | 0.86 | 7.13
+   7 | 0.61 / 0.27 / 0.12 |  86/ 14/  1 | 0.57 | 0.88 | 7.98
+  11 | 0.62 / 0.25 / 0.14 |  91/  8/  1 | 0.59 | 0.84 | 8.67
+  42 | 0.56 / 0.33 / 0.11 |  77/ 22/  1 | 0.54 | 0.78 | 8.11
+
+OPENING QUOTES
+seed  1  Fe   1.41  Cu   6.71  Cr  72.52
+seed  2  Fe   1.51  Cu   6.68  Cr  39.47
+seed  3  Fe   1.41  Cu   7.06  Cr  44.41
+seed  7  Fe   2.18  Cu   6.50  Cr  28.13
+seed 11  Fe   1.42  Cu   7.31  Cr  26.11
+seed 42  Fe   1.54  Cu   5.89  Cr  70.47
+
+DEMAND DRIFT OVER TEN MINUTES (no sale)
+seed 1
+  Iron      1.00 .. 2.26  (2.3x)  largest 1 s move 2.0%  at 1.4 → 1.2 → 1.1 → 1.3 → 1.6
+  Copper    4.63 .. 11.72  (2.5x)  largest 1 s move 1.5%  at 6.7 → 5.4 → 11.7 → 6.9 → 7.7
+  Crystal   28.08 .. 77.22  (2.7x)  largest 1 s move 1.0%  at 72.5 → 49.5 → 29.7 → 73.5 → 31.2
+seed 7
+  Iron      1.01 .. 2.28  (2.3x)  largest 1 s move 2.0%  at 2.2 → 1.2 → 1.6 → 1.1 → 2.0
+  Copper    4.48 .. 11.36  (2.5x)  largest 1 s move 1.5%  at 6.5 → 5.2 → 11.3 → 6.7 → 7.4
+  Crystal   25.65 .. 73.18  (2.9x)  largest 1 s move 1.1%  at 28.1 → 29.9 → 71.1 → 25.7 → 67.8
+seed 42
+  Iron      1.03 .. 2.32  (2.3x)  largest 1 s move 2.0%  at 1.5 → 1.7 → 2.3 → 2.0 → 1.7
+  Copper    4.06 .. 10.28  (2.5x)  largest 1 s move 1.5%  at 5.9 → 4.7 → 10.3 → 6.1 → 6.7
+  Crystal   27.29 .. 75.04  (2.7x)  largest 1 s move 1.0%  at 70.5 → 48.1 → 28.8 → 71.5 → 30.3
+
+WALL SALE FEEDBACK (one full hopper)
+sold 100 cells
+t(s) | pressure Fe/Cu/Cr | quote Fe/Cu/Cr
+   0 |   5.3   1.5   1.2 |   2.30   6.60  28.47
+  20 |   3.8   1.1   0.9 |   1.83   5.84  28.26
+  40 |   2.7   0.8   0.6 |   1.44   5.44  28.64
+  60 |   1.9   0.6   0.4 |   1.26   5.21  30.00
+  80 |   1.4   0.4   0.3 |   1.17   5.15  32.86
+ 100 |   1.0   0.3   0.2 |   1.22   5.46  37.71
+ 120 |   0.7   0.2   0.2 |   1.60   6.40  44.89

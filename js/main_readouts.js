@@ -6,6 +6,16 @@
 
 let renderedSales = -1;
 const inventoryCells = [];
+const inventoryPrices = [];
+// The price column follows the live market: a quote, its move against the
+// reference price, and an arrow for where the demand noise is heading, so a
+// boom forming and a glut easing are both readable at a glance.
+function marketText(price, reference, trend) {
+	const move = (price / reference - 1) * 100;
+	const sign = move >= 0 ? '+' : '';
+	const arrow = trend > 0.004 ? ' ▲' : trend < -0.004 ? ' ▼' : ' ·';
+	return price.toFixed(2) + ' · ' + sign + move.toFixed(0) + '%' + arrow;
+}
 function buildInventory() {
 	const ceiling = window.SteamCeiling.state;
 	for (let i = 0; i < ceiling.mineralNames.length; i++) {
@@ -15,8 +25,9 @@ function buildInventory() {
 		name.textContent = ceiling.mineralNames[i];
 		row.appendChild(name);
 		const price = document.createElement('td');
-		price.textContent = ceiling.mineralPrices[i].toFixed(2);
+		price.textContent = marketText(ceiling.mineralPrices[i], ceiling.referencePrices[i], 0);
 		row.appendChild(price);
+		inventoryPrices.push(price);
 		for (let k = 0; k < 2; k++) {
 			const cell = document.createElement('td');
 			cell.textContent = '0.000';
@@ -152,7 +163,7 @@ function mineralReadout() {
 	const strengthRatio = initial > 0 ? remaining / initial : 0;
 	if (Number(ui['strength-meter'].value) !== strengthRatio) ui['strength-meter'].value = strengthRatio;
 	setText(ui['mineral-composition'], 'Fe ' + (ceiling.minerals[offset] * 100).toFixed(1) + '% · Cu ' + (ceiling.minerals[offset + 1] * 100).toFixed(1) + '% · Cr ' + (ceiling.minerals[offset + 2] * 100).toFixed(1) + '%');
-	setText(ui['mineral-price'], 'Value ' + ceiling.prices[index].toFixed(2) + ' cr/cell · R ' + (ceiling.elements[offset] * 100).toFixed(0) + '% G ' + (ceiling.elements[offset + 1] * 100).toFixed(0) + '% B ' + (ceiling.elements[offset + 2] * 100).toFixed(0) + '%');
+	setText(ui['mineral-price'], 'Value ' + ceiling.prices[index].toFixed(2) + ' cr/cell · Fe ' + (ceiling.minerals[offset] * 100).toFixed(0) + '% Cu ' + (ceiling.minerals[offset + 1] * 100).toFixed(0) + '% Cr ' + (ceiling.minerals[offset + 2] * 100).toFixed(0) + '% · R ' + (ceiling.elements[offset] * 100).toFixed(0) + '% G ' + (ceiling.elements[offset + 1] * 100).toFixed(0) + '% B ' + (ceiling.elements[offset + 2] * 100).toFixed(0) + '%');
 }
 
 function miningReadout() {
@@ -188,6 +199,7 @@ function miningReadout() {
 	for (let i = 0; i < 3; i++) {
 		setText(inventoryCells[i * 2], ceiling.cargoMinerals[i].toFixed(3));
 		setText(inventoryCells[i * 2 + 1], ceiling.soldMinerals[i].toFixed(3));
+		setText(inventoryPrices[i], marketText(ceiling.mineralPrices[i], ceiling.referencePrices[i], ceiling.demandTrend[i]));
 	}
 	if (renderedSales === ceiling.ledger.length) return;
 	renderedSales = ceiling.ledger.length;

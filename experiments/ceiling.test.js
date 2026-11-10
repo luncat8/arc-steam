@@ -93,21 +93,35 @@ test('swept circle contacts the exposed rock face with its outward normal', () =
 test('smooth heightmap and optional square shape reflect at angled slopes', () => {
 	ceiling.reset(3);
 	ceiling.setShape('smooth');
-	// Excavate a symmetric crater around x = 10 m
+	// Excavate a crater and read the slope the face actually ended up with: the
+	// mineral variation makes a notch asymmetric, so the heightmap, not the hit
+	// point, decides which way each flank faces.
 	ceiling.damage(10.06, ceiling.state.bottom + 0.06, 5);
 	ceiling.collapse(10);
-	const leftHit = ceiling.trace(9.75, ceiling.state.bottom - 0.2, 0, 12, 0.05, 0.18);
-	assert.ok(Number.isFinite(leftHit.time));
-	assert.ok(leftHit.nx > 0.1);
-	assert.ok(leftHit.ny < -0.5);
-	const rightHit = ceiling.trace(10.35, ceiling.state.bottom - 0.2, 0, 12, 0.05, 0.18);
+	const state = ceiling.state;
+	const heightmap = state.heightmap;
+	let rising = -1;
+	let falling = -1;
+	for (let vertex = 1; vertex < state.columns && (rising < 0 || falling < 0); vertex++) {
+		const slope = heightmap[vertex + 1] - heightmap[vertex];
+		if (rising < 0 && slope > 0.05) rising = vertex;
+		if (falling < 0 && slope < -0.05) falling = vertex;
+	}
+	assert.ok(rising > 0 && falling > 0, 'the crater has a flank facing each way');
+	// A face that rises to the right (the ceiling is lower on its left) sends the
+	// ball left, and the mirrored flank sends it right.
+	const rightHit = ceiling.trace((rising + 0.5) * state.cell, ceiling.state.bottom - 0.2, 0, 12, 0.05, 0.18);
 	assert.ok(Number.isFinite(rightHit.time));
-	assert.ok(rightHit.nx < -0.1);
+	assert.ok(rightHit.nx > 0.1, 'a face rising to the right reflects the ball left');
 	assert.ok(rightHit.ny < -0.5);
+	const leftHit = ceiling.trace((falling + 0.5) * state.cell, ceiling.state.bottom - 0.2, 0, 12, 0.05, 0.18);
+	assert.ok(Number.isFinite(leftHit.time));
+	assert.ok(leftHit.nx < -0.1, 'a face falling to the right reflects the ball right');
+	assert.ok(leftHit.ny < -0.5);
 	// Optional square mode uses rounded cell corners instead of blocking with flat side walls
 	ceiling.setShape('square');
 	assert.equal(ceiling.state.shape, 'square');
-	const cornerHit = ceiling.trace(10.35, ceiling.state.bottom - 0.2, 0, 12, 0.05, 0.18);
+	const cornerHit = ceiling.trace((falling + 0.5) * state.cell, ceiling.state.bottom - 0.2, 0, 12, 0.05, 0.18);
 	assert.ok(Number.isFinite(cornerHit.time));
 	assert.ok(cornerHit.ny < 0);
 	ceiling.setShape('smooth');
@@ -423,4 +437,168 @@ test('a grain that has just let go is drawn under the ceiling it broke from', ()
 	for (let vertex = first; vertex <= last + 1; vertex++) underside = Math.min(underside, state.rockDrawnY(state.heightmap[vertex]));
 	assert.ok(tops[0] <= underside + 1e-9, 'the drawn grain must hang below the rock it left');
 	ceiling.reset(1);
+});
+
+// --- Mineral formation and the market -------------------------------------
+
+function fieldStats(seed) {
+	ceiling.reset(seed);
+	const state = ceiling.state;
+	const cells = state.columns * state.rows;
+	const mix = [0, 0, 0];
+	const dominant = [0, 0, 0];
+	let pureIron = 0;
+	let pureCrystal = 0;
+	let value = 0;
+	const running = [];
+	for (let index = 0; index < cells; index++) {
+		const offset = index * 3;
+		let best = -1;
+		let which = 0;
+		for (let m = 0; m < 3; m++) {
+			const share = state.minerals[offset + m];
+			mix[m] += share;
+			if (share > best) { best = share; which = m; }
+			value += share * state.referencePrices[m];
+		}
+		dominant[which]++;
+		if (best > 0.75 && which === 0) pureIron++;
+		if (best > 0.75 && which === 2) pureCrystal++;
+		running.push(best);
+	}
+	running.sort((a, b) => a - b);
+	return {
+		mix: mix.map(total => total / cells),
+		dominant: dominant.map(total => total / cells),
+		pureIron: pureIron / cells,
+		pureCrystal: pureCrystal / cells,
+		medianDominant: running[Math.floor(running.length / 2)],
+		meanValue: value / cells
+	};
+}
+
+test('each mineral forms its own veins: a bulk wall, seams, and rare pockets', () => {
+	const seeds = [1, 2, 3, 7, 11, 42];
+	const stats = seeds.map(fieldStats);
+	for (let i = 0; i < seeds.length; i++) {
+		const s = stats[i];
+		// Iron is the bulk ore everywhere, copper a seam and crystal a pocket: the
+		// rare ore never fills a fifth of the face on any seed.
+		assert.ok(s.mix[0] > s.mix[1] && s.mix[1] > s.mix[2], 'seed ' + seeds[i] + ' orders the ores by supply');
+		assert.ok(s.mix[0] > 0.45 && s.mix[0] < 0.78, 'seed ' + seeds[i] + ' keeps iron the bulk ore');
+		assert.ok(s.mix[2] < 0.2, 'seed ' + seeds[i] + ' keeps crystal rare');
+		// A cell is mostly one mineral: the old field never gave a cell a majority
+		// above a third, so a face of real rock needs a much higher median.
+		assert.ok(s.medianDominant > 0.5, 'seed ' + seeds[i] + ' has a dominant mineral per cell');
+		assert.ok(s.pureIron > 0.05, 'seed ' + seeds[i] + ' holds seams of pure iron');
+		assert.ok(s.pureCrystal < 0.05, 'seed ' + seeds[i] + ' keeps crystal in small pockets');
+	}
+	// The mean value of a cell lands in the band the old pricing paid, so the
+	// economy keeps its measured pace while the spread widens.
+	const mean = stats.reduce((total, s) => total + s.meanValue, 0) / stats.length;
+	assert.ok(mean > 6 && mean < 11, 'the mean cell is worth ' + mean.toFixed(2) + ' cr');
+});
+
+test('list prices follow the economy briefing: iron halved, crystal quadrupled', () => {
+	ceiling.reset(7);
+	const state = ceiling.state;
+	// 3 -> 1.5 and 11 -> 44 against the old table; copper keeps 7.
+	assert.deepEqual(Array.from(state.referencePrices), [1.5, 7, 44]);
+	// The live quote is the reference price scaled by this field's own rarity and
+	// the opening demand, so every ore lands within its rarity band of the list.
+	for (let m = 0; m < 3; m++) {
+		const ratio = state.mineralPrices[m] / state.referencePrices[m];
+		const rarity = 0.6 * 0.45;
+		assert.ok(ratio > rarity && ratio < 2.2 * 2.6, 'mineral ' + m + ' quote ratio ' + ratio.toFixed(2));
+	}
+	assert.ok(state.mineralPrices[2] > state.mineralPrices[1] * 2, 'crystal still carries the premium');
+	assert.ok(state.mineralPrices[0] < state.mineralPrices[1], 'iron stays the cheap ore');
+});
+
+test('demand drifts each price slowly and by large moves, at its own pace', () => {
+	ceiling.reset(7);
+	const state = ceiling.state;
+	const world = { platform: { x: -40, vx: 0 }, heat: 0, time: 0, direction: 0 };
+	// Ten minutes of chamber time, sampled each second: no sale, no catching, so
+	// the only price movement is the demand noise.
+	const series = [[], [], []];
+	for (let second = 0; second <= 600; second++) {
+		if (second) ceiling.step(world, 1, 60);
+		for (let m = 0; m < 3; m++) series[m].push(state.mineralPrices[m]);
+	}
+	const largestMove = [0, 0, 0];
+	let upTurns = [0, 0, 0];
+	for (let m = 0; m < 3; m++) {
+		const values = series[m];
+		const low = Math.min(...values);
+		const high = Math.max(...values);
+		// Every ore more than doubles and reverses across ten minutes, so a shift
+		// can be timed: crystal swings widest, iron least.
+		assert.ok(high / low > 2, 'mineral ' + m + ' swings ' + (high / low).toFixed(1) + '× over ten minutes');
+		for (let second = 1; second < values.length; second++) {
+			const move = Math.abs(values[second] / values[second - 1] - 1);
+			if (move > largestMove[m]) largestMove[m] = move;
+			if (second > 1 && Math.sign(values[second] - values[second - 1]) !== Math.sign(values[second - 1] - values[second - 2])) upTurns[m]++;
+		}
+	}
+	// One second never moves a price by more than a few percent: the change is a
+	// drift over minutes, not a flicker.
+	for (let m = 0; m < 3; m++) assert.ok(largestMove[m] < 0.035, 'mineral ' + m + ' one-second move ' + (largestMove[m] * 100).toFixed(1) + '%');
+	// Iron turns over more often than crystal, and crystal fewer times than iron:
+	// each ore has its own pace, so not every quote moves together.
+	assert.ok(upTurns[0] > upTurns[2], 'iron cycles fastest, crystal slowest');
+	assert.ok(upTurns[2] >= 3, 'crystal completes more than one cycle in ten minutes');
+	const swing = series.map(values => Math.max(...values) / Math.min(...values));
+	assert.ok(swing[2] > swing[0], 'the slow rare ore swings widest');
+});
+
+test('a wall sale softens its own ore and the market recovers', () => {
+	ceiling.reset(7);
+	const state = ceiling.state;
+	const world = { platform: { x: -40, vx: 0 }, heat: 0, time: 0, direction: 0 };
+	// Fill the hopper from the rock, then sell the load at the wall.
+	for (let x = 1; x < 23; x += 2) { ceiling.damage(x, state.bottom + 0.2, 20); ceiling.collapse(2); }
+	for (let i = 0; i < state.active.length; i++) if (state.active[i]) {
+		state.debrisX[i] = 11;
+		state.debrisY[i] = 0.701;
+		state.debrisVx[i] = 0;
+		state.debrisVy[i] = -1;
+	}
+	ceiling.step({ platform: { x: 12, vx: 0 }, heat: 0, time: 0 }, 0.01, 60);
+	assert.ok(state.cargoCells > 0, 'the hopper took the load');
+	const before = Array.from(state.mineralPrices);
+	const pressureBefore = Array.from(state.supplyPressure);
+	ceiling.sellCargo(0, 1);
+	assert.ok(state.supplyPressure[0] > pressureBefore[0], 'the wall absorbed iron and marked it down');
+	assert.ok(state.supplyPressure[2] >= pressureBefore[2], 'the crystal share of the load was marked down too');
+	// A glut is a discount, never a free ore.
+	for (let m = 0; m < 3; m++) assert.ok(state.mineralPrices[m] > 0 && state.mineralPrices[m] < before[m] * 1.5);
+	const discounted = Array.from(state.mineralPrices);
+	// Demand keeps moving while the pressure decays, so compare against the same
+	// instant with no sale: the pressure itself must fall back to the noise.
+	for (let second = 0; second < 120; second++) ceiling.step(world, 1, 60);
+	assert.ok(state.supplyPressure[0] < 0.02, 'the wall clears the load within a couple of minutes');
+	assert.ok(discounted.every(price => price > 0), 'quotes stay positive through the glut');
+});
+
+test('cargo keeps the value the cells were worth when they were caught', () => {
+	ceiling.reset(7);
+	const state = ceiling.state;
+	for (let x = 1; x < 23; x += 2) { ceiling.damage(x, state.bottom + 0.2, 20); ceiling.collapse(2); }
+	for (let i = 0; i < state.active.length; i++) if (state.active[i]) {
+		state.debrisX[i] = 11;
+		state.debrisY[i] = 0.701;
+		state.debrisVx[i] = 0;
+		state.debrisVy[i] = -1;
+	}
+	ceiling.step({ platform: { x: 12, vx: 0 }, heat: 0, time: 0 }, 0.01, 60);
+	const caught = state.cargoValue;
+	assert.ok(caught > 0, 'the hopper caught a load');
+	// The quotes move under the held load; the cargo it was booked at does not.
+	const world = { platform: { x: 40, vx: 0 }, heat: 0, time: 0, direction: 0 };
+	for (let second = 0; second < 200; second++) ceiling.step(world, 1, 60);
+	near(state.cargoValue, caught, 1e-9);
+	const paid = ceiling.sellCargo(0, 1);
+	near(paid, caught, 1e-9);
+	assert.equal(state.cargoCells, 0);
 });

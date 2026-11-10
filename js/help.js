@@ -213,6 +213,8 @@
 			title: 'Market and ledger',
 			text: [
 				'Touching either SELL wall sells the whole load automatically. This rig panel breaks the rig’s cargo and lifetime sales down by mineral, and its ledger records every rig sale, purchase, research payment and recharge. Competitor purses and purchase ledgers stay separate.',
+				'Each ore has a live quote. Iron is the bulk ore and pays a couple of credits a cell; copper pays several times that; crystal is the rare ore and pays ten times copper, but it only exists in pockets that this seed’s rock happens to hold. A quote is the reference price scaled by how much of that ore this rock carries and by its demand, and it drifts on a slow cycle of its own — iron swings over about two and a half minutes, copper over four, crystal over six — so a shift can be timed. The arrow beside a quote says which way the demand is currently heading.',
+				'Selling feeds the market: a load of one ore softens that ore’s own quote for the next minute or so, so dumping the same ore again and again pays less until the wall clears it. Cargo keeps the value its cells had when they were caught, so the wall pays what the load was worth, not what the market has drifted to since.',
 				'The emergency resupply imports energy instantly at the price shown, buying only what the funds cover; the centre pad remains the free route.',
 				'For the rig, sales, spending and imports all move one funds balance, so this ledger and the funds card always agree.'
 			]

@@ -850,6 +850,33 @@ test('reset clears research, equipment and the overlay together', () => {
 	assert.ok(Math.abs(parseFloat(dom.element('error').textContent)) < 1e-5);
 });
 
+test('the market table shows each live quote, its move and its trend', () => {
+	dom.element('reset').dispatch('click');
+	advance(4);
+	const rows = () => dom.element('inventory-rows').children;
+	const priceCell = index => rows()[index].children[1].textContent;
+	assert.equal(rows().length, 3);
+	// The quote, its move against the reference price and the demand arrow.
+	const pattern = /^-?\d+\.\d{2} · [+-]\d+% [▲▼·]$/;
+	for (let mineral = 0; mineral < 3; mineral++) {
+		assert.match(priceCell(mineral), pattern, 'row ' + mineral + ' reads ' + priceCell(mineral));
+		assert.ok(parseFloat(priceCell(mineral)) > 0, 'a quote is never free');
+	}
+	// The rare ore is the dearest and the bulk ore the cheapest, whatever the
+	// run's demand is doing.
+	const quotes = rows().map((row, mineral) => parseFloat(priceCell(mineral)));
+	assert.ok(quotes[2] > quotes[1] && quotes[1] > quotes[0], 'quote order ' + quotes.join(' < '));
+	// A minute of chamber time moves the market under the table; the quote is
+	// read from the same buffer the sale pays.
+	const quoted = Array.from(ceiling.state.mineralPrices);
+	const quiet = { platform: { x: -40, vx: 0 }, heat: 0, time: 0, direction: 0 };
+	for (let second = 0; second < 60; second++) ceiling.step(quiet, 1, 60);
+	assert.notDeepEqual(Array.from(ceiling.state.mineralPrices), quoted, 'the quotes moved with their demand');
+	// The rest of the suite starts from a clean chamber.
+	dom.element('reset').dispatch('click');
+	advance(2);
+});
+
 // The shim parses only elements with ids, so the menu labels are built here
 // exactly as the markup nests them: label > radio + text span.
 function viewLabel(value) {
