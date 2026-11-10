@@ -95,9 +95,66 @@ as a follow-up rather than hidden by a palette adjustment.
   240-second cap; matched baseline and squared-ramp logs retained.
 - `node --check` clean on every changed script; `git diff --check` clean.
 
+## Mine-trip mineral accounting (minerals.3 follow-up)
+
+`mine-trips.cjs` now records per-ore mineral mass for extracted, caught and
+sold cells. Extracted mass is new state on `ceiling.state`:
+`extractedMinerals` (Float64Array, Fe/Cu/Cr kg) is accumulated in
+`spawnFragment()` alongside the extracted cell count, zeroed in `reset()`
+and exposed on the frozen state view. Caught mass is cargo + sold mass
+(`cargoMinerals` + `soldMinerals`), sold mass is `soldMinerals`; each run
+prints Fe/Cu/Cr kg for all three stages and each mode block ends with
+per-shift averages. Experiments only — the page does not load `experiments/`.
+
+`ceiling.js`: added `extractedMinerals` and its reset/accumulation/state
+wiring; no formation or physics constants changed.
+
+Logs: `experiments/logs/minerals.3-mine-trips-minerals.txt` is the matched
+8-seed run of the shipped squared ramp (gain 1.6);
+`experiments/logs/minerals.3-mine-trips-baseline-minerals.txt` is the same
+suite with the previous linear ramp (gain 0.9), compiled by temporarily
+restoring the old constants and reverting them afterwards (the diff shows
+only the additive tracking).
+
+Crystal sold per shift (Fe/Cu/Cr kg shown as crystal only), 8-seed averages:
+
+| policy | shape | linear crystal banked | squared crystal banked | extracted crystal | share of extracted crystal banked |
+| base tuning | smooth | 1.27 kg ≈ 2.1 cells | 1.26 kg ≈ 2.1 cells | 25.07 → 18.04 kg | 5.1% → 7.0% |
+| base tuning | square | 1.15 kg ≈ 1.9 cells | 1.06 kg ≈ 1.8 cells | 14.84 → 14.88 kg | 7.7% → 7.1% |
+| progression | smooth | 1.42 kg ≈ 2.4 cells | 1.78 kg ≈ 3.0 cells | 34.00 → 25.03 kg | 4.2% → 7.1% |
+| progression | square | 1.56 kg ≈ 2.6 cells | 2.00 kg ≈ 3.3 cells | 22.80 → 23.08 kg | 6.9% → 8.7% |
+| communism | smooth | 2.42 kg ≈ 4.0 cells | 1.99 kg ≈ 3.3 cells | 22.26 → 24.97 kg | 10.9% → 8.0% |
+| communism | square | 3.10 kg ≈ 5.2 cells | 2.35 kg ≈ 3.9 cells | 36.49 → 29.07 kg | 8.5% → 8.1% |
+| communism + grader | smooth | 2.40 kg ≈ 4.0 cells | 2.33 kg ≈ 3.9 cells | 24.42 → 23.08 kg | 9.8% → 10.1% |
+| communism + grader | square | 2.01 kg ≈ 3.3 cells | 1.95 kg ≈ 3.3 cells | 30.21 → 24.31 kg | 6.6% → 8.9% |
+
+Read: crystal stays about 7–8% of extracted rock either way, and nearly all
+caught crystal is sold, so the shift's crystal banked is set by extraction
+cadence and catch rate — not by pocket count alone. The squared ramp's more
+numerous crystal-majority pockets (market probe: 0.57% → 3.02% of cells at
+crystal majority, 2.58 → 9.7 four-connected pockets per face, mean strength
+unchanged at 4.78) do not automatically bank more crystal: square stock trips
+extract ~10% less rock and bank about the same or less crystal, while the
+pad-aware progression converts the pockets into ~12% more crystal sold
+(1.56 → 2.00 kg per shift) on a higher catch rate (7.2% → 10.2%). No uniform
+direction across policies, so the square stock-trip dip stays a documented
+follow-up rather than a formation change.
+
+## Validation
+
+- `node --test experiments/*.test.js`: **239/239 pass** (with the shipped
+  squared-ramp constants).
+- `node experiments/mine-trips.cjs`: regenerated both matched logs, 8 seeds
+  per shape and policy at the 240-second cap.
+- `node --check` clean on `js/ceiling.js` and `experiments/mine-trips.cjs`;
+  `git diff --check` clean; baseline constants reverted, diff shows only the
+  additive `extractedMinerals` tracking.
+
 ## Next step
 
-Extend `mine-trips.cjs` to record mineral quantities in extracted, caught and
-sold cells. The current total catch rate cannot tell whether the new crystal
-pockets improve the amount of crystal a run actually banks, or merely make the
-rock's high-strength tail more legible.
+Decide the square stock-trip dip (−10% cells/min, crystal banked about the
+same): either accept the formation as-is with the dip documented, or attack
+the catch side — the pad-aware progression already shows the pattern
+(extraction 115.5 → 120.4 cells/min, crystal banked 1.56 → 2.00 kg per shift
+on a 7.2% → 10.2% catch rate), so a pad-aware stock policy is the natural
+place to close the gap without touching the formation.

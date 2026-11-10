@@ -403,6 +403,11 @@
 	let rockShape = 'smooth';
 	let testRock = false;
 	let extractedCells = 0;
+	// The mass of each ore the rock has let go, per ore: the mineral dimension
+	// of extraction, so a measurement can tell whether more crystal pockets
+	// actually put more crystal on the floor. Added in spawnFragment alongside
+	// the extracted cell count.
+	const extractedMinerals = new Float64Array(3);
 	// Cells that let go on their own schedule instead of on the hit that
 	// loosened them, and how many separate clumps that took: the chamber's own
 	// record of the delayed collapse.
@@ -765,6 +770,7 @@
 		dustCursor = 0;
 		dustAge.fill(dustLife);
 		extractedCells = 0;
+		extractedMinerals[0] = extractedMinerals[1] = extractedMinerals[2] = 0;
 		collapseCells = 0;
 		collapseBursts = 0;
 		caughtCells = 0;
@@ -1207,6 +1213,9 @@
 	// in the rock instead of being redrawn as one block.
 	function spawnFragment(index) {
 		const offset = index * 3;
+		extractedMinerals[0] += cellMass * minerals[offset];
+		extractedMinerals[1] += cellMass * minerals[offset + 1];
+		extractedMinerals[2] += cellMass * minerals[offset + 2];
 		const x = (index % columns + 0.5) * cell;
 		const y = bottom + (Math.floor(index / columns) + 0.5) * cell;
 		for (let i = 0; i < maxDebris; i++) {
@@ -2050,7 +2059,7 @@
 		get demand() { return [demandAt(0, marketTime), demandAt(1, marketTime), demandAt(2, marketTime)]; },
 		strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
 		debrisMinerals, debrisDamage,
-		cargoMinerals, soldMinerals, fallGroups, fallCells,
+		extractedMinerals, cargoMinerals, soldMinerals, fallGroups, fallCells,
 		get ledger() { return ledger; },
 		get extractedCells() { return extractedCells; },
 		get caughtCells() { return caughtCells; },

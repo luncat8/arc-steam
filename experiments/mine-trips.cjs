@@ -65,6 +65,11 @@ function floorMetrics() {
 	return { floorSum: sum, floorMax: max };
 }
 
+// Fe/Cu/Cr kilograms for one run's extraction, catching or sales tally.
+function mineralsLine(label, mass) {
+	return label + ' ' + mass.map(value => value.toFixed(2)).join('/') + ' kg';
+}
+
 function runTrip(shape, seed, maxSeconds, upgrades) {
 	ceiling.setCommune(upgrades === 'free' || upgrades === 'free-grader');
 	ceiling.reset(seed);
@@ -81,6 +86,9 @@ function runTrip(shape, seed, maxSeconds, upgrades) {
 	let maxPlatformSpeed = 0;
 	const trips = [];
 	let cellsAtStart = st.extractedCells;
+	const extractedMineralsStart = Array.from(st.extractedMinerals);
+	const caughtMineralsStart = Array.from(st.cargoMinerals).map((value, m) => value + st.soldMinerals[m]);
+	const soldMineralsStart = Array.from(st.soldMinerals);
 	let salesSeen = 0;
 	let stepCount = 0;
 	let seekingPad = false;
@@ -135,6 +143,9 @@ function runTrip(shape, seed, maxSeconds, upgrades) {
 		refuels: upgrades ? refuels() : 0, imported: upgrades ? w.importedEnergy / 1000 : 0,
 		pad: w.chargedEnergy / 1000, crank: w.crankEnergy / 1000,
 		floorSum: floor.floorSum, floorMax: floor.floorMax,
+		extractedMinerals: st.extractedMinerals.map((value, m) => value - extractedMineralsStart[m]),
+		caughtMinerals: Array.from(st.cargoMinerals).map((value, m) => value + st.soldMinerals[m] - caughtMineralsStart[m]),
+		soldMinerals: st.soldMinerals.map((value, m) => value - soldMineralsStart[m]),
 		state: w.ball.state
 	};
 }
@@ -151,6 +162,7 @@ for (const [label, upgrades] of modes) {
 				`${shape.padEnd(6)} seed ${String(seed).padStart(2)}  t ${r.time.toFixed(0)}s  extracted ${String(r.extracted).padStart(4)}  caught ${String(r.caught).padStart(4)}  lost ${String(r.lost).padStart(4)}` +
 				`  sold ${String(r.sold).padStart(4)}  earned ${r.earned.toFixed(0).padStart(5)} cr  credits ${r.credits.toFixed(0).padStart(5)}  sales ${r.trips}  battery ${(r.batteryUsed / 1000).toFixed(2)} kJ  ballSpeed ${r.maxSpeed.toFixed(1)}  platformSpeed ${r.maxPlatformSpeed.toFixed(1)}` +
 				`  maxTemp ${r.maxTemperature.toFixed(1)} C  minPower ${(r.minimumPower * 100).toFixed(0)}%  pad ${r.pad.toFixed(2)} kJ  crank ${r.crank.toFixed(2)} kJ  floor ${r.floorSum.toFixed(2)} max ${r.floorMax.toFixed(2)}` +
+				`  ${mineralsLine('ex', r.extractedMinerals)}  ${mineralsLine('ca', r.caughtMinerals)}  ${mineralsLine('so', r.soldMinerals)}` +
 				(upgrades ? `  upgrades ${r.upgrades}/${progression.length}  spent ${r.spent.toFixed(0)} cr  refuels ${r.refuels}  imported ${r.imported.toFixed(1)} kJ` : '')
 			);
 		}
@@ -165,6 +177,12 @@ for (const [label, upgrades] of modes) {
 		console.log(`  maxTemperature ${avg('maxTemperature').toFixed(1)} °C average, minimum drive output ${(avg('minimumPower') * 100).toFixed(0)}%`);
 		console.log(`  centre-pad charging ${avg('pad').toFixed(2)} kJ per shift (${(avg('pad') / avg('time') * 1000).toFixed(1)} W average), crank ${avg('crank').toFixed(2)} kJ per shift`);
 		console.log(`  floor piles sum ${avg('floorSum').toFixed(2)} column-m, tallest pile ${avg('floorMax').toFixed(2)} m`);
+		const mineralAvg = (key, m) => set.reduce((a, r) => a + r[key][m], 0) / set.length;
+		const extracted = [0, 1, 2].map(m => mineralAvg('extractedMinerals', m));
+		const caught = [0, 1, 2].map(m => mineralAvg('caughtMinerals', m));
+		const sold = [0, 1, 2].map(m => mineralAvg('soldMinerals', m));
+		console.log(`  minerals extracted Fe/Cu/Cr kg ${extracted.map(value => value.toFixed(2)).join('/')}, caught ${caught.map(value => value.toFixed(2)).join('/')}, sold ${sold.map(value => value.toFixed(2)).join('/')}`);
+		console.log(`  crystal banked ${sold[2].toFixed(2)} kg ≈ ${(sold[2] / 0.6).toFixed(1)} cells per shift, ${((sold[2] / Math.max(1e-9, extracted[2])) * 100).toFixed(1)}% of extracted crystal, ${((caught[2] / Math.max(1e-9, extracted[2])) * 100).toFixed(1)}% caught of extracted crystal`);
 		if (upgrades) console.log(`  progression ${avg('upgrades').toFixed(1)}/${progression.length} nodes owned, ${avg('spent').toFixed(0)} cr spent of ${avg('earned').toFixed(0)} cr earned, ${avg('refuels').toFixed(1)} recharges importing ${avg('imported').toFixed(1)} kJ`);
 	}
 }
