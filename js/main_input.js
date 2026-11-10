@@ -6,6 +6,10 @@
 
 let selectedColumn = 95;
 let selectedLayer = 0;
+let selectedGeoLayer = 0;
+function currentSelectedLayer(ceiling) {
+	return Math.max(0, Math.min(ceiling.rows - 1, selectedGeoLayer - ceiling.baseRow));
+}
 let paused = false;
 let accumulator = 0;
 let previous = 0;
@@ -114,12 +118,12 @@ function viewModeHovered(event) {
 // rock never moves the platform by accident.
 function rockCellIndex(worldX, worldY) {
 	const ceiling = window.SteamCeiling.state;
-	if (worldX < 0 || worldX > config.width || worldY < ceiling.bottom || worldY > ceiling.top) return -1;
+	if (worldX < 0 || worldX > config.width || worldY < ceiling.rockDrawnY(ceiling.bottom) || worldY > ceiling.top) return -1;
 	// The layer is drawn through a vertical perspective, so the pointer's
 	// screen height maps back to the cell's world height before the lookup.
 	const cellY = ceiling.rockWorldY(worldY);
 	const column = Math.min(ceiling.columns - 1, Math.floor(worldX / ceiling.cell));
-	const row = Math.min(ceiling.rows - 1, Math.floor((cellY - ceiling.bottom) / ceiling.cell));
+	const row = Math.min(ceiling.rows - 1, Math.max(0, Math.floor((cellY - ceiling.bottom) / ceiling.cell)));
 	const index = row * ceiling.columns + column;
 	if (ceiling.shape === 'square') return ceiling.strength[index] > 0 ? index : -1;
 	// The smooth surface is drawn as a linear profile between column vertices.
@@ -135,10 +139,12 @@ function inspectRockAtPointer(event) {
 	const index = rockCellIndex(worldX, worldY);
 	setHidden(ui['mineral-tooltip'], index < 0);
 	if (index < 0) return;
-	const columns = window.SteamCeiling.state.columns;
-	const previousIndex = selectedLayer * columns + selectedColumn;
+	const ceiling = window.SteamCeiling.state;
+	const columns = ceiling.columns;
+	const previousIndex = currentSelectedLayer(ceiling) * columns + selectedColumn;
 	selectedColumn = index % columns;
 	selectedLayer = Math.floor(index / columns);
+	selectedGeoLayer = ceiling.baseRow + selectedLayer;
 	if (index !== previousIndex) sceneDirty = true;
 	const tip = ui['mineral-tooltip'];
 	const x = event.clientX - bounds.left + 14;
@@ -289,6 +295,8 @@ function resetRun(withTestRock) {
 	window.SteamCeiling.setShape(ui.shape.value);
 	ui.balls.value = playerApi.state.ballMode;
 	physics.setGroundBounce(ui['ground-bounce'].value);
+	selectedLayer = 0;
+	selectedGeoLayer = 0;
 	renderedSales = -1;
 	clearInput();
 	endPistonDrag();

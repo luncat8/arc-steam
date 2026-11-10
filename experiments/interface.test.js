@@ -1590,3 +1590,73 @@ test('a tier family previews the selected tier as a swap, not as a stack', () =>
 	assert.equal(spec.children[8].children[1].children[1].textContent, '');
 	assert.equal(specValue(spec, 8), '1.60 W/K', 'the live cooling comes back');
 });
+
+test('market drawer renders live quote drift and rate with zero redundant DOM writes when settled', () => {
+	dom.element('reset').dispatch('click');
+	const marketRows = dom.element('market-rows');
+	const inventoryRows = dom.element('inventory-rows');
+	assert.equal(marketRows.children.length, ceiling.state.mineralNames.length);
+	ceiling.advanceMarket(25);
+	advance(8);
+	let directional = 0;
+	for (let i = 0; i < marketRows.children.length; i++) {
+		const row = marketRows.children[i];
+		const quoteCell = row.children[1];
+		const vsBaseCell = row.children[2];
+		const trendCell = row.children[3];
+		assert.equal(quoteCell.textContent, ceiling.state.mineralPrices[i].toFixed(2));
+		assert.ok(vsBaseCell.textContent.endsWith('%'), 'vs-base cell formats percentage');
+		assert.ok(trendCell.textContent.endsWith('%/m'), 'trend cell formats per-minute rate');
+		if (trendCell.textContent.startsWith('↑') || trendCell.textContent.startsWith('↓')) directional++;
+	}
+	assert.ok(directional >= 2, 'live market drawer shows directional quote trends');
+
+	// Freeze the world and verify zero redundant DOM writes on market and inventory cells.
+	dom.element('pause').dispatch('click');
+	advance(4);
+	let writes = 0;
+	function watchText(node) {
+		let value = node.textContent;
+		Object.defineProperty(node, 'textContent', {
+			configurable: true,
+			get() { return value; },
+			set(next) { writes++; value = next; }
+		});
+	}
+	watchText(marketRows.children[0].children[1]);
+	watchText(marketRows.children[0].children[2]);
+	watchText(marketRows.children[0].children[3]);
+	watchText(inventoryRows.children[0].children[1].children[0]);
+	watchText(inventoryRows.children[0].children[1].children[1]);
+	advance(10);
+	assert.equal(writes, 0, 'paused ticks do not rewrite unchanged quote or trend cells');
+	dom.element('pause').dispatch('click');
+});
+
+test('pointer rock inspection hits grown low rock and follows compacted layers without jumping', () => {
+	dom.element('reset').dispatch('click');
+	ceiling.queueGrowth(20);
+	ceiling.grow(5);
+	advance(2);
+	const view = global.window.SteamView;
+	const bounds = dom.element('c').getBoundingClientRect();
+	const targetCol = 50;
+	const targetRow = 3;
+	const worldX = (targetCol + 0.5) * ceiling.state.cell;
+	const worldY = ceiling.state.rockDrawnY(ceiling.state.bottom + (targetRow + 0.5) * ceiling.state.cell);
+	const clientX = bounds.left + view.offsetX + worldX * view.scale;
+	const clientY = bounds.top + view.floorY - worldY * view.scale;
+	dom.element('c').dispatch('pointermove', { clientX, clientY });
+	assert.equal(dom.element('mineral-tooltip').hidden, false, 'grown rock below 11.375 m is inspectable');
+	assert.match(dom.element('mineral-cell').textContent, /Column 51 \/ 192 · Layer 4 \//);
+
+	// Mine out the bottom 2 rows and grow 1 more row so baseRow advances by 2: Layer 4 becomes Layer 2.
+	const cols = ceiling.state.columns;
+	for (let r = 0; r < 2; r++) for (let c = 0; c < cols; c++) ceiling.state.strength[r * cols + c] = 0;
+	ceiling.queueGrowth(1);
+	ceiling.grow(0.25);
+	advance(8);
+	assert.match(dom.element('mineral-cell').textContent, /Column 51 \/ 192 · Layer 2 \//, 'selection follows the physical cell across compaction');
+	dom.element('reset').dispatch('click');
+});
+

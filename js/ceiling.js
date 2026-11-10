@@ -1,15 +1,30 @@
 (function (root) {
 	'use strict';
 	const width = 24;
-	const bottom = 11.375;
+	const initialBottom = 11.375;
 	const top = 15;
+	// Rock is limited to 70% of chamber height (10.5 m): at least 30% (4.5 m)
+	// stays open below, and intact lower rock is never destroyed when capped.
+	const maxRockShare = 0.7;
+	const minOpenShare = 1 - maxRockShare;
+	const minBottom = top * minOpenShare;
 	const cell = 0.125;
 	const floorCellHeight = cell / 4;
 	const defaultPixelSize = 4;
 	const columns = Math.round(width / cell);
-	const rows = Math.round((top - bottom) / cell);
-	const count = columns * rows;
-	const maxDebris = count;
+	const initialRows = Math.round((top - initialBottom) / cell);
+	const maxRows = Math.round((top - minBottom) / cell) + 36;
+	const maxCount = columns * maxRows;
+	const maxDebris = columns * initialRows;
+	// Queued top rows slide in smoothly at up to 5 rows/s instead of popping in.
+	const growthRate = 5;
+	const boundaryLookahead = 0.35;
+	let rows = initialRows;
+	let bottom = initialBottom;
+	let baseRow = 0;
+	let generatedRows = initialRows;
+	let totalShift = 0;
+	let queuedShift = 0;
 	const storageLimit = 100;
 	const cellMass = 0.6;
 	const gravity = 9.81;
@@ -60,8 +75,7 @@
 	const collapseRegionsX = 12;
 	const collapseRegionsY = 6;
 	const bandColumns = Math.ceil(columns / collapseRegionsX);
-	const bandRows = Math.ceil(rows / collapseRegionsY);
-	const collapseRegionCells = bandColumns * bandRows;
+	const bandRows = Math.ceil(initialRows / collapseRegionsY);
 	const regionCount = collapseRegionsX * collapseRegionsY;
 	// A hit loosens rock instead of tearing it down: the share of a cell's
 	// remaining strength the blow removes becomes the cell's damage, and only
@@ -184,6 +198,7 @@
 	const marketInterval = 0.5;
 	const mineralBasePrices = new Float64Array(mineralCount);
 	const mineralPrices = new Float64Array(mineralCount);
+	const mineralTrends = new Float64Array(mineralCount);
 	const mineralAbundance = new Float64Array(mineralCount);
 	const mineralDistance = new Float64Array(mineralCount);
 	const demandBias = new Float64Array(mineralCount);
@@ -192,15 +207,15 @@
 	const demandPhase = new Float64Array(mineralCount);
 	let marketClock = 0;
 	let marketBudget = 0;
-	const initialStrength = new Float32Array(count);
-	const strength = new Float32Array(count);
+	const initialStrength = new Float32Array(maxCount);
+	const strength = new Float32Array(maxCount);
 	// How loose each cell has become, 0 (sound rock) to 1 (about to let go). It
 	// is the share of a cell's remaining strength that impacts have taken since
 	// it last fell, so repeated hits around one spot add up.
-	const damageField = new Float32Array(count);
-	const elements = new Float32Array(count * 3);
-	const minerals = new Float32Array(count * mineralCount);
-	const prices = new Float32Array(count);
+	const damageField = new Float32Array(maxCount);
+	const elements = new Float32Array(maxCount * 3);
+	const minerals = new Float32Array(maxCount * mineralCount);
+	const prices = new Float32Array(maxCount);
 	const firstRow = new Uint8Array(columns);
 	const heightmap = new Float64Array(columns + 1);
 	const floorPiles = new Float64Array(columns);
@@ -319,9 +334,9 @@
 	}
 	const floorScratch = new Float64Array(columns);
 	const floorValueScratch = new Float64Array(columns);
-	const elementColors = new Array(count);
-	const mineralStyles = new Array(count);
-	const priceColors = new Array(count);
+	const elementColors = new Array(maxCount);
+	const mineralStyles = new Array(maxCount);
+	const priceColors = new Array(maxCount);
 	const strengthPalette = new Array(101);
 	const active = new Uint8Array(maxDebris);
 	const debrisX = new Float64Array(maxDebris);
@@ -439,10 +454,11 @@
 		return demandBias[m] * (1 + demandDepth[m] * (slow * 0.85 + quick * 0.35));
 	}
 
-	// Repaint what the market says each cell and each mineral is worth now. A
-	// fragment books its price when it breaks; the live cells and the price view
-	// follow the market so the next blow is priced at the current quote.
-	function revalueCells() {
+	function quoteAt(m, time) {
+		return Math.max(mineralPriceFloor, mineralBasePrices[m] * demandFactorAt(m, time));
+	}
+
+	function revalueRange(startIndex, endIndex) {
 		let minPrice = Infinity;
 		let maxPrice = -Infinity;
 		for (let m = 0; m < mineralCount; m++) {
@@ -450,7 +466,7 @@
 			if (mineralPrices[m] > maxPrice) maxPrice = mineralPrices[m];
 		}
 		const span = maxPrice > minPrice ? maxPrice - minPrice : 1;
-		for (let index = 0; index < count; index++) {
+		for (let index = startIndex; index < endIndex; index++) {
 			const offset = index * mineralCount;
 			let value = 0;
 			for (let m = 0; m < mineralCount; m++) value += minerals[offset + m] * mineralPrices[m];
@@ -460,10 +476,19 @@
 		}
 	}
 
+	// Repaint what the market says each cell and each mineral is worth now. A
+	// fragment books its price when it breaks; the live cells and the price view
+	// follow the market so the next blow is priced at the current quote.
+	function revalueCells() {
+		revalueRange(0, columns * rows);
+	}
+
 	function updateMarket(force) {
 		let changed = force;
 		for (let m = 0; m < mineralCount; m++) {
-			const next = Math.max(mineralPriceFloor, mineralBasePrices[m] * demandFactorAt(m, marketClock));
+			const next = quoteAt(m, marketClock);
+			const previous = quoteAt(m, marketClock - 1);
+			mineralTrends[m] = next > 0 ? (next - previous) * 60 / next : 0;
 			if (Math.abs(next - mineralPrices[m]) < 1e-6) continue;
 			mineralPrices[m] = next;
 			changed = true;
@@ -504,18 +529,22 @@
 		updateMarket(false);
 	}
 
-	function updateHeightmap() {
+	function updateFirstRow() {
 		for (let c = 0; c < columns; c++) {
 			let r = 0;
 			while (r < rows && strength[r * columns + c] <= 0) r++;
 			firstRow[c] = r;
 		}
+	}
+
+	function updateHeightmap() {
+		updateFirstRow();
 		for (let v = 0; v <= columns; v++) {
 			const c0 = Math.max(0, Math.min(columns - 1, v - 2));
 			const c1 = Math.max(0, Math.min(columns - 1, v - 1));
 			const c2 = Math.max(0, Math.min(columns - 1, v));
 			const c3 = Math.max(0, Math.min(columns - 1, v + 1));
-			heightmap[v] = bottom + (firstRow[c0] + 3 * firstRow[c1] + 3 * firstRow[c2] + firstRow[c3]) * 0.125 * cell;
+			heightmap[v] = Math.min(top, bottom + (firstRow[c0] + 3 * firstRow[c1] + 3 * firstRow[c2] + firstRow[c3]) * 0.125 * cell);
 		}
 	}
 
@@ -550,8 +579,275 @@
 	}
 
 	function collapseChunkMaxNow() {
-		const largestGrowth = Math.max(mineralClusterGrowth[0], mineralClusterGrowth[1], mineralClusterGrowth[2]);
+		let largestGrowth = 0;
+		for (let m = 0; m < mineralCount; m++) if (mineralClusterGrowth[m] > largestGrowth) largestGrowth = mineralClusterGrowth[m];
 		return collapseChunkMax * (1 + largestGrowth / 100);
+	}
+
+	// Build one row of rock at array slot `row` using continuous geological depth
+	// `geologicalRow` so top-row replenishment extends natural veins seamlessly.
+	function populateRow(row, geologicalRow, rowDamage, recordAbundance) {
+		if (testRock) {
+			for (let column = 0; column < columns; column++) {
+				const index = row * columns + column;
+				const mineral = Math.min(mineralCount - 1, Math.floor(column * mineralCount / columns));
+				const entry = mineralTable[mineral];
+				const elementOffset = index * 3;
+				const mineralOffset = index * mineralCount;
+				for (let m = 0; m < mineralCount; m++) minerals[mineralOffset + m] = m === mineral ? 1 : 0;
+				for (let channel = 0; channel < 3; channel++) elements[elementOffset + channel] = (entry.bands[channel][0] + entry.bands[channel][1]) * 0.5;
+				prices[index] = mineralPrices[mineral];
+				initialStrength[index] = 2.2 + entry.hardness;
+				strength[index] = initialStrength[index];
+				damageField[index] = rowDamage;
+				const color = entry.color;
+				mineralStyles[index] = 'rgb(' + color[0] + ' ' + color[1] + ' ' + color[2] + ')';
+				elementColors[index] = 'rgb(' + Math.round(elements[elementOffset] * 255) + ' ' + Math.round(elements[elementOffset + 1] * 255) + ' ' + Math.round(elements[elementOffset + 2] * 255) + ')';
+				priceColors[index] = 'rgb(48 72 91)';
+			}
+			return;
+		}
+		// Compressing the element fields in Y flattens the deposits: a vein
+		// crosses the rock as a stratified seam instead of a round patch.
+		const y = geologicalRow * 0.075 * 3;
+		for (let column = 0; column < columns; column++) {
+			const index = row * columns + column;
+			const x = column * 0.075;
+			// Three independent fields: an element concentration is not a colour
+			// mix that has to sum with the others, so a narrow band on one channel
+			// stays narrow and rare.
+			const red = 0.03 + noise(x, y, 0) * 0.94;
+			const green = 0.03 + noise(x * 0.82 + 7.3, y * 0.82 + 5.1, 1) * 0.94;
+			const blue = 0.03 + noise(x * 1.18 + 19.1, y * 1.18 + 11.9, 2) * 0.94;
+			const elementOffset = index * 3;
+			elements[elementOffset] = red;
+			elements[elementOffset + 1] = green;
+			elements[elementOffset + 2] = blue;
+			writeMineralMix(index, red, green, blue);
+			const offset = index * mineralCount;
+			let hardness = 0;
+			let mineralRed = 0;
+			let mineralGreen = 0;
+			let mineralBlue = 0;
+			for (let m = 0; m < mineralCount; m++) {
+				const fraction = minerals[offset + m];
+				if (recordAbundance) mineralAbundance[m] += fraction;
+				const entry = mineralTable[m];
+				hardness += fraction * entry.hardness;
+				mineralRed += fraction * entry.color[0];
+				mineralGreen += fraction * entry.color[1];
+				mineralBlue += fraction * entry.color[2];
+			}
+			initialStrength[index] = 2.2 + hardness;
+			strength[index] = initialStrength[index];
+			damageField[index] = rowDamage;
+			elementColors[index] = 'rgb(' + Math.round(red * 255) + ' ' + Math.round(green * 255) + ' ' + Math.round(blue * 255) + ')';
+			mineralStyles[index] = 'rgb(' + Math.round(mineralRed) + ' ' + Math.round(mineralGreen) + ' ' + Math.round(mineralBlue) + ')';
+		}
+	}
+
+	function lowestIntactY() {
+		updateFirstRow();
+		let minRow = rows;
+		for (let c = 0; c < columns; c++) if (firstRow[c] < minRow) minRow = firstRow[c];
+		return minRow < rows ? bottom + minRow * cell : top;
+	}
+
+	function availableGrowthShift() {
+		const heightRoom = Math.max(0, lowestIntactY() - minBottom);
+		const bufferRoom = Math.max(0, (maxRows - 1) * cell - (top - bottom));
+		return Math.min(heightRoom, bufferRoom);
+	}
+
+	function pruneBottomRows() {
+		updateFirstRow();
+		let drop = rows;
+		for (let c = 0; c < columns; c++) if (firstRow[c] < drop) drop = firstRow[c];
+		for (let i = 0; i < maxDebris; i++) {
+			if (!active[i]) continue;
+			const dRow = Math.floor(debrisCell[i] / columns);
+			if (dRow < drop) drop = dRow;
+		}
+		if (drop <= 0) return 0;
+		const remaining = rows - drop;
+		const shiftCells = drop * columns;
+		const remainingCells = remaining * columns;
+		initialStrength.copyWithin(0, shiftCells, shiftCells + remainingCells);
+		strength.copyWithin(0, shiftCells, shiftCells + remainingCells);
+		damageField.copyWithin(0, shiftCells, shiftCells + remainingCells);
+		prices.copyWithin(0, shiftCells, shiftCells + remainingCells);
+		elements.copyWithin(0, shiftCells * 3, (shiftCells + remainingCells) * 3);
+		minerals.copyWithin(0, shiftCells * mineralCount, (shiftCells + remainingCells) * mineralCount);
+		for (let idx = 0; idx < remainingCells; idx++) {
+			elementColors[idx] = elementColors[idx + shiftCells];
+			mineralStyles[idx] = mineralStyles[idx + shiftCells];
+			priceColors[idx] = priceColors[idx + shiftCells];
+		}
+		const oldCells = rows * columns;
+		initialStrength.fill(0, remainingCells, oldCells);
+		strength.fill(0, remainingCells, oldCells);
+		damageField.fill(0, remainingCells, oldCells);
+		prices.fill(0, remainingCells, oldCells);
+		for (let c = 0; c < columns; c++) firstRow[c] -= drop;
+		for (let i = 0; i < maxDebris; i++) if (active[i]) debrisCell[i] -= shiftCells;
+		rows = remaining;
+		baseRow += drop;
+		bottom = initialBottom + baseRow * cell - totalShift;
+		return drop;
+	}
+
+	function appendTopRow() {
+		pruneBottomRows();
+		if (rows >= maxRows) return false;
+		const row = rows;
+		populateRow(row, generatedRows, 0, false);
+		rows++;
+		generatedRows++;
+		revalueRange(row * columns, rows * columns);
+		// Incoming strata bring potential energy from above the chamber; booking
+		// the import keeps the chamber's energy balance invariant.
+		exportedEnergy -= columns * cellMass * gravity * (bottom + (row + 0.5) * cell);
+		return true;
+	}
+
+	function upperBoundaryY() {
+		updateFirstRow();
+		let highest = bottom;
+		for (let c = 0; c < columns; c++) {
+			let r = firstRow[c];
+			if (!testRock) {
+				while (r < rows && strength[r * columns + c] > 0 && damageField[r * columns + c] >= collapseLooseFloor) r++;
+			}
+			const y = Math.min(top, bottom + r * cell);
+			if (y > highest) highest = y;
+		}
+		return highest;
+	}
+
+	function maxActiveDamageRadius(world) {
+		let maxRadius = damageRadiusNow('rig');
+		const balls = world && world.balls;
+		if (balls) {
+			for (let i = 0; i < balls.length; i++) {
+				const r = damageRadiusNow(balls[i].owner || 'rig');
+				if (r > maxRadius) maxRadius = r;
+			}
+		}
+		return maxRadius;
+	}
+
+	function queueGrowth(rowCount) {
+		const added = rowCount === undefined ? 1 : rowCount;
+		pruneBottomRows();
+		const room = availableGrowthShift();
+		if (room <= 1e-12) {
+			queuedShift = 0;
+			return 0;
+		}
+		if (!(added > 0) || !Number.isFinite(added)) {
+			if (queuedShift > room) queuedShift = room;
+			return queuedShift / cell;
+		}
+		queuedShift = Math.min(room, queuedShift + added * cell);
+		return queuedShift / cell;
+	}
+
+	// Keep at least one full damage radius of rock headroom below y = 15 m by
+	// topping up queuedShift only above what bounce growth already queued.
+	function watchBoundary(world) {
+		const maxRadiusMeters = maxActiveDamageRadius(world) * cell;
+		let neededShift = upperBoundaryY() + maxRadiusMeters - top;
+		const balls = world && world.balls;
+		if (balls) {
+			const physics = root.SteamPhysics;
+			const ballRadius = physics && physics.config ? physics.config.radius : 0.18;
+			const ballGravity = physics && physics.config ? physics.config.ballGravity : gravity;
+			for (let i = 0; i < balls.length; i++) {
+				const ball = balls[i];
+				if (!ball || ball.state !== 'flying') continue;
+				const radiusMeters = damageRadiusNow(ball.owner || 'rig') * cell;
+				const ballTop = ball.y + ballRadius;
+				if (ballTop + radiusMeters - top > neededShift) neededShift = ballTop + radiusMeters - top;
+				if (!(ball.vy > 0)) continue;
+				const firstCol = Math.max(0, Math.floor((ball.x - ballRadius) / cell));
+				const lastCol = Math.min(columns - 1, Math.floor((ball.x + ballRadius) / cell));
+				let localRoof = bottom;
+				for (let c = firstCol; c <= lastCol; c++) {
+					let r = firstRow[c];
+					if (!testRock) {
+						while (r < rows && strength[r * columns + c] > 0 && damageField[r * columns + c] >= collapseLooseFloor) r++;
+					}
+					const y = Math.min(top, bottom + r * cell);
+					if (y > localRoof) localRoof = y;
+				}
+				const tLook = Math.min(boundaryLookahead, ball.vy / ballGravity);
+				const projectedTop = ballTop + ball.vy * tLook - 0.5 * ballGravity * tLook * tLook;
+				if (projectedTop >= localRoof) {
+					const lookShift = localRoof + 1.5 * radiusMeters - top;
+					if (lookShift > neededShift) neededShift = lookShift;
+				}
+			}
+		}
+		if (neededShift > queuedShift + 1e-12) queueGrowth((neededShift - queuedShift) / cell);
+		else {
+			pruneBottomRows();
+			const room = availableGrowthShift();
+			if (queuedShift > room) queuedShift = room;
+		}
+		return queuedShift / cell;
+	}
+
+	function stepGrowth(dt) {
+		pruneBottomRows();
+		if (!(queuedShift > 0) || !(dt > 0)) return false;
+		const room = availableGrowthShift();
+		if (room <= 1e-12) {
+			queuedShift = 0;
+			return false;
+		}
+		if (queuedShift > room) queuedShift = room;
+		let remainingShift = Math.min(queuedShift, growthRate * cell * dt);
+		const maxSlice = cell * 0.5;
+		let moved = false;
+		while (remainingShift > 1e-12) {
+			pruneBottomRows();
+			const stepRoom = availableGrowthShift();
+			if (stepRoom <= 1e-12) {
+				queuedShift = 0;
+				break;
+			}
+			const slice = Math.min(remainingShift, maxSlice, stepRoom);
+			remainingShift -= slice;
+			queuedShift = Math.max(0, queuedShift - slice);
+			let intact = 0;
+			const activeCells = columns * rows;
+			for (let index = 0; index < activeCells; index++) if (strength[index] > 0) intact++;
+			exportedEnergy += intact * cellMass * gravity * slice;
+			totalShift += slice;
+			bottom = initialBottom + baseRow * cell - totalShift;
+			while (initialBottom + generatedRows * cell - totalShift < top - 1e-12 && rows < maxRows) appendTopRow();
+			moved = true;
+		}
+		if (!moved) return false;
+		updateHeightmap();
+		updatePerspective();
+		scanRegions();
+		return true;
+	}
+
+	function grow(seconds, world) {
+		const span = seconds === undefined || seconds === null ? 1 / growthRate : seconds;
+		if (!(span > 0) || !Number.isFinite(span)) return false;
+		let remaining = span;
+		let moved = false;
+		const maxChunk = 0.05;
+		while (remaining > 1e-12) {
+			const dt = Math.min(remaining, maxChunk);
+			remaining -= dt;
+			watchBoundary(world);
+			if (stepGrowth(dt)) moved = true;
+		}
+		return moved;
 	}
 
 	// Controlled comparison bed: one pure mineral band per table entry, with
@@ -560,6 +856,13 @@
 	// inspector shows the signature that formed the band.
 	function generateTestRock() {
 		testRock = true;
+		rows = initialRows;
+		bottom = initialBottom;
+		baseRow = 0;
+		generatedRows = initialRows;
+		totalShift = 0;
+		queuedShift = 0;
+		exportedEnergy = 0;
 		collapseClock = 0;
 		collapseRoll = 0;
 		dustCursor = 0;
@@ -567,26 +870,14 @@
 		peeled.fill(0);
 		fallGroups.fill(0);
 		fallCells.fill(0);
-		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
-			const index = row * columns + column;
-			const mineral = Math.min(mineralCount - 1, Math.floor(column * mineralCount / columns));
-			const entry = mineralTable[mineral];
-			const elementOffset = index * 3;
-			const mineralOffset = index * mineralCount;
-			const damage = (rows - 1 - row) / (rows - 1);
-			for (let m = 0; m < mineralCount; m++) minerals[mineralOffset + m] = m === mineral ? 1 : 0;
-			for (let channel = 0; channel < 3; channel++) elements[elementOffset + channel] = (entry.bands[channel][0] + entry.bands[channel][1]) * 0.5;
-			prices[index] = mineralPrices[mineral];
-			initialStrength[index] = 2.2 + entry.hardness;
-			strength[index] = initialStrength[index];
-			damageField[index] = damage;
-			const color = entry.color;
-			mineralStyles[index] = 'rgb(' + color[0] + ' ' + color[1] + ' ' + color[2] + ')';
-			elementColors[index] = 'rgb(' + Math.round(elements[elementOffset] * 255) + ' ' + Math.round(elements[elementOffset + 1] * 255) + ' ' + Math.round(elements[elementOffset + 2] * 255) + ')';
-			priceColors[index] = 'rgb(48 72 91)';
-		}
+		initialStrength.fill(0);
+		strength.fill(0);
+		damageField.fill(0);
+		prices.fill(0);
+		for (let row = 0; row < rows; row++) populateRow(row, row, (rows - 1 - row) / (rows - 1), false);
 		revalueCells();
 		updateHeightmap();
+		updatePerspective();
 		scanRegions();
 		return true;
 	}
@@ -605,6 +896,12 @@
 	function reset(newSeed) {
 		seed = newSeed || 1;
 		testRock = false;
+		rows = initialRows;
+		bottom = initialBottom;
+		baseRow = 0;
+		generatedRows = initialRows;
+		totalShift = 0;
+		queuedShift = 0;
 		collapseRoll = 0;
 		dustCursor = 0;
 		dustAge.fill(dustLife);
@@ -641,52 +938,22 @@
 		graderCutMark.fill(0);
 		blade.value = 0;
 		blade.idle = 0;
+		initialStrength.fill(0);
+		strength.fill(0);
 		damageField.fill(0);
+		prices.fill(0);
 		regionDamage.fill(0);
 		regionEligible.fill(0);
 		collapseClock = 0;
 		marketClock = 0;
 		marketBudget = 0;
 		mineralAbundance.fill(0);
-		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
-			const index = row * columns + column;
-			const x = column * 0.075;
-			// Compressing the element fields in Y flattens the deposits: a vein
-			// crosses the rock as a stratified seam instead of a round patch.
-			const y = row * 0.075 * 3;
-			// Three independent fields: an element concentration is not a colour
-			// mix that has to sum with the others, so a narrow band on one channel
-			// stays narrow and rare.
-			const red = 0.03 + noise(x, y, 0) * 0.94;
-			const green = 0.03 + noise(x * 0.82 + 7.3, y * 0.82 + 5.1, 1) * 0.94;
-			const blue = 0.03 + noise(x * 1.18 + 19.1, y * 1.18 + 11.9, 2) * 0.94;
-			const elementOffset = index * 3;
-			elements[elementOffset] = red;
-			elements[elementOffset + 1] = green;
-			elements[elementOffset + 2] = blue;
-			writeMineralMix(index, red, green, blue);
-			const offset = index * mineralCount;
-			let hardness = 0;
-			let mineralRed = 0;
-			let mineralGreen = 0;
-			let mineralBlue = 0;
-			for (let m = 0; m < mineralCount; m++) {
-				const fraction = minerals[offset + m];
-				mineralAbundance[m] += fraction;
-				const entry = mineralTable[m];
-				hardness += fraction * entry.hardness;
-				mineralRed += fraction * entry.color[0];
-				mineralGreen += fraction * entry.color[1];
-				mineralBlue += fraction * entry.color[2];
-			}
-			initialStrength[index] = 2.2 + hardness;
-			strength[index] = initialStrength[index];
-			elementColors[index] = 'rgb(' + Math.round(red * 255) + ' ' + Math.round(green * 255) + ' ' + Math.round(blue * 255) + ')';
-			mineralStyles[index] = 'rgb(' + Math.round(mineralRed) + ' ' + Math.round(mineralGreen) + ' ' + Math.round(mineralBlue) + ')';
-		}
-		for (let m = 0; m < mineralCount; m++) mineralAbundance[m] /= count;
+		for (let row = 0; row < rows; row++) populateRow(row, row, 0, true);
+		const initialCells = columns * rows;
+		for (let m = 0; m < mineralCount; m++) mineralAbundance[m] /= initialCells;
 		initMarket();
 		updateHeightmap();
+		updatePerspective();
 		scanRegions();
 		updateFloor();
 	}
@@ -857,10 +1124,11 @@
 
 	// Keep the 12x6 region diagnostics synchronized with the live free surface.
 	function scanRegions() {
+		const regionRows = Math.max(1, Math.ceil(rows / collapseRegionsY));
 		for (let region = 0; region < regionCount; region++) {
-			const rowStart = Math.floor(region / collapseRegionsX) * bandRows;
+			const rowStart = Math.floor(region / collapseRegionsX) * regionRows;
 			const columnStart = (region % collapseRegionsX) * bandColumns;
-			const rowEnd = Math.min(rows, rowStart + bandRows);
+			const rowEnd = Math.min(rows, rowStart + regionRows);
 			const columnEnd = Math.min(columns, columnStart + bandColumns);
 			let total = 0;
 			let touched = 0;
@@ -1593,6 +1861,8 @@
 			debrisCells[i] = 0;
 			debrisValue[i] = 0;
 		}
+		watchBoundary(world);
+		stepGrowth(dt);
 		collapseTick(dt);
 		ageDust(dt);
 		if (root.SteamEquipment && root.SteamEquipment.isInstalled('grader')) grade(world, dt);
@@ -1699,7 +1969,8 @@
 
 	function energy() {
 		let value = exportedEnergy + cargoCells * cellMass * gravity * cargoHeight;
-		for (let index = 0; index < count; index++) if (strength[index] > 0) value += cellMass * gravity * (bottom + (Math.floor(index / columns) + 0.5) * cell);
+		const activeCells = columns * rows;
+		for (let index = 0; index < activeCells; index++) if (strength[index] > 0) value += cellMass * gravity * (bottom + (Math.floor(index / columns) + 0.5) * cell);
 		for (let i = 0; i < maxDebris; i++) if (active[i]) value += fragmentMechanical(i);
 		return value;
 	}
@@ -1724,55 +1995,46 @@
 		return mineralStyles[index];
 	}
 
-	// The rock layer is drawn with a vertical perspective: the near (bottom)
-	// edge keeps a larger pixel scale and the far (top) edge is compressed, so
-	// the ceiling reads as receding. The mapping keeps the layer's footprint
-	// (bottom..top) and grades the cell heights from 1x at the bottom (same as
-	// the plain grid) to 0.25x (4x smaller) at the top through a concave curve.
-	// Fallen debris is deliberately left unwarped.
-	const rockSpan = top - bottom;
-	// Cell heights solve h(0)=cell, h(rows-1)=cell/4 and sum=rockSpan.
-	const cellHeights = new Float64Array(rows);
-	{
-		const a = cell;
-		const b = cell * 0.25;
-		const dn = rows - 1;
-		const sumR = rows * dn / 2;
-		const sumR2 = dn * rows * (2 * rows - 1) / 6;
-		const rhs1 = b - a;
-		const rhs2 = rockSpan - rows * a;
-		const det = dn * sumR2 - dn * dn * sumR;
-		const B = (rhs1 * sumR2 - dn * dn * rhs2) / det;
-		const C = (dn * rhs2 - rhs1 * sumR) / det;
-		for (let r = 0; r < rows; r++) cellHeights[r] = a + B * r + C * r * r;
-	}
-	// Row boundaries in drawn space, precomputed once (the layer never moves).
-	const drawnRowY = new Float64Array(rows + 1);
-	drawnRowY[0] = bottom;
-	for (let r = 0; r < rows; r++) drawnRowY[r + 1] = drawnRowY[r] + cellHeights[r];
-	function rockRowAt(y) {
-		const r = Math.floor((y - bottom) / cell);
-		return r < 0 ? 0 : (r >= rows ? rows - 1 : r);
-	}
+	// The rock layer is drawn with a vertical perspective anchored to the upper
+	// chamber span (warpBottom..top): below warpBottom world and drawn coordinates
+	// coincide at 1x scale, while above warpBottom vertical scale eases smoothly
+	// from 1x at warpBottom to 0.25x (4x smaller) at top along a monotone cubic.
+	// Anchoring the warp to the chamber instead of the instantaneous row count
+	// prevents visual jumps as new rows slide in from above or compact below.
+	const warpBottom = initialBottom;
+	const warpSpan = top - warpBottom;
+	const drawnRowY = new Float64Array(maxRows + 1);
 	function rockDrawnY(y) {
-		if (y <= bottom) return bottom;
+		if (y <= warpBottom) return y;
 		if (y >= top) return top;
-		const r = rockRowAt(y);
-		const fraction = (y - (bottom + r * cell)) / cell;
-		return drawnRowY[r] + fraction * cellHeights[r];
+		const u = (y - warpBottom) / warpSpan;
+		return warpBottom + warpSpan * (u + 0.75 * u * u * (1 - u));
 	}
 	function rockWorldY(drawnY) {
-		if (drawnY <= bottom) return bottom;
+		if (drawnY <= warpBottom) return drawnY;
 		if (drawnY >= top) return top;
-		let r = 0;
-		while (r < rows - 1 && drawnRowY[r + 1] <= drawnY) r++;
-		const fraction = (drawnY - drawnRowY[r]) / cellHeights[r];
-		return bottom + r * cell + fraction * cell;
+		const target = (drawnY - warpBottom) / warpSpan;
+		let u = target;
+		for (let step = 0; step < 6; step++) {
+			const f = u + 0.75 * u * u * (1 - u) - target;
+			const df = 1 + 1.5 * u - 2.25 * u * u;
+			u -= f / df;
+			if (u < 0) u = 0;
+			else if (u > 1) u = 1;
+		}
+		return warpBottom + u * warpSpan;
 	}
 	// Local vertical pixel scale of the perspective at a world height.
 	function rockScale(y) {
-		return cellHeights[rockRowAt(y)] / cell;
+		if (y <= warpBottom) return 1;
+		if (y >= top) return 0.25;
+		const u = (y - warpBottom) / warpSpan;
+		return 1 + 1.5 * u - 2.25 * u * u;
 	}
+	function updatePerspective() {
+		for (let r = 0; r <= rows; r++) drawnRowY[r] = rockDrawnY(Math.min(top, bottom + r * cell));
+	}
+	updatePerspective();
 
 	// The underside of the rock across a footprint of this half width, in drawn
 	// space: the lowest ceiling an object of that width can still hang from. A
@@ -1794,12 +2056,15 @@
 	}
 
 	function draw(context, mode) {
+		updatePerspective();
 		if (rockShape === 'square') {
-			for (let index = 0; index < count; index++) {
+			const activeCells = columns * rows;
+			for (let index = 0; index < activeCells; index++) {
 				if (strength[index] <= 0) continue;
 				const row = Math.floor(index / columns);
 				const y0 = drawnRowY[row];
 				const y1 = drawnRowY[row + 1];
+				if (y1 <= y0) continue;
 				context.fillStyle = colorFor(index, mode);
 				context.fillRect(index % columns * cell, y0, cell + 0.002, y1 - y0 + 0.002);
 			}
@@ -1818,12 +2083,14 @@
 					const index = row * columns + c;
 					if (strength[index] <= 0) continue;
 					const cellBottom = bottom + row * cell;
-					const cellTop = cellBottom + cell + 0.002;
+					if (cellBottom >= top) continue;
+					const cellTop = Math.min(top, cellBottom + cell) + 0.002;
 					const bL = row === startRow ? yL : Math.max(cellBottom, yL);
 					const bR = row === startRow ? yR : Math.max(cellBottom, yR);
 					if (bL >= cellTop && bR >= cellTop) continue;
 					const dBottom = drawnRowY[row];
 					const dTop = drawnRowY[row + 1];
+					if (dTop <= dBottom) continue;
 					const eL = row === startRow ? dL : dBottom;
 					const eR = row === startRow ? dR : dBottom;
 					context.fillStyle = colorFor(index, mode);
@@ -1847,7 +2114,7 @@
 		const grain = cell * 0.76;
 		const halfGrain = grain * 0.5;
 		for (let i = 0; i < maxDebris; i++) if (active[i]) {
-			const drawnY = Math.min(debrisY[i] > bottom ? rockDrawnY(debrisY[i]) : debrisY[i], ceilingUnder(debrisX[i], halfGrain) - halfGrain);
+			const drawnY = Math.min(rockDrawnY(debrisY[i]), ceilingUnder(debrisX[i], halfGrain) - halfGrain);
 			context.fillStyle = colorFor(debrisCell[i], mode, debrisDamage[i]);
 			context.fillRect(debrisX[i] - halfGrain, drawnY - halfGrain, grain, grain);
 		}
@@ -1875,7 +2142,13 @@
 
 	// Stable live view: reading simulation state allocates nothing and invokes no command.
 	const state = Object.freeze({
-		columns, rows, cell, floorCellHeight, bottom, top, defaultPixelSize, storageLimit, cellMass,
+		columns, get rows() { return rows; }, initialRows, maxRows, cell, floorCellHeight,
+		get bottom() { return bottom; }, initialBottom, minBottom, maxRockShare, minOpenShare, top,
+		get lowestRockY() { return lowestIntactY(); },
+		get upperBoundaryY() { return upperBoundaryY(); },
+		get baseRow() { return baseRow; }, get generatedRows() { return generatedRows; },
+		get pendingRows() { return queuedShift / cell; }, growthRate, boundaryLookahead,
+		defaultPixelSize, storageLimit, cellMass,
 		rockDrawnY, rockWorldY, rockScale, drawnRowY,
 		get damageRadius() { return damageRadiusNow(); },
 		get baseDamageRadius() { return baseDamageRadius; },
@@ -1891,7 +2164,7 @@
 		graderBot, blade, graderShare, floorValues,
 		get shape() { return rockShape; }, heightmap, firstRow, floorPiles, floorHeight,
 		garageHeight, garageDepth, garageParkX, graderSpeed,
-		mineralTable, mineralNames, mineralSymbols, mineralPrices, mineralBasePrices, mineralAbundance,
+		mineralTable, mineralNames, mineralSymbols, mineralPrices, mineralBasePrices, mineralTrends, mineralAbundance,
 		targetCellValue, priceElasticity, mineralPriceCap, fuelPrice,
 		get marketTime() { return marketClock; },
 		strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
@@ -1923,6 +2196,7 @@
 		hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, damageRadiusNow, damageMultiplierNow,
 		trace, step, harvest, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt,
 		state, setShape, setMineralClusterGrowth, generateTestRock, rockDrawnY, rockWorldY, rockScale, collapse, advanceMarket,
+		queueGrowth, watchBoundary, grow,
 		get collapseChunkMax() { return collapseChunkMaxNow(); }
 	};
 	root.SteamCeiling = api;

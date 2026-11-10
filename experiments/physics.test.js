@@ -1019,3 +1019,95 @@ test('a collector already holding a ball returns the next arrival off its flat s
 	balanced(w);
 	physics.createWorld();
 });
+
+test('every upward deck or elastic-ground bounce queues one top row while preserving exact energy', () => {
+	const w = physics.createWorld();
+	// Launching from the collector is not a bounce and does not queue rock growth.
+	w.ball.state = 'held';
+	w.ball.holder = 'rig';
+	w.ball.vx = 0;
+	w.ball.vy = 0;
+	sync(w);
+	assert.equal(physics.launch(w), true);
+	near(ceiling.state.pendingRows, 0, 1e-12, 'release alone does not queue top-row growth');
+
+	// Reflector bounce queues 1 row and slides it in smoothly while keeping totalEnergy exact.
+	const reflect = physics.createWorld();
+	reflect.platform.x = 12;
+	reflect.ball.x = 12.6;
+	reflect.ball.y = 1.4;
+	reflect.ball.vx = 0;
+	reflect.ball.vy = -2;
+	sync(reflect);
+	let bounced = false;
+	for (let i = 0; i < 120 && !bounced; i++) {
+		const before = reflect.bounces;
+		physics.step(reflect, c.step);
+		if (reflect.bounces > before) {
+			bounced = true;
+			assert.ok(ceiling.state.pendingRows > 0.95 && ceiling.state.pendingRows <= 1, 'reflector bounce queued 1 row');
+		}
+	}
+	assert.ok(bounced, 'ball bounced off reflector');
+	run(reflect, 0.3);
+	assert.equal(ceiling.state.generatedRows, ceiling.state.initialRows + 1, 'one top row grew in');
+	near(ceiling.state.pendingRows, 0, 1e-9);
+	balanced(reflect);
+
+	// Elastic ground bounce also queues 1 row per rebound; wall and rock contacts do not.
+	const groundWorld = physics.createWorld();
+	physics.setGroundBounce('elastic');
+	groundWorld.platform.x = 3;
+	groundWorld.ball.x = 18;
+	groundWorld.ball.y = 1.2;
+	groundWorld.ball.vx = 0;
+	groundWorld.ball.vy = -2;
+	sync(groundWorld);
+	let groundRebound = false;
+	for (let i = 0; i < 120 && !groundRebound; i++) {
+		const before = groundWorld.bounces;
+		physics.step(groundWorld, c.step);
+		if (groundWorld.bounces > before) groundRebound = true;
+	}
+	assert.ok(groundRebound, 'elastic floor rebounded the ball');
+	assert.equal(ceiling.state.generatedRows, ceiling.state.initialRows + 1, 'ground bounce began feeding 1 top row');
+	run(groundWorld, 0.3);
+	balanced(groundWorld);
+
+	// Descending rock hitting the 70% h cap stops without destroying cells and keeps energy exact.
+	const deep = physics.createWorld();
+	deep.platform.x = 3;
+	deep.ball.state = 'held';
+	deep.ball.holder = 'rig';
+	deep.ball.vx = 0;
+	deep.ball.vy = 0;
+	sync(deep);
+	const row0Before = ceiling.state.strength[0];
+	ceiling.queueGrowth(95);
+	run(deep, 20);
+	near(ceiling.state.bottom, ceiling.state.minBottom, 1e-9);
+	assert.equal(ceiling.state.baseRow, 0, 'lower rock is not destroyed at the 70% cap');
+	near(ceiling.state.strength[0], row0Before, 1e-6);
+	balanced(deep);
+
+	// Upper-boundary ball lookahead starts smooth replenishment before an upward ball reaches a high shaft roof,
+	// while stopping cleanly without destruction if 30% h clearance is reached.
+	const shaftWorld = physics.createWorld();
+	shaftWorld.platform.x = 3;
+	const cols = ceiling.state.columns;
+	for (let col = 92; col <= 100; col++) for (let row = 0; row < 18; row++) ceiling.state.strength[row * cols + col] = 0;
+	shaftWorld.ball.state = 'flying';
+	shaftWorld.ball.holder = null;
+	shaftWorld.ball.x = 96.5 * ceiling.state.cell;
+	shaftWorld.ball.y = 12.8;
+	shaftWorld.ball.vx = 0;
+	shaftWorld.ball.vy = 3.2;
+	sync(shaftWorld);
+	// Roof at row 18 is 13.625 m (still > 1.097 m below 15 m statically), but upward lookahead triggers replenishment early.
+	physics.step(shaftWorld, c.step);
+	assert.ok(ceiling.state.pendingRows > 0, 'upward ball approaching deep shaft queues smooth headroom before impact');
+	run(shaftWorld, 0.5);
+	balanced(shaftWorld);
+	physics.createWorld();
+});
+

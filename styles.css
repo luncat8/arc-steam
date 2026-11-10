@@ -274,6 +274,9 @@ caption { text-align: left; color: var(--muted); font-size: 10px; padding-bottom
 th, td { text-align: right; padding: 9px 5px; border-bottom: 1px solid var(--line); }
 th:first-child { text-align: left; }
 thead { color: var(--muted); }
+td[data-tone="gain"], .quote-arrow[data-tone="gain"] { color: var(--accent); }
+td[data-tone="loss"], .quote-arrow[data-tone="loss"] { color: var(--danger); }
+.quote-arrow { display: inline-block; width: 1.2em; text-align: center; color: var(--muted); }
 #transaction-status { font-size: 11px; color: var(--amber); }
 details { font-size: 11px; color: var(--muted); line-height: 1.8; }
 summary { cursor: pointer; }

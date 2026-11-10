@@ -16,7 +16,7 @@ const ids = ['clock', 'drive', 'launch', 'status-bar', 'status-ball', 'status-en
 	'mineral-cell', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price', 'rock-damage-view',
 	'cluster-settings', 'generate-test-rock', 'fall-test-status',
 	'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
-	'inventory-rows', 'transaction-status', 'transaction-count', 'ledger',
+	'inventory-rows', 'market-rows', 'transaction-status', 'transaction-count', 'ledger',
 	'refuel', 'refuel-cost', 'fuel-price', 'reserve-note', 'cargo-note',
 	'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry', 'mineral-tooltip', 'science-drawer', 'market-drawer', 'science-open', 'science-close', 'market-open', 'market-close',
 	'telemetry', 'player-list', 'control-title', 'rig-drive'];

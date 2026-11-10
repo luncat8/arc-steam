@@ -1289,6 +1289,7 @@ function spend(world, useful) {
 			if (after < before) world.heat += before - after;
 			else world.importedEnergy += after - before;
 		}
+		if (ball.vy > 0 && root.SteamCeiling && root.SteamCeiling.queueGrowth) root.SteamCeiling.queueGrowth(1);
 		return true;
 	}
 
@@ -1466,6 +1467,7 @@ function spend(world, useful) {
 						world.heat += before - 0.5 * ballMassFor(ball) * (ball.vx * ball.vx + ball.vy * ball.vy);
 						world.bounces++;
 					}
+					if (root.SteamCeiling && root.SteamCeiling.queueGrowth) root.SteamCeiling.queueGrowth(1);
 					continue;
 				}
 				// A spent rebound settles on the rubble and keeps the potential
@@ -1561,6 +1563,7 @@ function spend(world, useful) {
 		body.vx = contact.platformVx;
 		if (!rig) bookImported(world, ball, before);
 		if (contact.captured) capture(world, machine, ball);
+		else if (ball.vy > 0 && root.SteamCeiling && root.SteamCeiling.queueGrowth) root.SteamCeiling.queueGrowth(1);
 	}
 
 	// A ball's energy gained on machinery outside the rig's ledger is imported

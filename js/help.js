@@ -74,7 +74,7 @@
 			label: 'Chamber',
 			title: 'The chamber',
 			text: [
-				'The chamber is 24 × 15 m. A ball bounces on the platform deck and off the ceiling; the sprung reflector piston sends it where you aim it.',
+				'The chamber is 24 × 15 m. A ball bounces on the platform deck and off the ceiling; the sprung reflector piston sends it where you aim it. Every upward bounce off a platform deck or elastic ground feeds one fresh row of rock smoothly in from the top, and deep shafts near the roof also pull in fresh strata so a ball’s full damage radius stays inside the chamber (capped at 5 rows/s, stopping without destroying lower rock once 30% of the chamber height remains below).',
 				'The amber collector catches only when it is empty: a ball arriving while it already holds one is returned off the flat strip instead. The green piston reflects through the same impulse solve the ballistic computer uses, so a forecast through a tilted bounce follows the ball’s real flight.',
 				'Clicks have three meanings, and the zones never overlap: visible rock inspects a cell, the low band near the ground (the drawn 1.7 m target height) commands travel, and open air starts a piston drag.',
 				'The recessed bay on the right is the road grader’s garage; a called grader works the floor and returns there.',
@@ -212,7 +212,7 @@
 			label: 'Market',
 			title: 'Market and ledger',
 			text: [
-				'Touching either SELL wall sells the whole load automatically. This rig panel breaks the rig’s cargo and lifetime sales down by mineral, and its ledger records every rig sale, purchase, research payment and recharge. Competitor purses and purchase ledgers stay separate. The cr/cell column is the live quote: each run opens with seed-random demand, and every quote moves on its own slow cycle, so a common ore can be dear for a few minutes. A broken fragment is booked at the price of the moment it breaks, which keeps cargo, rubble and the ledger exact while the market moves.',
+				'Touching either SELL wall sells the whole load automatically. This rig panel breaks the rig’s cargo and lifetime sales down by mineral, and its ledger records every rig sale, purchase, research payment and recharge. Competitor purses and purchase ledgers stay separate. The live quote table shows each mineral’s cr/cell price, drift against its seed base price and 1-minute rate: each run opens with seed-random demand, and every quote moves on its own slow cycle, so a common ore can be dear for a few minutes. A broken fragment is booked at the price of the moment it breaks, which keeps cargo, rubble and the ledger exact while the market moves.',
 				'The emergency resupply imports energy instantly at the price shown, buying only what the funds cover; the centre pad remains the free route.',
 				'For the rig, sales, spending and imports all move one funds balance, so this ledger and the funds card always agree.'
 			]

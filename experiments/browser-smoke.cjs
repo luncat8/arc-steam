@@ -318,6 +318,32 @@ async function main() {
 		await page.mouse.up();
 		assert.equal(await page.locator('#help-title').textContent(), 'Cargo and storage', 'the held panel names its topic');
 		await page.keyboard.press('Escape');
+		await page.locator('#market-open').click();
+		assert.equal(await page.locator('#market-drawer').isVisible(), true);
+		assert.equal(await page.locator('#market-rows tr').count(), 6, 'market drawer shows all six mineral quotes');
+		assert.equal(await page.evaluate(() => {
+			const wrap = document.querySelector('#market-drawer .market-quotes');
+			return wrap.scrollWidth <= wrap.clientWidth + 1;
+		}), true, 'market quote table fits without horizontal overflow on desktop');
+		await page.locator('#market-close').click();
+		assert.equal(await page.evaluate(() => {
+			SteamCeiling.reset(1);
+			const before = SteamCeiling.state.bottom;
+			SteamCeiling.queueGrowth(1);
+			SteamCeiling.grow(0.2);
+			const oneCell = Math.abs((before - SteamCeiling.state.bottom) - SteamCeiling.state.cell) < 1e-6;
+			SteamCeiling.queueGrowth(120);
+			SteamCeiling.grow(30);
+			const capped = Math.abs(SteamCeiling.state.bottom - 4.5) < 1e-6
+				&& SteamCeiling.state.baseRow === 0
+				&& SteamCeiling.queueGrowth(1) === 0;
+			SteamCeiling.reset(1);
+			for (let r = 0; r < 24; r++) SteamCeiling.state.strength[r * SteamCeiling.state.columns + 40] = 0;
+			SteamCeiling.grow(1.5);
+			const headroom = Math.abs((SteamCeiling.state.top - SteamCeiling.state.upperBoundaryY) - SteamCeiling.state.damageRadius * SteamCeiling.state.cell) < 1e-6;
+			SteamCeiling.reset(1);
+			return oneCell && capped && headroom;
+		}), true, 'top-row growth, non-destructive 70% cap and upper-boundary replenishment hold in browser');
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.waitForTimeout(100);
 		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

@@ -192,12 +192,15 @@ function draw() {
 	if (window.SteamCeiling) window.SteamCeiling.draw(context, viewMode);
 	if (window.SteamCeiling) {
 		const ceiling = window.SteamCeiling.state;
-		const cellY0 = ceiling.rockDrawnY(ceiling.bottom + selectedLayer * ceiling.cell);
-		const cellY1 = ceiling.rockDrawnY(ceiling.bottom + (selectedLayer + 1) * ceiling.cell);
-		context.strokeStyle = '#edf6f1';
-		context.lineWidth = 1.5 / scale;
-		context.strokeRect(selectedColumn * ceiling.cell, cellY0, ceiling.cell, cellY1 - cellY0);
-		context.lineWidth = 1 / scale;
+		const layer = currentSelectedLayer(ceiling);
+		const cellY0 = ceiling.rockDrawnY(Math.min(ceiling.top, ceiling.bottom + layer * ceiling.cell));
+		const cellY1 = ceiling.rockDrawnY(Math.min(ceiling.top, ceiling.bottom + (layer + 1) * ceiling.cell));
+		if (cellY1 > cellY0) {
+			context.strokeStyle = '#edf6f1';
+			context.lineWidth = 1.5 / scale;
+			context.strokeRect(selectedColumn * ceiling.cell, cellY0, ceiling.cell, cellY1 - cellY0);
+			context.lineWidth = 1 / scale;
+		}
 	}
 	context.strokeStyle = '#657578';
 	context.beginPath(); context.moveTo(-pocketDepth, 0); context.lineTo(config.width, 0); context.stroke();

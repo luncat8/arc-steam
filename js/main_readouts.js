@@ -7,7 +7,9 @@
 let renderedSales = -1;
 const inventoryCells = [];
 const inventoryPrices = [];
+const inventoryArrows = [];
 const inventoryBasePrices = [];
+const marketQuoteCells = [];
 function buildInventory() {
 	const ceiling = window.SteamCeiling.state;
 	for (let i = 0; i < ceiling.mineralNames.length; i++) {
@@ -17,10 +19,17 @@ function buildInventory() {
 		name.textContent = ceiling.mineralNames[i];
 		row.appendChild(name);
 		const price = document.createElement('td');
-		price.textContent = ceiling.mineralPrices[i].toFixed(2);
+		const priceValue = document.createElement('span');
+		priceValue.textContent = ceiling.mineralPrices[i].toFixed(2);
+		const arrow = document.createElement('span');
+		arrow.className = 'quote-arrow';
+		arrow.textContent = '→';
+		price.appendChild(priceValue);
+		price.appendChild(arrow);
 		price.title = 'base ' + ceiling.mineralBasePrices[i].toFixed(2) + ' cr/cell';
 		row.appendChild(price);
-		inventoryPrices.push(price);
+		inventoryPrices.push(priceValue);
+		inventoryArrows.push(arrow);
 		inventoryBasePrices.push(ceiling.mineralBasePrices[i]);
 		for (let k = 0; k < 2; k++) {
 			const cell = document.createElement('td');
@@ -29,6 +38,19 @@ function buildInventory() {
 			inventoryCells.push(cell);
 		}
 		ui['inventory-rows'].appendChild(row);
+		if (!ui['market-rows']) continue;
+		const marketRow = document.createElement('tr');
+		const marketName = document.createElement('th');
+		marketName.scope = 'row';
+		marketName.textContent = ceiling.mineralNames[i] + ' (' + ceiling.mineralSymbols[i] + ')';
+		marketRow.appendChild(marketName);
+		for (let k = 0; k < 5; k++) {
+			const cell = document.createElement('td');
+			cell.textContent = '—';
+			marketRow.appendChild(cell);
+			marketQuoteCells.push(cell);
+		}
+		ui['market-rows'].appendChild(marketRow);
 	}
 }
 
@@ -178,10 +200,10 @@ function spent(credits, digits) {
 	return credits > 0 ? '−' + credits.toFixed(digits) + ' cr' : 'free';
 }
 
-function mineralStateTag(ceiling, remaining, looseness) {
+function mineralStateTag(ceiling, layer, remaining, looseness) {
 	if (remaining === 0) return ' · fallen';
 	if (looseness < ceiling.collapseLooseFloor) return ' · remaining strength · sound';
-	return selectedLayer === ceiling.firstRow[selectedColumn]
+	return layer === ceiling.firstRow[selectedColumn]
 		? ' · remaining strength · loose'
 		: ' · remaining strength · weakened (held)';
 }
@@ -189,14 +211,15 @@ function mineralStateTag(ceiling, remaining, looseness) {
 function mineralReadout() {
 	const ceiling = window.SteamCeiling.state;
 	const count = ceiling.mineralNames.length;
-	const index = selectedLayer * ceiling.columns + selectedColumn;
+	const layer = currentSelectedLayer(ceiling);
+	const index = layer * ceiling.columns + selectedColumn;
 	const offset = index * count;
 	const elementOffset = index * 3;
 	const remaining = ceiling.strength[index];
 	const initial = ceiling.initialStrength[index];
 	const looseness = ceiling.damageField[index];
-	setText(ui['mineral-cell'], 'Column ' + (selectedColumn + 1) + ' / ' + ceiling.columns + ' · Layer ' + (selectedLayer + 1) + ' / ' + ceiling.rows);
-	setText(ui['mineral-strength'], remaining.toFixed(2) + ' / ' + initial.toFixed(2) + ' J' + mineralStateTag(ceiling, remaining, looseness));
+	setText(ui['mineral-cell'], 'Column ' + (selectedColumn + 1) + ' / ' + ceiling.columns + ' · Layer ' + (layer + 1) + ' / ' + ceiling.rows);
+	setText(ui['mineral-strength'], remaining.toFixed(2) + ' / ' + initial.toFixed(2) + ' J' + mineralStateTag(ceiling, layer, remaining, looseness));
 	const strengthRatio = initial > 0 ? remaining / initial : 0;
 	if (Number(ui['strength-meter'].value) !== strengthRatio) ui['strength-meter'].value = strengthRatio;
 	let composition = '';
@@ -236,13 +259,37 @@ function miningReadout() {
 	setDisabled(ui.refuel, ceiling.commune ? deficit < 1 : refill <= 0 || ceiling.funds < ceiling.fuelPrice / 1000);
 	setText(ui.refuel, deficit >= 1 ? 'Recharge ' + (deficit / 1000).toFixed(2) + ' kJ' : 'Reserve full');
 	for (let i = 0; i < inventoryPrices.length; i++) {
-		setText(inventoryPrices[i], ceiling.mineralPrices[i].toFixed(2));
-		if (inventoryBasePrices[i] !== ceiling.mineralBasePrices[i]) {
-			inventoryBasePrices[i] = ceiling.mineralBasePrices[i];
-			inventoryPrices[i].title = 'base ' + inventoryBasePrices[i].toFixed(2) + ' cr/cell';
+		const quote = ceiling.mineralPrices[i];
+		const base = ceiling.mineralBasePrices[i];
+		const ratePct = ceiling.mineralTrends[i] * 100;
+		const quoteText = quote.toFixed(2);
+		const cargoText = ceiling.cargoMinerals[i].toFixed(3);
+		const soldText = ceiling.soldMinerals[i].toFixed(3);
+		const arrowGlyph = ratePct >= 0.5 ? '↑' : ratePct <= -0.5 ? '↓' : '→';
+		const rateTone = ratePct >= 0.5 ? 'gain' : ratePct <= -0.5 ? 'loss' : '';
+		setText(inventoryPrices[i], quoteText);
+		setText(inventoryArrows[i], arrowGlyph);
+		setTone(inventoryArrows[i], rateTone);
+		if (inventoryBasePrices[i] !== base) {
+			inventoryBasePrices[i] = base;
+			inventoryPrices[i].parentElement.title = 'base ' + base.toFixed(2) + ' cr/cell';
 		}
-		setText(inventoryCells[i * 2], ceiling.cargoMinerals[i].toFixed(3));
-		setText(inventoryCells[i * 2 + 1], ceiling.soldMinerals[i].toFixed(3));
+		setText(inventoryCells[i * 2], cargoText);
+		setText(inventoryCells[i * 2 + 1], soldText);
+		if (marketQuoteCells.length) {
+			const rowOffset = i * 5;
+			const vsPct = base > 0 ? (quote - base) / base * 100 : 0;
+			const vsTone = vsPct >= 0.5 ? 'gain' : vsPct <= -0.5 ? 'loss' : '';
+			const vsText = vsPct >= 0.5 ? '+' + vsPct.toFixed(1) + '%' : vsPct <= -0.5 ? '−' + Math.abs(vsPct).toFixed(1) + '%' : '0.0%';
+			const trendText = ratePct >= 0.5 ? '↑ +' + ratePct.toFixed(1) + '%/m' : ratePct <= -0.5 ? '↓ −' + Math.abs(ratePct).toFixed(1) + '%/m' : '→ 0.0%/m';
+			setText(marketQuoteCells[rowOffset], quoteText);
+			setText(marketQuoteCells[rowOffset + 1], vsText);
+			setTone(marketQuoteCells[rowOffset + 1], vsTone);
+			setText(marketQuoteCells[rowOffset + 2], trendText);
+			setTone(marketQuoteCells[rowOffset + 2], rateTone);
+			setText(marketQuoteCells[rowOffset + 3], cargoText);
+			setText(marketQuoteCells[rowOffset + 4], soldText);
+		}
 	}
 	if (renderedSales === ceiling.ledger.length) return;
 	renderedSales = ceiling.ledger.length;

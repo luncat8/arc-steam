@@ -442,3 +442,157 @@ test('a grain that has just let go is drawn under the ceiling it broke from', ()
 	assert.ok(tops[0] <= underside + 1e-9, 'the drawn grain must hang below the rock it left');
 	ceiling.reset(1);
 });
+
+test('queued top-row growth slides in smoothly at 5 rows/s and continues seeded veins', () => {
+	ceiling.reset(17);
+	const state = ceiling.state;
+	const startBottom = state.bottom;
+	const startRows = state.rows;
+	const startHeight0 = state.heightmap[0];
+	const rowZeroStrength = state.strength[0];
+	assert.equal(ceiling.queueGrowth(1), 1);
+	assert.equal(state.bottom, startBottom, 'queueing never jumps bottom on the bounce frame');
+	assert.equal(state.rows, startRows, 'row count waits until space opens at the top');
+	near(state.heightmap[0], startHeight0, 1e-12);
+
+	// 0.05 s at 5 rows/s shifts 0.25 row (0.03125 m) and opens row 29 at the top.
+	assert.equal(ceiling.grow(0.05), true);
+	near(state.pendingRows, 0.75, 1e-9);
+	near(state.bottom, startBottom - 0.25 * state.cell, 1e-9);
+	near(state.heightmap[0], startHeight0 - 0.25 * state.cell, 1e-9);
+	assert.equal(state.rows, startRows + 1, 'the incoming top row begins emerging across y = 15 m');
+	assert.equal(state.generatedRows, startRows + 1);
+	near(state.strength[0], rowZeroStrength, 1e-6, 'existing lower cells move down intact');
+	near(state.drawnRowY[state.rows], state.top, 1e-9, 'emerging top row clips cleanly at top');
+	assert.ok(state.drawnRowY[state.rows - 1] < state.top && state.drawnRowY[state.rows - 1] > state.top - 0.02);
+
+	// Remaining 0.15 s completes the 1-row shift; extra grow time with empty queue is a no-op.
+	assert.equal(ceiling.grow(0.15), true);
+	near(state.pendingRows, 0, 1e-12);
+	near(state.bottom, startBottom - state.cell, 1e-9);
+	assert.equal(state.rows, startRows + 1);
+	assert.equal(ceiling.grow(0.5), false);
+
+	// Repeat with the same seed and market advance: geological row 29 is deterministic and repriced.
+	const count = state.mineralNames.length;
+	const rowOffset = (state.rows - 1) * state.columns;
+	const snapshotElements = Array.from(state.elements.subarray(rowOffset * 3, (rowOffset + 8) * 3));
+	ceiling.advanceMarket(40);
+	for (let col = 0; col < 8; col++) {
+		const idx = rowOffset + col;
+		let expectedPrice = 0;
+		for (let m = 0; m < count; m++) expectedPrice += state.minerals[idx * count + m] * state.mineralPrices[m];
+		near(state.prices[idx], expectedPrice, 1e-3);
+	}
+	ceiling.reset(17);
+	ceiling.queueGrowth(1);
+	ceiling.grow(0.2);
+	const repeatElements = Array.from(state.elements.subarray(rowOffset * 3, (rowOffset + 8) * 3));
+	assert.deepEqual(repeatElements, snapshotElements, 'new top rows repeat deterministically for the seed');
+	ceiling.reset(1);
+});
+
+test('mined bottom rows compact seamlessly, preserve perspective round-trip, and stop at minBottom', () => {
+	ceiling.reset(23);
+	const state = ceiling.state;
+	const columns = state.columns;
+	// Clear the bottom 3 rows and leave one falling fragment referencing row 3.
+	for (let row = 0; row < 3; row++) for (let col = 0; col < columns; col++) state.strength[row * columns + col] = 0;
+	const trackedCol = 40;
+	const trackedStrength = state.strength[3 * columns + trackedCol];
+	state.active[0] = 1;
+	state.debrisCell[0] = 3 * columns + trackedCol;
+	state.debrisCells[0] = 1;
+	state.debrisX[0] = (trackedCol + 0.5) * state.cell;
+	state.debrisY[0] = 9;
+	ceiling.queueGrowth(1);
+	ceiling.grow(0.2);
+	assert.equal(state.baseRow, 3, 'the three empty bottom rows compacted');
+	assert.equal(state.rows, state.initialRows - 3 + 1);
+	near(state.bottom, state.initialBottom + 2 * state.cell, 1e-9, 'surviving cell world heights shifted by exactly 1 cell');
+	near(state.strength[trackedCol], trackedStrength, 1e-6, 'former row 3 is now row 0 without losing strength');
+	assert.equal(state.debrisCell[0], trackedCol, 'active debrisCell index shifts with compacted rows');
+
+	// Chamber-anchored perspective stays 1x below initialBottom and round-trips everywhere.
+	for (const y of [4.0, 9.5, 11.375, 12.1, 13.6, 14.95]) {
+		near(state.rockWorldY(state.rockDrawnY(y)), y, 1e-11);
+	}
+	near(state.rockScale(8.0), 1, 1e-12);
+	near(state.rockScale(state.initialBottom), 1, 1e-12);
+	near(state.rockScale(state.top), 0.25, 1e-12);
+
+	// 70% chamber height cap (minBottom = 30% * 15 = 4.5 m): lower intact rock is
+	// never destroyed, and no new lines are added once <= 30% h remains below.
+	state.active[0] = 0;
+	ceiling.reset(23);
+	near(state.minBottom, state.top * 0.3, 1e-12);
+	const originalRow0Col0 = state.strength[0];
+	const maxAllowedRows = Math.round((state.top - state.minBottom) / state.cell);
+	ceiling.queueGrowth(120);
+	ceiling.grow(30);
+	near(state.bottom, state.minBottom, 1e-9, 'descending rock stops right at 30% remaining chamber height');
+	assert.equal(state.baseRow, 0, 'no intact bottom row was retired or destroyed');
+	assert.equal(state.rows, maxAllowedRows, 'rock spans exactly 70% of chamber height (84 rows)');
+	assert.equal(state.generatedRows, maxAllowedRows, 'no extra lines were generated past the 70% limit');
+	near(state.strength[0], originalRow0Col0, 1e-6, 'lowest intact cell kept its full strength');
+	assert.equal(ceiling.queueGrowth(1), 0, 'new bounces add 0 lines while 30% h remains');
+	assert.equal(ceiling.grow(1), false);
+
+	// Once the bottom row is mined clear (> 30% h remains), one new line is accepted again.
+	for (let col = 0; col < columns; col++) state.strength[col] = 0;
+	near(ceiling.queueGrowth(1), 1, 1e-9, 'clearing 1 bottom row re-opens room for 1 new top row');
+	assert.equal(ceiling.grow(0.25), true);
+	assert.equal(state.baseRow, 1);
+	assert.equal(state.generatedRows, maxAllowedRows + 1);
+	near(state.bottom, state.minBottom, 1e-9);
+	ceiling.reset(1);
+});
+
+test('upper boundary watcher keeps full damage-radius headroom at <= 5 rows/s without conflicting with bounces', () => {
+	const equipment = require('../js/equipment.js');
+	const research = require('../js/research.js');
+	ceiling.reset(29);
+	equipment.reset();
+	research.reset();
+	const state = ceiling.state;
+	const columns = state.columns;
+
+	// Carve a shaft up to row 24 (14.375 m), leaving only 5 rows (0.625 m) below y = 15 m,
+	// less than stock damageRadius (8.775 rows = 1.096875 m).
+	const shaft = 96;
+	for (let row = 0; row < 24; row++) state.strength[row * columns + shaft] = 0;
+	near(state.upperBoundaryY, state.bottom + 24 * state.cell, 1e-9);
+	const expectedDeficitRows = (state.upperBoundaryY + state.damageRadius * state.cell - state.top) / state.cell;
+	assert.ok(expectedDeficitRows > 3.7 && expectedDeficitRows < 3.8);
+
+	// Pre-queue 2 bounce rows: watchBoundary tops up only the difference instead of adding 2 + 3.775.
+	ceiling.queueGrowth(2);
+	near(ceiling.watchBoundary(), expectedDeficitRows, 1e-9, 'bounce and boundary growth share one non-conflicting queue');
+
+	// Rate cap: 0.2 s advances at most 1.0 row (5 rows/s) with smooth geometry.
+	const beforeBottom = state.bottom;
+	ceiling.grow(0.2);
+	near(beforeBottom - state.bottom, 5 * 0.2 * state.cell, 1e-9, 'boundary replenishment never exceeds 5 rows/s');
+
+	// Letting the remainder finish restores exact damageRadius headroom below top = 15 m.
+	ceiling.grow(1.5);
+	near(state.pendingRows, 0, 1e-9);
+	near(state.top - state.upperBoundaryY, state.damageRadius * state.cell, 1e-9, 'full stock damage radius fits inside chamber');
+
+	// Upgrading to the spiked hammer ball widens damageRadius (+1.4 cells) and smoothly adds the extra headroom.
+	ceiling.setCommune(true);
+	research.grant('materials');
+	research.grant('impact');
+	assert.equal(equipment.installBall('spike'), true);
+	ceiling.setCommune(false);
+	assert.ok(state.damageRadius > 10);
+	assert.ok(ceiling.watchBoundary() > 1.3, 'wider ball damage radius requests matching extra headroom');
+	ceiling.grow(0.5);
+	near(state.top - state.upperBoundaryY, state.damageRadius * state.cell, 1e-9, 'spiked ball damage radius fits inside chamber');
+
+	equipment.reset();
+	research.reset();
+	ceiling.reset(1);
+});
+
+

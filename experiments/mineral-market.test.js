@@ -160,3 +160,31 @@ test('rock cells follow the market while a broken fragment keeps the price it br
 	for (let m = 0; m < count; m++) expected += state.minerals[cellIndex * count + m] * state.mineralPrices[m];
 	near(state.prices[cellIndex], expected, 1e-3);
 });
+
+test('cluster chunk ceiling honours all six minerals and quote trends match causal movement', () => {
+	const state = reset(41);
+	const saved = Array.from(state.mineralClusterGrowth);
+	for (let m = 0; m < saved.length; m++) ceiling.setMineralClusterGrowth(m, 10);
+	const floorChunk = ceiling.collapseChunkMax;
+	for (let m = 3; m < saved.length; m++) {
+		ceiling.setMineralClusterGrowth(m, 500);
+		near(ceiling.collapseChunkMax, state.collapseChunkMax, 1e-9);
+		assert.ok(ceiling.collapseChunkMax > floorChunk * 4.5, 'mineral ' + m + ' scales collapseChunkMax');
+		ceiling.setMineralClusterGrowth(m, 10);
+	}
+	for (let m = 0; m < saved.length; m++) ceiling.setMineralClusterGrowth(m, saved[m]);
+	ceiling.advanceMarket(15);
+	const before = Array.from(state.mineralPrices);
+	const slopes = Array.from(state.mineralTrends);
+	ceiling.advanceMarket(1);
+	let checked = 0;
+	for (let m = 0; m < state.mineralNames.length; m++) {
+		if (Math.abs(slopes[m]) < 0.02) continue;
+		const delta = state.mineralPrices[m] - before[m];
+		assert.equal(Math.sign(delta), Math.sign(slopes[m]), 'causal trend matches short-step quote direction');
+		checked++;
+	}
+	assert.ok(checked >= 2, 'several minerals carry a clear short-term slope');
+	ceiling.reset(1);
+});
+
