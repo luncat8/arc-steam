@@ -300,7 +300,7 @@ function resetRun(withTestRock) {
 	if (testMode) grantTestState();
 	if (withTestRock) {
 		window.SteamCeiling.generateTestRock();
-		setText(ui['fall-test-status'], 'Test rock ready · Iron → Copper → Crystal · damage rises from 0% at the top to 100% at the bottom.');
+		setText(ui['fall-test-status'], 'Test rock ready · ' + window.SteamCeiling.state.mineralNames.join(' → ') + ' · damage rises from 0% at the top to 100% at the bottom.');
 	} else setText(ui['fall-test-status'], 'New run · mineral grouping settings carry over.');
 	setModeStatus();
 	refresh();
@@ -315,9 +315,6 @@ function mineralClusterChanged(event) {
 function bindInput() {
 	document.getElementById('reset').addEventListener('click', function () { resetRun(false); });
 	ui['generate-test-rock'].addEventListener('click', function () { resetRun(true); });
-	ui['cluster-iron'].addEventListener('input', mineralClusterChanged);
-	ui['cluster-copper'].addEventListener('input', mineralClusterChanged);
-	ui['cluster-crystal'].addEventListener('input', mineralClusterChanged);
 	ui.drive.addEventListener('click', toggleDrive);
 	ui.commune.addEventListener('change', function () { setCommune(ui.commune.checked); });
 	ui['test-mode'].addEventListener('change', function () { setTestMode(ui['test-mode'].checked); });

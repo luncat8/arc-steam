@@ -10,7 +10,8 @@ const blankContext = {
 
 function runTestBed(growth) {
 	ceiling.reset(73);
-	for (let mineral = 0; mineral < 3; mineral++) ceiling.setMineralClusterGrowth(mineral, growth);
+	const mineralCount = ceiling.state.mineralNames.length;
+	for (let mineral = 0; mineral < mineralCount; mineral++) ceiling.setMineralClusterGrowth(mineral, growth);
 	ceiling.generateTestRock();
 	const state = ceiling.state;
 	const energy = state.energy;
@@ -22,35 +23,37 @@ function runTestBed(growth) {
 		// A released group is not redrawn as one block: every cell falls as its
 		// own grain, at its own cell size, keeping the shape it left the face in.
 		assert.equal(state.debrisCells[i], 1, 'a released cell falls as its own grain');
-		const offset = i * 3;
-		const mass = state.debrisMinerals[offset] + state.debrisMinerals[offset + 1] + state.debrisMinerals[offset + 2];
+		const offset = i * mineralCount;
+		let mass = 0;
+		for (let m = 0; m < mineralCount; m++) mass += state.debrisMinerals[offset + m];
 		assert.ok(Math.abs(mass - state.cellMass) < 1e-8, 'each grain carries exactly one cell of mineral mass');
 	}
 	assert.ok(Math.abs(state.energy - energy) < 1e-5, 'forming falling grains preserves rock energy');
 	let cells = 0;
 	let groups = 0;
-	for (let mineral = 0; mineral < 3; mineral++) {
+	for (let mineral = 0; mineral < mineralCount; mineral++) {
 		cells += state.fallCells[mineral];
 		groups += state.fallGroups[mineral];
 	}
 	return { bursts: state.collapseBursts, grains, cells, groups, perFall: groups ? cells / groups : 0 };
 }
 
-test('test rock lays out three mineral bands and a top-to-bottom damage gradient', () => {
+test('test rock lays out one mineral band per table entry and a top-to-bottom damage gradient', () => {
 	ceiling.reset(1);
 	assert.equal(ceiling.state.testRock, false);
-	assert.deepEqual(Array.from(ceiling.state.mineralClusterGrowth), [300, 100, 10],
-		'the default grouping is Iron 300%, Copper 100%, Crystal 10%');
+	const mineralCount = ceiling.state.mineralNames.length;
+	assert.deepEqual(Array.from(ceiling.state.mineralClusterGrowth), ceiling.state.mineralTable.map(entry => entry.growth),
+		'the default grouping comes from the material table');
 	ceiling.generateTestRock();
 	const state = ceiling.state;
 	assert.equal(state.testRock, true);
-	for (let mineral = 0; mineral < 3; mineral++) {
-		const column = Math.floor((mineral + 0.5) * state.columns / 3);
+	for (let mineral = 0; mineral < mineralCount; mineral++) {
+		const column = Math.floor((mineral + 0.5) * state.columns / mineralCount);
 		const bottom = column;
 		const top = (state.rows - 1) * state.columns + column;
-		assert.equal(state.minerals[bottom * 3 + mineral], 1);
-		assert.equal(state.minerals[top * 3 + mineral], 1);
-		assert.equal(state.prices[bottom], state.mineralPrices[mineral]);
+		assert.equal(state.minerals[bottom * mineralCount + mineral], 1);
+		assert.equal(state.minerals[top * mineralCount + mineral], 1);
+		assert.ok(Math.abs(state.prices[bottom] - state.mineralPrices[mineral]) < 1e-4);
 		assert.equal(state.damageField[bottom], 1);
 		assert.equal(state.damageField[top], 0);
 	}
@@ -91,18 +94,22 @@ function mixedBandTicks(growth, ticks) {
 	ceiling.reset(5);
 	const state = ceiling.state;
 	const columns = state.columns;
+	const mineralCount = state.mineralNames.length;
+	// Isolate the band: with no rock elsewhere, every release in the tick comes
+	// from the alternating columns and the test measures one decision.
+	state.strength.fill(0);
+	state.damageField.fill(0);
 	for (let column = 0; column < 16; column++) {
-		for (let row = 0; row < 3; row++) state.strength[row * columns + column] = 0;
 		for (let row = 3; row < 11; row++) {
 			state.strength[row * columns + column] = state.initialStrength[row * columns + column];
 			state.damageField[row * columns + column] = 1;
-			const offset = (row * columns + column) * 3;
+			const offset = (row * columns + column) * mineralCount;
 			state.minerals[offset] = column % 2 === 0 ? 1 : 0;
 			state.minerals[offset + 1] = column % 2 === 1 ? 1 : 0;
-			state.minerals[offset + 2] = 0;
+			for (let m = 2; m < mineralCount; m++) state.minerals[offset + m] = 0;
 		}
 	}
-	for (let mineral = 0; mineral < 3; mineral++) ceiling.setMineralClusterGrowth(mineral, growth);
+	for (let mineral = 0; mineral < mineralCount; mineral++) ceiling.setMineralClusterGrowth(mineral, growth);
 	// Draw once with a blank context to resynchronize the free surface.
 	ceiling.draw(blankContext, 'minerals');
 	const activeBefore = Array.from(state.active);
@@ -112,7 +119,7 @@ function mixedBandTicks(growth, ticks) {
 		const seen = new Set();
 		for (let i = 0; i < state.active.length; i++) {
 			if (!state.active[i] || activeBefore[i]) continue;
-			const offset = state.debrisCell[i] * 3;
+			const offset = state.debrisCell[i] * mineralCount;
 			const iron = state.minerals[offset];
 			const copper = state.minerals[offset + 1];
 			seen.add(copper > iron ? 'copper' : 'iron');
@@ -153,8 +160,11 @@ test('mineral growth is bounded to the 10%..500% slider range and survives New g
 	assert.equal(ceiling.setMineralClusterGrowth(1, 25), 25);
 	assert.equal(ceiling.setMineralClusterGrowth('Copper', 900), 500);
 	assert.equal(ceiling.setMineralClusterGrowth(2, 40), 40);
+	assert.equal(ceiling.setMineralClusterGrowth(3, 40), 40);
+	assert.equal(ceiling.setMineralClusterGrowth(4, 30), 30);
+	assert.equal(ceiling.setMineralClusterGrowth(5, 20), 20);
 	ceiling.reset(2);
-	assert.deepEqual(Array.from(ceiling.state.mineralClusterGrowth), [10, 500, 40],
+	assert.deepEqual(Array.from(ceiling.state.mineralClusterGrowth), [10, 500, 40, 40, 30, 20],
 		'the live settings carry into a new run');
 	assert.equal(ceiling.collapseChunkMax, 4 * (1 + 500 / 100), 'the group cap covers the 500% setting');
 });

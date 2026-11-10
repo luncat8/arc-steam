@@ -31,10 +31,14 @@ test('seeded 2D element and mineral fields repeat and normalize', () => {
 	assert.equal(state.defaultPixelSize, 4);
 	assert.equal(state.shape, 'smooth');
 	const first = Array.from(state.strength);
+	const mineralStride = state.mineralNames.length;
 	for (let i = 0; i < state.columns * state.rows; i++) {
 		const offset = i * 3;
-		near(state.elements[offset] + state.elements[offset + 1] + state.elements[offset + 2], 1);
-		near(state.minerals[offset] + state.minerals[offset + 1] + state.minerals[offset + 2], 1);
+		for (let channel = 0; channel < 3; channel++) assert.ok(state.elements[offset + channel] >= 0 && state.elements[offset + channel] <= 1,
+			'each element is an independent concentration in 0..1');
+		let mix = 0;
+		for (let m = 0; m < mineralStride; m++) mix += state.minerals[i * mineralStride + m];
+		near(mix, 1);
 	}
 	ceiling.reset(42);
 	assert.deepEqual(Array.from(ceiling.state.strength), first);
@@ -93,14 +97,21 @@ test('swept circle contacts the exposed rock face with its outward normal', () =
 test('smooth heightmap and optional square shape reflect at angled slopes', () => {
 	ceiling.reset(3);
 	ceiling.setShape('smooth');
-	// Excavate a symmetric crater around x = 10 m
-	ceiling.damage(10.06, ceiling.state.bottom + 0.06, 5);
-	ceiling.collapse(10);
-	const leftHit = ceiling.trace(9.75, ceiling.state.bottom - 0.2, 0, 12, 0.05, 0.18);
+	// Carve a symmetric notch directly: contact geometry must not depend on the
+	// mineral field or on a collapse giving the intended shape.
+	const state = ceiling.state;
+	const blank = {
+		fillStyle: '', fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}, stroke() {}
+	};
+	for (let column = 76; column <= 84; column++) {
+		for (let row = 0; row < 3; row++) state.strength[row * state.columns + column] = 0;
+	}
+	ceiling.draw(blank, 'minerals');
+	const leftHit = ceiling.trace(9.75, state.bottom - 0.2, 0, 12, 0.05, 0.18);
 	assert.ok(Number.isFinite(leftHit.time));
 	assert.ok(leftHit.nx > 0.1);
 	assert.ok(leftHit.ny < -0.5);
-	const rightHit = ceiling.trace(10.35, ceiling.state.bottom - 0.2, 0, 12, 0.05, 0.18);
+	const rightHit = ceiling.trace(10.35, state.bottom - 0.2, 0, 12, 0.05, 0.18);
 	assert.ok(Number.isFinite(rightHit.time));
 	assert.ok(rightHit.nx < -0.1);
 	assert.ok(rightHit.ny < -0.5);
@@ -179,9 +190,11 @@ test('damage applies 2x hit-point strength falling to zero at 8.78-cell radius w
 	const edge = centerRow * state.columns + centerColumn + 5;
 	const outside = centerRow * state.columns + centerColumn + 10;
 	function w(d) { return Math.pow(Math.max(0, 1 - d / state.damageRadius), 2.8); }
-	near(before[center] - state.strength[center], impactJ * 2 * w(0), 1e-5);
-	near(before[mid] - state.strength[mid], impactJ * 2 * w(2), 1e-5);
-	near(before[edge] - state.strength[edge], impactJ * 2 * w(5), 1e-5);
+	// A blow never takes more than half of a cell's remaining strength.
+	function expected(cell, d) { return Math.min(impactJ * 2 * w(d), before[cell] * state.hitLooseCap); }
+	near(before[center] - state.strength[center], expected(center, 0), 1e-5);
+	near(before[mid] - state.strength[mid], expected(mid, 2), 1e-5);
+	near(before[edge] - state.strength[edge], expected(edge, 5), 1e-5);
 	near(state.strength[outside], before[outside]);
 });
 
@@ -227,12 +240,17 @@ test('cargo tracks per-mineral mass and each wall sale appends a frozen ledger e
 	ceiling.step(world, 0.01, 60);
 	const cargo = state.cargoCells;
 	assert.ok(cargo > 0);
-	near(state.cargoMinerals[0] + state.cargoMinerals[1] + state.cargoMinerals[2], state.cargoMass);
+	const mineralStride = state.mineralNames.length;
+	let cargoMix = 0;
+	for (let m = 0; m < mineralStride; m++) cargoMix += state.cargoMinerals[m];
+	near(cargoMix, state.cargoMass);
 	near(state.caughtValue, state.cargoValue + state.soldValue);
 	const firstValue = ceiling.sellCargo(0, 3.25);
 	assert.ok(firstValue > 0);
 	assert.equal(state.cargoCells, 0);
-	near(state.soldMinerals[0] + state.soldMinerals[1] + state.soldMinerals[2], state.soldCells * state.cellMass);
+	let soldMix = 0;
+	for (let m = 0; m < mineralStride; m++) soldMix += state.soldMinerals[m];
+	near(soldMix, state.soldCells * state.cellMass);
 	assert.equal(state.ledger.length, 1);
 	assert.deepEqual(state.ledger[0].id, 1);
 	assert.equal(state.ledger[0].time, 3.25);

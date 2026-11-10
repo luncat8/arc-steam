@@ -34,6 +34,7 @@ function loadMainScripts() {
 class Element {
 	constructor(tagName, id) {
 		this.tagName = tagName.toUpperCase();
+		this._id = '';
 		this.id = id || '';
 		this.children = [];
 		this.dataset = {};
@@ -52,6 +53,10 @@ class Element {
 		this.checked = false;
 		this.control = null;
 	}
+	// The page builds some panels from data, so a created element that is given
+	// an id must be reachable through getElementById like a parsed one.
+	get id() { return this._id; }
+	set id(value) { this._id = value || ''; if (this._id) elements.set(this._id, this); }
 	// Form controls stringify assignments, exactly like the DOM does.
 	get value() { return this.raw; }
 	set value(next) { this.raw = next === null || next === undefined ? '' : String(next); }

@@ -6,6 +6,7 @@
 
 let renderedSales = -1;
 const inventoryCells = [];
+const inventoryPrices = [];
 function buildInventory() {
 	const ceiling = window.SteamCeiling.state;
 	for (let i = 0; i < ceiling.mineralNames.length; i++) {
@@ -16,7 +17,9 @@ function buildInventory() {
 		row.appendChild(name);
 		const price = document.createElement('td');
 		price.textContent = ceiling.mineralPrices[i].toFixed(2);
+		price.title = 'base ' + ceiling.mineralBasePrices[i].toFixed(2) + ' cr/cell';
 		row.appendChild(price);
+		inventoryPrices.push(price);
 		for (let k = 0; k < 2; k++) {
 			const cell = document.createElement('td');
 			cell.textContent = '0.000';
@@ -24,6 +27,50 @@ function buildInventory() {
 			inventoryCells.push(cell);
 		}
 		ui['inventory-rows'].appendChild(row);
+	}
+}
+
+// One growth slider per mineral, built from the material table so a new entry
+// needs no markup and cannot fall out of step with the field.
+let clusterNoteIds = [];
+let renderedFallCells = new Float64Array(0);
+function buildFallTest() {
+	const ceiling = window.SteamCeiling.state;
+	const container = ui['cluster-settings'];
+	clusterNoteIds = [];
+	renderedFallCells = new Float64Array(ceiling.mineralNames.length);
+	renderedFallCells.fill(-1);
+	for (let i = 0; i < ceiling.mineralNames.length; i++) {
+		const id = 'cluster-' + ceiling.mineralTable[i].id;
+		const setting = document.createElement('div');
+		setting.className = 'cluster-setting';
+		const label = document.createElement('label');
+		label.setAttribute('for', id);
+		label.textContent = ceiling.mineralNames[i] + ' ';
+		const output = document.createElement('output');
+		output.id = id + '-value';
+		output.textContent = ceiling.mineralClusterGrowth[i] + '%';
+		label.appendChild(output);
+		const input = document.createElement('input');
+		input.id = id;
+		input.type = 'range';
+		input.setAttribute('min', '10');
+		input.setAttribute('max', '500');
+		input.setAttribute('step', '10');
+		input.setAttribute('data-mineral', String(i));
+		input.setAttribute('aria-describedby', id + '-note');
+		input.setAttribute('value', String(ceiling.mineralClusterGrowth[i]));
+		input.value = String(ceiling.mineralClusterGrowth[i]);
+		input.addEventListener('input', mineralClusterChanged);
+		const note = document.createElement('small');
+		note.id = id + '-note';
+		note.textContent = '10% is the plain loose-face clump';
+		setting.append(label, input, note);
+		container.appendChild(setting);
+		ui[id] = input;
+		ui[id + '-value'] = output;
+		ui[note.id] = note;
+		clusterNoteIds.push(note.id);
 	}
 }
 // The computer is the selected platform's, so its readout names that machine
@@ -129,9 +176,6 @@ function spent(credits, digits) {
 	return credits > 0 ? '−' + credits.toFixed(digits) + ' cr' : 'free';
 }
 
-const clusterNoteIds = ['cluster-iron-note', 'cluster-copper-note', 'cluster-crystal-note'];
-const renderedFallCells = new Float64Array([-1, -1, -1]);
-
 function mineralStateTag(ceiling, remaining, looseness) {
 	if (remaining === 0) return ' · fallen';
 	if (looseness < ceiling.collapseLooseFloor) return ' · remaining strength · sound';
@@ -142,8 +186,10 @@ function mineralStateTag(ceiling, remaining, looseness) {
 
 function mineralReadout() {
 	const ceiling = window.SteamCeiling.state;
+	const count = ceiling.mineralNames.length;
 	const index = selectedLayer * ceiling.columns + selectedColumn;
-	const offset = index * 3;
+	const offset = index * count;
+	const elementOffset = index * 3;
 	const remaining = ceiling.strength[index];
 	const initial = ceiling.initialStrength[index];
 	const looseness = ceiling.damageField[index];
@@ -151,14 +197,16 @@ function mineralReadout() {
 	setText(ui['mineral-strength'], remaining.toFixed(2) + ' / ' + initial.toFixed(2) + ' J' + mineralStateTag(ceiling, remaining, looseness));
 	const strengthRatio = initial > 0 ? remaining / initial : 0;
 	if (Number(ui['strength-meter'].value) !== strengthRatio) ui['strength-meter'].value = strengthRatio;
-	setText(ui['mineral-composition'], 'Fe ' + (ceiling.minerals[offset] * 100).toFixed(1) + '% · Cu ' + (ceiling.minerals[offset + 1] * 100).toFixed(1) + '% · Cr ' + (ceiling.minerals[offset + 2] * 100).toFixed(1) + '%');
-	setText(ui['mineral-price'], 'Value ' + ceiling.prices[index].toFixed(2) + ' cr/cell · R ' + (ceiling.elements[offset] * 100).toFixed(0) + '% G ' + (ceiling.elements[offset + 1] * 100).toFixed(0) + '% B ' + (ceiling.elements[offset + 2] * 100).toFixed(0) + '%');
+	let composition = '';
+	for (let m = 0; m < count; m++) composition += (m ? ' · ' : '') + ceiling.mineralSymbols[m] + ' ' + (ceiling.minerals[offset + m] * 100).toFixed(1) + '%';
+	setText(ui['mineral-composition'], composition);
+	setText(ui['mineral-price'], 'Value ' + ceiling.prices[index].toFixed(2) + ' cr/cell · R ' + (ceiling.elements[elementOffset] * 100).toFixed(0) + '% G ' + (ceiling.elements[elementOffset + 1] * 100).toFixed(0) + '% B ' + (ceiling.elements[elementOffset + 2] * 100).toFixed(0) + '%');
 }
 
 function miningReadout() {
 	const ceiling = window.SteamCeiling.state;
 	mineralReadout();
-	for (let i = 0; i < 3; i++) {
+	for (let i = 0; i < renderedFallCells.length; i++) {
 		const cells = ceiling.fallCells[i];
 		if (renderedFallCells[i] === cells) continue;
 		renderedFallCells[i] = cells;
@@ -185,7 +233,8 @@ function miningReadout() {
 	setText(ui['fuel-price'], ceiling.commune ? 'free' : String(ceiling.fuelPrice));
 	setDisabled(ui.refuel, ceiling.commune ? deficit < 1 : refill <= 0 || ceiling.funds < ceiling.fuelPrice / 1000);
 	setText(ui.refuel, deficit >= 1 ? 'Recharge ' + (deficit / 1000).toFixed(2) + ' kJ' : 'Reserve full');
-	for (let i = 0; i < 3; i++) {
+	for (let i = 0; i < inventoryPrices.length; i++) {
+		setText(inventoryPrices[i], ceiling.mineralPrices[i].toFixed(2));
 		setText(inventoryCells[i * 2], ceiling.cargoMinerals[i].toFixed(3));
 		setText(inventoryCells[i * 2 + 1], ceiling.soldMinerals[i].toFixed(3));
 	}

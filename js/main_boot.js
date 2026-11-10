@@ -32,6 +32,7 @@ function bindToolDrawers() {
 
 function bootMain() {
 	buildInventory();
+	buildFallTest();
 	buildUpgrades();
 	bindInput();
 	bindHelp();

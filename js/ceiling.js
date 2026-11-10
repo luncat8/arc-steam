@@ -132,6 +132,66 @@
 	function damageRadiusNow(owner, extra) { return baseDamageRadius + installed('damageRadiusBonus', owner, extra); }
 	function damageMultiplierNow(owner, extra) { return baseDamageMultiplier + installed('damageBonus', owner, extra); }
 	function damageRangeNow(owner) { return Math.ceil(damageRadiusNow(owner)); }
+	// The material table. A mineral is a soft box in the independent element
+	// cube: `bands` holds [low, high, feather] per element channel. A narrow box
+	// is a rare mineral, because random noise finds it rarely. Colour, hardness,
+	// default fall grouping and market behaviour live here so the field, the
+	// renderer, the sliders and the price list cannot drift apart.
+	const mineralTable = Object.freeze([
+		Object.freeze({
+			id: 'iron', name: 'Iron', symbol: 'Fe', color: Object.freeze([184, 91, 64]), hardness: 2.8, growth: 300,
+			bands: Object.freeze([Object.freeze([0.02, 0.42, 0.14]), Object.freeze([0.02, 0.40, 0.14]), Object.freeze([0.02, 0.44, 0.14])]),
+			demandPeriod: 200, demandDepth: 0.45
+		}),
+		Object.freeze({
+			id: 'copper', name: 'Copper', symbol: 'Cu', color: Object.freeze([65, 174, 133]), hardness: 1.7, growth: 100,
+			bands: Object.freeze([Object.freeze([0.40, 0.82, 0.10]), Object.freeze([0.02, 0.38, 0.10]), Object.freeze([0.02, 0.38, 0.10])]),
+			demandPeriod: 130, demandDepth: 0.55
+		}),
+		Object.freeze({
+			id: 'crystal', name: 'Crystal', symbol: 'Cr', color: Object.freeze([133, 153, 202]), hardness: 3.6, growth: 10,
+			bands: Object.freeze([Object.freeze([0.10, 0.34, 0.08]), Object.freeze([0.36, 0.70, 0.08]), Object.freeze([0.44, 0.78, 0.08])]),
+			demandPeriod: 260, demandDepth: 0.40
+		}),
+		Object.freeze({
+			id: 'fluorite', name: 'Fluorite', symbol: 'Fl', color: Object.freeze([163, 106, 196]), hardness: 1.2, growth: 40,
+			bands: Object.freeze([Object.freeze([0.02, 0.28, 0.07]), Object.freeze([0.36, 0.68, 0.07]), Object.freeze([0.58, 0.98, 0.07])]),
+			demandPeriod: 210, demandDepth: 0.50
+		}),
+		Object.freeze({
+			id: 'silver', name: 'Silver', symbol: 'Ag', color: Object.freeze([200, 205, 214]), hardness: 2.4, growth: 30,
+			bands: Object.freeze([Object.freeze([0.58, 0.78, 0.04]), Object.freeze([0.56, 0.76, 0.04]), Object.freeze([0.20, 0.38, 0.04])]),
+			demandPeriod: 150, demandDepth: 0.60
+		}),
+		Object.freeze({
+			id: 'gold', name: 'Gold', symbol: 'Au', color: Object.freeze([224, 180, 62]), hardness: 1.8, growth: 20,
+			bands: Object.freeze([Object.freeze([0.74, 0.96, 0.05]), Object.freeze([0.38, 0.62, 0.05]), Object.freeze([0.02, 0.32, 0.05])]),
+			demandPeriod: 300, demandDepth: 0.35
+		})
+	]);
+	const mineralCount = mineralTable.length;
+	const mineralNames = mineralTable.map(mineral => mineral.name);
+	const mineralSymbols = mineralTable.map(mineral => mineral.symbol);
+	const mineralIds = mineralTable.map(mineral => mineral.id);
+	const mineralColors = mineralTable.map(mineral => mineral.color);
+	// A cell is worth this much on average before demand. Base prices follow a
+	// rarity curve over the measured abundance, normalised back to this target,
+	// so the spread between ores can change without moving the economy. The
+	// elasticity above 1 makes a rare mineral dearer than its share alone.
+	const targetCellValue = 12.5;
+	const priceElasticity = 1.3;
+	const mineralPriceFloor = 0.4;
+	const mineralPriceCap = 150;
+	const marketInterval = 0.5;
+	const mineralBasePrices = new Float64Array(mineralCount);
+	const mineralPrices = new Float64Array(mineralCount);
+	const mineralAbundance = new Float64Array(mineralCount);
+	const demandBias = new Float64Array(mineralCount);
+	const demandDepth = new Float64Array(mineralCount);
+	const demandPeriod = new Float64Array(mineralCount);
+	const demandPhase = new Float64Array(mineralCount);
+	let marketClock = 0;
+	let marketBudget = 0;
 	const initialStrength = new Float32Array(count);
 	const strength = new Float32Array(count);
 	// How loose each cell has become, 0 (sound rock) to 1 (about to let go). It
@@ -139,7 +199,7 @@
 	// it last fell, so repeated hits around one spot add up.
 	const damageField = new Float32Array(count);
 	const elements = new Float32Array(count * 3);
-	const minerals = new Float32Array(count * 3);
+	const minerals = new Float32Array(count * mineralCount);
 	const prices = new Float32Array(count);
 	const firstRow = new Uint8Array(columns);
 	const heightmap = new Float64Array(columns + 1);
@@ -271,26 +331,23 @@
 	const debrisCell = new Uint16Array(maxDebris);
 	const debrisCells = new Uint16Array(maxDebris);
 	const debrisValue = new Float64Array(maxDebris);
-	const debrisMinerals = new Float64Array(maxDebris * 3);
+	const debrisMinerals = new Float64Array(maxDebris * mineralCount);
 	const debrisDamage = new Float32Array(maxDebris);
 	const hit = { time: Infinity, x: 0, y: 0, nx: 0, ny: 0, index: -1 };
-	const mineralColors = [[184, 91, 64], [65, 174, 133], [133, 153, 202]];
-	const mineralPrices = [3, 7, 11];
 	// Bought energy is the only import into the closed system: 25 cr per kJ of
 	// reserve, measured against a scripted shift grossing roughly 560 cr.
 	const fuelPrice = 25;
-	const mineralNames = ['Iron', 'Copper', 'Crystal'];
-	// Default grouping: Iron 300%, Copper 100%, Crystal 10%. Each setting mixes
-	// the plain loose-face clump with the connected mineral flake, so the one
-	// slider spans both behaviours instead of switching at a threshold. A larger
-	// group has the matching inverse release chance, so it falls less often and
-	// the difference between the settings stays visible.
-	const mineralClusterGrowth = new Uint16Array([300, 100, minClusterGrowth]);
+	// Each setting mixes the plain loose-face clump with the connected mineral
+	// flake, so the one slider spans both behaviours instead of switching at a
+	// threshold. A larger group has the matching inverse release chance, so it
+	// falls less often and the difference between the settings stays visible.
+	const mineralClusterGrowth = new Uint16Array(mineralCount);
+	for (let m = 0; m < mineralCount; m++) mineralClusterGrowth[m] = mineralTable[m].growth;
 	const damagePalette = new Array(101);
-	const cargoMinerals = new Float64Array(3);
-	const soldMinerals = new Float64Array(3);
-	const fallGroups = new Float64Array(3);
-	const fallCells = new Float64Array(3);
+	const cargoMinerals = new Float64Array(mineralCount);
+	const soldMinerals = new Float64Array(mineralCount);
+	const fallGroups = new Float64Array(mineralCount);
+	const fallCells = new Float64Array(mineralCount);
 	for (let i = 0; i <= 100; i++) {
 		const remaining = i / 100;
 		strengthPalette[i] = 'rgb(' + Math.round(75 + remaining * 130) + ' ' + Math.round(45 + remaining * 125) + ' ' + Math.round(38 + remaining * 82) + ')';
@@ -335,6 +392,113 @@
 		const a = hash(ix, iy, channel) + (hash(ix + 1, iy, channel) - hash(ix, iy, channel)) * fx;
 		const b = hash(ix, iy + 1, channel) + (hash(ix + 1, iy + 1, channel) - hash(ix, iy + 1, channel)) * fx;
 		return a + (b - a) * fy;
+	}
+
+	// A channel's normalised distance outside its band: 0 inside, growing by the
+	// band's feather outside. The three channels are summed before the kernel
+	// rather than multiplied, so one channel far outside does not drown a mineral
+	// that is close on the other two. That keeps broad boxes from swallowing the
+	// whole cube and is what makes a narrow band genuinely rare.
+	function bandDistance(value, band) {
+		if (value < band[0]) return (band[0] - value) / band[2];
+		if (value > band[1]) return (value - band[1]) / band[2];
+		return 0;
+	}
+
+	// The element cube is continuous, so a cell can sit near several boxes at
+	// once: the normalised memberships are the mineral mix.
+	function writeMineralMix(index, red, green, blue) {
+		const offset = index * mineralCount;
+		let total = 0;
+		let best = 0;
+		let bestWeight = -1;
+		for (let m = 0; m < mineralCount; m++) {
+			const bands = mineralTable[m].bands;
+			const distance = bandDistance(red, bands[0]) + bandDistance(green, bands[1]) + bandDistance(blue, bands[2]);
+			const weight = Math.exp(-distance * 1.4);
+			minerals[offset + m] = weight;
+			total += weight;
+			if (weight > bestWeight) { bestWeight = weight; best = m; }
+		}
+		if (total <= 1e-30) {
+			for (let m = 0; m < mineralCount; m++) minerals[offset + m] = m === best ? 1 : 0;
+			return;
+		}
+		for (let m = 0; m < mineralCount; m++) minerals[offset + m] /= total;
+	}
+
+	// Demand is one-dimensional value noise in chamber time: each mineral has
+	// its own period and depth, so some prices wander quickly and some slowly.
+	// The bias and phase come from the seed, which makes a run open with its own
+	// random market.
+	function demandFactorAt(m, time) {
+		const wave = noise(time / demandPeriod[m] + demandPhase[m], m * 0.37, 31 + m);
+		return demandBias[m] * (1 + demandDepth[m] * (wave * 2 - 1));
+	}
+
+	// Repaint what the market says each cell and each mineral is worth now. A
+	// fragment books its price when it breaks; the live cells and the price view
+	// follow the market so the next blow is priced at the current quote.
+	function revalueCells() {
+		let minPrice = Infinity;
+		let maxPrice = -Infinity;
+		for (let m = 0; m < mineralCount; m++) {
+			if (mineralPrices[m] < minPrice) minPrice = mineralPrices[m];
+			if (mineralPrices[m] > maxPrice) maxPrice = mineralPrices[m];
+		}
+		const span = maxPrice > minPrice ? maxPrice - minPrice : 1;
+		for (let index = 0; index < count; index++) {
+			const offset = index * mineralCount;
+			let value = 0;
+			for (let m = 0; m < mineralCount; m++) value += minerals[offset + m] * mineralPrices[m];
+			prices[index] = value;
+			const ratio = (value - minPrice) / span;
+			priceColors[index] = 'rgb(' + Math.round(48 + ratio * 190) + ' ' + Math.round(72 + ratio * 150) + ' ' + Math.round(91 - ratio * 45) + ')';
+		}
+	}
+
+	function updateMarket(force) {
+		let changed = force;
+		for (let m = 0; m < mineralCount; m++) {
+			const next = Math.max(mineralPriceFloor, mineralBasePrices[m] * demandFactorAt(m, marketClock));
+			if (Math.abs(next - mineralPrices[m]) < 1e-6) continue;
+			mineralPrices[m] = next;
+			changed = true;
+		}
+		if (changed) revalueCells();
+	}
+
+	// Base prices follow measured abundance: a mineral that takes a small share
+	// of the field costs more per cell, so a pure rare cell is a jackpot and a
+	// trace of it is worth about as much as any other cell. Seed-derived bias
+	// and phase give each run a market of its own, common ores included.
+	function initMarket() {
+		let inverseSum = 0;
+		for (let m = 0; m < mineralCount; m++) {
+			const share = Math.max(mineralAbundance[m], 1e-4);
+			inverseSum += Math.pow(share, 1 - priceElasticity);
+		}
+		const scale = targetCellValue / inverseSum;
+		for (let m = 0; m < mineralCount; m++) {
+			const entry = mineralTable[m];
+			const share = Math.max(mineralAbundance[m], 1e-4);
+			const base = scale * Math.pow(share, -priceElasticity);
+			mineralBasePrices[m] = Math.max(mineralPriceFloor, Math.min(mineralPriceCap, base));
+			demandBias[m] = 0.72 + hash(m, seed, 41) * 0.66;
+			demandPhase[m] = hash(m, seed, 43) * 97;
+			demandPeriod[m] = entry.demandPeriod * (0.85 + hash(m, seed, 47) * 0.3);
+			demandDepth[m] = entry.demandDepth;
+		}
+		marketClock = 0;
+		marketBudget = 0;
+		updateMarket(true);
+	}
+
+	// Market time in one call: the page advances it inside the simulation loop,
+	// measurements and tests can move the market without running the chamber.
+	function advanceMarket(seconds) {
+		marketClock += Math.max(0, seconds);
+		updateMarket(false);
 	}
 
 	function updateHeightmap() {
@@ -387,8 +551,10 @@
 		return collapseChunkMax * (1 + largestGrowth / 100);
 	}
 
-	// Controlled comparison bed: three pure mineral veins, with looseness rising
-	// from untouched at the roof to ready-to-fall at the exposed lower edge.
+	// Controlled comparison bed: one pure mineral band per table entry, with
+	// looseness rising from untouched at the roof to ready-to-fall at the
+	// exposed lower edge. Elements take the centre of each band, so the
+	// inspector shows the signature that formed the band.
 	function generateTestRock() {
 		testRock = true;
 		collapseClock = 0;
@@ -400,22 +566,23 @@
 		fallCells.fill(0);
 		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
 			const index = row * columns + column;
-			const mineral = Math.min(2, Math.floor(column * 3 / columns));
-			const offset = index * 3;
+			const mineral = Math.min(mineralCount - 1, Math.floor(column * mineralCount / columns));
+			const entry = mineralTable[mineral];
+			const elementOffset = index * 3;
+			const mineralOffset = index * mineralCount;
 			const damage = (rows - 1 - row) / (rows - 1);
-			elements[offset] = minerals[offset] = mineral === 0 ? 1 : 0;
-			elements[offset + 1] = minerals[offset + 1] = mineral === 1 ? 1 : 0;
-			elements[offset + 2] = minerals[offset + 2] = mineral === 2 ? 1 : 0;
+			for (let m = 0; m < mineralCount; m++) minerals[mineralOffset + m] = m === mineral ? 1 : 0;
+			for (let channel = 0; channel < 3; channel++) elements[elementOffset + channel] = (entry.bands[channel][0] + entry.bands[channel][1]) * 0.5;
 			prices[index] = mineralPrices[mineral];
-			initialStrength[index] = mineral === 0 ? 5 : (mineral === 1 ? 3.9 : 5.8);
+			initialStrength[index] = 2.2 + entry.hardness;
 			strength[index] = initialStrength[index];
 			damageField[index] = damage;
-			const color = mineralColors[mineral];
+			const color = entry.color;
 			mineralStyles[index] = 'rgb(' + color[0] + ' ' + color[1] + ' ' + color[2] + ')';
-			elementColors[index] = mineral === 0 ? 'rgb(255 0 0)' : (mineral === 1 ? 'rgb(0 255 0)' : 'rgb(0 0 255)');
-			const priceRatio = (prices[index] - mineralPrices[0]) / (mineralPrices[2] - mineralPrices[0]);
-			priceColors[index] = 'rgb(' + Math.round(48 + priceRatio * 190) + ' ' + Math.round(72 + priceRatio * 150) + ' ' + Math.round(91 - priceRatio * 45) + ')';
+			elementColors[index] = 'rgb(' + Math.round(elements[elementOffset] * 255) + ' ' + Math.round(elements[elementOffset + 1] * 255) + ' ' + Math.round(elements[elementOffset + 2] * 255) + ')';
+			priceColors[index] = 'rgb(48 72 91)';
 		}
+		revalueCells();
 		updateHeightmap();
 		scanRegions();
 		return true;
@@ -451,8 +618,8 @@
 		funds = 0;
 		exportedEnergy = 0;
 		ledger = [];
-		cargoMinerals[0] = cargoMinerals[1] = cargoMinerals[2] = 0;
-		soldMinerals[0] = soldMinerals[1] = soldMinerals[2] = 0;
+		cargoMinerals.fill(0);
+		soldMinerals.fill(0);
 		fallGroups.fill(0);
 		fallCells.fill(0);
 		active.fill(0);
@@ -475,36 +642,47 @@
 		regionDamage.fill(0);
 		regionEligible.fill(0);
 		collapseClock = 0;
+		marketClock = 0;
+		marketBudget = 0;
+		mineralAbundance.fill(0);
 		for (let row = 0; row < rows; row++) for (let column = 0; column < columns; column++) {
 			const index = row * columns + column;
 			const x = column * 0.075;
-			const y = row * 0.075;
-			const red = 0.08 + noise(x, y, 0) * 0.92;
-			const green = 0.08 + noise(x + 13.7, y + 5.1, 1) * 0.92;
-			const blue = 0.08 + noise(x + 29.3, y + 11.9, 2) * 0.92;
-			const elementTotal = red + green + blue;
-			const offset = index * 3;
-			elements[offset] = red / elementTotal;
-			elements[offset + 1] = green / elementTotal;
-			elements[offset + 2] = blue / elementTotal;
-			const iron = elements[offset] * elements[offset] + elements[offset + 1] * 0.1;
-			const copper = elements[offset + 1] * elements[offset + 1] + elements[offset + 2] * 0.12;
-			const crystal = elements[offset + 2] * elements[offset + 2] + elements[offset] * 0.08;
-			const mineralTotal = iron + copper + crystal;
-			minerals[offset] = iron / mineralTotal;
-			minerals[offset + 1] = copper / mineralTotal;
-			minerals[offset + 2] = crystal / mineralTotal;
-			prices[index] = minerals[offset] * mineralPrices[0] + minerals[offset + 1] * mineralPrices[1] + minerals[offset + 2] * mineralPrices[2];
-			initialStrength[index] = 2.2 + minerals[offset] * 2.8 + minerals[offset + 1] * 1.7 + minerals[offset + 2] * 3.6;
+			// Compressing the element fields in Y flattens the deposits: a vein
+			// crosses the rock as a stratified seam instead of a round patch.
+			const y = row * 0.075 * 3;
+			// Three independent fields: an element concentration is not a colour
+			// mix that has to sum with the others, so a narrow band on one channel
+			// stays narrow and rare.
+			const red = 0.03 + noise(x, y, 0) * 0.94;
+			const green = 0.03 + noise(x * 0.82 + 7.3, y * 0.82 + 5.1, 1) * 0.94;
+			const blue = 0.03 + noise(x * 1.18 + 19.1, y * 1.18 + 11.9, 2) * 0.94;
+			const elementOffset = index * 3;
+			elements[elementOffset] = red;
+			elements[elementOffset + 1] = green;
+			elements[elementOffset + 2] = blue;
+			writeMineralMix(index, red, green, blue);
+			const offset = index * mineralCount;
+			let hardness = 0;
+			let mineralRed = 0;
+			let mineralGreen = 0;
+			let mineralBlue = 0;
+			for (let m = 0; m < mineralCount; m++) {
+				const fraction = minerals[offset + m];
+				mineralAbundance[m] += fraction;
+				const entry = mineralTable[m];
+				hardness += fraction * entry.hardness;
+				mineralRed += fraction * entry.color[0];
+				mineralGreen += fraction * entry.color[1];
+				mineralBlue += fraction * entry.color[2];
+			}
+			initialStrength[index] = 2.2 + hardness;
 			strength[index] = initialStrength[index];
-			elementColors[index] = 'rgb(' + Math.round(elements[offset] * 255) + ' ' + Math.round(elements[offset + 1] * 255) + ' ' + Math.round(elements[offset + 2] * 255) + ')';
-			const priceRatio = (prices[index] - mineralPrices[0]) / (mineralPrices[2] - mineralPrices[0]);
-			priceColors[index] = 'rgb(' + Math.round(48 + priceRatio * 190) + ' ' + Math.round(72 + priceRatio * 150) + ' ' + Math.round(91 - priceRatio * 45) + ')';
-			const mineralRed = minerals[offset] * mineralColors[0][0] + minerals[offset + 1] * mineralColors[1][0] + minerals[offset + 2] * mineralColors[2][0];
-			const mineralGreen = minerals[offset] * mineralColors[0][1] + minerals[offset + 1] * mineralColors[1][1] + minerals[offset + 2] * mineralColors[2][1];
-			const mineralBlue = minerals[offset] * mineralColors[0][2] + minerals[offset + 1] * mineralColors[1][2] + minerals[offset + 2] * mineralColors[2][2];
+			elementColors[index] = 'rgb(' + Math.round(red * 255) + ' ' + Math.round(green * 255) + ' ' + Math.round(blue * 255) + ')';
 			mineralStyles[index] = 'rgb(' + Math.round(mineralRed) + ' ' + Math.round(mineralGreen) + ' ' + Math.round(mineralBlue) + ')';
 		}
+		for (let m = 0; m < mineralCount; m++) mineralAbundance[m] /= count;
+		initMarket();
 		updateHeightmap();
 		scanRegions();
 		updateFloor();
@@ -598,11 +776,10 @@
 
 	function compatibleMineral(index, seedIndex, mineral) {
 		if (dominantMineral(index) === mineral) return true;
-		const a = index * 3;
-		const b = seedIndex * 3;
-		const diff = Math.abs(minerals[a] - minerals[b])
-			+ Math.abs(minerals[a + 1] - minerals[b + 1])
-			+ Math.abs(minerals[a + 2] - minerals[b + 2]);
+		const a = index * mineralCount;
+		const b = seedIndex * mineralCount;
+		let diff = 0;
+		for (let m = 0; m < mineralCount; m++) diff += Math.abs(minerals[a + m] - minerals[b + m]);
 		return diff < 0.22;
 	}
 
@@ -703,9 +880,9 @@
 	// releases. Growth scales the damage-sized clump; its inverse scales the
 	// roll chance, trading frequent grains for rarer, heavier falls.
 	function dominantMineral(index) {
-		const offset = index * 3;
-		let mineral = minerals[offset + 1] > minerals[offset] ? 1 : 0;
-		if (minerals[offset + 2] > minerals[offset + mineral]) mineral = 2;
+		const offset = index * mineralCount;
+		let mineral = 0;
+		for (let m = 1; m < mineralCount; m++) if (minerals[offset + m] > minerals[offset + mineral]) mineral = m;
 		return mineral;
 	}
 
@@ -889,7 +1066,7 @@
 	// position, so a group of cells that let go together keeps the shape it had
 	// in the rock instead of being redrawn as one block.
 	function spawnFragment(index) {
-		const offset = index * 3;
+		const offset = index * mineralCount;
 		const x = (index % columns + 0.5) * cell;
 		const y = bottom + (Math.floor(index / columns) + 0.5) * cell;
 		for (let i = 0; i < maxDebris; i++) {
@@ -898,10 +1075,8 @@
 			debrisCell[i] = index;
 			debrisCells[i] = 1;
 			debrisValue[i] = prices[index];
-			const mOffset = i * 3;
-			debrisMinerals[mOffset] = cellMass * minerals[offset];
-			debrisMinerals[mOffset + 1] = cellMass * minerals[offset + 1];
-			debrisMinerals[mOffset + 2] = cellMass * minerals[offset + 2];
+			const mOffset = i * mineralCount;
+			for (let m = 0; m < mineralCount; m++) debrisMinerals[mOffset + m] = cellMass * minerals[offset + m];
 			debrisX[i] = x;
 			debrisY[i] = y;
 			debrisVx[i] = 0;
@@ -923,14 +1098,11 @@
 		const prevCells = fragmentCells(target);
 		const previousDamage = debrisDamage[target];
 		if (!debrisCells[target]) {
-			const baseIndex = debrisCell[target];
-			const baseOffset = baseIndex * 3;
-			const mOffset = target * 3;
+			const baseOffset = debrisCell[target] * mineralCount;
+			const mOffset = target * mineralCount;
 			debrisCells[target] = 1;
-			debrisValue[target] = prices[baseIndex];
-			debrisMinerals[mOffset] = cellMass * minerals[baseOffset];
-			debrisMinerals[mOffset + 1] = cellMass * minerals[baseOffset + 1];
-			debrisMinerals[mOffset + 2] = cellMass * minerals[baseOffset + 2];
+			debrisValue[target] = prices[debrisCell[target]];
+			for (let m = 0; m < mineralCount; m++) debrisMinerals[mOffset + m] = cellMass * minerals[baseOffset + m];
 		}
 		const beforeE = fragmentMechanical(target) + cellMass * gravity * y;
 		const nextCells = prevCells + 1;
@@ -941,10 +1113,8 @@
 		debrisCells[target] = nextCells;
 		debrisValue[target] += prices[index];
 		debrisDamage[target] = (previousDamage * prevCells + damageField[index]) / nextCells;
-		const mOffset = target * 3;
-		debrisMinerals[mOffset] += cellMass * minerals[offset];
-		debrisMinerals[mOffset + 1] += cellMass * minerals[offset + 1];
-		debrisMinerals[mOffset + 2] += cellMass * minerals[offset + 2];
+		const mOffset = target * mineralCount;
+		for (let m = 0; m < mineralCount; m++) debrisMinerals[mOffset + m] += cellMass * minerals[offset + m];
 		exportedEnergy += beforeE - fragmentMechanical(target);
 		extractedCells++;
 	}
@@ -1213,13 +1383,13 @@
 		const after = 0.5 * (carriedMass + caughtMass) * world.platform.vx * world.platform.vx;
 		world.heat += Math.max(0, before - after);
 		const index = debrisCell[i];
-		const offset = index * 3;
-		const mOffset = i * 3;
+		const offset = index * mineralCount;
+		const mOffset = i * mineralCount;
 		cargoCells += take;
 		caughtCells += take;
 		const val = fragmentValue(i) * ratio;
 		cargoValue += val;
-		for (let m = 0; m < 3; m++) {
+		for (let m = 0; m < mineralCount; m++) {
 			const minMass = (debrisCells[i] ? debrisMinerals[mOffset + m] : cellMass * minerals[offset + m]) * ratio;
 			cargoMinerals[m] += minMass;
 			if (debrisCells[i]) debrisMinerals[mOffset + m] -= minMass;
@@ -1424,6 +1594,11 @@
 		ageDust(dt);
 		if (root.SteamEquipment && root.SteamEquipment.isInstalled('grader')) grade(world, dt);
 		stepGraderBot(world, dt);
+		marketBudget += dt;
+		if (marketBudget < marketInterval) return;
+		marketClock += marketBudget;
+		marketBudget = 0;
+		updateMarket(false);
 	}
 
 	// Purchases and research debit funds and append a ledger entry; false when
@@ -1500,8 +1675,8 @@
 		soldCells += cargoCells;
 		soldValue += value;
 		funds += value;
-		const quantities = Object.freeze([cargoMinerals[0], cargoMinerals[1], cargoMinerals[2]]);
-		for (let m = 0; m < 3; m++) {
+		const quantities = Object.freeze(Array.from(cargoMinerals));
+		for (let m = 0; m < mineralCount; m++) {
 			soldMinerals[m] += cargoMinerals[m];
 			cargoMinerals[m] = 0;
 		}
@@ -1713,7 +1888,8 @@
 		graderBot, blade, graderShare, floorValues,
 		get shape() { return rockShape; }, heightmap, firstRow, floorPiles, floorHeight,
 		garageHeight, garageDepth, garageParkX, graderSpeed,
-		mineralNames, mineralPrices, fuelPrice,
+		mineralTable, mineralNames, mineralSymbols, mineralPrices, mineralBasePrices, mineralAbundance, fuelPrice,
+		get marketTime() { return marketClock; },
 		strength, initialStrength, elements, minerals, prices, active, debrisX, debrisY, debrisVx, debrisVy, debrisCell, debrisCells,
 		debrisMinerals, debrisDamage,
 		cargoMinerals, soldMinerals, fallGroups, fallCells,
@@ -1742,7 +1918,7 @@
 	const api = {
 		hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, damageRadiusNow, damageMultiplierNow,
 		trace, step, harvest, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt,
-		state, setShape, setMineralClusterGrowth, generateTestRock, rockDrawnY, rockWorldY, rockScale, collapse,
+		state, setShape, setMineralClusterGrowth, generateTestRock, rockDrawnY, rockWorldY, rockScale, collapse, advanceMarket,
 		get collapseChunkMax() { return collapseChunkMaxNow(); }
 	};
 	root.SteamCeiling = api;
