@@ -38,6 +38,16 @@ game: на отскок шариков от платформы тратилас�
 ## good clean interactive gui to show what installed and available, tech tree, etc.
 Потолок - массив клеток (1px...8px size adjustable generation). Удар шарика ослабляет клетки в радиусе от точки удара с убывающие силой. Рендер имеет режим отображения оставшейся прочности клеток потолка. Изначальная прочность определяется типом минералов (simplex noise R, G, B - elements that form minerals. mineral types [] = f(r,g,b). example [0.1, 0.5, 0.0, 0.4] mean it consist of mostly mineral1 and mineral3. then use strength table ). 
 
+### decrease low cost mineral 2x, increase high cost 4x
+
+### improve mineral formation range from elements.
+
+### improve cost generation table:
+rare mineral usually cost high + some random demand startup generation, so some not rare may also cost high. 
+as i remember -  we already implemented demand change - review and improve if found good way.
+i expect slow noise on prices that can do big changes during few minutes IRL, but not very fast and not very slow. some minerals slow change, some faster.
+
+
 rock above: make it 2d array 4*4 px cells by default. ball properly bounce reflect from it surface.
 view modes: 
 - elements r,g,b
@@ -46,6 +56,9 @@ view modes:
 - remain strength
 
 Storage limit is 100 cells; full storage add similar mass as dry platform mass. Sell automatically when platform touch left or right wall. vertical text 'sell' on walls near platform path. 
+
+
+
 
 platform movement energy exchange on ball capture and bounce and friction while this. we need Newtonian physics and kinetic-thermal energy conversion.
 
