@@ -60,6 +60,41 @@ example2 rgb1:
 
 mix  0.9...1,0.5...0.51, 0.2...0.22, is very rare element because ranges are very narrow and random noise create it rarely
 
+improve mineral and strength
+add plans to improve minerals: 
+change elements to: r metal, g crystal, b gas
+
+change mineral to more important and meaningful: 
+this numbers is not calculated, just thoughts, need to balance or jus think better. ... mean other or any: [... G B] mean any R
+name r g b real analog suggested rarity
+
+think is better do table 
+with abs r g b ranges:
+- native metal 0.9…1	<0.1 <0.1  Ag	rare
+- iron Ore	0.5…1	<0.3 0.5…1  FeO	common
+or
+with % of total :
+- native metal  0.9…1	... ... Ag	rare
+- iron Ore	0.3…0.7	... 0.3…0.6  FeO	common
+- copper Ore	0.3…0.7	 0.1…0.4 ... CuS	uncommon
+- Gold ore	0.9…1.0 0.1…0.15 0.1…0.15	Ag+SiO2	rare
+- Quartz Stone	... 0.3…0.6 0.3…0.4 SiO2	common
+- ? Al₂O*
+- Fluorite 0.2…0.4 ... 0.7…0.9 CaF₂	uncommon
+- ? todo
+- gas ... ... 0.95…1
+- other are stone  . i mean if mineral a has r<3 and mineral b has r>4 then other will be 3..4, so its share is the leftover
+
+and  how better store it in readable format
+
+
+
+
+
+near 100% gas has near 0 strength.
+other strength is from generated random table of mineral strength and minerals in cell.
+i expect not 100% 'remain trength' but 100% is max and most cells has lower strength then max. if you can find better way - you can just get mineral map and get strength from it via strength table
+
 
 rock above: make it 2d array 4*4 px cells by default. ball properly bounce reflect from it surface.
 view modes: 
@@ -293,6 +328,7 @@ should fall from free surface but not from inside of rock.
 
 добавить при каждом отскоке генерацию одной строки скалы сверху, то есть она растет сверху и постепенно опускается вниз.
 также при приближении разрушения к границе карты сверху добавлять новые строки, чтобы шару постоянно было место для разрушения, поскольку шар имеет определенный радиус разрушения, то нужно чтобы этот радиус был всегда в поле видимости и добавлять нехватающие строки плавно (не более 5/sec)
+Pause growth at 30% remaining height
 
 
 Добавить checkbox, при котором размер шарика также вдали (вверху) уменьшается, по тому же закону, что и размер ячейки скалы.

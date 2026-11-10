@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>2D Noise Resource Map</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 24px; background: #f6f6f4; color: #222; }
+h1 { font-size: 22px; }
+h2 { font-size: 16px; margin: 0 0 8px; }
+.panel { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+label { font-size: 14px; display: flex; gap: 6px; align-items: center; }
+input[type=range] { width: 120px; }
+canvas { border: 1px solid #999; image-rendering: pixelated; background: #000; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; }
+.item { display: flex; align-items: center; gap: 6px; }
+.chip { width: 18px; height: 18px; border-radius: 4px; border: 1px solid #888; display: inline-block; vertical-align: middle; }
+.muted { color: #777; font-size: 13px; }
+.val { display: inline-block; min-width: 36px; font-variant-numeric: tabular-nums; }
+table { border-collapse: collapse; font-size: 13px; width: 100%; }
+th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; vertical-align: middle; }
+th { background: #fafafa; }
+button { padding: 6px 12px; cursor: pointer; }
+textarea { width: 100%; height: 180px; font-family: ui-monospace, monospace; font-size: 12px; box-sizing: border-box; }
+#status { font-size: 13px; min-height: 18px; margin-top: 6px; }
+
+/* Dual-handle range slider */
+.dual { position: relative; width: 200px; height: 28px; user-select: none; touch-action: none; cursor: pointer; }
+.dual .track { position: absolute; left: 0; right: 0; top: 11px; height: 6px; border-radius: 3px; border: 1px solid #aaa; }
+.dual .fill { position: absolute; top: 11px; height: 6px; border-radius: 3px; background: rgba(0,0,0,0.25); pointer-events: none; }
+.dual .handle { position: absolute; top: 3px; width: 14px; height: 22px; margin-left: -7px; border-radius: 4px;
+								background: #fff; border: 2px solid #333; box-sizing: border-box; pointer-events: none; }
+.dual .handle.active { border-color: #0a64d6; }
+</style>
+</head>
+<body>
+
+<div class="panel">
+	<div class="row">
+		<label>Seed <input type="number" id="seed" value="42" style="width:90px"></label>
+		<label>Scale <input type="range" id="scale" min="10" max="300" value="120"><span id="scaleV" class="val"></span></label>
+		<label>Octaves <input type="range" id="octaves" min="1" max="6" value="4"><span id="octV" class="val"></span></label>
+		<label>Persistence <input type="range" id="persist" min="0.2" max="0.8" step="0.05" value="0.5"><span id="perV" class="val"></span></label>
+		<label>Channel offset <input type="range" id="offset" min="0" max="200" value="60"><span id="offV" class="val"></span></label>
+	</div>
+	<div class="row">
+		<label><input type="checkbox" id="showColor" checked> Show resource colours</label>
+		<button id="auto">Auto-adjust ranges</button>
+		<button id="reset">Reset ranges</button>
+	</div>
+	<div class="muted">Each pixel uses three noise layers (R, G, B) that are normalized and matched to the resource table (first match wins). Auto-adjust samples the current noise and sets each resource's box to hit its target share.</div>
+</div>
+
+<div class="panel">
+	<canvas id="map" width="600" height="400"></canvas>
+	<div class="legend" id="legend" style="margin-top:12px"></div>
+</div>
+
+<div class="panel">
+	<h2>Resource ranges (normalized R, G, B; first match wins, top to bottom)</h2>
+	<div class="muted" style="margin-bottom:8px">Drag the two handles on each channel bar to set the min and max. Target share is used by Auto-adjust. Rare resources are placed first.</div>
+	<div style="overflow-x:auto">
+		<table>
+			<thead>
+				<tr><th>Resource</th><th>Rarity</th><th>Target share</th><th>R range</th><th>G range</th><th>B range</th></tr>
+			</thead>
+			<tbody id="rangeTable"></tbody>
+		</table>
+	</div>
+</div>
+
+<div class="panel">
+	<h2>Settings copy / paste</h2>
+	<div class="muted" style="margin-bottom:8px">Copy settings puts all parameters and ranges into the box below and onto your clipboard. To restore them, paste the JSON into the box and press Apply pasted settings.</div>
+	<div class="row">
+		<button id="copySettings">Copy settings</button>
+		<button id="applySettings">Apply pasted settings</button>
+		<button id="clearSettings">Clear box</button>
+	</div>
+	<textarea id="settingsBox" spellcheck="false" placeholder="Settings JSON appears here. Paste settings here and press Apply."></textarea>
+	<div id="status"></div>
+</div>
+
+<script>
+// ----- Resource table -----
+const RESOURCES = [
+	{ id: "native_silver", name: "Native silver", rarity: "rare",		 target: 0.03, color: "#a0a0a0", rgb: { r: [0.31, 0.36], g: [0.31, 0.36], b: [0.31, 0.36] } },
+	{ id: "native_gold",	 name: "Native gold",	 rarity: "rare",		 target: 0.03, color: "#d4a520", rgb: { r: [0.45, 0.50], g: [0.35, 0.40], b: [0.10, 0.15] } },
+	{ id: "native_copper", name: "Native copper", rarity: "uncommon", target: 0.08, color: "#b8632b", rgb: { r: [0.45, 0.50], g: [0.30, 0.35], b: [0.15, 0.20] } },
+	{ id: "copper_ore",		name: "Copper ore",		rarity: "uncommon", target: 0.08, color: "#c9a227", rgb: { r: [0.40, 0.50], g: [0.35, 0.45], b: [0.10, 0.20] } },
+	{ id: "iron_ore",			name: "Iron ore",			rarity: "common",	 target: 0.15, color: "#8b3a2b", rgb: { r: [0.50, 0.60], g: [0.20, 0.30], b: [0.15, 0.25] } },
+	{ id: "quartz",				name: "Quartz",				rarity: "common",	 target: 0.15, color: "#e8e8e0", rgb: { r: [0.30, 0.35], g: [0.30, 0.35], b: [0.30, 0.35] } },
+	{ id: "fluorite",			name: "Fluorite",			rarity: "uncommon", target: 0.08, color: "#7a5cc7", rgb: { r: [0.10, 0.30], g: [0.00, 0.20], b: [0.70, 0.90] } },
+	{ id: "gas_oxygen",		name: "Gas (oxygen)",	rarity: "common",	 target: 0.10, color: "#6fb4ff", rgb: { r: [0.00, 0.05], g: [0.00, 0.05], b: [0.95, 1.00] } },
+	{ id: "other",				 name: "Other / stone", rarity: null,			 target: 0,		color: "#555555", rgb: null }
+];
+const DEFAULT_RANGES = {};
+RESOURCES.forEach(r => { if (r.rgb) DEFAULT_RANGES[r.id] = JSON.parse(JSON.stringify(r.rgb)); });
+
+// ----- Seeded random + 2D gradient noise -----
+function mulberry32(seed) {
+	return function () {
+		seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+		let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+		t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+		return ((t ^ t >>> 14) >>> 0) / 4294967296;
+	};
+}
+
+function makePermutation(seed) {
+	const rand = mulberry32(seed);
+	const p = Array.from({ length: 256 }, (_, i) => i);
+	for (let i = 255; i > 0; i--) {
+		const j = Math.floor(rand() * (i + 1));
+		[p[i], p[j]] = [p[j], p[i]];
+	}
+	return [...p, ...p];
+}
+
+function makeNoise2D(seed) {
+	const perm = makePermutation(seed);
+	const grads = [[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
+	const fade = t => t * t * t * (t * (t * 6 - 15) + 10);
+	const lerp = (a, b, t) => a + t * (b - a);
+	const dot = (h, x, y) => { const g = grads[h & 7]; return g[0] * x + g[1] * y; };
+	return function (x, y) {
+		const xi = Math.floor(x), yi = Math.floor(y);
+		const xf = x - xi, yf = y - yi;
+		const X = xi & 255, Y = yi & 255;
+		const u = fade(xf), v = fade(yf);
+		const aa = perm[perm[X] + Y], ab = perm[perm[X] + Y + 1];
+		const ba = perm[perm[X + 1] + Y], bb = perm[perm[X + 1] + Y + 1];
+		const n = lerp(
+			lerp(dot(aa, xf, yf), dot(ba, xf - 1, yf), u),
+			lerp(dot(ab, xf, yf - 1), dot(bb, xf - 1, yf - 1), u),
+			v
+		);
+		return n * 0.5 + 0.5;
+	};
+}
+
+function fbm(noise, x, y, octaves, persistence) {
+	let amp = 1, freq = 1, sum = 0, norm = 0;
+	for (let i = 0; i < octaves; i++) {
+		sum += noise(x * freq, y * freq) * amp;
+		norm += amp;
+		amp *= persistence;
+		freq *= 2;
+	}
+	return sum / norm;
+}
+
+// ----- Helpers -----
+const $ = id => document.getElementById(id);
+const canvas = $("map");
+const ctx = canvas.getContext("2d");
+const clamp01 = v => Math.max(0, Math.min(1, v));
+const round2 = v => Math.round(v * 100) / 100;
+
+function getParams() {
+	return {
+		seed: +$("seed").value | 0,
+		scale: +$("scale").value,
+		octaves: +$("octaves").value,
+		persist: +$("persist").value,
+		offset: +$("offset").value
+	};
+}
+
+function makeSampler(p) {
+	const nR = makeNoise2D(p.seed);
+	const nG = makeNoise2D(p.seed + 1013);
+	const nB = makeNoise2D(p.seed + 2027);
+	return function (px, py) {
+		const x = px / p.scale, y = py / p.scale;
+		const r = fbm(nR, x, y, p.octaves, p.persist);
+		const g = fbm(nG, x + p.offset / 100, y, p.octaves, p.persist);
+		const b = fbm(nB, x, y + p.offset / 100, p.octaves, p.persist);
+		const s = r + g + b || 1;
+		return { raw: [r, g, b], norm: [r / s, g / s, b / s] };
+	};
+}
+
+function inRange(v, r) { return r === null || (v >= r[0] - 1e-9 && v <= r[1] + 1e-9); }
+function matchResource(nr, ng, nb) {
+	for (const res of RESOURCES) {
+		if (!res.rgb) continue;
+		if (inRange(nr, res.rgb.r) && inRange(ng, res.rgb.g) && inRange(nb, res.rgb.b)) return res;
+	}
+	return RESOURCES.find(r => r.id === "other");
+}
+
+// ----- Dual-handle range slider -----
+// Returns a DOM element. onChange(lo, hi) fires while dragging.
+function makeDualSlider(lo, hi, gradient, onChange) {
+	const wrap = document.createElement("div");
+	wrap.className = "dual";
+	wrap.innerHTML = `
+		<div class="track" style="background:${gradient}"></div>
+		<div class="fill"></div>
+		<div class="handle lo"></div>
+		<div class="handle hi"></div>`;
+	const fill = wrap.querySelector(".fill");
+	const hLo = wrap.querySelector(".handle.lo");
+	const hHi = wrap.querySelector(".handle.hi");
+	const track = wrap.querySelector(".track");
+	let active = null;
+
+	const paint = () => {
+		fill.style.left = (lo * 100) + "%";
+		fill.style.width = ((hi - lo) * 100) + "%";
+		hLo.style.left = (lo * 100) + "%";
+		hHi.style.left = (hi * 100) + "%";
+		wrap.title = `${lo.toFixed(2)} to ${hi.toFixed(2)}`;
+	};
+
+	const valueFromEvent = e => {
+		const rect = track.getBoundingClientRect();
+		return clamp01((e.clientX - rect.left) / rect.width);
+	};
+
+	const move = e => {
+		let v = round2(valueFromEvent(e));
+		if (active === "lo") lo = Math.min(v, hi);
+		else hi = Math.max(v, lo);
+		paint();
+		onChange(lo, hi);
+	};
+
+	wrap.addEventListener("pointerdown", e => {
+		const v = valueFromEvent(e);
+		if (Math.abs(v - lo) < Math.abs(v - hi)) active = "lo";
+		else if (Math.abs(v - lo) > Math.abs(v - hi)) active = "hi";
+		else active = v < lo ? "lo" : "hi";
+		hLo.classList.toggle("active", active === "lo");
+		hHi.classList.toggle("active", active === "hi");
+		wrap.setPointerCapture(e.pointerId);
+		move(e);
+	});
+	wrap.addEventListener("pointermove", e => { if (active) move(e); });
+	const stop = () => {
+		active = null;
+		hLo.classList.remove("active");
+		hHi.classList.remove("active");
+	};
+	wrap.addEventListener("pointerup", stop);
+	wrap.addEventListener("pointercancel", stop);
+
+	paint();
+	return wrap;
+}
+
+// ----- Range table UI -----
+const CHANNEL_GRADIENTS = {
+	r: "linear-gradient(to right, #000, #f00)",
+	g: "linear-gradient(to right, #000, #0f0)",
+	b: "linear-gradient(to right, #000, #00f)"
+};
+
+let renderQueued = false;
+function queueRender() {
+	if (renderQueued) return;
+	renderQueued = true;
+	requestAnimationFrame(() => { renderQueued = false; render(); });
+}
+
+function buildRangeTable() {
+	const tbody = $("rangeTable");
+	tbody.innerHTML = "";
+	RESOURCES.filter(r => r.rgb).forEach(res => {
+		const tr = document.createElement("tr");
+		const tdName = document.createElement("td");
+		tdName.innerHTML = `<span class="chip" style="background:${res.color}"></span> ${res.name}`;
+		const tdRarity = document.createElement("td");
+		tdRarity.textContent = res.rarity;
+
+		const tdTarget = document.createElement("td");
+		const targetInp = document.createElement("input");
+		targetInp.type = "range"; targetInp.min = 0; targetInp.max = 0.3; targetInp.step = 0.01; targetInp.value = res.target;
+		const targetVal = document.createElement("span");
+		targetVal.className = "val";
+		targetVal.textContent = (res.target * 100).toFixed(0) + "%";
+		targetInp.addEventListener("input", () => {
+			res.target = +targetInp.value;
+			targetVal.textContent = (res.target * 100).toFixed(0) + "%";
+		});
+		tdTarget.append(targetInp, " ", targetVal);
+
+		tr.append(tdName, tdRarity, tdTarget);
+		["r", "g", "b"].forEach(ch => {
+			const td = document.createElement("td");
+			const label = document.createElement("span");
+			label.className = "val";
+			const slider = makeDualSlider(res.rgb[ch][0], res.rgb[ch][1], CHANNEL_GRADIENTS[ch], (lo, hi) => {
+				res.rgb[ch] = [round2(lo), round2(hi)];
+				label.textContent = `${lo.toFixed(2)}–${hi.toFixed(2)}`;
+				queueRender();
+			});
+			label.textContent = `${res.rgb[ch][0].toFixed(2)}–${res.rgb[ch][1].toFixed(2)}`;
+			td.append(slider, " ", label);
+			tr.appendChild(td);
+		});
+		tbody.appendChild(tr);
+	});
+}
+
+// ----- Auto-adjust -----
+function autoAdjust() {
+	const p = getParams();
+	const sample = makeSampler(p);
+	const N = 20000;
+	let pts = [];
+	for (let i = 0; i < N; i++) {
+		const px = Math.random() * canvas.width;
+		const py = Math.random() * canvas.height;
+		pts.push(sample(px, py).norm);
+	}
+
+	const order = RESOURCES.filter(r => r.rgb && r.target > 0).sort((a, b) => a.target - b.target);
+
+	for (const res of order) {
+		if (pts.length < 10) { res.rgb = { r: [0, 0], g: [0, 0], b: [0, 0] }; continue; }
+		const c = pts[Math.floor(Math.random() * pts.length)];
+		const need = res.target * N;
+
+		const countIn = h => {
+			let n = 0;
+			for (const q of pts) {
+				if (Math.abs(q[0] - c[0]) <= h && Math.abs(q[1] - c[1]) <= h && Math.abs(q[2] - c[2]) <= h) n++;
+			}
+			return n;
+		};
+
+		let lo = 0, hi = 0.5;
+		for (let i = 0; i < 25; i++) {
+			const mid = (lo + hi) / 2;
+			if (countIn(mid) >= need) hi = mid; else lo = mid;
+		}
+		const h = hi;
+		res.rgb = {
+			r: [round2(clamp01(c[0] - h)), round2(clamp01(c[0] + h))],
+			g: [round2(clamp01(c[1] - h)), round2(clamp01(c[1] + h))],
+			b: [round2(clamp01(c[2] - h)), round2(clamp01(c[2] + h))]
+		};
+		pts = pts.filter(q => !(inRange(q[0], res.rgb.r) && inRange(q[1], res.rgb.g) && inRange(q[2], res.rgb.b)));
+	}
+
+	buildRangeTable();
+	render();
+}
+
+function resetRanges() {
+	RESOURCES.forEach(r => { if (r.rgb) r.rgb = JSON.parse(JSON.stringify(DEFAULT_RANGES[r.id])); });
+	buildRangeTable();
+	render();
+}
+
+// ----- Settings copy / paste -----
+function collectSettings() {
+	const p = getParams();
+	const out = {
+		version: 1,
+		params: { seed: p.seed, scale: p.scale, octaves: p.octaves, persistence: p.persist, channelOffset: p.offset, showColor: $("showColor").checked },
+		resources: {}
+	};
+	RESOURCES.forEach(r => {
+		out.resources[r.id] = r.rgb
+			? { target: r.target, r: r.rgb.r, g: r.rgb.g, b: r.rgb.b }
+			: { target: 0 };
+	});
+	return out;
+}
+
+function setStatus(msg, ok) {
+	const s = $("status");
+	s.textContent = msg;
+	s.style.color = ok ? "#1a7f37" : "#b42318";
+}
+
+function copySettings() {
+	const json = JSON.stringify(collectSettings(), null, 2);
+	$("settingsBox").value = json;
+	const fallback = () => {
+		$("settingsBox").select();
+		try { document.execCommand("copy"); setStatus("Settings copied.", true); }
+		catch (e) { setStatus("Copy failed. Select the text in the box and copy it manually.", false); }
+	};
+	if (navigator.clipboard && navigator.clipboard.writeText) {
+		navigator.clipboard.writeText(json)
+			.then(() => setStatus("Settings copied to clipboard.", true))
+			.catch(fallback);
+	} else {
+		fallback();
+	}
+}
+
+function isValidPair(a) {
+	return Array.isArray(a) && a.length === 2 && a.every(v => typeof v === "number" && v >= 0 && v <= 1) && a[0] <= a[1];
+}
+
+function applySettings() {
+	let data;
+	try { data = JSON.parse($("settingsBox").value); }
+	catch (e) { setStatus("Could not read settings: the text is not valid JSON.", false); return; }
+	if (!data || typeof data !== "object" || !data.params || !data.resources) {
+		setStatus("Settings are missing the params or resources section.", false);
+		return;
+	}
+
+	// Validate everything first so a bad paste does not half-apply
+	const p = data.params;
+	const numbersOk = ["seed", "scale", "octaves", "persistence", "channelOffset"].every(k => typeof p[k] === "number");
+	if (!numbersOk) { setStatus("Params are missing numeric seed, scale, octaves, persistence or channelOffset.", false); return; }
+	for (const res of RESOURCES) {
+		const entry = data.resources[res.id];
+		if (!entry) continue;
+		if (res.rgb) {
+			if (!isValidPair(entry.r) || !isValidPair(entry.g) || !isValidPair(entry.b)) {
+				setStatus(`Range for "${res.name}" is invalid. Each channel needs two numbers between 0 and 1, min first.`, false);
+				return;
+			}
+		}
+	}
+
+	// Apply
+	$("seed").value = p.seed;
+	$("scale").value = p.scale;
+	$("octaves").value = p.octaves;
+	$("persist").value = p.persistence;
+	$("offset").value = p.channelOffset;
+	if (typeof p.showColor === "boolean") $("showColor").checked = p.showColor;
+
+	RESOURCES.forEach(res => {
+		const entry = data.resources[res.id];
+		if (!entry) return;
+		if (typeof entry.target === "number") res.target = clamp01(entry.target);
+		if (res.rgb) res.rgb = { r: entry.r.slice(), g: entry.g.slice(), b: entry.b.slice() };
+	});
+
+	buildRangeTable();
+	render();
+	setStatus("Settings applied.", true);
+}
+
+// ----- Render -----
+function render() {
+	const p = getParams();
+	$("scaleV").textContent = p.scale;
+	$("octV").textContent = p.octaves;
+	$("perV").textContent = p.persist.toFixed(2);
+	$("offV").textContent = p.offset;
+	const showColor = $("showColor").checked;
+
+	const sample = makeSampler(p);
+	const W = canvas.width, H = canvas.height;
+	const img = ctx.createImageData(W, H);
+	const counts = {};
+
+	for (let py = 0; py < H; py++) {
+		for (let px = 0; px < W; px++) {
+			const s = sample(px, py);
+			const res = matchResource(s.norm[0], s.norm[1], s.norm[2]);
+			counts[res.id] = (counts[res.id] || 0) + 1;
+
+			const i = (py * W + px) * 4;
+			let R, G, B;
+			if (showColor && res.color) {
+				R = parseInt(res.color.slice(1, 3), 16);
+				G = parseInt(res.color.slice(3, 5), 16);
+				B = parseInt(res.color.slice(5, 7), 16);
+			} else {
+				R = Math.round(clamp01(s.raw[0]) * 255);
+				G = Math.round(clamp01(s.raw[1]) * 255);
+				B = Math.round(clamp01(s.raw[2]) * 255);
+			}
+			img.data[i] = R; img.data[i + 1] = G; img.data[i + 2] = B; img.data[i + 3] = 255;
+		}
+	}
+	ctx.putImageData(img, 0, 0);
+
+	const total = W * H;
+	$("legend").innerHTML = RESOURCES.map(res => {
+		const pct = ((counts[res.id] || 0) / total * 100).toFixed(1);
+		return `<div class="item"><span class="chip" style="background:${res.color}"></span>${res.name}: ${pct}%</div>`;
+	}).join("");
+}
+
+// ----- Wiring -----
+["seed", "scale", "octaves", "persist", "offset", "showColor"].forEach(id =>
+	$(id).addEventListener("input", render)
+);
+$("auto").addEventListener("click", autoAdjust);
+$("reset").addEventListener("click", resetRanges);
+$("copySettings").addEventListener("click", copySettings);
+$("applySettings").addEventListener("click", applySettings);
+$("clearSettings").addEventListener("click", () => { $("settingsBox").value = ""; setStatus("", true); });
+
+buildRangeTable();
+render();
+</script>
+</body>
+</html>

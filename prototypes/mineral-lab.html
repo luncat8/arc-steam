@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>minerals.2 — element field and mineral lab</title>
+	<link rel="stylesheet" href="mineral-lab.css">
+</head>
+<body>
+	<main>
+		<header class="lab-bar panel">
+			<span class="lab-title">MINERALS LAB<em>element fields · mineral ranges · calibration</em></span>
+			<label for="seed">SEED <input id="seed" type="number" min="1" max="99999" step="1" value="37" autocomplete="off"></label>
+			<button id="reseed" class="quiet" type="button">Random seed ↺</button>
+			<label for="frequency">FIELD FREQUENCY <output id="frequency-value">0.075</output></label>
+			<input id="frequency" type="range" min="0.01" max="0.3" step="0.005" value="0.075">
+			<label for="compression">Y FLATTENING <output id="compression-value">3.0×</output></label>
+			<input id="compression" type="range" min="1" max="6" step="0.5" value="3">
+			<label for="map-depth">MAP DEPTH <output id="map-depth-value">row 0</output></label>
+			<input id="map-depth" type="range" min="0" max="800" step="4" value="0">
+			<label for="sample-seeds">SAMPLE SEEDS <output id="sample-seeds-value">6</output></label>
+			<input id="sample-seeds" type="range" min="1" max="12" step="1" value="6">
+			<label for="sample-depth">SAMPLE DEPTH <output id="sample-depth-value">160</output></label>
+			<input id="sample-depth" type="range" min="40" max="320" step="20" value="160">
+		</header>
+
+		<section class="lab-map panel" aria-label="Rock map">
+			<div class="panel-title"><span>ROCK · ONE PIXEL PER CELL</span><span id="map-note">192 × 120 cells</span></div>
+			<div class="canvas-wrap">
+				<canvas id="map" width="768" height="480" tabindex="0" aria-label="Generated rock, coloured by mineral mix"></canvas>
+				<aside id="cell-tip" class="cell-tip" role="tooltip" hidden>
+					<strong id="cell-mineral">—</strong>
+					<p id="cell-elements">—</p>
+					<p id="cell-mix">—</p>
+				</aside>
+			</div>
+			<div class="mine-footer">
+				<div id="view-modes" class="view-modes" role="radiogroup" aria-labelledby="view-label">
+					<span id="view-label">VIEW</span>
+					<label><input type="radio" name="lab-view" value="minerals" autocomplete="off" checked>Mineral mix</label>
+					<label><input type="radio" name="lab-view" value="dominant" autocomplete="off">Dominant</label>
+					<label><input type="radio" name="lab-view" value="elements" autocomplete="off">Elements</label>
+					<label><input type="radio" name="lab-view" value="host" autocomplete="off">Host share</label>
+				</div>
+				<div class="element-previews">
+					<figure><canvas id="element-r" width="384" height="240"></canvas><figcaption>METAL · R</figcaption></figure>
+					<figure><canvas id="element-g" width="384" height="240"></canvas><figcaption>CRYSTAL · G</figcaption></figure>
+					<figure><canvas id="element-b" width="384" height="240"></canvas><figcaption>GAS · B</figcaption></figure>
+				</div>
+			</div>
+		</section>
+
+		<aside class="lab-stats panel" aria-label="Measured shares">
+			<div class="panel-title"><span>MEASURED SHARE</span><span id="stats-note">—</span></div>
+			<div class="panel-body">
+				<table class="share-table">
+					<thead><tr><th>Mineral</th><th>Target</th><th>Share</th><th>Dominant</th><th>Visible</th><th>Patch</th></tr></thead>
+					<tbody id="share-rows"></tbody>
+				</table>
+				<p id="stats-hint" class="hint"></p>
+			</div>
+		</aside>
+
+		<section class="lab-editor panel" aria-label="Mineral ranges">
+			<div class="panel-title"><span>SIGNATURE RANGES · ALL MINERALS</span></div>
+			<div class="panel-body">
+				<p class="hint">Drag either border; grey shows the channel distribution and color shows the mineral yield. Gas signature stays fixed during auto-adjust and spread.</p>
+				<div id="range-sliders"></div>
+				<div class="editor-row">
+					<label for="host-weight">HOST WEIGHT <output id="host-weight-value">0.08</output></label>
+					<input id="host-weight" type="range" min="0" max="2" step="0.01" value="0.08">
+					<button id="solve-host" class="quiet" type="button">Solve for target host share</button>
+				</div>
+			</div>
+		</section>
+
+		<section class="lab-calibrate panel" aria-label="Calibration">
+			<div class="panel-title"><span>CALIBRATION</span><button id="help-calibrate" class="help-mark quiet" type="button">?</button></div>
+			<div class="panel-body">
+				<div class="calibrate-grid">
+					<label for="mode">AFFINITY<select id="mode" autocomplete="off"><option value="balanced" selected>Balanced · geometric mean</option><option value="product">Product</option></select></label>
+					<label for="specificity">SPECIFICITY <output id="specificity-value">0.60</output></label>
+					<input id="specificity" type="range" min="0" max="1.5" step="0.05" value="0.6">
+					<label for="target-host">TARGET HOST <output id="target-host-value">32%</output></label>
+					<input id="target-host" type="range" min="0.05" max="0.6" step="0.01" value="0.32">
+					<label for="target-common">COMMON <output id="target-common-value">1.00</output></label>
+					<input id="target-common" type="range" min="0.1" max="3" step="0.05" value="1">
+					<label for="target-uncommon">UNCOMMON <output id="target-uncommon-value">0.45</output></label>
+					<input id="target-uncommon" type="range" min="0.05" max="2" step="0.05" value="0.45">
+					<label for="target-rare">RARE <output id="target-rare-value">0.19</output></label>
+					<input id="target-rare" type="range" min="0.02" max="1" step="0.01" value="0.19">
+					<label for="target-veryrare">VERY RARE <output id="target-veryrare-value">0.07</output></label>
+					<input id="target-veryrare" type="range" min="0.005" max="0.5" step="0.005" value="0.07">
+				</div>
+				<div class="button-row">
+					<button id="auto-adjust" type="button">Auto-adjust ranges</button>
+					<button id="spread" class="quiet" type="button">Spread signatures</button>
+					<button id="reset-ranges" class="quiet" type="button">Reset to table</button>
+					<button id="copy-table" class="quiet" type="button">Copy JS ranges</button>
+					<button id="copy-report" class="quiet" type="button">Copy report</button>
+				</div>
+				<p id="calibrate-status" class="hint" role="status"></p>
+				<pre id="report" hidden></pre>
+			</div>
+		</section>
+	</main>
+	<script src="../js/minerals.js"></script>
+	<script src="../js/element-cdf.js"></script>
+	<script src="../js/geology.js"></script>
+	<script src="range-slider.js"></script>
+	<script src="mineral-lab.js"></script>
+</body>
+</html>

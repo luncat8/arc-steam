@@ -1,0 +1,656 @@
+// The minerals lab: look at the element fields and the mineral mix they turn
+// into, drag the signature ranges with the plot behind them, and let the
+// calibration find ranges that put some of every mineral on a typical map.
+// Depends on: js/minerals.js, js/element-cdf.js, js/geology.js, range-slider.js
+'use strict';
+
+const minerals = SteamMinerals;
+const geology = SteamGeology;
+const table = minerals.mineralTable;
+const count = minerals.mineralCount;
+const hostIndex = minerals.hostIndex;
+const channelNames = ['Metal', 'Crystal', 'Gas'];
+const channelKeys = ['r', 'g', 'b'];
+const channelTint = [[196, 108, 96], [110, 148, 208], [124, 186, 130]];
+
+const columns = 192;
+const rows = 120;
+const sampleColumns = 96;
+const plotBins = 72;
+
+const state = {
+	seed: 37,
+	frequency: 0.075,
+	compression: 3,
+	ranges: geology.rangesOf(table),
+	hostWeight: 0.08,
+	specificity: 0.6,
+	mode: 'balanced',
+	view: 'minerals',
+	selected: 1,
+	targets: Float64Array.from(minerals.rarityTargets),
+	seeds: 6,
+	depth: 160,
+	depth0: 0
+};
+
+const ui = {};
+for (const id of ['seed', 'reseed', 'frequency', 'frequency-value', 'compression', 'compression-value',
+	'sample-seeds', 'sample-seeds-value', 'sample-depth', 'sample-depth-value',
+	'map-depth', 'map-depth-value', 'map-note',
+	'map', 'cell-tip', 'cell-mineral', 'cell-elements', 'cell-mix', 'view-modes', 'view-label',
+	'element-r', 'element-g', 'element-b', 'share-rows', 'stats-note', 'stats-hint',
+	'range-sliders', 'host-weight', 'host-weight-value', 'solve-host',
+	'mode', 'specificity', 'specificity-value', 'target-host', 'target-host-value',
+	'target-common', 'target-common-value', 'target-uncommon', 'target-uncommon-value',
+	'target-rare', 'target-rare-value', 'target-veryrare', 'target-veryrare-value',
+	'auto-adjust', 'spread', 'reset-ranges', 'copy-table', 'copy-report', 'help-calibrate',
+	'calibrate-status', 'report']) {
+	ui[id] = document.getElementById(id);
+}
+
+// Buffers: the visible rock, the measurement sample and the scratch every
+// recompute walks through. Allocated once, rewritten in place.
+const field = geology.createField({ seed: state.seed, frequency: state.frequency, yCompression: state.compression });
+const mapElements = new Float32Array(columns * rows * 3);
+const mapMix = new Float32Array(columns * rows * count);
+const mapCanvas = document.createElement('canvas');
+mapCanvas.width = columns;
+mapCanvas.height = rows;
+const mapContext = mapCanvas.getContext('2d');
+const mapImage = mapContext.createImageData(columns, rows);
+const elementImages = [];
+const elementContexts = [ui['element-r'], ui['element-g'], ui['element-b']].map(canvas => {
+	const context = canvas.getContext('2d');
+	elementImages.push(context.createImageData(columns, rows));
+	return context;
+});
+let formation = geology.compile(state.ranges, state.mode, state.specificity);
+let sample = null;
+let cache = null;
+const stats = geology.emptyStats();
+const values = new Float64Array(3);
+const rowMix = new Float64Array(count);
+const plotCounts = Array.from({ length: 3 }, () => new Float64Array(plotBins));
+const plotYields = Array.from({ length: count }, () => Array.from({ length: 3 }, () => new Float64Array(plotBins)));
+// Connected patches of one dominant mineral on the visible map: whether an ore
+// turns up as a seam you can work or as dust scattered between other ores.
+const cellDominant = new Uint8Array(columns * rows);
+const patchVisited = new Uint8Array(columns * rows);
+const patchStack = new Int32Array(columns * rows);
+const patchCount = new Float64Array(count);
+const patchCells = new Float64Array(count);
+const patchLargest = new Float64Array(count);
+const dirty = { field: true, mixes: true, stats: true, plots: true, editor: true, draw: true };
+let frame = 0;
+
+const sliders = [];
+const shareRows = [];
+
+function schedule() {
+	if (frame) return;
+	frame = requestAnimationFrame(work);
+}
+
+function work() {
+	frame = 0;
+	if (dirty.field) {
+		field.seed = state.seed;
+		field.frequency = state.frequency;
+		field.yCompression = state.compression;
+		for (let row = 0; row < rows; row++) {
+			for (let column = 0; column < columns; column++) {
+				const at = (row * columns + column) * 3;
+				field.elements(column, row + state.depth0, field.values);
+				mapElements[at] = field.values[0];
+				mapElements[at + 1] = field.values[1];
+				mapElements[at + 2] = field.values[2];
+			}
+		}
+		dirty.field = false;
+		dirty.mixes = true;
+	}
+	if (dirty.mixes) {
+		for (let i = 0; i < columns * rows; i++) {
+			const at = i * 3;
+			values[0] = mapElements[at];
+			values[1] = mapElements[at + 1];
+			values[2] = mapElements[at + 2];
+			formation.mixInto(values, state.hostWeight, mapMix, i * count);
+		}
+		computePatches();
+		dirty.mixes = false;
+		dirty.draw = true;
+	}
+	if (dirty.stats) {
+		measure();
+		dirty.stats = false;
+		dirty.plots = true;
+	}
+	if (dirty.plots) {
+		buildPlots();
+		dirty.plots = false;
+		dirty.editor = true;
+	}
+	if (dirty.editor) {
+		paintEditor();
+		dirty.editor = false;
+	}
+	if (dirty.draw) {
+		draw();
+		dirty.draw = false;
+	}
+}
+
+// `heavy` re-measures the multi-seed sample as well; a drag only re-mixes the
+// visible rock and repaints, and the numbers follow when the handle is let go.
+function recompile(heavy) {
+	formation = geology.compile(state.ranges, state.mode, state.specificity);
+	dirty.mixes = true;
+	if (heavy === false) { schedule(); return; }
+	cache = null;
+	dirty.stats = true;
+	schedule();
+}
+
+function rebuildSample() {
+	const seeds = [];
+	for (let s = 0; s < state.seeds; s++) seeds.push(state.seed + s * 811);
+	sample = geology.buildSample({ seeds, columns: sampleColumns, rows: state.depth, frequency: state.frequency, yCompression: state.compression });
+	cache = null;
+	dirty.stats = true;
+	schedule();
+}
+
+function measure() {
+	if (!sample) rebuildSample();
+	if (!cache) cache = geology.buildCache(sample, formation);
+	geology.statsAt(cache, state.hostWeight, stats);
+	paintShares();
+}
+
+// The plot behind a range slider: how many sampled cells sit at each value of
+// the channel, and how much of the edited mineral they actually hold. The band
+// can then be dragged onto the part of the field that produces that mineral.
+function buildPlots() {
+	if (!cache) return;
+	for (let c = 0; c < 3; c++) plotCounts[c].fill(0);
+	for (let m = 0; m < count; m++) for (let c = 0; c < 3; c++) plotYields[m][c].fill(0);
+	for (let i = 0; i < sample.cells; i++) {
+		const total = cache.totals[i] + state.hostWeight;
+		const scale = total > 0 ? 1 / total : 0;
+		for (let c = 0; c < 3; c++) {
+			const bin = Math.min(plotBins - 1, Math.floor(sample.elements[i * 3 + c] * plotBins));
+			plotCounts[c][bin]++;
+			for (let m = 0; m < count; m++) {
+				const fraction = m === hostIndex ? state.hostWeight * scale : cache.affinities[i * count + m] * scale;
+				plotYields[m][c][bin] += fraction;
+			}
+		}
+	}
+	for (let m = 0; m < count; m++) for (let c = 0; c < 3; c++) {
+		for (let b = 0; b < plotBins; b++) if (plotCounts[c][b] > 0) plotYields[m][c][b] /= plotCounts[c][b];
+	}
+}
+
+function colourStyle(rgb) { return 'rgb(' + rgb[0] + ' ' + rgb[1] + ' ' + rgb[2] + ')'; }
+
+function draw() {
+	const data = mapImage.data;
+	for (let i = 0; i < columns * rows; i++) {
+		const offset = i * count;
+		const at = i * 3;
+		let red = 0;
+		let green = 0;
+		let blue = 0;
+		if (state.view === 'elements') {
+			red = mapElements[at] * 255;
+			green = mapElements[at + 1] * 255;
+			blue = mapElements[at + 2] * 255;
+		} else if (state.view === 'host') {
+			const host = mapMix[offset + hostIndex];
+			red = 34 + host * 190;
+			green = 44 + host * 186;
+			blue = 50 + host * 176;
+		} else if (state.view === 'dominant') {
+			let best = -1;
+			let bestMineral = hostIndex;
+			for (let m = 0; m < count; m++) {
+				if (mapMix[offset + m] > best) { best = mapMix[offset + m]; bestMineral = m; }
+			}
+			const rgb = table[bestMineral].color;
+			red = rgb[0];
+			green = rgb[1];
+			blue = rgb[2];
+		} else {
+			for (let m = 0; m < count; m++) {
+				const fraction = mapMix[offset + m];
+				if (fraction <= 0) continue;
+				const rgb = table[m].color;
+				red += fraction * rgb[0];
+				green += fraction * rgb[1];
+				blue += fraction * rgb[2];
+			}
+		}
+		const pixel = i * 4;
+		data[pixel] = red;
+		data[pixel + 1] = green;
+		data[pixel + 2] = blue;
+		data[pixel + 3] = 255;
+		for (let c = 0; c < 3; c++) {
+			const value = mapElements[at + c];
+			const tint = channelTint[c];
+			const pixelData = elementImages[c].data;
+			pixelData[pixel] = value * tint[0];
+			pixelData[pixel + 1] = value * tint[1];
+			pixelData[pixel + 2] = value * tint[2];
+			pixelData[pixel + 3] = 255;
+		}
+	}
+	mapContext.putImageData(mapImage, 0, 0);
+	const context = ui.map.getContext('2d');
+	context.imageSmoothingEnabled = false;
+	context.clearRect(0, 0, ui.map.width, ui.map.height);
+	context.drawImage(mapCanvas, 0, 0, ui.map.width, ui.map.height);
+	for (let c = 0; c < 3; c++) elementContexts[c].putImageData(elementImages[c], 0, 0);
+}
+
+function computePatches() {
+	for (let i = 0; i < columns * rows; i++) {
+		const offset = i * count;
+		let best = -1;
+		let bestMineral = hostIndex;
+		for (let m = 0; m < count; m++) {
+			if (mapMix[offset + m] > best) { best = mapMix[offset + m]; bestMineral = m; }
+		}
+		cellDominant[i] = bestMineral;
+	}
+	patchVisited.fill(0);
+	patchCount.fill(0);
+	patchCells.fill(0);
+	patchLargest.fill(0);
+	for (let start = 0; start < columns * rows; start++) {
+		if (patchVisited[start]) continue;
+		const mineral = cellDominant[start];
+		let top = 0;
+		let size = 0;
+		patchStack[top++] = start;
+		patchVisited[start] = 1;
+		while (top > 0) {
+			const cell = patchStack[--top];
+			size++;
+			const column = cell % columns;
+			const row = (cell - column) / columns;
+			for (let d = 0; d < 4; d++) {
+				const nextColumn = column + (d === 0 ? -1 : d === 1 ? 1 : 0);
+				const nextRow = row + (d === 2 ? -1 : d === 3 ? 1 : 0);
+				if (nextColumn < 0 || nextRow < 0 || nextColumn >= columns || nextRow >= rows) continue;
+				const next = nextRow * columns + nextColumn;
+				if (patchVisited[next] || cellDominant[next] !== mineral) continue;
+				patchVisited[next] = 1;
+				patchStack[top++] = next;
+			}
+		}
+		patchCount[mineral]++;
+		patchCells[mineral] += size;
+		if (size > patchLargest[mineral]) patchLargest[mineral] = size;
+	}
+}
+
+function patchText(mineral) {
+	if (patchCount[mineral] === 0) return '—';
+	return (patchCells[mineral] / patchCount[mineral]).toFixed(1);
+}
+
+function paintShares() {
+	for (let m = 0; m < count; m++) {
+		const row = shareRows[m];
+		row.shareText.textContent = (stats.shares[m] * 100).toFixed(2) + '%';
+		row.dominant.textContent = (stats.dominant[m] * 100).toFixed(2) + '%';
+		row.visible.textContent = (stats.visible[m] * 100).toFixed(2) + '%';
+		row.bar.style.width = Math.min(100, stats.shares[m] * 100 / 0.35) + '%';
+		row.patch.textContent = patchText(m);
+		row.patch.title = patchLargest[m] ? 'largest patch ' + patchLargest[m] + ' cells' : 'not on this map';
+		row.row.classList.toggle('is-selected', m === state.selected);
+	}
+	const missing = [];
+	for (let m = 0; m < count; m++) {
+		if (m === hostIndex) continue;
+		if (stats.visible[m] < 0.01) missing.push(table[m].name);
+	}
+	ui['stats-note'].textContent = (sample.cells / 1000).toFixed(0) + 'k cells · ' + state.seeds + ' seeds';
+	ui['stats-hint'].textContent = (missing.length
+		? 'Nearly absent: ' + missing.join(', ') + '. A mineral that shows in under 1% of cells will not be found by play.'
+		: 'Every mineral is visible in at least 1% of cells. Host rock takes ' + (stats.shares[hostIndex] * 100).toFixed(1) + '% of the field.') +
+		' Share is the mean fraction over the sample; patch is the mean size of one connected run on the visible map.';
+}
+
+function buildShareRows() {
+	const body = ui['share-rows'];
+	for (let m = 0; m < count; m++) {
+		const entry = table[m];
+		const tr = document.createElement('tr');
+		tr.className = 'share-row';
+		const name = document.createElement('td');
+		const chip = document.createElement('i');
+		chip.className = 'chip';
+		chip.style.background = colourStyle(entry.color);
+		name.append(chip, document.createTextNode(entry.name));
+		const target = document.createElement('td');
+		target.className = 'target';
+		target.textContent = (state.targets[m] * 100).toFixed(1) + '%';
+		const share = document.createElement('td');
+		share.className = 'bar-cell';
+		const bar = document.createElement('div');
+		bar.className = 'bar';
+		const fill = document.createElement('i');
+		const mark = document.createElement('b');
+		bar.append(fill, mark);
+		const shareText = document.createElement('span');
+		share.append(bar, shareText);
+		const dominant = document.createElement('td');
+		const visible = document.createElement('td');
+		const patch = document.createElement('td');
+		tr.append(name, target, share, dominant, visible, patch);
+		tr.addEventListener('click', () => select(m));
+		body.append(tr);
+		shareRows.push({ row: tr, bar: fill, mark: mark, shareText: shareText, dominant: dominant, visible: visible, patch: patch, target: target });
+	}
+}
+
+function select(mineral) {
+	state.selected = mineral;
+	const row = document.getElementById('editor-' + table[mineral].id);
+	if (row) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+	dirty.plots = true;
+	dirty.editor = true;
+	for (let m = 0; m < count; m++) shareRows[m].row.classList.toggle('is-selected', m === mineral);
+	schedule();
+}
+
+function updateTargetMarks() {
+	for (let m = 0; m < count; m++) shareRows[m].mark.style.left = Math.min(100, state.targets[m] * 100 / 0.35) + '%';
+}
+
+function buildEditor() {
+	for (let m = 0; m < count; m++) {
+		const entry = table[m];
+		const row = document.createElement('div');
+		row.className = 'mineral-editor';
+		row.id = 'editor-' + entry.id;
+		const title = document.createElement('div');
+		title.className = 'mineral-editor-title';
+		title.textContent = entry.name + ' · ' + (entry.host ? 'host fallback' : entry.analog + ' · ' + entry.rarity + ' · strength ' + entry.strength.toFixed(1) + ' J');
+		row.append(title);
+		const controls = document.createElement('div');
+		controls.className = 'mineral-editor-controls';
+		row.append(controls);
+		ui['range-sliders'].append(row);
+		sliders[m] = [];
+		if (entry.host) {
+			controls.textContent = 'Host weight is constant; Stone has no signature ranges.';
+			continue;
+		}
+		for (let c = 0; c < 3; c++) {
+			sliders[m].push(SteamRangeSlider.create(controls, {
+				label: channelNames[c] + ' · ' + 'RGB'[c] + ' · ' + entry.name,
+				min: 0, max: 1, step: 0.005, minGap: 0.02,
+				low: state.ranges[m][c][0], high: state.ranges[m][c][1],
+				onInput(low, high, finished) {
+					state.ranges[m][c][0] = low;
+					state.ranges[m][c][1] = high;
+					recompile(finished);
+				}
+			}));
+		}
+	}
+}
+
+function paintEditor() {
+	for (let m = 0; m < count; m++) {
+		if (table[m].host) continue;
+		const color = table[m].color;
+		const accent = 'rgba(' + color[0] + ', ' + color[1] + ', ' + color[2] + ', 0.7)';
+		for (let c = 0; c < 3; c++) {
+			const range = state.ranges[m][c];
+			sliders[m][c].setRange(range[0], range[1]);
+			sliders[m][c].setPlot(plotCounts[c], plotYields[m][c], accent);
+		}
+	}
+}
+
+function targetsFromWeights() {
+	const weights = {
+		host: Number(ui['target-host'].value),
+		common: Number(ui['target-common'].value),
+		uncommon: Number(ui['target-uncommon'].value),
+		rare: Number(ui['target-rare'].value),
+		'very rare': Number(ui['target-veryrare'].value)
+	};
+	let total = 0;
+	for (let m = 0; m < count; m++) {
+		const rarity = table[m].rarity;
+		if (rarity === 'host') continue;
+		total += weights[rarity] || 0;
+	}
+	const unit = total > 0 ? (1 - weights.host) / total : 0;
+	for (let m = 0; m < count; m++) {
+		const rarity = table[m].rarity;
+		state.targets[m] = rarity === 'host' ? weights.host : unit * (weights[rarity] || 0);
+	}
+	for (let m = 0; m < count; m++) shareRows[m].target.textContent = (state.targets[m] * 100).toFixed(1) + '%';
+	updateTargetMarks();
+	dirty.stats = true;
+	schedule();
+}
+
+function status(text) { ui['calibrate-status'].textContent = text; }
+
+function runAdjust() {
+	status('adjusting…');
+	const started = performance.now();
+	setTimeout(function () {
+		const result = geology.autoAdjust({
+			sample: sample,
+			ranges: state.ranges,
+			targets: state.targets,
+			mode: state.mode,
+			specificity: state.specificity,
+			hostWeight: state.hostWeight
+		});
+		state.hostWeight = result.hostWeight;
+		ui['host-weight'].value = String(result.hostWeight);
+		ui['host-weight-value'].textContent = result.hostWeight.toFixed(3);
+		recompile();
+		const worst = Math.max(...Array.from(result.stats.shares, (share, m) => Math.abs(share - state.targets[m]) / state.targets[m]));
+		status('auto-adjust: ' + result.history.length + ' passes, worst relative share error ' +
+			(worst * 100).toFixed(1) + '% (fixed gas signature may make targets unreachable), ' +
+			Math.round(performance.now() - started) + ' ms');
+	}, 20);
+}
+
+function reportText() {
+	const lines = ['minerals lab · seed ' + state.seed + ' · frequency ' + state.frequency + ' · Y flattening ' + state.compression + '×',
+		'sample ' + state.seeds + ' seeds × ' + sampleColumns + ' columns × ' + state.depth + ' rows = ' + sample.cells + ' cells',
+		'affinity ' + state.mode + ', specificity ' + state.specificity + ', host weight ' + state.hostWeight.toFixed(3), ''];
+	lines.push('mineral              target    share  dominant  visible   patch   signature R / G / B');
+	for (let m = 0; m < count; m++) {
+		const parts = [];
+		for (let c = 0; c < 3; c++) {
+			const range = state.ranges[m][c];
+			parts.push(geology.isUnconstrained(range) ? 'any' : range[0].toFixed(2) + '-' + range[1].toFixed(2));
+		}
+		lines.push(table[m].name.padEnd(20) +
+			(state.targets[m] * 100).toFixed(1).padStart(6) + '%' +
+			(stats.shares[m] * 100).toFixed(2).padStart(8) + '%' +
+			(stats.dominant[m] * 100).toFixed(2).padStart(9) + '%' +
+			(stats.visible[m] * 100).toFixed(2).padStart(8) + '%' + (patchText(m) + ' cells').padStart(11) + '   ' + parts.join('  '));
+	}
+	lines.push('', 'js/minerals.js ranges');
+	for (let m = 0; m < count; m++) {
+		if (table[m].host) continue;
+		const parts = channelKeys.map((key, c) => {
+			const range = state.ranges[m][c];
+			return key + ': ' + (geology.isUnconstrained(range) ? 'ANY' : 'Object.freeze([' + range[0].toFixed(2) + ', ' + range[1].toFixed(2) + '])');
+		});
+		lines.push('\t\t\t' + table[m].id + ': ' + parts.join(', ') + ',');
+	}
+	return lines.join('\n');
+}
+
+function copy(text, note) {
+	navigator.clipboard.writeText(text).then(function () { status(note); }, function () {
+		ui.report.hidden = false;
+		ui.report.textContent = text;
+		status('clipboard blocked · report shown below');
+	});
+}
+
+function bindControls() {
+	ui.seed.addEventListener('input', function () {
+		state.seed = Math.max(1, Math.round(Number(ui.seed.value) || 1));
+		dirty.field = true;
+		rebuildSample();
+	});
+	ui.reseed.addEventListener('click', function () {
+		state.seed = 1 + Math.floor(Math.random() * 99999);
+		ui.seed.value = String(state.seed);
+		dirty.field = true;
+		rebuildSample();
+	});
+	ui.frequency.addEventListener('input', function () {
+		state.frequency = Number(ui.frequency.value);
+		ui['frequency-value'].textContent = state.frequency.toFixed(3);
+		dirty.field = true;
+		rebuildSample();
+	});
+	ui.compression.addEventListener('input', function () {
+		state.compression = Number(ui.compression.value);
+		ui['compression-value'].textContent = state.compression.toFixed(1) + '×';
+		dirty.field = true;
+		rebuildSample();
+	});
+	ui['map-depth'].addEventListener('input', function () {
+		state.depth0 = Number(ui['map-depth'].value);
+		ui['map-depth-value'].textContent = 'row ' + state.depth0;
+		dirty.field = true;
+		schedule();
+	});
+	ui['sample-seeds'].addEventListener('input', function () {
+		state.seeds = Number(ui['sample-seeds'].value);
+		ui['sample-seeds-value'].textContent = String(state.seeds);
+		rebuildSample();
+	});
+	ui['sample-depth'].addEventListener('input', function () {
+		state.depth = Number(ui['sample-depth'].value);
+		ui['sample-depth-value'].textContent = String(state.depth);
+		rebuildSample();
+	});
+	ui['view-modes'].addEventListener('change', function (event) {
+		if (event.target.name !== 'lab-view') return;
+		state.view = event.target.value;
+		dirty.draw = true;
+		schedule();
+	});
+	ui['host-weight'].addEventListener('input', function () {
+		state.hostWeight = Number(ui['host-weight'].value);
+		ui['host-weight-value'].textContent = state.hostWeight.toFixed(3);
+		dirty.mixes = true;
+		dirty.stats = true;
+		schedule();
+	});
+	ui['solve-host'].addEventListener('click', function () {
+		cache = geology.buildCache(sample, formation);
+		state.hostWeight = geology.solveHostWeight(cache, state.targets[hostIndex]);
+		ui['host-weight'].value = String(state.hostWeight);
+		ui['host-weight-value'].textContent = state.hostWeight.toFixed(3);
+		status('host solve: actual share ' + (geology.meanHostShare(cache, state.hostWeight) * 100).toFixed(1) + '%; unmatched cells can make the target unreachable.');
+		dirty.mixes = true;
+		dirty.stats = true;
+		schedule();
+	});
+	ui.mode.addEventListener('change', function () {
+		state.mode = ui.mode.value;
+		recompile();
+	});
+	ui.specificity.addEventListener('input', function () {
+		state.specificity = Number(ui.specificity.value);
+		ui['specificity-value'].textContent = state.specificity.toFixed(2);
+		recompile();
+	});
+	ui['target-host'].addEventListener('input', function () {
+		ui['target-host-value'].textContent = Math.round(Number(ui['target-host'].value) * 100) + '%';
+		targetsFromWeights();
+	});
+	for (const key of ['target-common', 'target-uncommon', 'target-rare', 'target-veryrare']) {
+		ui[key].addEventListener('input', function () {
+			ui[key + '-value'].textContent = Number(ui[key].value).toFixed(key === 'target-veryrare' ? 3 : 2);
+			targetsFromWeights();
+		});
+	}
+	ui['auto-adjust'].addEventListener('click', runAdjust);
+	ui.spread.addEventListener('click', function () {
+		const moved = geology.separate(state.ranges, 0.06);
+		recompile();
+		status(moved.length ? 'spread: gave ' + moved.length + ' swallowed signature(s) an edge of their own' : 'spread: no signature sits inside another');
+	});
+	ui['reset-ranges'].addEventListener('click', function () {
+		state.ranges = geology.rangesOf(table);
+		state.hostWeight = 0.08;
+		ui['host-weight'].value = '0.08';
+		ui['host-weight-value'].textContent = '0.080';
+		recompile();
+		status('ranges reset to js/minerals.js');
+	});
+	ui['copy-table'].addEventListener('click', function () { copy(reportText(), 'report and JS ranges copied'); });
+	ui['copy-report'].addEventListener('click', function () {
+		ui.report.hidden = false;
+		ui.report.textContent = reportText();
+		status('report shown below');
+	});
+	ui['help-calibrate'].addEventListener('click', function () {
+		status('Auto-adjust widens or narrows every signature until the measured shares match the rarity ' +
+			'targets, solves the host weight for the target host share, and pushes a signature out of any ' +
+			'broader box that contains it. Gas stays fixed; its target may be unreachable.');
+	});
+}
+
+function bindCellTip() {
+	const canvas = ui.map;
+	canvas.addEventListener('pointermove', function (event) {
+		const box = canvas.getBoundingClientRect();
+		const column = Math.floor((event.clientX - box.left) / box.width * columns);
+		const row = Math.floor((event.clientY - box.top) / box.height * rows);
+		if (column < 0 || row < 0 || column >= columns || row >= rows) return;
+		const index = row * columns + column;
+		const offset = index * count;
+		let best = -1;
+		let bestMineral = hostIndex;
+		const parts = [];
+		for (let m = 0; m < count; m++) {
+			const fraction = mapMix[offset + m];
+			if (fraction > best) { best = fraction; bestMineral = m; }
+			if (fraction > 0.02) parts.push(table[m].symbol + ' ' + Math.round(fraction * 100) + '%');
+		}
+		ui['cell-mineral'].textContent = table[bestMineral].name + ' · ' + Math.round(best * 100) + '%';
+		ui['cell-elements'].textContent = 'metal ' + mapElements[index * 3].toFixed(2) +
+			'  crystal ' + mapElements[index * 3 + 1].toFixed(2) + '  gas ' + mapElements[index * 3 + 2].toFixed(2);
+		ui['cell-mix'].textContent = parts.join(' · ');
+		ui['cell-tip'].hidden = false;
+		ui['cell-tip'].style.left = Math.min(box.width - 220, (event.clientX - box.left) + 16) + 'px';
+		ui['cell-tip'].style.top = ((event.clientY - box.top) + 16) + 'px';
+	});
+	canvas.addEventListener('pointerleave', function () { ui['cell-tip'].hidden = true; });
+}
+
+function start() {
+	buildShareRows();
+	buildEditor();
+	bindControls();
+	bindCellTip();
+	ui['map-note'].textContent = columns + ' × ' + rows + ' cells · ' + count + ' materials';
+	ui['stats-note'].textContent = 'measuring…';
+	rebuildSample();
+}
+
+start();

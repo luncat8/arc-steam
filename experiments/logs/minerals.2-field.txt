@@ -1,0 +1,61 @@
+element field: 5 seeds, 120 columns, 240 rows deep, 144000 cells
+channel   mean      sd   evenness (share per 0..1 decile, uniform = 10.00%)
+  R     0.4871  0.2876  10.76 10.34 10.28 10.32 10.35 9.70 9.81 9.84 9.50 9.10
+  G     0.5195  0.2834  8.11 9.10 9.73 10.08 10.33 10.25 10.71 10.74 10.03 10.92
+  B     0.5036  0.2876  9.41 10.23 9.88 9.85 10.21 10.23 10.19 9.72 9.99 10.29
+seam flattening (row gradient / column gradient, target 3):
+  R  2.89
+  G  3.10
+  B  2.95
+
+balanced + specificity 0.60 (calibrated) · host weight 0.08, host weight 0.0800
+mineral              target    share  dominant  visible   ranges R / G / B
+Stone                 32.0%   32.00%   28.31%   29.25%   any  any  any
+Iron ore              17.9%   16.32%   10.19%   31.56%   0.28-0.99  0.00-0.54  0.00-0.63
+Copper ore             8.1%    7.07%   10.39%   14.89%   0.31-0.79  0.02-0.38  0.21-0.69
+Quartz stone          17.9%   19.59%   21.65%   28.77%   0.00-0.48  0.23-0.87  0.00-0.56
+Corundum               3.4%    3.69%    4.41%    6.46%   0.10-0.40  0.70-0.95  0.05-0.30
+Fluorite               8.1%    8.25%    8.47%   11.68%   0.07-0.38  0.11-0.54  0.62-0.98
+Native silver          3.4%    3.03%    4.66%    6.16%   0.67-0.96  0.26-0.55  0.04-0.33
+Gold-bearing quartz    1.3%    1.12%    1.61%    2.25%   0.82-0.98  0.06-0.26  0.42-0.66
+Gas-bearing rock       8.1%    8.93%   10.31%   10.71%   any  any  0.92-1.00
+host rock share 32.00% (target 32.0%), cells over 90% host 27.87%
+
+balanced + specificity 0.60 (calibrated) · host weight solved for the target, host weight 0.0801
+mineral              target    share  dominant  visible   ranges R / G / B
+Stone                 32.0%   32.00%   28.31%   29.25%   any  any  any
+Iron ore              17.9%   16.32%   10.19%   31.56%   0.28-0.99  0.00-0.54  0.00-0.63
+Copper ore             8.1%    7.07%   10.39%   14.89%   0.31-0.79  0.02-0.38  0.21-0.69
+Quartz stone          17.9%   19.59%   21.65%   28.77%   0.00-0.48  0.23-0.87  0.00-0.56
+Corundum               3.4%    3.69%    4.41%    6.46%   0.10-0.40  0.70-0.95  0.05-0.30
+Fluorite               8.1%    8.25%    8.47%   11.68%   0.07-0.38  0.11-0.54  0.62-0.98
+Native silver          3.4%    3.03%    4.66%    6.16%   0.67-0.96  0.26-0.55  0.04-0.33
+Gold-bearing quartz    1.3%    1.12%    1.61%    2.25%   0.82-0.98  0.06-0.26  0.42-0.66
+Gas-bearing rock       8.1%    8.93%   10.31%   10.71%   any  any  0.92-1.00
+host rock share 32.00% (target 32.0%), cells over 90% host 27.87%
+
+product, no specificity · host weight 0.08, host weight 0.0800
+mineral              target    share  dominant  visible   ranges R / G / B
+Stone                 32.0%   35.82%   31.23%   33.85%   any  any  any
+Iron ore              17.9%   16.65%   25.37%   29.52%   0.28-0.99  0.00-0.54  0.00-0.63
+Copper ore             8.1%    6.13%    2.24%   12.51%   0.31-0.79  0.02-0.38  0.21-0.69
+Quartz stone          17.9%   18.93%   20.32%   26.69%   0.00-0.48  0.23-0.87  0.00-0.56
+Corundum               3.4%    2.99%    1.91%    5.15%   0.10-0.40  0.70-0.95  0.05-0.30
+Fluorite               8.1%    7.50%    8.34%   10.31%   0.07-0.38  0.11-0.54  0.62-0.98
+Native silver          3.4%    2.38%    0.87%    5.06%   0.67-0.96  0.26-0.55  0.04-0.33
+Gold-bearing quartz    1.3%    0.87%    0.38%    1.70%   0.82-0.98  0.06-0.26  0.42-0.66
+Gas-bearing rock       8.1%    8.73%    9.35%   10.67%   any  any  0.92-1.00
+host rock share 35.82% (target 32.0%), cells over 90% host 28.96%
+
+product, no specificity · host weight solved for the target, host weight 0.0284
+mineral              target    share  dominant  visible   ranges R / G / B
+Stone                 32.0%   32.00%   29.83%   31.28%   any  any  any
+Iron ore              17.9%   17.45%   25.61%   29.78%   0.28-0.99  0.00-0.54  0.00-0.63
+Copper ore             8.1%    6.42%    2.36%   12.68%   0.31-0.79  0.02-0.38  0.21-0.69
+Quartz stone          17.9%   20.16%   20.76%   27.05%   0.00-0.48  0.23-0.87  0.00-0.56
+Corundum               3.4%    3.17%    1.97%    5.23%   0.10-0.40  0.70-0.95  0.05-0.30
+Fluorite               8.1%    8.07%    8.57%   10.49%   0.07-0.38  0.11-0.54  0.62-0.98
+Native silver          3.4%    2.52%    0.97%    5.18%   0.67-0.96  0.26-0.55  0.04-0.33
+Gold-bearing quartz    1.3%    0.92%    0.40%    1.74%   0.82-0.98  0.06-0.26  0.42-0.66
+Gas-bearing rock       8.1%    9.30%    9.53%   10.77%   any  any  0.92-1.00
+host rock share 32.00% (target 32.0%), cells over 90% host 28.55%
