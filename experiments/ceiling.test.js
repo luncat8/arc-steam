@@ -477,6 +477,49 @@ function fieldStats(seed) {
 	};
 }
 
+function crystalPocketStats(state) {
+	const columns = state.columns;
+	const cells = columns * state.rows;
+	const visited = new Uint8Array(cells);
+	const queue = new Int32Array(cells);
+	let crystalCells = 0;
+	let pockets = 0;
+	for (let start = 0; start < cells; start++) {
+		if (visited[start] || state.minerals[start * 3 + 2] < 0.5) continue;
+		let head = 0;
+		let tail = 0;
+		queue[tail++] = start;
+		visited[start] = 1;
+		while (head < tail) {
+			const index = queue[head++];
+			const column = index % columns;
+		let next = index - 1;
+		if (column > 0 && !visited[next] && state.minerals[next * 3 + 2] >= 0.5) {
+			visited[next] = 1;
+			queue[tail++] = next;
+		}
+		next = index + 1;
+		if (column + 1 < columns && !visited[next] && state.minerals[next * 3 + 2] >= 0.5) {
+			visited[next] = 1;
+			queue[tail++] = next;
+		}
+		next = index - columns;
+		if (index >= columns && !visited[next] && state.minerals[next * 3 + 2] >= 0.5) {
+			visited[next] = 1;
+			queue[tail++] = next;
+		}
+		next = index + columns;
+		if (index + columns < cells && !visited[next] && state.minerals[next * 3 + 2] >= 0.5) {
+			visited[next] = 1;
+			queue[tail++] = next;
+		}
+		}
+		crystalCells += tail;
+		pockets++;
+	}
+	return { crystalCells, pockets };
+}
+
 test('each mineral forms its own veins: a bulk wall, seams, and rare pockets', () => {
 	const seeds = [1, 2, 3, 7, 11, 42];
 	const stats = seeds.map(fieldStats);
@@ -497,6 +540,43 @@ test('each mineral forms its own veins: a bulk wall, seams, and rare pockets', (
 	// economy keeps its measured pace while the spread widens.
 	const mean = stats.reduce((total, s) => total + s.meanValue, 0) / stats.length;
 	assert.ok(mean > 6 && mean < 11, 'the mean cell is worth ' + mean.toFixed(2) + ' cr');
+});
+
+test('the squared blue ramp concentrates crystal into harder, connected pockets', () => {
+	const seeds = [1, 2, 3, 7, 11, 42];
+	const mix = [0, 0, 0];
+	const strengths = [];
+	let crystalCells = 0;
+	let pocketCount = 0;
+	let strengthTotal = 0;
+	let cellTotal = 0;
+	for (const seed of seeds) {
+		ceiling.reset(seed);
+		const state = ceiling.state;
+		const cells = state.columns * state.rows;
+		const pockets = crystalPocketStats(state);
+		assert.ok(pockets.pockets >= 5, 'seed ' + seed + ' has several connected crystal pockets');
+		assert.ok(pockets.crystalCells > cells * 0.02, 'seed ' + seed + ' keeps crystal-rich cells countable');
+		crystalCells += pockets.crystalCells;
+		pocketCount += pockets.pockets;
+		for (let m = 0; m < 3; m++) mix[m] += state.fieldShare[m] / seeds.length;
+		for (const strength of state.initialStrength) {
+			strengthTotal += strength;
+			strengths.push(strength);
+		}
+		cellTotal += cells;
+	}
+	strengths.sort((a, b) => a - b);
+	const meanStrength = strengthTotal / cellTotal;
+	const p95 = strengths[Math.floor(strengths.length * 0.95)];
+	const p99 = strengths[Math.floor(strengths.length * 0.99)];
+	assert.ok(mix[0] > 0.60 && mix[0] < 0.64, 'iron remains the host at ' + mix[0].toFixed(3));
+	assert.ok(mix[1] > 0.26 && mix[1] < 0.30, 'copper remains a seam at ' + mix[1].toFixed(3));
+	assert.ok(mix[2] > 0.09 && mix[2] < 0.11, 'crystal keeps about a tenth of the mean mix at ' + mix[2].toFixed(3));
+	assert.ok(crystalCells > cellTotal * 0.025, 'at least 2.5% of cells carry a crystal majority');
+	assert.ok(pocketCount >= seeds.length * 7, 'there are enough connected pockets to read as separate finds');
+	assert.ok(meanStrength > 4.70 && meanStrength < 4.85, 'mean strength stays near 4.78: ' + meanStrength.toFixed(3));
+	assert.ok(p95 > 5.20 && p99 > 5.35, 'crystal crests fill the harder tail: p95 ' + p95.toFixed(3) + ', p99 ' + p99.toFixed(3));
 });
 
 test('list prices follow the economy briefing: iron halved, crystal quadrupled', () => {

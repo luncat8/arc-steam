@@ -293,10 +293,12 @@
 	const elementRangeHigh = 0.97;
 	const elementFloor = 0.08;
 	const oreStartQuantile = [0, 0.10, 0.45];
-	const oreGain = [2.2, 1.3, 0.9];
+	const oreGain = [2.2, 1.3, 1.6];
 	// Iron is pulled towards its element's middle, so the bulk ore is a steady
-	// body with only soft variation while copper and crystal keep their crests.
+	// body with only soft variation. Crystal's squared ramp keeps most of its
+	// share on the upper blue crests; the higher gain preserves its ~10% mean.
 	const ironContrast = 0.5;
+	const crystalRampPower = 2;
 	const elementLow = new Float64Array(3);
 	const elementHigh = new Float64Array(3);
 	const oreStart = new Float64Array(3);
@@ -616,7 +618,7 @@
 			elements[offset + 2] = levelBlue / elementTotal;
 			const iron = oreGain[0] * (0.5 + (red - (elementLow[0] + elementHigh[0]) * 0.5) / redSpan * ironContrast);
 			const copperRamp = Math.max(0, Math.min(1, (green - oreStart[1]) / greenSpan));
-			const crystalRamp = Math.max(0, Math.min(1, (blue - oreStart[2]) / blueSpan));
+			const crystalRamp = Math.pow(Math.max(0, Math.min(1, (blue - oreStart[2]) / blueSpan)), crystalRampPower);
 			const copper = oreGain[1] * copperRamp;
 			const crystal = oreGain[2] * crystalRamp;
 			const mineralTotal = iron + copper + crystal;
