@@ -208,8 +208,13 @@ game generates and lets the ranges be dragged while the rock updates:
   dominant mineral, the raw element cube, and host share;
 - the three element channels as separate previews, so the 3× Y flattening is
   visible as stratified seams;
-- a measurement table over a multi-seed, deep sample: target, share, dominant,
-  visible and patch size per mineral, with the target marked on the bar;
+- a measurement table over a multi-seed, deep sample: an editable desired
+  share, the achieved share, the signed achieved-minus-desired residual,
+  dominant, visible and patch size per mineral, with the desired share marked
+  as a red line on the bar. The desired share is set by typing, by pressing
+  and dragging on the bar, or by arrow keys; Stone is the residual of the ore
+  shares, a total over 100% is flagged, and a desired stone share under the
+  sample's unmatched floor is named unreachable;
 - one row of three **two-handle range sliders** for every non-host mineral, visible at once, each with
   the channel's histogram and the mineral's yield curve drawn behind the track,
   so a band can be dragged onto the part of the field that actually produces

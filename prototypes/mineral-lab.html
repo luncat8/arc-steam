@@ -50,13 +50,15 @@
 			</div>
 		</section>
 
-		<aside class="lab-stats panel" aria-label="Measured shares">
-			<div class="panel-title"><span>MEASURED SHARE</span><span id="stats-note">—</span></div>
+		<aside class="lab-stats panel" aria-label="Desired and achieved shares">
+			<div class="panel-title"><span>DESIRED / ACHIEVED SHARE</span><span id="stats-note">—</span></div>
 			<div class="panel-body">
+				<p id="desired-sum" class="desired-sum"></p>
 				<table class="share-table">
-					<thead><tr><th>Mineral</th><th>Desired</th><th>Share</th><th>Error</th><th>Dominant</th><th>Visible</th><th>Patch</th></tr></thead>
+					<thead><tr><th>Mineral</th><th title="desired mean share of the rock; edit an ore, stone is the residual">Desired</th><th>Share</th><th title="achieved minus desired, percentage points">Error, pp</th><th>Dom.</th><th>Vis.</th><th>Patch</th></tr></thead>
 					<tbody id="share-rows"></tbody>
 				</table>
+				<p id="error-sum" class="hint"></p>
 				<p id="stats-hint" class="hint"></p>
 			</div>
 		</aside>
@@ -92,6 +94,7 @@
 					<label for="target-veryrare">VERY RARE <output id="target-veryrare-value">0.07</output></label>
 					<input id="target-veryrare" type="range" min="0.005" max="0.5" step="0.005" value="0.07">
 				</div>
+				<p class="hint">A rarity weight writes every desired share at once; a Desired cell sets one by hand. Stone is the residual of the ore shares and is not edited directly.</p>
 				<div class="button-row">
 					<button id="auto-adjust" type="button">Auto-adjust ranges</button>
 					<button id="spread" class="quiet" type="button">Spread signatures</button>
