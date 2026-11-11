@@ -13,6 +13,25 @@ const channelNames = ['Metal', 'Crystal', 'Gas'];
 const channelKeys = ['r', 'g', 'b'];
 const channelTint = [[196, 108, 96], [110, 148, 208], [124, 186, 130]];
 
+// Fixed reference quotes keep range edits comparable, rather than repricing the map.
+const referencePrices = new Float64Array(count);
+let inverseShareSum = 0;
+for (let m = 0; m < count; m++) inverseShareSum += Math.pow(Math.max(minerals.rarityTargets[m], 1e-4), -0.3);
+for (let m = 0; m < count; m++) {
+	referencePrices[m] = Math.max(0.4, Math.min(150,
+		12.5 / inverseShareSum * Math.pow(Math.max(minerals.rarityTargets[m], 1e-4), -1.3)));
+}
+const minPrice = Math.min(...referencePrices);
+const priceSpan = Math.max(...referencePrices) - minPrice;
+const maxStrength = Math.max(...table.map(entry => entry.strength));
+const hoverPointer = window.matchMedia('(hover: hover) and (pointer: fine)');
+
+function mixedValue(offset, prices) {
+	let value = 0;
+	for (let m = 0; m < count; m++) value += mapMix[offset + m] * (prices ? referencePrices[m] : table[m].strength);
+	return value;
+}
+
 const columns = 192;
 const rows = 120;
 const sampleColumns = 96;
@@ -212,6 +231,13 @@ function buildPlots() {
 
 function colourStyle(rgb) { return 'rgb(' + rgb[0] + ' ' + rgb[1] + ' ' + rgb[2] + ')'; }
 
+function setViewMode(mode) {
+	if (state.view === mode) return;
+	state.view = mode;
+	dirty.draw = true;
+	schedule();
+}
+
 function draw() {
 	const data = mapImage.data;
 	for (let i = 0; i < columns * rows; i++) {
@@ -224,6 +250,16 @@ function draw() {
 			red = mapElements[at] * 255;
 			green = mapElements[at + 1] * 255;
 			blue = mapElements[at + 2] * 255;
+		} else if (state.view === 'price') {
+			const ratio = (mixedValue(offset, true) - minPrice) / priceSpan;
+			red = 48 + ratio * 190;
+			green = 72 + ratio * 150;
+			blue = 91 - ratio * 45;
+		} else if (state.view === 'strength') {
+			const ratio = mixedValue(offset, false) / maxStrength;
+			red = 75 + ratio * 130;
+			green = 45 + ratio * 125;
+			blue = 38 + ratio * 82;
 		} else if (state.view === 'host') {
 			const host = mapMix[offset + hostIndex];
 			red = 34 + host * 190;
@@ -767,9 +803,16 @@ function bindControls() {
 	});
 	ui['view-modes'].addEventListener('change', function (event) {
 		if (event.target.name !== 'lab-view') return;
-		state.view = event.target.value;
-		dirty.draw = true;
-		schedule();
+		setViewMode(event.target.value);
+	});
+	ui['view-modes'].addEventListener('pointerover', function (event) {
+		if (!hoverPointer.matches) return;
+		const label = event.target.closest('label');
+		if (!label || !ui['view-modes'].contains(label)) return;
+		const input = label.control;
+		if (!input || input.name !== 'lab-view') return;
+		input.checked = true;
+		setViewMode(input.value);
 	});
 	ui['host-weight'].addEventListener('input', function () {
 		state.hostWeight = Number(ui['host-weight'].value);
@@ -855,7 +898,8 @@ function bindCellTip() {
 		ui['cell-mineral'].textContent = table[bestMineral].name + ' · ' + Math.round(best * 100) + '%';
 		ui['cell-elements'].textContent = 'metal ' + mapElements[index * 3].toFixed(2) +
 			'  crystal ' + mapElements[index * 3 + 1].toFixed(2) + '  gas ' + mapElements[index * 3 + 2].toFixed(2);
-		ui['cell-mix'].textContent = parts.join(' · ');
+		ui['cell-mix'].textContent = parts.join(' · ') + '\nStrength ' + mixedValue(offset, false).toFixed(2) +
+			' J/cell · Reference price ' + mixedValue(offset, true).toFixed(2) + ' credits/cell';
 		ui['cell-tip'].hidden = false;
 		ui['cell-tip'].style.left = Math.min(box.width - 220, (event.clientX - box.left) + 16) + 'px';
 		ui['cell-tip'].style.top = ((event.clientY - box.top) + 16) + 'px';
