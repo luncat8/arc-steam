@@ -54,11 +54,17 @@ main { max-width: 1720px; margin: auto; padding: 8px; display: grid; gap: 8px; g
 .share-row.is-selected td { color: var(--accent); }
 .chip { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 7px; vertical-align: baseline; }
 .bar-cell { width: 96px; }
-.bar { position: relative; height: 7px; border-radius: 2px; background: #1b272b; overflow: hidden; }
-.bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); opacity: 0.75; }
-.bar b { position: absolute; top: -2px; bottom: -2px; width: 1px; background: #dce6e4; opacity: 0.85; }
+.bar { position: relative; height: 7px; border-radius: 2px; background: #1b272b; cursor: ew-resize; touch-action: none; }
+.bar:focus-visible { outline: 2px solid #ff5252; outline-offset: 3px; }
+.bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); opacity: 0.75; border-radius: 2px 0 0 2px; }
+.bar b { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: #ff5252; }
+.desired-handle { position: absolute; top: -3px; bottom: -3px; width: 10px; margin-left: -5px; border-radius: 2px; background: #ff5252; border: 1px solid #7a1f1f; }
+.bar.is-dragging .desired-handle { background: #ff7b7b; }
 .bar-cell span { display: block; margin-top: 4px; color: #dce6e4; }
-.share-table .target { color: #7d9094; }
+.desired-input { width: 62px; padding: 2px 5px; font: inherit; text-align: right; background: #0e1619; border: 1px solid var(--control-line); border-radius: 3px; color: #dce6e4; cursor: text; }
+.desired-input:focus { border-color: #ff5252; outline: none; }
+.error-cell.is-close { color: var(--accent); }
+.error-cell.is-far { color: var(--amber); }
 
 .editor-row { margin-top: 6px; }
 .editor-row button { margin-top: 4px; }

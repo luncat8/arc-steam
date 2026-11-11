@@ -17,6 +17,9 @@ const columns = 192;
 const rows = 120;
 const sampleColumns = 96;
 const plotBins = 72;
+// Bar scale: a 35% share fills the bar. The red line marks the desired share
+// on the same scale; drag it, or type in Desired, to change the target.
+const barFull = 0.35;
 
 const state = {
 	seed: 37,
@@ -86,6 +89,7 @@ let frame = 0;
 
 const sliders = [];
 const shareRows = [];
+const desiredDrag = { mineral: -1, pointer: 0, active: false };
 
 function schedule() {
 	if (frame) return;
@@ -302,16 +306,52 @@ function patchText(mineral) {
 	return (patchCells[mineral] / patchCount[mineral]).toFixed(1);
 }
 
+function barPercent(fraction) {
+	return Math.min(100, Math.max(0, fraction * 100 / barFull));
+}
+
+function errorText(mineral) {
+	const diff = (stats.shares[mineral] - state.targets[mineral]) * 100;
+	return (diff > 0 ? '+' : '') + diff.toFixed(2) + 'pp';
+}
+
+function paintDesired(mineral) {
+	const row = shareRows[mineral];
+	const desired = state.targets[mineral];
+	const left = barPercent(desired) + '%';
+	row.mark.style.left = left;
+	row.handle.style.left = left;
+	row.bar.setAttribute('aria-valuenow', (desired * 100).toFixed(1));
+	row.bar.setAttribute('aria-valuetext', (desired * 100).toFixed(1) + ' percent desired, ' + (stats.shares[mineral] * 100).toFixed(2) + ' percent achieved');
+	if (document.activeElement !== row.desired) row.desired.value = (desired * 100).toFixed(1);
+	const diff = Math.abs(stats.shares[mineral] - desired) * 100;
+	row.error.textContent = errorText(mineral);
+	row.error.classList.toggle('is-close', diff <= 0.1);
+	row.error.classList.toggle('is-far', diff > 2);
+}
+
+function setDesired(mineral, fraction) {
+	state.targets[mineral] = Math.min(1, Math.max(0, fraction));
+	paintDesired(mineral);
+}
+
+function desiredAt(bar, clientX) {
+	const box = bar.getBoundingClientRect();
+	const ratio = box.width > 0 ? Math.min(1, Math.max(0, (clientX - box.left) / box.width)) : 0;
+	return ratio * barFull;
+}
+
 function paintShares() {
 	for (let m = 0; m < count; m++) {
 		const row = shareRows[m];
 		row.shareText.textContent = (stats.shares[m] * 100).toFixed(2) + '%';
 		row.dominant.textContent = (stats.dominant[m] * 100).toFixed(2) + '%';
 		row.visible.textContent = (stats.visible[m] * 100).toFixed(2) + '%';
-		row.bar.style.width = Math.min(100, stats.shares[m] * 100 / 0.35) + '%';
+		row.fill.style.width = barPercent(stats.shares[m]) + '%';
 		row.patch.textContent = patchText(m);
 		row.patch.title = patchLargest[m] ? 'largest patch ' + patchLargest[m] + ' cells' : 'not on this map';
 		row.row.classList.toggle('is-selected', m === state.selected);
+		paintDesired(m);
 	}
 	const missing = [];
 	for (let m = 0; m < count; m++) {
@@ -322,7 +362,7 @@ function paintShares() {
 	ui['stats-hint'].textContent = (missing.length
 		? 'Nearly absent: ' + missing.join(', ') + '. A mineral that shows in under 1% of cells will not be found by play.'
 		: 'Every mineral is visible in at least 1% of cells. Host rock takes ' + (stats.shares[hostIndex] * 100).toFixed(1) + '% of the field.') +
-		' Share is the mean fraction over the sample; patch is the mean size of one connected run on the visible map.';
+		' Share is the mean fraction over the sample; patch is the mean size of one connected run on the visible map. Drag the red line on a bar, or type in Desired, to change the desired share; Error is achieved minus desired in percentage points.';
 }
 
 function buildShareRows() {
@@ -336,40 +376,96 @@ function buildShareRows() {
 		chip.className = 'chip';
 		chip.style.background = colourStyle(entry.color);
 		name.append(chip, document.createTextNode(entry.name));
-		const target = document.createElement('td');
-		target.className = 'target';
-		target.textContent = (state.targets[m] * 100).toFixed(1) + '%';
+		const desiredCell = document.createElement('td');
+		const desired = document.createElement('input');
+		desired.className = 'desired-input';
+		desired.type = 'number';
+		desired.min = '0';
+		desired.max = '100';
+		desired.step = '0.1';
+		desired.value = (state.targets[m] * 100).toFixed(1);
+		desired.setAttribute('aria-label', 'Desired share for ' + entry.name + ' in percent');
+		desiredCell.append(desired);
+		desired.addEventListener('input', function () {
+			const value = Number(desired.value);
+			if (!Number.isFinite(value)) return;
+			setDesired(m, value / 100);
+		});
+		desired.addEventListener('change', function () {
+			const value = Number(desired.value);
+			if (!Number.isFinite(value)) return;
+			desired.value = Math.min(100, Math.max(0, value)).toFixed(1);
+		});
 		const share = document.createElement('td');
 		share.className = 'bar-cell';
 		const bar = document.createElement('div');
 		bar.className = 'bar';
+		bar.tabIndex = 0;
+		bar.setAttribute('role', 'slider');
+		bar.setAttribute('aria-label', 'Desired share for ' + entry.name + ' — drag or use arrow keys');
+		bar.setAttribute('aria-valuemin', '0');
+		bar.setAttribute('aria-valuemax', String(barFull * 100));
 		const fill = document.createElement('i');
 		const mark = document.createElement('b');
-		bar.append(fill, mark);
+		const handle = document.createElement('span');
+		handle.className = 'desired-handle';
+		bar.append(fill, mark, handle);
+		bar.addEventListener('pointerdown', function (event) {
+			desiredDrag.mineral = m;
+			desiredDrag.pointer = event.pointerId;
+			desiredDrag.active = true;
+			bar.setPointerCapture(event.pointerId);
+			bar.classList.add('is-dragging');
+			select(m);
+			setDesired(m, desiredAt(bar, event.clientX));
+			event.preventDefault();
+		});
+		bar.addEventListener('pointermove', function (event) {
+			if (!desiredDrag.active || event.pointerId !== desiredDrag.pointer || desiredDrag.mineral !== m) return;
+			setDesired(m, desiredAt(bar, event.clientX));
+		});
+		function endDrag(event) {
+			if (!desiredDrag.active || event.pointerId !== desiredDrag.pointer) return;
+			desiredDrag.active = false;
+			bar.classList.remove('is-dragging');
+			if (bar.hasPointerCapture(event.pointerId)) bar.releasePointerCapture(event.pointerId);
+		}
+		bar.addEventListener('pointerup', endDrag);
+		bar.addEventListener('pointercancel', endDrag);
+		bar.addEventListener('keydown', function (event) {
+			const stride = event.shiftKey ? 0.01 : 0.001;
+			let next = null;
+			if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') next = state.targets[m] - stride;
+			else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') next = state.targets[m] + stride;
+			else if (event.key === 'Home') next = 0;
+			else if (event.key === 'End') next = barFull;
+			else return;
+			event.preventDefault();
+			select(m);
+			setDesired(m, next);
+		});
 		const shareText = document.createElement('span');
 		share.append(bar, shareText);
+		const error = document.createElement('td');
+		error.className = 'error-cell';
+		error.title = 'Achieved minus desired, in percentage points';
 		const dominant = document.createElement('td');
 		const visible = document.createElement('td');
 		const patch = document.createElement('td');
-		tr.append(name, target, share, dominant, visible, patch);
+		tr.append(name, desiredCell, share, error, dominant, visible, patch);
 		tr.addEventListener('click', () => select(m));
 		body.append(tr);
-		shareRows.push({ row: tr, bar: fill, mark: mark, shareText: shareText, dominant: dominant, visible: visible, patch: patch, target: target });
+		shareRows.push({ row: tr, bar: bar, fill: fill, mark: mark, handle: handle, desired: desired, error: error, shareText: shareText, dominant: dominant, visible: visible, patch: patch });
+		paintDesired(m);
 	}
 }
 
 function select(mineral) {
 	state.selected = mineral;
-	const row = document.getElementById('editor-' + table[mineral].id);
-	if (row) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 	dirty.plots = true;
 	dirty.editor = true;
 	for (let m = 0; m < count; m++) shareRows[m].row.classList.toggle('is-selected', m === mineral);
 	schedule();
-}
-
-function updateTargetMarks() {
-	for (let m = 0; m < count; m++) shareRows[m].mark.style.left = Math.min(100, state.targets[m] * 100 / 0.35) + '%';
 }
 
 function buildEditor() {
@@ -438,8 +534,7 @@ function targetsFromWeights() {
 		const rarity = table[m].rarity;
 		state.targets[m] = rarity === 'host' ? weights.host : unit * (weights[rarity] || 0);
 	}
-	for (let m = 0; m < count; m++) shareRows[m].target.textContent = (state.targets[m] * 100).toFixed(1) + '%';
-	updateTargetMarks();
+	for (let m = 0; m < count; m++) paintDesired(m);
 	dirty.stats = true;
 	schedule();
 }
@@ -473,7 +568,7 @@ function reportText() {
 	const lines = ['minerals lab · seed ' + state.seed + ' · frequency ' + state.frequency + ' · Y flattening ' + state.compression + '×',
 		'sample ' + state.seeds + ' seeds × ' + sampleColumns + ' columns × ' + state.depth + ' rows = ' + sample.cells + ' cells',
 		'affinity ' + state.mode + ', specificity ' + state.specificity + ', host weight ' + state.hostWeight.toFixed(3), ''];
-	lines.push('mineral              target    share  dominant  visible   patch   signature R / G / B');
+	lines.push('mineral              desired    share   error dominant  visible   patch   signature R / G / B');
 	for (let m = 0; m < count; m++) {
 		const parts = [];
 		for (let c = 0; c < 3; c++) {
@@ -483,6 +578,7 @@ function reportText() {
 		lines.push(table[m].name.padEnd(20) +
 			(state.targets[m] * 100).toFixed(1).padStart(6) + '%' +
 			(stats.shares[m] * 100).toFixed(2).padStart(8) + '%' +
+			errorText(m).padStart(8) +
 			(stats.dominant[m] * 100).toFixed(2).padStart(9) + '%' +
 			(stats.visible[m] * 100).toFixed(2).padStart(8) + '%' + (patchText(m) + ' cells').padStart(11) + '   ' + parts.join('  '));
 	}
