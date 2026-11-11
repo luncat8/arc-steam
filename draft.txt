@@ -88,7 +88,8 @@ with % of total :
 and  how better store it in readable format
 
 
-
+Add **editable desired share + achieved/desired error**.
+and add handler and red line to mark desired value over bar of achieved. press and drag on bar to change desired value.
 
 
 near 100% gas has near 0 strength.
