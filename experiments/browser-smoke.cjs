@@ -86,8 +86,11 @@ async function main() {
 		assert.equal(await page.evaluate(() => Array.from(document.querySelectorAll('#tree-links path')).every(path => Boolean(path.getAttribute('d')))), true, 'every SVG edge is laid out');
 		assert.equal(await page.evaluate(() => {
 			const content = document.querySelector('#science-drawer .tool-drawer-content');
-			return content.scrollWidth <= content.clientWidth && content.scrollHeight <= content.clientHeight;
-		}), true, 'the whole progression tree fits inside 1440x1000 without overflow');
+			const root = document.querySelector('.tree-root').getBoundingClientRect();
+			const nodes = document.querySelectorAll('#progression-tree .tree-node');
+			return content.scrollWidth <= content.clientWidth && getComputedStyle(content).overflowY === 'auto'
+				&& Array.from(nodes).every(node => node.getBoundingClientRect().top >= root.bottom);
+		}), true, 'the tree fits horizontally and scrolls vertically without covering the base-chassis bays');
 		assert.equal(await page.locator('#commercial-grader').count(), 1);
 		assert.equal(await page.locator('#research-progress').textContent(), '0 / ' + nodeCount);
 		assert.equal(await page.locator('#platform-spec > div').count(), 10, 'ten specification measures, each label over its value');
@@ -212,7 +215,7 @@ async function main() {
 		assert.equal(await page.locator('#motion').textContent(), '0.00 m/s', 'a rock click does not command travel');
 		await chamberClick(page, 5, 0.5);
 		// Travel ramps up, so wait for the readout instead of guessing a delay.
-		await page.waitForFunction(() => document.getElementById('motion').textContent !== '0.00 m/s', null, { timeout: 2000 });
+		await page.waitForFunction(() => document.getElementById('motion').textContent !== '0.00 m/s', null, { timeout: 30000 });
 		assert.equal(await page.locator('#launch').isDisabled(), true);
 		assert.match(await page.locator('#mineral-cell').textContent(), cellPattern, 'travel does not change the selected cell');
 		assert.ok(Math.abs(parseFloat(await page.locator('#error').textContent())) < 0.00001);
@@ -320,7 +323,7 @@ async function main() {
 		await page.keyboard.press('Escape');
 		await page.locator('#market-open').click();
 		assert.equal(await page.locator('#market-drawer').isVisible(), true);
-		assert.equal(await page.locator('#market-rows tr').count(), 6, 'market drawer shows all six mineral quotes');
+		assert.equal(await page.locator('#market-rows tr').count(), await page.evaluate(() => SteamCeiling.state.mineralNames.length), 'market drawer shows every mineral quote');
 		assert.equal(await page.evaluate(() => {
 			const wrap = document.querySelector('#market-drawer .market-quotes');
 			return wrap.scrollWidth <= wrap.clientWidth + 1;

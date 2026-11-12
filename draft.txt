@@ -346,3 +346,42 @@ Pause growth at 30% remaining height
 Давайте балансировать, так чтобы он был примерно с нулевой прибылью на начальном уровне энергии и при добыче дешевых минералов, что было бы выгодно использовать только на дорогих минералах и с продвинутыми двигателями. т.е. расход энергии большой
 
 to shop add item that increase platform's piston push force, so ball will reach ceil in 1...2 bounces from new platform.
+
+
+
+add shop item - ramp - free to install/uninstall. bot dont switch, 
+all has ramp by default that auto-fold and allow move on top of platforms.
+if one of player has no ramp - all not use it but platforms instead of this push each other, typical engine cant outperform brake friction force, but fast speed inertial is enough to move platform on brake for some distance.
+### deferred: add art img prompt show ramp for wheels on sides of platforms - like rails.
+
+add to settings debris y compression 1...8. in this game mode it is 1.5 by default
+
+# GUI
+
+##
+on big wide screen we should not have waste empty space left and right from central gui
+but limit canvas to make it fix width, height of free space
+
+##
+add color to list of minerals similar as mineral color in canvas view mode 
+think what is better: add colored '|'-like mark before row, background, mineral name text color
+
+
+## save found trajectories to easy launch list.
+what we need:
+- loop that return to same planet
+- long route to other owner's EMC available planet
+remove same planets visits trajectories that has slower time to keep list clean.
+Bots also use list to compare with new search results and choose best.
+this should also optimize CPU and profit.
+add auto helper buttons for best profit. and for best profit and possibility to build EMC.
+if gravity body movement enabled - disable lists.
+
+
+## career map generator improve
+
+choose seed and/or adjust player's planet start positions to 1st predicted flight be more or less similar profit. and all has in more or less equal ability to land on not heavy planet to build new EMC in 1st fly.
+because if some player possible to land on only heavy G>~1.5 planets this cause big score impact from start. 
+
+agent told: All 48 planets are generated with spaced geometry when the seeded world is created; adding a bot reveals one rather than moving/generating coordinates.
+i dont know is this cause slow generation. is generation by add and adjust position of planet faster? 

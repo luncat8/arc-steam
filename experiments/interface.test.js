@@ -120,6 +120,7 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	assert.equal(gearRow('pad').parentElement, nodeCard('materials'), 'unlocked gear lives inside its research node');
 	assert.equal(tierRow('radiators').parentElement, nodeCard('thermodynamics'));
 	assert.equal(tierRow('balls').parentElement, nodeCard('impact'));
+	for (const node of research.nodes) assert.ok(Number(nodeCard(node.id).style.gridRow) >= 3, 'research cards reserve the spec and base-chassis rows');
 	assert.match(techRow('power').children[3].textContent, /Needs: Traction motors, Heat transfer/);
 	// Hovering a node highlights its connected prerequisite and dependent edges.
 	nodeCard('power').dispatch('pointerenter');
@@ -921,7 +922,7 @@ test('test mode grants all upgrades, preserves credits, and reapplies them on Ne
 	assert.equal(dom.element('research-progress').textContent, research.nodes.length + ' / ' + research.nodes.length);
 	assert.ok(research.nodes.every(node => techRow(node.id).dataset.state === 'researched'));
 	assert.ok(equipment.items.every(item => gearRow(item.id).dataset.state === 'installed'));
-	assert.match(dom.element('progression-status').textContent, /all 10 technologies researched and all 8 equipment items installed/);
+	assert.match(dom.element('progression-status').textContent, new RegExp('all ' + research.nodes.length + ' technologies researched and all ' + equipment.items.length + ' equipment items installed'));
 	assert.ok(ceiling.state.ledger.filter(entry => entry.source === 'test').length >= research.nodes.length + equipment.items.length);
 	assert.match(dom.element('ledger').children[0].textContent, /Test installed /);
 	assert.match(dom.element('transaction-status').textContent, /Test mode installed /);
@@ -938,7 +939,7 @@ test('test mode grants all upgrades, preserves credits, and reapplies them on Ne
 	assert.match(dom.element('progression-status').textContent, /remain active until New game/);
 	dom.element('reset').dispatch('click');
 	assert.equal(research.state.completed, 0, 'a fresh non-test game clears research');
-	assert.ok(equipment.items.every(item => !equipment.isInstalled(item.id)));
+	assert.ok(equipment.items.every(item => equipment.isInstalled(item.id) === Boolean(item.defaultInstalled)));
 	assert.equal(dom.element('test-mode').checked, false);
 });
 
@@ -1661,3 +1662,52 @@ test('pointer rock inspection hits grown low rock and follows compacted layers w
 	dom.element('reset').dispatch('click');
 });
 
+test('the free ramp shop toggle follows the selected player and explains the shared collision mode', () => {
+	dom.element('reset').dispatch('click');
+	advance(2);
+	const row = gearRow('ramp');
+	const button = buttonOf(row);
+	const roster = dom.element('player-list');
+	assert.match(row.children[0].textContent, /RAMP · FREE/);
+	assert.equal(row.dataset.state, 'installed');
+	assert.equal(button.textContent, 'Uninstall · free');
+	assert.equal(button.getAttribute('aria-disabled'), 'false');
+	assert.equal(button.getAttribute('aria-pressed'), 'true');
+	assert.equal(row.dataset.previewable, 'false', 'the ramp is a rule choice, not a numeric specification change');
+	assert.match(row.children[2].textContent, /All ramps installed/);
+	const funds = ceiling.state.funds;
+	const rival = players.state.rivals[0];
+	const bot = rival.bot;
+	button.dispatch('click');
+	assert.equal(equipment.isInstalled('ramp'), false);
+	assert.equal(equipment.isInstalled('ramp', rival.id), true);
+	assert.equal(players.state.rampsEnabled, false);
+	assert.equal(button.textContent, 'Install · free');
+	assert.equal(button.getAttribute('aria-pressed'), 'false');
+	assert.match(row.children[2].textContent, /Removed · all platforms push/);
+	assert.match(dom.element('progression-status').textContent, /Uninstalled Ramp for YOU · free/);
+
+	roster.children[1].children[0].dispatch('click');
+	assert.equal(button.textContent, 'Uninstall · free');
+	assert.equal(button.getAttribute('aria-disabled'), 'false');
+	assert.match(row.children[2].textContent, /Installed but inactive/);
+	button.dispatch('click');
+	assert.equal(equipment.isInstalled('ramp', rival.id), false);
+	assert.equal(button.textContent, 'Install · free');
+	assert.equal(rival.bot, bot, 'shop edits do not switch the bot');
+	button.dispatch('click');
+	assert.equal(equipment.isInstalled('ramp', rival.id), true);
+	assert.equal(players.state.rampsEnabled, false, 'the rig still has no ramp');
+	roster.children[0].children[0].dispatch('click');
+	button.dispatch('click');
+	assert.equal(players.state.rampsEnabled, true);
+	assert.match(row.children[2].textContent, /All ramps installed/);
+	assert.equal(ceiling.state.funds, funds);
+	assert.equal(rival.money, 0);
+	assert.equal(research.state.completed, 0);
+	assert.equal(ceiling.state.ledger.length, 0, 'free reconfiguration is not a paid transaction');
+	button.dispatch('click');
+	dom.element('reset').dispatch('click');
+	assert.equal(button.textContent, 'Uninstall · free');
+	assert.equal(players.state.rampsEnabled, true);
+});

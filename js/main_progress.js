@@ -23,17 +23,18 @@ const treeOrder = Object.freeze([
 	'ballistics', 'traction', 'storage',
 	'ballistics2', 'power'
 ]);
+// Rows 1 and 2 belong to the specification strip and the base-chassis bays.
 const treeLayout = Object.freeze({
-	materials: Object.freeze({ row: 2, col: 2 }),
-	alloys: Object.freeze({ row: 2, col: 3 }),
-	impact: Object.freeze({ row: 3, col: 1 }),
-	electromagnetics: Object.freeze({ row: 3, col: 2 }),
-	thermodynamics: Object.freeze({ row: 3, col: 3 }),
-	ballistics: Object.freeze({ row: 4, col: 1 }),
-	traction: Object.freeze({ row: 4, col: 2 }),
-	storage: Object.freeze({ row: 4, col: 3 }),
-	ballistics2: Object.freeze({ row: 5, col: 1 }),
-	power: Object.freeze({ row: 5, col: 2 })
+	materials: Object.freeze({ row: 3, col: 2 }),
+	alloys: Object.freeze({ row: 3, col: 3 }),
+	impact: Object.freeze({ row: 4, col: 1 }),
+	electromagnetics: Object.freeze({ row: 4, col: 2 }),
+	thermodynamics: Object.freeze({ row: 4, col: 3 }),
+	ballistics: Object.freeze({ row: 5, col: 1 }),
+	traction: Object.freeze({ row: 5, col: 2 }),
+	storage: Object.freeze({ row: 5, col: 3 }),
+	ballistics2: Object.freeze({ row: 6, col: 1 }),
+	power: Object.freeze({ row: 6, col: 2 })
 });
 const treeEdges = Object.freeze([
 	Object.freeze({ from: 'root', to: 'materials', kind: 'trunk' }),
@@ -268,7 +269,7 @@ function svgNode(tag) { return document.createElementNS(SVG_NS, tag); }
 
 // Row titles show list prices, FREE in Communism mode, or TEST for grants.
 function priceLabel(cost) {
-	return window.SteamCeiling.state.commune ? 'FREE' : testMode ? 'TEST' : cost + ' CR';
+	return cost === 0 || window.SteamCeiling.state.commune ? 'FREE' : testMode ? 'TEST' : cost + ' CR';
 }
 
 function massSuffix(mass) {
@@ -325,6 +326,15 @@ function buildSlot(container, className, name, cost, mass, action, effect, activ
 	container.appendChild(row);
 	button.addEventListener('click', activate);
 	return { row, heading, button, mark: actions.mark, detail, name, cost, mass };
+}
+
+function buildEquipmentSlot(container, item) {
+	const record = buildSlot(container, 'upgrade-row node-buy', item.name, item.cost, item.mass || 0, 'Buy', item.effect,
+		function () { buyEquipment(item.id); });
+	record.row.dataset.item = item.id;
+	record.item = item;
+	bindPreview(record);
+	equipmentRows.push(record);
 }
 
 // Engines, radiators and strike balls each fit one unit at a time and swap
@@ -416,14 +426,9 @@ function buildUpgrades() {
 	for (const item of SteamEquipment.items) {
 		if (item.requires) (itemsByResearch[item.requires] = itemsByResearch[item.requires] || []).push(item);
 	}
-	const graderItem = SteamEquipment.find('grader');
-	const graderSlot = buildSlot(rootBays, 'upgrade-row node-buy', graderItem.name, graderItem.cost, graderItem.mass || 0, 'Buy', graderItem.effect,
-		function () { buyEquipment(graderItem.id); });
-	graderSlot.row.dataset.item = graderItem.id;
-	graderSlot.item = graderItem;
-	graderSlot.fillPreview = function () { previewEquipment(graderItem); };
-	bindPreview(graderSlot);
-	equipmentRows.push(graderSlot);
+	for (const item of SteamEquipment.items) {
+		if (!item.requires) buildEquipmentSlot(rootBays, item);
+	}
 
 	buildTierSlot(rootBays, {
 		family: 'engines', title: 'ENGINE POWERTRAIN', label: 'Engine upgrades',
@@ -539,15 +544,7 @@ function buildUpgrades() {
 
 		const unlockedItems = itemsByResearch[node.id];
 		if (unlockedItems) {
-			for (const unlockedItem of unlockedItems) {
-				const buy = buildSlot(card, 'upgrade-row node-buy', unlockedItem.name, unlockedItem.cost, unlockedItem.mass || 0, 'Locked', unlockedItem.effect,
-					function () { buyEquipment(unlockedItem.id); });
-				buy.row.dataset.item = unlockedItem.id;
-				buy.item = unlockedItem;
-				buy.fillPreview = function () { previewEquipment(unlockedItem); };
-				bindPreview(buy);
-				equipmentRows.push(buy);
-			}
+			for (const unlockedItem of unlockedItems) buildEquipmentSlot(card, unlockedItem);
 		} else if (node.id === 'thermodynamics') {
 			const record = buildTierSlot(card, radiatorSpec);
 			bindPreview(record);
@@ -676,6 +673,12 @@ function layoutTreeLinks() {
 function buyEquipment(id) {
 	const owner = activePlayerId();
 	const item = SteamEquipment.find(id);
+	if (item.removable && SteamEquipment.isInstalled(id, owner)) {
+		SteamEquipment.uninstall(id, world, owner);
+		setText(ui['progression-status'], 'Uninstalled ' + item.name + ' for ' + activePlayer().name + ' · free. All platforms now push instead of climbing.');
+		refresh();
+		return;
+	}
 	if (SteamEquipment.install(id, world, owner)) setText(ui['progression-status'], 'Installed ' + item.name + ' at ' + world.time.toFixed(1) + ' s.');
 	else if (SteamEquipment.isInstalled(id, owner)) setText(ui['progression-status'], item.name + ' is already installed.');
 	// The grader's row is only ever locked for a competitor, and it has no
@@ -826,11 +829,20 @@ function refreshUpgrades() {
 	for (const row of equipmentRows) {
 		const installed = SteamEquipment.isInstalled(row.item.id, owner);
 		const unlocked = SteamEquipment.isUnlocked(row.item.id, owner);
-		setBlocked(row.button, installed || !unlocked || (funds < row.item.cost && !ceiling.commune));
-		setPreviewable(row, !installed);
-		setText(row.button, installed ? 'Installed' : unlocked ? 'Buy' : 'Locked');
+		const removable = row.item.removable;
+		setBlocked(row.button, (installed && !removable) || !unlocked || (!installed && funds < row.item.cost && !ceiling.commune));
+		setPreviewable(row, !installed && !removable);
+		setText(row.button, removable ? installed ? 'Uninstall · free' : 'Install · free' : installed ? 'Installed' : unlocked ? 'Buy' : 'Locked');
 		setRowState(row.row, installed ? 'installed' : unlocked ? 'available' : 'locked');
 		setText(row.heading, rowTitle(row));
+		if (row.item.id === 'ramp') {
+			const pressed = String(installed);
+			if (row.button.getAttribute('aria-pressed') !== pressed) row.button.setAttribute('aria-pressed', pressed);
+			setText(row.detail, playerApi.state.rampsEnabled
+				? 'All ramps installed · automatic ride-over. Bots leave this choice alone.'
+				: installed ? 'Installed but inactive: another player has no ramp. All platforms push instead.'
+					: 'Removed · all platforms push. Reinstall on every player to restore ride-over.');
+		}
 	}
 	for (const record of tierRows) refreshTierSlot(record, funds, ceiling.commune);
 	let completed = 0;

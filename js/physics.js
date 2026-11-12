@@ -45,6 +45,8 @@
 		// Research and machinery add forceBonus/speedBonus on top of this; the
 		// electric full chain reaches 1920 N / 30 m/s.
 		platformMass: 60, force: 480, maxSpeed: 12,
+		// Stock brakes hold against 480 N thrust; upgraded drives can exceed grip.
+		platformBrakeFriction: 1.2,
 		// Bounce pulse sized for the three-bounce rule: from a release, the apex
 		// after the third powered bounce must clear the ceiling plane (about
 		// 15.1 m at 42 J) while the first two stay short of it. One pulse adds
@@ -97,6 +99,7 @@
 
 	function platformMin() { return config.platformWidth * 0.5 - config.pocketDepth; }
 	function platformMax() { return config.width - config.platformWidth * 0.5; }
+	function brakeAcceleration() { return config.platformBrakeFriction * config.gravity; }
 
 	function terrainHeight(x) {
 		return root.SteamCeiling ? root.SteamCeiling.floorAt(x) : 0;
@@ -900,11 +903,11 @@
 		if (root.SteamEquipment) root.SteamEquipment.reset();
 		if (root.SteamResearch) root.SteamResearch.reset();
 		const world = {
-			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, chargedEnergy: 0, crankEnergy: 0, terrainWork: 0,
+			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, chargedEnergy: 0, crankEnergy: 0, terrainWork: 0, platformWork: 0,
 			initialEnergy: 0,
 			brake: false, drive: true, forceSetting: 0.6, direction: 0, target: NaN,
 			pistonAngle: 0, pistonOffset: 0, pistonVelocity: 0, pistonImpact: 0,
-			platform: { id: 'rig', x: 12, y: 0, vx: 0, vy: 0, angle: 0, omega: 0, spin: 0, previousX: 12, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0, wheelDrop: [0, 0] },
+			platform: { id: 'rig', x: 12, y: 0, vx: 0, vy: 0, angle: 0, omega: 0, spin: 0, previousX: 12, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0, brakeImpulse: 0, brakeHeld: false, collisionMass: 0, collisionX: 0, wheelDrop: [0, 0] },
 			balls: [], ballMode: 'shared1', focus: null,
 			bounces: 0, pushes: 0, lastPush: 0, groundings: 0, sales: 0, lastSale: 0
 		};
@@ -948,7 +951,7 @@
 		const balls = world.balls || [];
 		let ballEnergyTotal = 0;
 		for (let i = 0; i < balls.length; i++) if (isRigBall(balls[i])) ballEnergyTotal += ballEnergy(balls[i]);
-		return world.battery + world.heat + world.cooledEnergy + world.fractureEnergy - world.importedEnergy - world.terrainWork + ceilingEnergy + ballEnergyTotal + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
+		return world.battery + world.heat + world.cooledEnergy + world.fractureEnergy - world.importedEnergy - world.terrainWork - world.platformWork + ceilingEnergy + ballEnergyTotal + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
 	}
 
 	function temperature(world) {
@@ -1107,6 +1110,8 @@ function spend(world, useful) {
 		platform.previousX = platform.x;
 		platform.previousY = platform.y;
 		platform.previousAngle = platform.angle;
+		platform.brakeHeld = world.brake;
+		platform.brakeImpulse = 0;
 		const mass = platformMass(world);
 		const engineForce = forceNow();
 		let direction = world.direction;
@@ -1132,11 +1137,13 @@ function spend(world, useful) {
 		const crank = world.battery <= 0;
 		let velocity = oldVelocity;
 		let remaining = dt;
+		const stoppingAcceleration = world.brake ? brakeAcceleration() : acceleration;
 		if (direction && oldVelocity * direction < 0) {
-			const brakingTime = Math.min(remaining, Math.abs(oldVelocity) / acceleration);
-			velocity += direction * acceleration * brakingTime;
+			const brakingTime = Math.min(remaining, Math.abs(oldVelocity) / stoppingAcceleration);
+			velocity += direction * stoppingAcceleration * brakingTime;
 			remaining -= brakingTime;
 		}
+		if (world.brake) platform.brakeImpulse = Math.max(0, mass * (stoppingAcceleration * dt - Math.abs(oldVelocity - velocity)));
 		if (remaining > 0 && !world.brake) velocity += direction * (crank ? config.crankForce / mass : acceleration * thermalFactor(world)) * remaining;
 		if (crank && direction) {
 			// The crank tops out at its crawl, but never drags a faster coast
@@ -1188,7 +1195,105 @@ function spend(world, useful) {
 		// Wheels roll with the distance actually travelled, so the drawn spokes
 		// match the ground contact rather than the commanded velocity.
 		platform.spin += (platform.x - platform.previousX) / config.platformWheelRadius;
-		updatePlatformTerrain(world, dt);
+	}
+
+	// Competitor machinery is outside the rig ledger. Book transferred work
+	// separately from collision heat and the rig's recoverable brake work.
+	function bookPlatformContact(world, body, before, after, impactHeat, brakeHeat) {
+		if (body !== world.platform) return;
+		world.heat += impactHeat;
+		dissipate(world, brakeHeat);
+		world.platformWork += 0.5 * body.collisionMass * (after * after - before * before) + impactHeat + brakeHeat;
+	}
+
+	function contactVelocity(world, left, right) {
+		if (left.vx <= right.vx) return;
+		const ml = left.collisionMass;
+		const mr = right.collisionMass;
+		const mass = ml + mr;
+		const vl = left.vx;
+		const vr = right.vx;
+		let common = (ml * vl + mr * vr) / mass;
+		if ((common < 0 && left.x <= platformMin() + 1e-9) || (common > 0 && right.x >= platformMax() - 1e-9)) common = 0;
+		const impactHeat = Math.max(0, 0.5 * (ml * vl * vl + mr * vr * vr - mass * common * common));
+		const budget = left.brakeImpulse + right.brakeImpulse;
+		const used = Math.min(Math.abs(mass * common), budget);
+		const leftUsed = budget > 0 ? used * left.brakeImpulse / budget : 0;
+		const rightUsed = used - leftUsed;
+		const velocity = Math.sign(common) * Math.max(0, Math.abs(common) - used / mass);
+		const brakeHeat = Math.max(0, 0.5 * mass * (common * common - velocity * velocity));
+		const leftHeat = used > 0 ? brakeHeat * leftUsed / used : 0;
+		bookPlatformContact(world, left, vl, velocity, impactHeat * 0.5, leftHeat);
+		bookPlatformContact(world, right, vr, velocity, impactHeat * 0.5, brakeHeat - leftHeat);
+		left.brakeImpulse = Math.max(0, left.brakeImpulse - leftUsed);
+		right.brakeImpulse = Math.max(0, right.brakeImpulse - rightUsed);
+		left.vx = velocity;
+		right.vx = velocity;
+	}
+
+	function separatePlatforms(left, right, overlap) {
+		const leftRoom = Math.max(0, left.x - platformMin());
+		const rightRoom = Math.max(0, platformMax() - right.x);
+		// A stationary brake is a support, not a body that creeps half an overlap
+		// every step. If a live ramp edit overlaps two parked hulls, separate them
+		// geometrically without manufacturing a velocity.
+		let leftWeight = leftRoom > 0 && !(left.brakeHeld && left.vx === 0) ? 1 / left.collisionMass : 0;
+		let rightWeight = rightRoom > 0 && !(right.brakeHeld && right.vx === 0) ? 1 / right.collisionMass : 0;
+		if (leftWeight + rightWeight === 0) {
+			leftWeight = leftRoom > 0 ? 1 / left.collisionMass : 0;
+			rightWeight = rightRoom > 0 ? 1 / right.collisionMass : 0;
+		}
+		if (leftWeight + rightWeight === 0) return;
+		let leftShift = Math.min(leftRoom, overlap * leftWeight / (leftWeight + rightWeight));
+		const rightShift = Math.min(rightRoom, overlap - leftShift);
+		leftShift = Math.min(leftRoom, overlap - rightShift);
+		left.x -= leftShift;
+		right.x += rightShift;
+	}
+
+	const platformContactOrder = [];
+	function resolvePlatformContacts(world, dt) {
+		const players = root.SteamPlayers;
+		if (!players || players.state.world !== world || players.state.rampsEnabled) return;
+		const machines = machinesOf(world);
+		platformContactOrder.length = 0;
+		for (let i = 0; i < machines.length; i++) {
+			const body = machineBody(machines[i]);
+			if (!Number.isFinite(body.x)) continue;
+			body.collisionMass = machineMass(world, machines[i]);
+			body.collisionX = body.x;
+			// Pre-step order prevents a fast contact from tunnelling through a hull.
+			let j = platformContactOrder.length;
+			while (j > 0 && platformContactOrder[j - 1].previousX > body.previousX) {
+				platformContactOrder[j] = platformContactOrder[j - 1];
+				j--;
+			}
+			platformContactOrder[j] = body;
+		}
+		// Revisit neighbours so an impulse or a wall pin propagates through a
+		// whole train. Brake impulse is a per-step budget, never per iteration.
+		for (let pass = 0; pass < platformContactOrder.length * 32; pass++) {
+			let unsettled = false;
+			for (let i = 1; i < platformContactOrder.length; i++) {
+				const left = platformContactOrder[i - 1];
+				const right = platformContactOrder[i];
+				const overlap = config.platformWidth - (right.x - left.x);
+				if (overlap < -1e-9) continue;
+				if (left.vx > right.vx + 1e-10) { contactVelocity(world, left, right); unsettled = true; }
+				if (overlap > 1e-9) { separatePlatforms(left, right, overlap); unsettled = true; }
+			}
+			if (!unsettled) break;
+		}
+		for (let i = 0; i < platformContactOrder.length; i++) {
+			const body = platformContactOrder[i];
+			body.spin += (body.x - body.collisionX) / config.platformWheelRadius;
+			if (body === world.platform || body.x === body.collisionX) continue;
+			// Rival drive steps already settled their pose. Re-solve a corrected
+			// position from the same previous pose, without a second pitch slew.
+			body.angle = body.previousAngle;
+			body.y = body.previousY;
+			settlePose(body, dt, body.id);
+		}
 	}
 
 	function downwardTime(ball, height) {
@@ -1577,6 +1682,8 @@ function spend(world, useful) {
 
 	function step(world, dt) {
 		movePlatform(world, dt);
+		resolvePlatformContacts(world, dt);
+		updatePlatformTerrain(world, dt);
 		const balls = world.balls;
 		for (let i = 0; i < balls.length; i++) advanceBall(world, balls[i], dt);
 		advancePiston(world, dt);
@@ -1600,7 +1707,7 @@ function spend(world, useful) {
 	const api = {
 		engines, engineNow, selectEngine, reserveNow, packMass,
 		config, createWorld, step, launch, canLaunch, releaseReady, launchCapacity, ballEnergy, totalEnergy, temperature,
-		thermalFactor, coolingPower, platformMass, machineMass, applyMachineMassChange, platformMin, platformMax, dryMass,
+		thermalFactor, coolingPower, platformMass, machineMass, applyMachineMassChange, platformMin, platformMax, dryMass, brakeAcceleration, resolvePlatformContacts,
 		platformPitchAt, platformBaseAt, platformPointAt, platformSurfaceAt, planeContactTime, hullDepthAt,
 		chargePadMin, chargePadMax, onChargePad, charging,
 		retentionNow, rockRetentionNow, ballMassNow, ballMassFor, damageBonusNow, damageRadiusBonusNow, pulseNow, forceNow, speedNow, arrivalSpeed, coverage, travelTime, stopTime, recoveryNow, conductanceNow, radiatorArea, applyMassChange,

@@ -6,9 +6,10 @@
 	// and keeps the shared energy reserve and market ledger; every competitor
 	// settles its own cargo and invests its own credits.
 	//
-	// Two platforms that meet ride rather than collide: the platform applying
-	// more drive power starts the climb, and the other is carved out of its
-	// ground query one way only, so no pair can lift itself. Once one hull is on
+	// With every stock ramp installed, platforms ride rather than collide. One
+	// removed ramp switches the whole chamber to horizontal pushing contacts.
+	// With ramps, the platform applying more drive power starts the climb. The
+	// ground query is one-way, so no pair can lift itself. Once one hull is on
 	// top, the pair keeps that rider until the bodies part — a brake or a
 	// direction change mid-crossing cannot swap them. The tails unfold as the
 	// gap closes and fold again when it opens, so a climbing wheel always meets
@@ -173,6 +174,22 @@
 	// change mid-crossing must not swap the two hulls while one is on top.
 	const layers = [];
 	const layerThreshold = 0.02;
+	let rampsEnabled = true;
+
+	// Equipment edits and roster resets update this once, not in every ground sample.
+	function syncRamps() {
+		const equipment = root.SteamEquipment;
+		let enabled = true;
+		for (let i = 0; equipment && i < players.length; i++) {
+			if (!equipment.isInstalled('ramp', players[i].id)) { enabled = false; break; }
+		}
+		if (enabled === rampsEnabled) return;
+		rampsEnabled = enabled;
+		for (let i = 0; i < layers.length; i++) {
+			layers[i].engaged = false;
+			layers[i].rider = null;
+		}
+	}
 
 	function powerAbove(a, b) {
 		const pa = powerOf(a);
@@ -198,6 +215,7 @@
 	}
 
 	function syncLayers() {
+		if (!rampsEnabled) return;
 		const engage = halfWidth() * 2 + tailPlate;
 		const release = halfWidth() * 2 + tailReach;
 		for (let i = 0; i < layers.length; i++) {
@@ -229,6 +247,7 @@
 	function profileAt(player, dx) {
 		const distance = Math.abs(dx);
 		if (distance <= halfWidth()) return bodyTop;
+		if (!rampsEnabled) return 0;
 		const angle = dx < 0 ? player.tailLeft : player.tailRight;
 		if (angle <= 1e-4) return 0;
 		if (distance >= halfWidth() + tailPlate * Math.sin(angle)) return 0;
@@ -243,6 +262,7 @@
 	// autopilot and the prediction ask without an id — so a platform never
 	// stands on itself.
 	function surfaceAt(x, exceptId) {
+		if (!rampsEnabled) return 0;
 		const self = playerById(exceptId === undefined ? 'rig' : exceptId);
 		let height = 0;
 		for (let i = 0; i < players.length; i++) {
@@ -302,6 +322,7 @@
 			keeperAge: keeperInterval, keeperBall: null, keeperState: '', keeperBounces: -1, keeperPushes: -1,
 			contactOnPiston: false, contactVx: 0, contactVy: 0, contactY: 0,
 			previousX: 0, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0,
+			brakeImpulse: 0, brakeHeld: false, collisionMass: 0, collisionX: 0,
 			wheelDrop: [0, 0]
 		};
 		settle(rival);
@@ -335,6 +356,7 @@
 		active = 0;
 		selling = false;
 		recharging = false;
+		syncRamps();
 		applyBalls(world);
 		return players;
 	}
@@ -883,13 +905,19 @@
 		// Drive power for the ride-over rule is the platform's own command: a
 		// chasing competitor pushes, a competitor standing on its mark does not.
 		rival.commanded = wanted !== 0;
+		const oldVelocity = rival.vx;
+		rival.brakeHeld = rival.braking || wanted === 0;
+		// Policy stops keep their controller tune; B engages the mechanical brake.
+		const stoppingAcceleration = rival.braking ? physics.brakeAcceleration() : acceleration * 1.5;
 		const delta = wanted - rival.vx;
 		if (delta !== 0) {
 			const speedingUp = wanted !== 0 && Math.abs(wanted) > Math.abs(rival.vx) && wanted * rival.vx >= 0;
-			const rate = (speedingUp ? acceleration : acceleration * 1.5) * dt;
+			const rate = (speedingUp ? acceleration : stoppingAcceleration) * dt;
 			rival.vx += Math.max(-rate, Math.min(rate, delta));
 		}
 		if (Math.abs(rival.vx) < 1e-4) rival.vx = 0;
+		rival.brakeImpulse = rival.brakeHeld
+			? Math.max(0, physics.machineMass(rigWorld, rival) * (stoppingAcceleration * dt - Math.abs(oldVelocity - rival.vx))) : 0;
 		rival.x += rival.vx * dt;
 		const minX = physics.platformMin();
 		const maxX = physics.platformMax();
@@ -932,7 +960,14 @@
 	// 2.6 m reach. A fixed reach left a fast approach climbing a half-folded
 	// plate, which is a 0.3 m face rather than a ramp, and popped the hull higher
 	// than the deck it was riding onto.
+	function slewTails(player, left, right, dt) {
+		const slew = tailSlew * dt;
+		player.tailLeft += Math.max(-slew, Math.min(slew, left * tailAngle - player.tailLeft));
+		player.tailRight += Math.max(-slew, Math.min(slew, right * tailAngle - player.tailRight));
+	}
+
 	function stepTails(player, dt) {
+		if (!rampsEnabled) { slewTails(player, 0, 0, dt); return; }
 		const body = posOf(player);
 		if (!Number.isFinite(body.x)) return;
 		const half = halfWidth();
@@ -983,11 +1018,7 @@
 			if (leftwards) right = Math.max(right, deployment);
 			else left = Math.max(left, deployment);
 		}
-		const slew = tailSlew * dt;
-		const wantLeft = left * tailAngle;
-		const wantRight = right * tailAngle;
-		player.tailLeft += Math.max(-slew, Math.min(slew, wantLeft - player.tailLeft));
-		player.tailRight += Math.max(-slew, Math.min(slew, wantRight - player.tailRight));
+		slewTails(player, left, right, dt);
 	}
 
 	// The full rig bot sells a full hopper, then refills a short reserve at the
@@ -1041,6 +1072,7 @@
 	// skin is the one palette every platform wears; player supplies the
 	// deployment angles, which are per-platform state.
 	function drawTails(context, skin, player, body) {
+		if (root.SteamEquipment && !root.SteamEquipment.isInstalled('ramp', player.id)) return;
 		const half = halfWidth();
 		for (let end = 0; end < 2; end++) {
 			const side = end ? 1 : -1;
@@ -1202,6 +1234,7 @@
 		get rig() { return players[0]; },
 		get selling() { return selling; },
 		get recharging() { return recharging; },
+		get rampsEnabled() { return rampsEnabled; },
 		get force() { return players[active] ? forceOf(players[active]) : 0; },
 		get ballMode() { return ballMode; },
 		get world() { return rigWorld; },
@@ -1212,7 +1245,7 @@
 	const api = {
 		init, update, surfaceAt, draw, renderPlatform, profileAt, money, purchase, load, force, activeSpeed, activeTarget, rigActive,
 		setActive, setBot, syncRigBot, command, commandTarget, commandBrake, clearCommand, setForce, setBallMode,
-		machineOf, pistonAngleOf, setPistonAngleOf, overrideMachine,
+		machineOf, pistonAngleOf, setPistonAngleOf, overrideMachine, syncRamps,
 		state, bodyTop, bodyBottom, tailAngle, tailReach, tailFullGap, bladeSwath, bladeCut,
 		get halfWidth() { return halfWidth(); }
 	};

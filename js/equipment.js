@@ -4,6 +4,10 @@
 	// shared, but ownership, installed tiers and every measured delta are not.
 	const items = Object.freeze([
 		Object.freeze({
+			id: 'ramp', name: 'Ramp', cost: 0, mass: 0, defaultInstalled: true, removable: true,
+			effect: 'Stock auto-folding ramps let platforms ride over each other. If any player removes theirs, all platforms push instead. Bots never change this choice.'
+		}),
+		Object.freeze({
 			id: 'grader', name: 'Road grader', cost: 300, mass: 10,
 			effect: '1.5 m under-chassis blade smooths floor rubble while moving; adds rolling resistance.'
 		}),
@@ -71,6 +75,7 @@
 		})
 	]);
 	const engineCosts = Object.freeze({ hand: 60, coal: 250, oil: 650, electric: 850, nuclear: 2400 });
+	const stockItems = items.filter(item => item.defaultInstalled).map(item => item.id);
 	const profiles = new Map();
 
 	function ownerId(owner) {
@@ -99,7 +104,7 @@
 
 	function createProfile() {
 		const profile = {
-			installed: new Set(), ownedEngines: new Set(['electric']),
+			installed: new Set(stockItems), ownedEngines: new Set(['electric']),
 			radiatorId: null, ownedRadiators: new Set(),
 			ballId: 'standard', ownedBalls: new Set(['standard']),
 			massDelta: 0, retentionBonus: 0, pulseBonus: 0, recovery: 0,
@@ -283,18 +288,36 @@
 		return true;
 	}
 
-	function apply(item, world, owner, testGrant) {
+	function syncRamps() {
+		if (root.SteamPlayers) root.SteamPlayers.syncRamps();
+	}
+
+	function changeItem(item, world, owner, installed) {
 		const profile = profileFor(owner);
 		const oldMass = machineMass(world, owner);
-		if (!purchase(owner, item.name, item.cost, world, testGrant)) return false;
-		profile.installed.add(item.id);
-		profile.massDelta += item.mass || 0;
-		profile.retentionBonus += item.retentionBonus || 0;
-		profile.pulseBonus += item.pulseBonus || 0;
-		profile.recovery += item.recoveryFraction || 0;
-		profile.forceBonus += item.forceBonus || 0;
-		profile.speedBonus += item.speedBonus || 0;
+		const sign = installed ? 1 : -1;
+		if (installed) profile.installed.add(item.id);
+		else profile.installed.delete(item.id);
+		profile.massDelta += sign * (item.mass || 0);
+		profile.retentionBonus += sign * (item.retentionBonus || 0);
+		profile.pulseBonus += sign * (item.pulseBonus || 0);
+		profile.recovery += sign * (item.recoveryFraction || 0);
+		profile.forceBonus += sign * (item.forceBonus || 0);
+		profile.speedBonus += sign * (item.speedBonus || 0);
 		coupleMass(world, owner, oldMass);
+		if (item.id === 'ramp') syncRamps();
+	}
+
+	function apply(item, world, owner, testGrant) {
+		if ((item.cost > 0 || testGrant) && !purchase(owner, item.name, item.cost, world, testGrant)) return false;
+		changeItem(item, world, owner, true);
+		return true;
+	}
+
+	function uninstall(id, world, owner) {
+		const item = find(id);
+		if (!item || !item.removable || !isInstalled(id, owner)) return false;
+		changeItem(item, world, owner, false);
 		return true;
 	}
 
@@ -318,13 +341,14 @@
 
 	function reset() {
 		profiles.clear();
+		syncRamps();
 	}
 
 	const api = {
 		engineCosts, ownsEngine, atShop, buyEngine, items, radiators,
 		ownsRadiator, radiatorUnlocked, installedRadiator, installRadiator,
 		balls, ballEntry, ownsBall, ballUnlocked, installedBall, installBall,
-		state, stateFor, find, isInstalled, isUnlocked, rigOnly, install, grant, installAll, reset
+		state, stateFor, find, isInstalled, isUnlocked, rigOnly, install, uninstall, grant, installAll, reset
 	};
 	root.SteamEquipment = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;

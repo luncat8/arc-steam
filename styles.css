@@ -18,7 +18,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 13px 0; 
 .hint { font-size: 11px; line-height: 1.6; }
 
 /* System, telemetry, chamber workspace and market; science and view controls live in drawers. */
-main { max-width: 1920px; margin: auto; padding: 8px; display: grid; gap: 8px; }
+main { padding: 8px; display: grid; gap: 8px; }
 .panel { min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: #101a1e; }
 .panel-title { min-height: 44px; padding: 15px 16px; border-bottom: 1px solid var(--line); color: #a7b8ba; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #101a1e; }
 .panel-body { padding: 16px; }
@@ -102,13 +102,15 @@ main { max-width: 1920px; margin: auto; padding: 8px; display: grid; gap: 8px; }
 .status-message[data-tone="danger"] { color: var(--danger); border-left-color: var(--danger); }
 .status-message[hidden] { display: none; }
 
-.workspace { display: grid; gap: 12px; grid-template-columns: 260px minmax(0, 1fr) 250px; grid-template-areas: "cargo mine controls"; }
+/* Cap the chamber, not the page: surplus desktop width belongs to cargo.
+   126.54vh is the 1.71 scene ratio at the side panels' 74vh height limit. */
+.workspace { display: grid; gap: 12px; grid-template-columns: minmax(260px, 1fr) minmax(0, min(1282px, calc(126.54vh + 2px))) 250px; grid-template-areas: "cargo mine controls"; }
 .cargo-panel { grid-area: cargo; }
-.mine-panel { grid-area: mine; display: flex; flex-direction: column; }
+.mine-panel { grid-area: mine; align-self: start; display: flex; flex-direction: column; }
 .controls-panel { grid-area: controls; }
 /* The ratio matches the chamber's 27.3 x 15.7 m scene plus the renderer's
-   margins, so the fitted chamber fills the canvas instead of letterboxing. */
-.canvas-wrap { position: relative; flex: 1 0 auto; aspect-ratio: 1.71; min-height: 420px; max-height: 74vh; background: #10191d; border-radius: 6px 6px 0 0; overflow: hidden; }
+   margins. Side-panel content must never stretch this box. */
+.canvas-wrap { position: relative; flex: none; aspect-ratio: 1.71; background: #10191d; border-radius: 6px 6px 0 0; overflow: hidden; }
 canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 
 .mine-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; padding: 9px 14px; border-top: 1px solid var(--line); color: #94a8ac; font-size: 9px; }
@@ -195,6 +197,7 @@ progress { width: 100%; height: 8px; accent-color: var(--amber); margin-top: 8px
 .node-sci > b::before { content: "SCI"; color: #b9ed91; background: #213726; border: 1px solid #446b47; }
 .node-buy > b::before { content: "↳ BUY"; color: #e6b66e; background: #2c2416; border: 1px solid #68512c; }
 .tree-root .node-buy > b::before { content: "BUY"; }
+.tree-root [data-item="ramp"] > b::before { content: "KIT"; }
 .tree-root [data-family="engines"] > b::before { content: "BAY"; color: #7fb6d9; background: #172934; border: 1px solid #35586d; }
 .service-slot > b::before { content: "BOT"; color: #7fb6d9; background: #172934; border: 1px solid #35586d; }
 .upgrade-row[data-state="installed"] b, .upgrade-row[data-state="researched"] b { color: var(--accent); }
@@ -218,7 +221,7 @@ progress { width: 100%; height: 8px; accent-color: var(--amber); margin-top: 8px
 
 .tree-root { position: relative; z-index: 1; grid-column: 1 / -1; grid-row: 2; border: 1px solid #354a4f; border-radius: 6px; background: #111c20; overflow: hidden; }
 .tree-root-title { padding: 4px 10px; border-bottom: 1px solid var(--line); background: #0d1619; color: #8da2a6; font: 8.5px ui-monospace, monospace; letter-spacing: 1.1px; }
-.tree-root-bays { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.tree-root-bays { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .tree-root-bays > .upgrade-row { padding: 6px 9px; }
 .tree-root-bays > .upgrade-row + .upgrade-row { border-left: 1px solid var(--line); }
 
@@ -348,6 +351,11 @@ button.help-mark:hover, button.help-mark[aria-expanded="true"] { color: #10191d;
 	.telemetry { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 	.workspace { grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.8fr); grid-template-areas: "cargo mine" "controls controls"; }
 }
+@media (min-width: 761px) and (max-width: 1100px) {
+	.tree-root-bays { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.tree-root-bays > .upgrade-row:nth-child(3) { border-left: 0; }
+	.tree-root-bays > .upgrade-row:nth-child(n + 3) { border-top: 1px solid var(--line); }
+}
 @media (max-width: 760px) {
 	/* On a phone the messages matter more than the facts, so they wrap under a smaller fact row. */
 	body { padding-bottom: 76px; }
@@ -355,12 +363,13 @@ button.help-mark:hover, button.help-mark[aria-expanded="true"] { color: #10191d;
 	.status-messages { margin-left: 0; }
 	main { padding: 12px; }
 	.system-row { gap: 6px 14px; }
+	.time-controls { flex-wrap: wrap; }
 	.system-row label { display: flex; align-items: center; }
 	.system-row select { margin-left: 4px; max-width: 132px; }
 	.telemetry { grid-template-columns: 1fr 1fr; }
 	.telemetry strong { font-size: 13px; }
 	.workspace { grid-template-columns: minmax(0, 1fr); grid-template-areas: "mine" "controls" "cargo"; }
-	.canvas-wrap { aspect-ratio: auto; height: 320px; min-height: 0; }
+	.canvas-wrap { aspect-ratio: auto; height: 320px; }
 	.view-switch { margin-left: 0; }
 	.mine-footer { gap: 8px 12px; }
 	.fall-test-summary { display: none; }
