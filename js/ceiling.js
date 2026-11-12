@@ -391,24 +391,9 @@
 	// compiled formation, so equal seed and configuration give equal rock; the
 	// rendering warp and the screen never enter the sampler.
 	const runGeology = geologyConfig.create(seed);
+	const runField = geology.createField(runGeology);
 	let formation = geology.compile(runGeology.ranges, runGeology.mode, runGeology.specificity);
 	let runHostWeight = runGeology.hostWeight;
-
-	function applyGeology(snapshot) {
-		geologyConfig.settingsInto(runGeology, snapshot);
-		geologyConfig.rangesInto(runGeology, snapshot.ranges);
-		formation = geology.compile(runGeology.ranges, runGeology.mode, runGeology.specificity);
-		runHostWeight = runGeology.hostWeight;
-	}
-
-	// One cell's composition and mixture from absolute geological coordinates.
-	function populateCell(index, column, geologicalRow) {
-		const elementOffset = index * 3;
-		const mixOffset = index * mineralCount;
-		geology.fillElements(runField, column, geologicalRow, elements, elementOffset);
-		geology.fillMix(formation, elements, elementOffset, runHostWeight, minerals, mixOffset);
-	}
-	const runField = geology.createField(runGeology);
 
 	// The field is positioned by the run, not by the picture: only these cell
 	// coordinates and the captured settings reach the sampler.
@@ -418,6 +403,25 @@
 		runField.yCompression = runGeology.yCompression;
 	}
 
+	// Take the settings of a validated snapshot into the run's live configuration
+	// and compile the formation once, not once per cell. This changes the rock of
+	// the next run; an active run's intact cells, fragments and cargo keep their
+	// strength and booked prices.
+	function applyGeology(snapshot) {
+		geologyConfig.settingsInto(runGeology, snapshot);
+		geologyConfig.rangesInto(runGeology, snapshot.ranges);
+		formation = geology.compile(runGeology.ranges, runGeology.mode, runGeology.specificity);
+		runHostWeight = runGeology.hostWeight;
+		syncField();
+	}
+
+	// One cell's composition and mixture from absolute geological coordinates.
+	function populateCell(index, column, geologicalRow) {
+		const elementOffset = index * 3;
+		const mixOffset = index * mineralCount;
+		geology.fillElements(runField, column, geologicalRow, elements, elementOffset);
+		geology.fillMix(formation, elements, elementOffset, runHostWeight, minerals, mixOffset);
+	}
 	function smooth(t) { return t * t * (3 - 2 * t); }
 	function noise(x, y, channel) {
 		const ix = Math.floor(x);
@@ -573,7 +577,6 @@
 	// probe compares this against the lab at the same coordinates.
 	const sampleScratch = { elements: new Float64Array(3), mix: new Float64Array(mineralCount) };
 	function sampleCell(column, geologicalRow) {
-		syncField();
 		geology.fillElements(runField, column, geologicalRow, sampleScratch.elements, 0);
 		geology.fillMix(formation, sampleScratch.elements, 0, runHostWeight, sampleScratch.mix, 0);
 		return sampleScratch;
@@ -594,7 +597,7 @@
 
 	// Build one row of rock at array slot `row` using continuous geological depth
 	// `geologicalRow` so top-row replenishment extends natural veins seamlessly.
-	function populateRow(row, geologicalRow, rowDamage, recordAbundance) {
+	function populateRow(row, geologicalRow, rowDamage) {
 		if (testRock) {
 			populateTestRow(row, rowDamage);
 			return;
@@ -602,10 +605,25 @@
 		for (let column = 0; column < columns; column++) {
 			const index = row * columns + column;
 			populateCell(index, column, geologicalRow);
-			const offset = index * mineralCount;
-			if (recordAbundance) for (let m = 0; m < mineralCount; m++) mineralAbundance[m] += minerals[offset + m];
 			paintCell(index, rowDamage);
 		}
+	}
+
+	// The run's calibration population: the measured abundance of the opening bed
+	// only, so the base quotes describe the geology the run starts in. Generated
+	// upper rows are not folded in - a deeper column would otherwise reprice the
+	// market while the player scrolls. The sample is every initial cell, seed-wide
+	// and column-wide at the run's own depth.
+	function measureAbundance() {
+		mineralAbundance.fill(0);
+		for (let row = 0; row < initialRows; row++) {
+			for (let column = 0; column < columns; column++) {
+				const offset = (row * columns + column) * mineralCount;
+				for (let m = 0; m < mineralCount; m++) mineralAbundance[m] += minerals[offset + m];
+			}
+		}
+		const initialCells = columns * initialRows;
+		for (let m = 0; m < mineralCount; m++) mineralAbundance[m] /= initialCells;
 	}
 
 	// The controlled bed: one pure band per table entry, left to right, so every
@@ -702,7 +720,7 @@
 		pruneBottomRows();
 		if (rows >= maxRows) return false;
 		const row = rows;
-		populateRow(row, generatedRows, 0, false);
+		populateRow(row, generatedRows, 0);
 		rows++;
 		generatedRows++;
 		revalueRange(row * columns, rows * columns);
@@ -877,7 +895,7 @@
 		strength.fill(0);
 		damageField.fill(0);
 		prices.fill(0);
-		for (let row = 0; row < rows; row++) populateRow(row, row, (rows - 1 - row) / (rows - 1), false);
+		for (let row = 0; row < rows; row++) populateRow(row, row, (rows - 1 - row) / (rows - 1));
 		revalueCells();
 		updateHeightmap();
 		updatePerspective();
@@ -955,10 +973,8 @@
 		collapseClock = 0;
 		marketClock = 0;
 		marketBudget = 0;
-		mineralAbundance.fill(0);
-		for (let row = 0; row < rows; row++) populateRow(row, row, 0, true);
-		const initialCells = columns * rows;
-		for (let m = 0; m < mineralCount; m++) mineralAbundance[m] /= initialCells;
+		for (let row = 0; row < rows; row++) populateRow(row, row, 0);
+		measureAbundance();
 		initMarket();
 		updateHeightmap();
 		updatePerspective();
@@ -1998,6 +2014,8 @@
 	function colorFor(index, mode, damage) {
 		if (mode === 'elements') return elementColors[index];
 		if (mode === 'price') return priceColors[index];
+		// The fixed absolute ceiling: the strongest pure mineral, so a cell's
+		// colour never depends on its own initial strength.
 		if (mode === 'strength') return strengthPalette[Math.round(materials.clamp01(strength[index] / materials.maxStrength) * 100)];
 		if (mode === 'damage') return damagePalette[Math.round(Math.max(0, Math.min(1, damage === undefined ? damageField[index] : damage)) * 100)];
 		return mineralStyles[index];

@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync('prototypes/mineral-lab.js', 'utf8');
 const minerals = require('../js/minerals.js');
-const context = vm.createContext({ minerals, count: minerals.mineralCount, table: minerals.mineralTable,
+const materials = require('../js/rock-materials.js');
+const context = vm.createContext({ minerals, materials, count: minerals.mineralCount, table: minerals.mineralTable,
 	window: { matchMedia: () => ({ matches: true }) }, mapMix: new Float32Array(minerals.mineralCount),
 	state: { view: 'minerals' }, dirty: { draw: false }, schedules: 0 });
 vm.runInContext('function schedule() { schedules++; }\n' +

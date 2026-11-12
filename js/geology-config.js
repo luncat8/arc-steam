@@ -40,12 +40,31 @@
 	const format = 'steam-geology';
 	const version = 1;
 
+	// The lab's field controls, in the order the header shows them. `key` names
+	// the setting, so the markup, the lab's reset and the game start all read one
+	// row: a bound or a default can only change here.
+	const controls = Object.freeze([
+		Object.freeze({ key: 'frequency', id: 'frequency', label: 'FIELD FREQUENCY', step: 0.005, digits: 3 }),
+		Object.freeze({ key: 'yCompression', id: 'compression', label: 'Y FLATTENING', step: 0.5, digits: 1, suffix: '×' }),
+		Object.freeze({ key: 'specificity', id: 'specificity', label: 'SPECIFICITY', step: 0.05, digits: 2 }),
+		Object.freeze({ key: 'hostWeight', id: 'host-weight', label: 'HOST WEIGHT', step: 0.01, digits: 3 })
+	]);
+
+	// How a control shows a value: fixed digits and the unit suffix, if any.
+	function formatValue(key, value) {
+		for (let i = 0; i < controls.length; i++) {
+			const control = controls[i];
+			if (control.key === key) return value.toFixed(control.digits) + (control.suffix || '');
+		}
+		return String(value);
+	}
+
 	// Editable copy of a table's ranges: ranges[mineral][channel] = [low, high].
 	function rangesOf(source) {
 		const ranges = new Array(source.length);
 		for (let m = 0; m < source.length; m++) {
 			const entry = source[m];
-			ranges[m] = [[entry.r[0], entry.r[1]], [entry.g[0], entry.g[1]], [entry.b[0], entry.b[1]]];
+			ranges[m] = [entry.r.slice(), entry.g.slice(), entry.b.slice()];
 		}
 		return ranges;
 	}
@@ -72,14 +91,13 @@
 		return copy;
 	}
 
-	// Restore the shipped defaults in place (the lab's reset).
+	// Restore the shipped defaults in place (the lab's reset): the same single
+	// path create() takes, so a reset can never restore something different from
+	// what a new configuration opens with.
 	function resetInto(config) {
-		config.frequency = defaults.frequency;
-		config.yCompression = defaults.yCompression;
-		config.mode = defaults.mode;
-		config.specificity = defaults.specificity;
-		config.hostWeight = defaults.hostWeight;
-		rangesInto(config, table);
+		const shipped = create(config.seed);
+		settingsInto(config, shipped);
+		rangesInto(config, shipped.ranges);
 		return config;
 	}
 
@@ -92,11 +110,15 @@
 		target.hostWeight = source.hostWeight;
 	}
 
+	// Copy [low, high] pairs from another snapshot into `target` in place. The
+	// source is either a compiled range array or a table row; one reader for
+	// both, so a table row can never be read as if it were a range array.
 	function rangesInto(target, source) {
 		const ranges = target.ranges;
 		for (let m = 0; m < count; m++) {
+			const entry = source[m];
 			for (let c = 0; c < channelCount; c++) {
-				const range = source[m][c];
+				const range = Array.isArray(entry) ? entry[c] : entry[channelKeys[c]];
 				ranges[m][c][0] = range[0];
 				ranges[m][c][1] = range[1];
 			}
@@ -203,7 +225,7 @@
 	}
 
 	const api = {
-		defaults, limits, modes, channelKeys, format, version,
+		defaults, limits, modes, channelKeys, controls, formatValue, format, version,
 		rangesOf, create, capture, resetInto, settingsInto, rangesInto,
 		exportOf, validateExport, applyInto
 	};

@@ -722,14 +722,26 @@ function applyImportText() {
 function syncConfigControls() {
 	ui.seed.value = String(state.seed);
 	ui.frequency.value = String(state.frequency);
-	ui['frequency-value'].textContent = state.frequency.toFixed(3);
+	ui['frequency-value'].textContent = geologyConfig.formatValue('frequency', state.frequency);
 	ui.compression.value = String(state.yCompression);
-	ui['compression-value'].textContent = state.yCompression.toFixed(1) + '×';
+	ui['compression-value'].textContent = geologyConfig.formatValue('yCompression', state.yCompression);
 	ui['host-weight'].value = String(state.hostWeight);
-	ui['host-weight-value'].textContent = state.hostWeight.toFixed(3);
+	ui['host-weight-value'].textContent = geologyConfig.formatValue('hostWeight', state.hostWeight);
 	ui.mode.value = state.mode;
 	ui.specificity.value = String(state.specificity);
-	ui['specificity-value'].textContent = state.specificity.toFixed(2);
+	ui['specificity-value'].textContent = geologyConfig.formatValue('specificity', state.specificity);
+}
+
+// The field controls' bounds and opening values come from the shared table, so
+// the HTML defaults, a reset and the game's start cannot drift apart.
+function syncControlBounds() {
+	for (const control of geologyConfig.controls) {
+		const input = ui[control.id];
+		const limit = geologyConfig.limits[control.key];
+		input.setAttribute('min', String(limit.min));
+		input.setAttribute('max', String(limit.max));
+		input.setAttribute('step', String(control.step));
+	}
 }
 
 function runAdjust() {
@@ -747,7 +759,7 @@ function runAdjust() {
 		});
 		state.hostWeight = result.hostWeight;
 		ui['host-weight'].value = String(result.hostWeight);
-		ui['host-weight-value'].textContent = result.hostWeight.toFixed(3);
+		ui['host-weight-value'].textContent = geologyConfig.formatValue('hostWeight', result.hostWeight);
 		recompile();
 		const scan = scanErrors(result.stats.shares);
 		status('auto-adjust: ' + result.history.length + ' passes, worst ' + signed(scan.pp, 2) + ' pp (' +
@@ -818,13 +830,13 @@ function bindControls() {
 	});
 	ui.frequency.addEventListener('input', function () {
 		state.frequency = Number(ui.frequency.value);
-		ui['frequency-value'].textContent = state.frequency.toFixed(3);
+		ui['frequency-value'].textContent = geologyConfig.formatValue('frequency', state.frequency);
 		dirty.field = true;
 		rebuildSample();
 	});
 	ui.compression.addEventListener('input', function () {
 		state.yCompression = Number(ui.compression.value);
-		ui['compression-value'].textContent = state.yCompression.toFixed(1) + '×';
+		ui['compression-value'].textContent = geologyConfig.formatValue('yCompression', state.yCompression);
 		dirty.field = true;
 		rebuildSample();
 	});
@@ -859,7 +871,7 @@ function bindControls() {
 	});
 	ui['host-weight'].addEventListener('input', function () {
 		state.hostWeight = Number(ui['host-weight'].value);
-		ui['host-weight-value'].textContent = state.hostWeight.toFixed(3);
+		ui['host-weight-value'].textContent = geologyConfig.formatValue('hostWeight', state.hostWeight);
 		dirty.mixes = true;
 		dirty.stats = true;
 		schedule();
@@ -868,7 +880,7 @@ function bindControls() {
 		cache = geology.buildCache(sample, formation);
 		state.hostWeight = geology.solveHostWeight(cache, state.targets[hostIndex]);
 		ui['host-weight'].value = String(state.hostWeight);
-		ui['host-weight-value'].textContent = state.hostWeight.toFixed(3);
+		ui['host-weight-value'].textContent = geologyConfig.formatValue('hostWeight', state.hostWeight);
 		status('host solve: actual share ' + (geology.meanHostShare(cache, state.hostWeight) * 100).toFixed(1) + '%; unmatched cells can make the target unreachable.');
 		dirty.mixes = true;
 		dirty.stats = true;
@@ -880,7 +892,7 @@ function bindControls() {
 	});
 	ui.specificity.addEventListener('input', function () {
 		state.specificity = Number(ui.specificity.value);
-		ui['specificity-value'].textContent = state.specificity.toFixed(2);
+		ui['specificity-value'].textContent = geologyConfig.formatValue('specificity', state.specificity);
 		recompile();
 	});
 	ui['target-host'].addEventListener('input', function () {
@@ -958,6 +970,8 @@ function bindCellTip() {
 }
 
 function start() {
+	syncControlBounds();
+	syncConfigControls();
 	buildShareRows();
 	updateDesiredSummary();
 	buildEditor();

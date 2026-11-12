@@ -1459,31 +1459,32 @@ test('the road grader row follows the selected player: Locked for a rival, and t
 });
 
 test('mineral fall sliders and test-rock button wire the controlled setup', () => {
+	// One slider per shared table row, so a new mineral needs no markup here.
+	const minerals = require('../js/minerals.js');
 	const iron = dom.element('cluster-iron');
-	// The sliders span the whole mixed range: 10% is the plain loose-face clump
-	// and 500% the widest group.
-	for (const id of ['cluster-iron', 'cluster-copper', 'cluster-crystal']) {
-		assert.equal(dom.element(id).getAttribute('min'), '10');
-		assert.equal(dom.element(id).getAttribute('max'), '500');
+	for (const entry of minerals.mineralTable) {
+		const slider = dom.element('cluster-' + entry.id);
+		assert.equal(slider.getAttribute('min'), '10');
+		assert.equal(slider.getAttribute('max'), '500');
+		assert.equal(slider.getAttribute('value'), String(entry.growth), 'a slider opens on the table growth');
 	}
-	assert.equal(dom.element('cluster-iron').getAttribute('value'), '300');
-	assert.equal(dom.element('cluster-copper').getAttribute('value'), '100');
-	assert.equal(dom.element('cluster-crystal').getAttribute('value'), '10');
+	const ironIndex = minerals.mineralIds.indexOf('iron');
+	const gasIndex = minerals.mineralIds.indexOf('gas');
 	iron.value = '125';
 	iron.dispatch('input');
-	assert.equal(ceiling.state.mineralClusterGrowth[0], 125);
+	assert.equal(ceiling.state.mineralClusterGrowth[ironIndex], 125);
 	assert.equal(dom.element('cluster-iron-value').textContent, '125%');
-	const crystal = dom.element('cluster-crystal');
-	crystal.value = '0';
-	crystal.dispatch('input');
-	assert.equal(ceiling.state.mineralClusterGrowth[2], 10, 'the slider cannot go below the plain clump');
-	assert.equal(dom.element('cluster-crystal-value').textContent, '10%');
+	const gas = dom.element('cluster-' + minerals.mineralTable[gasIndex].id);
+	gas.value = '0';
+	gas.dispatch('input');
+	assert.equal(ceiling.state.mineralClusterGrowth[gasIndex], 10, 'the slider cannot go below the plain clump');
+	assert.equal(dom.element('cluster-gas-value').textContent, '10%');
 
 	dom.element('generate-test-rock').dispatch('click');
 	assert.equal(ceiling.state.testRock, true);
 	assert.equal(ceiling.state.extractedCells, 0, 'the generator starts from a clean run');
-	assert.equal(ceiling.state.mineralClusterGrowth[0], 125, 'the live setting carries into the new run');
-	assert.match(dom.element('fall-test-status').textContent, /Iron → Copper → Crystal/);
+	assert.equal(ceiling.state.mineralClusterGrowth[ironIndex], 125, 'the live setting carries into the new run');
+	assert.match(dom.element('fall-test-status').textContent, /Stone → Iron ore → Copper ore/);
 	assert.equal(dom.element('rock-damage-view').getAttribute('value'), 'damage');
 	advance(3);
 	assert.ok(Math.abs(physics.totalEnergy(world) - world.initialEnergy) < 1e-5);

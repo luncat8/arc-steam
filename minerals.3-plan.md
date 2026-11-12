@@ -12,17 +12,25 @@ collapse cohesion and demand remain authoritative. Gas-bearing rock stays at
 Port the model, not the calibration UI into the game. Preserve classic scripts,
 `file://` operation, guarded CommonJS exports and no build step.
 
-## Current boundaries
+## Boundaries
 
-- `js/minerals.js`: shared nine-material table, ranges, target shares, strengths,
-  growth defaults and demand metadata.
-- `js/element-cdf.js` and `js/geology.js`: existing field sampling, flattening,
-  formation and calibration tools used by the lab and probes.
-- `prototypes/mineral-lab.js`: editable parameter state, calibration UI and map
-  presentation; also contains reference price and strength calculations.
-- `js/ceiling.js`: currently owns a separate six-material table, generation,
-  `2.2 + hardness`, market, simulation arrays and drawing. Its geology does not
-  yet consume the shared model, despite the intended boundary in geology's header.
+- `js/minerals.js`: the one nine-material table (stone host, iron, copper, quartz,
+  corundum, fluorite, silver, gold, gas-bearing rock) with ranges, target shares,
+  strengths, growth defaults and demand metadata.
+- `js/geology-config.js`: frozen defaults and editor bounds, the shared control
+  list and value formatting, and the caller-owned snapshot API (`create`,
+  `capture`, `resetInto`, `settingsInto`, `rangesInto`, `exportOf`,
+  `validateExport`, `applyInto`).
+- `js/element-cdf.js` and `js/geology.js`: field sampling, flattening, formation
+  and calibration. Geology reads its defaults from the config and keeps the
+  calibration-only cache and optimizers out of the run path.
+- `js/rock-materials.js`: mixture strength, colour, allocation-free base prices
+  and the two display ramps, all writing into caller storage.
+- `js/ceiling.js`: the run's captured snapshot, field, compiled formation, cell
+  arrays, market, collapse mechanics and drawing. It owns no material table and
+  no copied formula.
+- `prototypes/mineral-lab.js`: editable snapshot, calibration UI and map
+  presentation; the same shared table, helpers and price curve as the game.
 
 ## Shared ownership
 
@@ -81,6 +89,11 @@ calibration into another file; do not rewrite the working sampler unnecessarily.
    Use absolute geological cell coordinates, including newly generated rows after
    scrolling/compaction. Rendering warp and screen coordinates must not influence
    geology. Equal seed/config/coordinates must produce equal lab/game mixtures.
+
+   Implemented: the run captures one snapshot, compiles one formation and samples
+   one field whose seed, frequency and flattening follow that snapshot. Row shifts
+   change the array slot, never the geological row, so a regenerated cell at the
+   same absolute coordinate reads the same mixture as the lab.
 3. Set initial strength to `sum(fraction * table.strength)` and remaining strength
    to that value on generation. Pure test bands use exact table strengths. Keep
    the impact radius, multiplier, falloff, hit cap, held-cell rule and energy ledger
@@ -89,6 +102,8 @@ calibration into another file; do not rewrite the working sampler unnecessarily.
    inventory, cargo, rubble, debris composition, help, inspector, tests and probes
    for six-entry assumptions and positional IDs. Every material, including stone
    and gas-bearing rock, participates consistently in accounting.
+   Screens and readouts iterate the table by index or by `id` (`cluster-<id>`),
+   never by a positional six-entry name, so adding a row needs no markup.
 5. Draw remaining strength against the fixed strongest-pure-material maximum,
    not each cell's own initial strength. Clamp only the display ratio. Continue
    showing remaining/initial J in the inspector; the separate damage view retains
@@ -98,10 +113,17 @@ calibration into another file; do not rewrite the working sampler unnecessarily.
    recalibrating abundance on every visible-row shift; preserve the run's chosen
    calibration population and document its geological depth/seed coverage.
 
-## Validation and rollout
+   Implemented: the calibration population is the opening bed — every column at
+   rows 0..initialRows-1 of the run's own seed, formation and depth, sampled once
+   when the run starts. Generated upper rows are excluded on purpose: a deeper
+   column is a different geological population, and folding it in would reprice
+   the market while the player scrolls. The base-price report carries the nominal
+   cell value next to the mean the floor and cap actually achieve.
 
-- First extract helpers without changing lab output; then migrate the game in a
-  separate reviewable step. Tune ranges/economy only after parity is established.
+## Validation
+
+- The shared helpers landed without changing lab output before the game was
+  migrated onto them; ranges and economy were tuned only after parity.
 - Compare seeded lab and game samples at identical absolute coordinates, including
   deep rows, row shifts and reseeding. Compare with Float32 storage tolerance.
 - Verify nonnegative normalized mixes, pure strengths, weighted mixtures,

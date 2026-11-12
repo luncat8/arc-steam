@@ -98,6 +98,7 @@ function loadLab() {
 		'target-common', 'target-common-value', 'target-uncommon', 'target-uncommon-value',
 		'target-rare', 'target-rare-value', 'target-veryrare', 'target-veryrare-value',
 		'auto-adjust', 'spread', 'reset-ranges', 'copy-table', 'copy-report', 'help-calibrate',
+		'export-formation', 'import-formation', 'import-panel', 'import-text', 'import-apply', 'import-cancel',
 		'calibrate-status', 'report'];
 	const byId = new Map(ids.map(id => [id, new StubElement('div')]));
 	let frameCallback = null;
@@ -111,18 +112,24 @@ function loadLab() {
 			return node;
 		}
 	};
+	const clipboard = { text: '', writeText(text) { clipboard.text = text; return Promise.resolve(); } };
 	const sandbox = {
 		console,
 		document,
-		navigator: { clipboard: { writeText: () => Promise.resolve() } },
+		navigator: { clipboard },
+		// A fine pointer, so the lab's hover-to-preview path stays available.
+		matchMedia: () => ({ matches: true }),
 		performance: { now: () => 0 },
 		requestAnimationFrame: callback => { frameCallback = callback; return 1; },
 		setTimeout,
 		clearTimeout
 	};
 	sandbox.globalThis = sandbox;
+	// The lab page's window is the page global: geology-config and the lab read
+	// it for their guarded globals, exactly as a classic script does in a page.
+	sandbox.window = sandbox;
 	vm.createContext(sandbox);
-	for (const file of ['js/minerals.js', 'js/element-cdf.js', 'js/geology.js', 'prototypes/range-slider.js', 'prototypes/mineral-lab.js']) {
+	for (const file of ['js/minerals.js', 'js/element-cdf.js', 'js/geology-config.js', 'js/rock-materials.js', 'js/geology.js', 'prototypes/range-slider.js', 'prototypes/mineral-lab.js']) {
 		vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), sandbox, { filename: file });
 	}
 	function runFrame() {
@@ -131,7 +138,7 @@ function loadLab() {
 		assert.ok(callback, 'a frame was scheduled');
 		callback();
 	}
-	return { byId, runFrame };
+	return { byId, runFrame, clipboard };
 }
 
 function shareRow(lab, index) {
@@ -222,4 +229,64 @@ test('desired share is editable and error reads achieved minus desired', () => {
 	// stub (which has no scrollIntoView) must not be called.
 	fire(first.row, 'click');
 	assert.ok(first.row.classList.contains('is-selected'), 'row click selects the mineral');
+});
+
+test('the formation snapshot exports keyed by mineral id and imports whole or not at all', () => {
+	const lab = loadLab();
+	lab.runFrame();
+	const geoConfig = require('../js/geology-config.js');
+	const minerals = require('../js/minerals.js');
+
+	// Export is the complete formation, not just the ranges.
+	fire(lab.byId.get('export-formation'), 'click');
+	const exported = JSON.parse(lab.clipboard.text);
+	assert.equal(exported.format, geoConfig.format);
+	assert.equal(exported.version, geoConfig.version);
+	assert.deepEqual(Object.keys(exported.ranges).sort(), minerals.mineralIds.slice().sort());
+	assert.deepEqual(exported.settings, {
+		frequency: geoConfig.defaults.frequency,
+		yCompression: geoConfig.defaults.yCompression,
+		mode: geoConfig.defaults.mode,
+		specificity: geoConfig.defaults.specificity,
+		hostWeight: geoConfig.defaults.hostWeight
+	}, 'the lab exports the settings it is showing');
+	assert.ok(exported.calibration.desiredShares.iron > 0, 'desired shares travel as calibration metadata');
+
+	// An edit, exported, imports back in and returns the lab to the edited state.
+	const frequency = lab.byId.get('frequency');
+	frequency.value = '0.2';
+	fire(frequency, 'input');
+	const mode = lab.byId.get('mode');
+	mode.value = 'product';
+	fire(mode, 'change');
+	fire(lab.byId.get('export-formation'), 'click');
+	const edited = lab.clipboard.text;
+	fire(lab.byId.get('reset-ranges'), 'click');
+	fire(lab.byId.get('export-formation'), 'click');
+	assert.equal(JSON.parse(lab.clipboard.text).settings.frequency, geoConfig.defaults.frequency, 'reset restored the defaults');
+
+	fire(lab.byId.get('import-formation'), 'click');
+	assert.equal(lab.byId.get('import-panel').hidden, false, 'import opens a paste panel');
+	lab.byId.get('import-text').value = edited;
+	fire(lab.byId.get('import-apply'), 'click');
+	assert.equal(lab.byId.get('import-panel').hidden, true);
+	fire(lab.byId.get('export-formation'), 'click');
+	const restored = JSON.parse(lab.clipboard.text);
+	assert.equal(restored.settings.frequency, 0.2, 'the imported field frequency is applied');
+	assert.equal(restored.settings.mode, 'product', 'the imported mode is applied');
+	assert.deepEqual(restored.ranges, JSON.parse(edited).ranges, 'the imported ranges are applied');
+	assert.equal(lab.byId.get('host-weight-value').textContent, geoConfig.formatValue('hostWeight', restored.settings.hostWeight),
+		'the controls mirror the imported snapshot');
+
+	// A broken paste is reported and changes nothing.
+	fire(lab.byId.get('import-formation'), 'click');
+	lab.byId.get('import-text').value = '{ not json';
+	fire(lab.byId.get('import-apply'), 'click');
+	assert.match(lab.byId.get('calibrate-status').textContent, /import rejected/);
+	lab.byId.get('import-text').value = JSON.stringify({ format: geoConfig.format, version: geoConfig.version, settings: {}, ranges: {} });
+	fire(lab.byId.get('import-apply'), 'click');
+	assert.match(lab.byId.get('calibrate-status').textContent, /import rejected: frequency must be a finite number/);
+	assert.match(lab.byId.get('calibrate-status').textContent, /ranges for stone/);
+	fire(lab.byId.get('export-formation'), 'click');
+	assert.deepEqual(JSON.parse(lab.clipboard.text), restored, 'a rejected import left the lab untouched');
 });
