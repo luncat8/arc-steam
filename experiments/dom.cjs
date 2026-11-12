@@ -41,7 +41,10 @@ class Element {
 		this.attributes = {};
 		this.listeners = {};
 		this.textContent = '';
-		this.style = {};
+		this.style = {
+			setProperty(name, value) { this[name] = String(value); },
+			getPropertyValue(name) { return this[name] || ''; }
+		};
 		this.offsetHeight = 0;
 		this.hidden = false;
 		this.disabled = false;

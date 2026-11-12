@@ -278,6 +278,11 @@ thead { color: var(--muted); }
 td[data-tone="gain"], .quote-arrow[data-tone="gain"] { color: var(--accent); }
 td[data-tone="loss"], .quote-arrow[data-tone="loss"] { color: var(--danger); }
 .quote-arrow { display: inline-block; width: 1.2em; text-align: center; color: var(--muted); }
+/* The canvas mineral colour as a row mark: a bar keeps the name readable. */
+#inventory-rows th[scope="row"]::before, #market-rows th[scope="row"]::before {
+	content: ""; display: inline-block; width: 3px; height: 1em; margin-right: 7px;
+	border-radius: 2px; background: var(--mineral-color); vertical-align: -2px;
+}
 #transaction-status { font-size: 11px; color: var(--amber); }
 details { font-size: 11px; color: var(--muted); line-height: 1.8; }
 summary { cursor: pointer; }

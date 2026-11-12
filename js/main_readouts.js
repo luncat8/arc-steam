@@ -13,7 +13,10 @@ const marketQuoteCells = [];
 function buildInventory() {
 	const ceiling = window.SteamCeiling.state;
 	for (let i = 0; i < ceiling.mineralNames.length; i++) {
+		const color = ceiling.mineralTable[i].color;
+		const mineralColor = 'rgb(' + color[0] + ' ' + color[1] + ' ' + color[2] + ')';
 		const row = document.createElement('tr');
+		row.style.setProperty('--mineral-color', mineralColor);
 		const name = document.createElement('th');
 		name.scope = 'row';
 		name.textContent = ceiling.mineralNames[i];
@@ -40,6 +43,7 @@ function buildInventory() {
 		ui['inventory-rows'].appendChild(row);
 		if (!ui['market-rows']) continue;
 		const marketRow = document.createElement('tr');
+		marketRow.style.setProperty('--mineral-color', mineralColor);
 		const marketName = document.createElement('th');
 		marketName.scope = 'row';
 		marketName.textContent = ceiling.mineralNames[i] + ' (' + ceiling.mineralSymbols[i] + ')';
