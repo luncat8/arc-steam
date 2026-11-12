@@ -3,14 +3,15 @@
 // calibration lab (prototypes/mineral-lab.html) and the probes, so the numbers
 // measured outside the game are the numbers the game produces.
 // Provides: sampleNoise, flatten, createField, membership, featherFor,
-// rangesOf, compile, buildSample, buildCache, statsAt, solveHostWeight,
-// autoAdjust.
-// Depends on: js/minerals.js, js/element-cdf.js
+// rangesOf, compile, fillElements, fillMix, buildSample, buildCache, statsAt,
+// solveHostWeight, autoAdjust.
+// Depends on: js/minerals.js, js/element-cdf.js, js/geology-config.js
 (function (root) {
 	'use strict';
 	const node = typeof module !== 'undefined' && module.exports;
 	const minerals = node ? require('./minerals.js') : root.SteamMinerals;
 	const cdfTable = node ? require('./element-cdf.js') : root.SteamElementCdf;
+	const config = node ? require('./geology-config.js') : root.SteamGeologyConfig;
 
 	const mineralTable = minerals.mineralTable;
 	const mineralCount = minerals.mineralCount;
@@ -56,12 +57,15 @@
 	// geological flattening: a deposit spans yCompression times fewer rows than
 	// columns, so veins read as stratified seams. Channels differ by a modest
 	// frequency scale and an offset; all three carry the same flattening.
-	const defaultFrequency = 0.075;
-	const defaultYCompression = 3;
+	// The defaults live in js/geology-config.js, beside every other setting.
+	const defaultFrequency = config.defaults.frequency;
+	const defaultYCompression = config.defaults.yCompression;
 	const channelScale = [1, 0.82, 1.18];
 	const channelOffsetX = [0, 7.3, 19.1];
 	const channelOffsetY = [0, 5.1, 11.9];
 
+	// The field of one run, positioned by a geology configuration. The page and
+	// the lab sample the same absolute geological cell coordinates through it.
 	function createField(options) {
 		const field = {
 			seed: (options && options.seed) || 1,
@@ -101,14 +105,9 @@
 	function isUnconstrained(range) { return range[0] <= 0 && range[1] >= 1; }
 
 	// Editable copy of a table's ranges: ranges[mineral][channel] = [low, high].
-	function rangesOf(table) {
-		const ranges = new Array(table.length);
-		for (let m = 0; m < table.length; m++) {
-			const entry = table[m];
-			ranges[m] = [[entry.r[0], entry.r[1]], [entry.g[0], entry.g[1]], [entry.b[0], entry.b[1]]];
-		}
-		return ranges;
-	}
+	// The copy itself lives in js/geology-config.js; this is the short alias the
+	// lab, the probes and the game have always used.
+	const rangesOf = config.rangesOf;
 
 	// Affinity modes. `product` multiplies the channel memberships; `balanced`
 	// takes their geometric mean over the constrained channels only. The
@@ -206,6 +205,30 @@
 
 	// A fixed block of geology to measure: the element values of every sampled
 	// cell, built once so range changes only cost the mix pass.
+	// The element channels of one absolute geological cell. `column` and
+	// `geologicalRow` are cell coordinates, never screen or warp coordinates, so
+	// the page and the lab read the same composition at the same depth.
+	function fillElements(field, column, geologicalRow, out, offset) {
+		field.elements(column, geologicalRow, field.values);
+		const values = field.values;
+		out[offset] = values[0];
+		out[offset + 1] = values[1];
+		out[offset + 2] = values[2];
+		return out;
+	}
+
+	// The compiled formation's normalized mix of one cell, written straight into
+	// the caller's array. Reuses one channel scratch vector: no per-cell garbage.
+	const mixValues = new Float64Array(channelCount);
+
+	function fillMix(formation, elements, elementOffset, hostWeight, out, mixOffset) {
+		mixValues[0] = elements[elementOffset];
+		mixValues[1] = elements[elementOffset + 1];
+		mixValues[2] = elements[elementOffset + 2];
+		formation.mixInto(mixValues, hostWeight, out, mixOffset);
+		return out;
+	}
+
 	function buildSample(options) {
 		const seeds = options.seeds;
 		const columns = options.columns;
@@ -468,7 +491,8 @@
 		mineralTable, mineralCount, hostIndex, channelCount, modes, lutBins,
 		defaultFrequency, defaultYCompression, channelScale,
 		sampleNoise, flatten, createField, membership, featherFor, isUnconstrained,
-		rangesOf, compile, specificityOf, contains, separate, buildSample, buildCache,
+		rangesOf, compile, specificityOf, contains, separate, fillElements, fillMix,
+		buildSample, buildCache,
 		emptyStats, statsAt, meanHostShare, solveHostWeight, scaleRange, autoAdjust
 	};
 	root.SteamGeology = api;

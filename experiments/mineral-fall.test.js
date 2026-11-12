@@ -156,15 +156,17 @@ test('released grains fall, land under their own columns and grow the floor heig
 });
 
 test('mineral growth is bounded to the 10%..500% slider range and survives New game resets', () => {
-	assert.equal(ceiling.setMineralClusterGrowth(0, 0), 10, 'the floor is the plain clump, not zero growth');
-	assert.equal(ceiling.setMineralClusterGrowth(1, 25), 25);
-	assert.equal(ceiling.setMineralClusterGrowth('Copper', 900), 500);
-	assert.equal(ceiling.setMineralClusterGrowth(2, 40), 40);
-	assert.equal(ceiling.setMineralClusterGrowth(3, 40), 40);
-	assert.equal(ceiling.setMineralClusterGrowth(4, 30), 30);
-	assert.equal(ceiling.setMineralClusterGrowth(5, 20), 20);
+	// Growth is a game setting keyed by the shared table, so every material -
+	// stone and gas-bearing rock included - carries its own slider.
+	const entry = id => ceiling.state.mineralIds.indexOf(id);
+	assert.equal(ceiling.state.mineralClusterGrowth.length, ceiling.state.mineralCount);
+	assert.equal(ceiling.setMineralClusterGrowth(entry('stone'), 0), 10, 'the floor is the plain clump, not zero growth');
+	assert.equal(ceiling.setMineralClusterGrowth(entry('quartz'), 25), 25);
+	assert.equal(ceiling.setMineralClusterGrowth('Copper ore', 900), 500);
+	assert.equal(ceiling.setMineralClusterGrowth(entry('gas'), 20), 20);
+	const live = Array.from(ceiling.state.mineralClusterGrowth);
 	ceiling.reset(2);
-	assert.deepEqual(Array.from(ceiling.state.mineralClusterGrowth), [10, 500, 40, 40, 30, 20],
+	assert.deepEqual(Array.from(ceiling.state.mineralClusterGrowth), live,
 		'the live settings carry into a new run');
 	assert.equal(ceiling.collapseChunkMax, 4 * (1 + 500 / 100), 'the group cap covers the 500% setting');
 });

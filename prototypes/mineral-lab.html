@@ -44,7 +44,7 @@
 					<label title="Reference base price from default target shares; no live demand"><input type="radio" name="lab-view" value="price" autocomplete="off">Price</label>
 					<label title="Mineral-weighted impact resistance, relative to the strongest pure mineral"><input type="radio" name="lab-view" value="strength" autocomplete="off">Strength</label>
 				</div>
-				<p class="hint">Price: reference base quotes from default target shares, no demand. Strength: 0–7.8 J/cell (strongest pure mineral), not percentage of undamaged health.</p>
+				<p class="hint">Price: reference base quotes from the default target shares, no demand. Strength: 0–7.8 J/cell (the strongest pure mineral, the fixed ceiling), not a percentage of undamaged health.</p>
 				<div class="element-previews">
 					<figure><canvas id="element-r" width="384" height="240"></canvas><figcaption>METAL · R</figcaption></figure>
 					<figure><canvas id="element-g" width="384" height="240"></canvas><figcaption>CRYSTAL · G</figcaption></figure>
@@ -101,9 +101,16 @@
 				<div class="button-row">
 					<button id="auto-adjust" type="button">Auto-adjust ranges</button>
 					<button id="spread" class="quiet" type="button">Spread signatures</button>
-					<button id="reset-ranges" class="quiet" type="button">Reset to table</button>
+					<button id="reset-ranges" class="quiet" type="button">Reset to defaults</button>
+					<button id="export-formation" class="quiet" type="button" title="Copy the complete formation snapshot: field settings, mode, specificity, host weight and every range, keyed by mineral id">Export formation</button>
+					<button id="import-formation" class="quiet" type="button">Import formation</button>
 					<button id="copy-table" class="quiet" type="button">Copy JS ranges</button>
 					<button id="copy-report" class="quiet" type="button">Copy report</button>
+				</div>
+				<div id="import-panel" class="import-panel" hidden>
+					<label for="import-text">Paste a formation snapshot exported from this lab; it is validated before anything changes.</label>
+					<textarea id="import-text" rows="6" spellcheck="false" autocomplete="off"></textarea>
+					<div class="button-row"><button id="import-apply" type="button">Apply snapshot</button><button id="import-cancel" class="quiet" type="button">Cancel</button></div>
 				</div>
 				<p id="calibrate-status" class="hint" role="status"></p>
 				<pre id="report" hidden></pre>
@@ -112,6 +119,8 @@
 	</main>
 	<script src="../js/minerals.js"></script>
 	<script src="../js/element-cdf.js"></script>
+	<script src="../js/geology-config.js"></script>
+	<script src="../js/rock-materials.js"></script>
 	<script src="../js/geology.js"></script>
 	<script src="range-slider.js"></script>
 	<script src="mineral-lab.js"></script>

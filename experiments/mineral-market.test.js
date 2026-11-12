@@ -73,9 +73,9 @@ test('element noise is compressed in Y, so deposits are flatter than they are ro
 test('narrow ranges are rarer: one broad mineral covers more rock than a rare one', () => {
 	const state = reset(1);
 	const counts = dominantCounts(state);
-	const iron = state.mineralNames.indexOf('Iron');
-	const gold = state.mineralNames.indexOf('Gold');
-	assert.ok(counts[iron] > counts[gold] * 3, 'Iron dominates far more cells than Gold');
+	const iron = state.mineralIds.indexOf('iron');
+	const gold = state.mineralIds.indexOf('gold');
+	assert.ok(counts[iron] > counts[gold] * 3, 'Iron ore dominates far more cells than Gold-bearing quartz');
 	assert.ok(state.mineralAbundance[gold] < state.mineralAbundance[iron] / 3);
 	for (let m = 0; m < counts.length; m++) assert.ok(state.mineralAbundance[m] > 0, 'every table entry forms somewhere');
 });
@@ -96,9 +96,34 @@ test('base prices follow measured abundance on a rarity curve and keep the cell 
 			mean += value;
 		}
 		mean /= state.columns * state.rows;
-		assert.ok(Math.abs(mean - state.targetCellValue) < state.targetCellValue * 0.05,
+		// The floor and the cap bend the curve, so the achieved mean is reported
+		// instead of claiming the nominal target exactly.
+		assert.equal(state.basePriceReport.clamped >= 0, true);
+		assert.ok(Math.abs(state.basePriceReport.mean - mean) < 1e-9, 'the report is the achieved mean of this table');
+		assert.ok(Math.abs(mean - state.targetCellValue) < state.targetCellValue * 0.15,
 			'the base table puts about one target cell value on the average cell');
+		assert.ok(state.basePriceReport.mean <= state.targetCellValue + 1e-9,
+			'a clamped stack can only undershoot the nominal target, and the report says so');
 	}
+});
+
+test('the shared base-price curve gives the lab and the game the same quote for the same mix', () => {
+	const materials = require('../js/rock-materials.js');
+	const minerals = require('../js/minerals.js');
+	const state = reset(5);
+	const count = minerals.mineralCount;
+	const shares = Float64Array.from(state.mineralAbundance);
+	const shared = new Float64Array(count);
+	materials.basePricesInto(shared, shares, materials.economy);
+	for (let m = 0; m < count; m++) near(shared[m], state.mineralBasePrices[m], 1e-12);
+	// The lab's reference quotes use the same curve with the default target
+	// shares as its input instead of measured abundance.
+	const reference = new Float64Array(count);
+	materials.basePricesInto(reference, minerals.rarityTargets, materials.economy);
+	for (let m = 0; m < count; m++) assert.ok(reference[m] >= materials.economy.floor && reference[m] <= materials.economy.cap);
+	const mean = Float64Array.from(minerals.rarityTargets).reduce((sum, share, m) => sum + share * reference[m], 0);
+	assert.ok(mean <= materials.economy.targetCellValue + 1e-9 && mean > materials.economy.targetCellValue * 0.6,
+		'the reference table stays near the nominal cell value');
 });
 
 test('the startup market is seeded per run, and demand can make a common ore open dear', () => {
@@ -161,7 +186,7 @@ test('rock cells follow the market while a broken fragment keeps the price it br
 	near(state.prices[cellIndex], expected, 1e-3);
 });
 
-test('cluster chunk ceiling honours all six minerals and quote trends match causal movement', () => {
+test('cluster chunk ceiling honours every material and quote trends match causal movement', () => {
 	const state = reset(41);
 	const saved = Array.from(state.mineralClusterGrowth);
 	for (let m = 0; m < saved.length; m++) ceiling.setMineralClusterGrowth(m, 10);

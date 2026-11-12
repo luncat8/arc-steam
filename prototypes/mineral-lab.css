@@ -97,6 +97,9 @@ main { max-width: 1720px; margin: auto; padding: 8px; display: grid; gap: 8px; g
 .calibrate-grid select { flex: 0 0 auto; }
 .button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 #report { max-height: 320px; overflow: auto; margin: 12px 0 0; padding: 10px; border: 1px solid var(--line); border-radius: 4px; background: #0b1316; font: 10px ui-monospace, monospace; color: #a7b8ba; white-space: pre; }
+.import-panel { margin-top: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 4px; }
+.import-panel label { display: block; font-size: 11px; color: var(--muted); }
+.import-panel textarea { width: 100%; margin-top: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 4px; background: #0b1316; color: #a7b8ba; font: 10px ui-monospace, monospace; resize: vertical; }
 .help-mark { padding: 2px 8px; border-radius: 50%; }
 
 .mineral-editor { border-bottom: 1px solid var(--line); padding: 10px 0; }

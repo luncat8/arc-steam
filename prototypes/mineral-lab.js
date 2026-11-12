@@ -1,35 +1,36 @@
 // The minerals lab: look at the element fields and the mineral mix they turn
 // into, drag the signature ranges with the plot behind them, and let the
 // calibration find ranges that put some of every mineral on a typical map.
-// Depends on: js/minerals.js, js/element-cdf.js, js/geology.js, range-slider.js
+// Its configuration is a snapshot of js/geology-config.js, and the strength,
+// colour and price of a mixture come from js/rock-materials.js, so the numbers
+// here are the numbers the game produces.
+// Depends on: js/minerals.js, js/element-cdf.js, js/geology-config.js,
+// js/rock-materials.js, js/geology.js, range-slider.js
 'use strict';
 
 const minerals = SteamMinerals;
+const geologyConfig = SteamGeologyConfig;
 const geology = SteamGeology;
+const materials = SteamRockMaterials;
 const table = minerals.mineralTable;
 const count = minerals.mineralCount;
 const hostIndex = minerals.hostIndex;
 const channelNames = ['Metal', 'Crystal', 'Gas'];
-const channelKeys = ['r', 'g', 'b'];
+const channelKeys = geologyConfig.channelKeys;
 const channelTint = [[196, 108, 96], [110, 148, 208], [124, 186, 130]];
 
-// Fixed reference quotes keep range edits comparable, rather than repricing the map.
+// Reference quotes from the default target shares: they keep range edits
+// comparable instead of repricing the map, and use the shared base-price curve
+// with fixed input. The game's base quotes use measured abundance instead.
 const referencePrices = new Float64Array(count);
-let inverseShareSum = 0;
-for (let m = 0; m < count; m++) inverseShareSum += Math.pow(Math.max(minerals.rarityTargets[m], 1e-4), -0.3);
-for (let m = 0; m < count; m++) {
-	referencePrices[m] = Math.max(0.4, Math.min(150,
-		12.5 / inverseShareSum * Math.pow(Math.max(minerals.rarityTargets[m], 1e-4), -1.3)));
-}
+materials.basePricesInto(referencePrices, minerals.rarityTargets, materials.economy);
 const minPrice = Math.min(...referencePrices);
 const priceSpan = Math.max(...referencePrices) - minPrice;
-const maxStrength = Math.max(...table.map(entry => entry.strength));
+const maxStrength = materials.maxStrength;
 const hoverPointer = window.matchMedia('(hover: hover) and (pointer: fine)');
 
 function mixedValue(offset, prices) {
-	let value = 0;
-	for (let m = 0; m < count; m++) value += mapMix[offset + m] * (prices ? referencePrices[m] : table[m].strength);
-	return value;
+	return prices ? materials.valueInto(mapMix, offset, referencePrices) : materials.strengthInto(mapMix, offset);
 }
 
 const columns = 192;
@@ -45,22 +46,18 @@ const TOLERANCE_PP = 0.25;
 const MIN_HOST_WEIGHT = 0.06;
 const barFull = 0.35;
 
-const state = {
-	seed: 37,
-	frequency: 0.075,
-	compression: 3,
-	ranges: geology.rangesOf(table),
-	hostWeight: 0.08,
-	specificity: 0.6,
-	mode: 'balanced',
-	view: 'minerals',
-	selected: 1,
-	targets: Float64Array.from(minerals.rarityTargets),
-	edited: false,
-	seeds: 6,
-	depth: 160,
-	depth0: 0
-};
+// The lab's own editable snapshot: the field settings, mode, specificity, host
+// weight and every signature range. Nothing here aliases the defaults.
+const config = geologyConfig.create(37);
+// Stone's fall grouping is a game setting, not formation input; it stays out.
+const state = config;
+state.view = 'minerals';
+state.selected = 1;
+state.targets = Float64Array.from(minerals.rarityTargets);
+state.edited = false;
+state.seeds = 6;
+state.depth = 160;
+state.depth0 = 0;
 
 const ui = {};
 for (const id of ['seed', 'reseed', 'frequency', 'frequency-value', 'compression', 'compression-value',
@@ -70,6 +67,7 @@ for (const id of ['seed', 'reseed', 'frequency', 'frequency-value', 'compression
 	'element-r', 'element-g', 'element-b', 'share-rows', 'stats-note', 'stats-hint',
 	'desired-sum', 'error-sum',
 	'range-sliders', 'host-weight', 'host-weight-value', 'solve-host',
+	'export-formation', 'import-formation', 'import-panel', 'import-text', 'import-apply', 'import-cancel',
 	'mode', 'specificity', 'specificity-value', 'target-host', 'target-host-value',
 	'target-common', 'target-common-value', 'target-uncommon', 'target-uncommon-value',
 	'target-rare', 'target-rare-value', 'target-veryrare', 'target-veryrare-value',
@@ -80,7 +78,7 @@ for (const id of ['seed', 'reseed', 'frequency', 'frequency-value', 'compression
 
 // Buffers: the visible rock, the measurement sample and the scratch every
 // recompute walks through. Allocated once, rewritten in place.
-const field = geology.createField({ seed: state.seed, frequency: state.frequency, yCompression: state.compression });
+const field = geology.createField({ seed: state.seed, frequency: state.frequency, yCompression: state.yCompression });
 const mapElements = new Float32Array(columns * rows * 3);
 const mapMix = new Float32Array(columns * rows * count);
 const mapCanvas = document.createElement('canvas');
@@ -131,7 +129,7 @@ function work() {
 	if (dirty.field) {
 		field.seed = state.seed;
 		field.frequency = state.frequency;
-		field.yCompression = state.compression;
+		field.yCompression = state.yCompression;
 		for (let row = 0; row < rows; row++) {
 			for (let column = 0; column < columns; column++) {
 				const at = (row * columns + column) * 3;
@@ -190,7 +188,7 @@ function recompile(heavy) {
 function rebuildSample() {
 	const seeds = [];
 	for (let s = 0; s < state.seeds; s++) seeds.push(state.seed + s * 811);
-	sample = geology.buildSample({ seeds, columns: sampleColumns, rows: state.depth, frequency: state.frequency, yCompression: state.compression });
+	sample = geology.buildSample({ seeds, columns: sampleColumns, rows: state.depth, frequency: state.frequency, yCompression: state.yCompression });
 	cache = null;
 	dirty.stats = true;
 	schedule();
@@ -238,53 +236,46 @@ function setViewMode(mode) {
 	schedule();
 }
 
+// The rgb the current view paints a cell with. Price and strength go through
+// the shared ramps on their fixed scales: the reference quote span and the
+// strongest pure mineral, so a colour never depends on the map's own extremes.
+const rgbScratch = [0, 0, 0];
+
+function viewColor(offset) {
+	if (state.view === 'host') {
+		const host = mapMix[offset + hostIndex];
+		rgbScratch[0] = 34 + host * 190;
+		rgbScratch[1] = 44 + host * 186;
+		rgbScratch[2] = 50 + host * 176;
+		return rgbScratch;
+	}
+	if (state.view === 'dominant') {
+		let best = -1;
+		for (let m = 0; m < count; m++) if (mapMix[offset + m] > best) best = mapMix[offset + m];
+		for (let m = 0; m < count; m++) {
+			if (mapMix[offset + m] !== best) continue;
+			const rgb = table[m].color;
+			rgbScratch[0] = rgb[0];
+			rgbScratch[1] = rgb[1];
+			rgbScratch[2] = rgb[2];
+			break;
+		}
+		return rgbScratch;
+	}
+	if (state.view === 'price') return materials.priceColorInto(rgbScratch, (mixedValue(offset, true) - minPrice) / priceSpan);
+	if (state.view === 'strength') return materials.strengthColorInto(rgbScratch, mixedValue(offset, false) / maxStrength);
+	return materials.colorInto(mapMix, offset, rgbScratch);
+}
+
 function draw() {
 	const data = mapImage.data;
 	for (let i = 0; i < columns * rows; i++) {
 		const offset = i * count;
 		const at = i * 3;
-		let red = 0;
-		let green = 0;
-		let blue = 0;
-		if (state.view === 'elements') {
-			red = mapElements[at] * 255;
-			green = mapElements[at + 1] * 255;
-			blue = mapElements[at + 2] * 255;
-		} else if (state.view === 'price') {
-			const ratio = (mixedValue(offset, true) - minPrice) / priceSpan;
-			red = 48 + ratio * 190;
-			green = 72 + ratio * 150;
-			blue = 91 - ratio * 45;
-		} else if (state.view === 'strength') {
-			const ratio = mixedValue(offset, false) / maxStrength;
-			red = 75 + ratio * 130;
-			green = 45 + ratio * 125;
-			blue = 38 + ratio * 82;
-		} else if (state.view === 'host') {
-			const host = mapMix[offset + hostIndex];
-			red = 34 + host * 190;
-			green = 44 + host * 186;
-			blue = 50 + host * 176;
-		} else if (state.view === 'dominant') {
-			let best = -1;
-			let bestMineral = hostIndex;
-			for (let m = 0; m < count; m++) {
-				if (mapMix[offset + m] > best) { best = mapMix[offset + m]; bestMineral = m; }
-			}
-			const rgb = table[bestMineral].color;
-			red = rgb[0];
-			green = rgb[1];
-			blue = rgb[2];
-		} else {
-			for (let m = 0; m < count; m++) {
-				const fraction = mapMix[offset + m];
-				if (fraction <= 0) continue;
-				const rgb = table[m].color;
-				red += fraction * rgb[0];
-				green += fraction * rgb[1];
-				blue += fraction * rgb[2];
-			}
-		}
+		const rgb = state.view === 'elements' ? null : viewColor(offset);
+		const red = rgb ? rgb[0] : mapElements[at] * 255;
+		const green = rgb ? rgb[1] : mapElements[at + 1] * 255;
+		const blue = rgb ? rgb[2] : mapElements[at + 2] * 255;
 		const pixel = i * 4;
 		data[pixel] = red;
 		data[pixel + 1] = green;
@@ -689,6 +680,58 @@ function targetsFromWeights() {
 
 function status(text) { ui['calibrate-status'].textContent = text; }
 
+// Back to the shipped formation: one reset path, the same values the HTML
+// controls and the game start from.
+function resetToDefaults() {
+	geologyConfig.resetInto(state);
+	syncConfigControls();
+	recompile();
+}
+
+// The complete snapshot, keyed by stable mineral id, with the desired shares as
+// separate calibration metadata that the game never applies.
+function formationExport() {
+	return JSON.stringify(geologyConfig.exportOf(state, state.targets), null, '\t');
+}
+
+// Applying an import replaces the lab's snapshot only; the game takes its own
+// copy deliberately, so a lab experiment can never leak into an active run.
+function applyImportText() {
+	let parsed = null;
+	try {
+		parsed = JSON.parse(ui['import-text'].value);
+	} catch (error) {
+		status('import rejected: ' + error.message);
+		return false;
+	}
+	const problems = geologyConfig.validateExport(parsed);
+	if (problems.length) {
+		status('import rejected: ' + problems.join('; '));
+		return false;
+	}
+	geologyConfig.applyInto(state, parsed);
+	ui['import-panel'].hidden = true;
+	syncConfigControls();
+	recompile();
+	status('import applied · field settings, mean, specificity and host weight follow the snapshot');
+	return true;
+}
+
+// The controls mirror the snapshot after any change that did not come from a
+// control itself (import, reset).
+function syncConfigControls() {
+	ui.seed.value = String(state.seed);
+	ui.frequency.value = String(state.frequency);
+	ui['frequency-value'].textContent = state.frequency.toFixed(3);
+	ui.compression.value = String(state.yCompression);
+	ui['compression-value'].textContent = state.yCompression.toFixed(1) + '×';
+	ui['host-weight'].value = String(state.hostWeight);
+	ui['host-weight-value'].textContent = state.hostWeight.toFixed(3);
+	ui.mode.value = state.mode;
+	ui.specificity.value = String(state.specificity);
+	ui['specificity-value'].textContent = state.specificity.toFixed(2);
+}
+
 function runAdjust() {
 	status('adjusting…');
 	const started = performance.now();
@@ -715,7 +758,7 @@ function runAdjust() {
 }
 
 function reportText() {
-	const lines = ['minerals lab · seed ' + state.seed + ' · frequency ' + state.frequency + ' · Y flattening ' + state.compression + '×',
+	const lines = ['minerals lab · seed ' + state.seed + ' · frequency ' + state.frequency + ' · Y flattening ' + state.yCompression + '×',
 		'sample ' + state.seeds + ' seeds × ' + sampleColumns + ' columns × ' + state.depth + ' rows = ' + sample.cells + ' cells',
 		'affinity ' + state.mode + ', specificity ' + state.specificity + ', host weight ' + state.hostWeight.toFixed(3), ''];
 	const scan = scanErrors(stats.shares);
@@ -780,8 +823,8 @@ function bindControls() {
 		rebuildSample();
 	});
 	ui.compression.addEventListener('input', function () {
-		state.compression = Number(ui.compression.value);
-		ui['compression-value'].textContent = state.compression.toFixed(1) + '×';
+		state.yCompression = Number(ui.compression.value);
+		ui['compression-value'].textContent = state.yCompression.toFixed(1) + '×';
 		dirty.field = true;
 		rebuildSample();
 	});
@@ -857,13 +900,20 @@ function bindControls() {
 		status(moved.length ? 'spread: gave ' + moved.length + ' swallowed signature(s) an edge of their own' : 'spread: no signature sits inside another');
 	});
 	ui['reset-ranges'].addEventListener('click', function () {
-		state.ranges = geology.rangesOf(table);
-		state.hostWeight = 0.08;
-		ui['host-weight'].value = '0.08';
-		ui['host-weight-value'].textContent = '0.080';
-		recompile();
-		status('ranges reset to js/minerals.js');
+		resetToDefaults();
+		status('formation reset to js/geology-config.js defaults');
 	});
+	ui['export-formation'].addEventListener('click', function () {
+		copy(formationExport(), 'complete formation snapshot copied');
+	});
+	ui['import-formation'].addEventListener('click', function () {
+		ui.report.hidden = true;
+		ui['import-text'].value = '';
+		ui['import-panel'].hidden = false;
+		ui['import-text'].focus();
+	});
+	ui['import-apply'].addEventListener('click', applyImportText);
+	ui['import-cancel'].addEventListener('click', function () { ui['import-panel'].hidden = true; });
 	ui['copy-table'].addEventListener('click', function () { copy(reportText(), 'report and JS ranges copied'); });
 	ui['copy-report'].addEventListener('click', function () {
 		ui.report.hidden = false;
