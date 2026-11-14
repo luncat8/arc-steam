@@ -7,7 +7,7 @@ const harness = require('./harness.cjs');
 const players = require('../js/players.js');
 const rockets = require('../js/rockets.js');
 
-const { ceiling, physics, c, near } = harness;
+const { ceiling, equipment, physics, c, near } = harness;
 const rock = ceiling.state;
 const rack = rockets.state;
 
@@ -16,7 +16,8 @@ function fresh(seed = 1) {
 	players.init(world, 0);
 	if (seed !== 1) ceiling.reset(seed);
 	rockets.reset(seed);
-	rockets.setAutoBuy(false);
+	rockets.setAutoBuy(false, 'rig');
+	equipment.grant('rocket-rack', world, 'rig');
 	ceiling.setCommune(false);
 	world.drive = false;
 	return world;
@@ -64,6 +65,44 @@ test('the rack runs the planned rules', () => {
 	assert.equal(rack.shardRadiusMax, 4, 'a fragment damages a radius of 1–4 cells');
 	assert.ok(rack.rackSize >= rack.visitLimit);
 	assert.ok(rack.maxShards >= rack.maxRockets * rack.shardCount, 'every rocket in the air has its fan reserved');
+});
+
+test('each installed rack has its own stock, wall purchases and launcher', () => {
+	const world = physics.createWorld();
+	players.init(world, 1);
+	rockets.reset(8);
+	rockets.setAutoBuy(false, 'rig');
+	rockets.setAutoBuy(false, 'rival-1');
+	ceiling.setCommune(false);
+	const rival = players.state.rivals[0];
+	park(world, physics.platformMin());
+	rival.x = physics.platformMax();
+	rival.vx = 0;
+	const rigFunds = rock.funds;
+
+	assert.equal(rockets.fill(world, 'rig'), false, 'no stock before the rack is installed');
+	assert.equal(rockets.buy(world, 1, 'rig'), 0, 'an unequipped platform cannot buy rounds');
+	assert.equal(rockets.fire(world, 'rig'), false);
+	assert.equal(rockets.buy(world, 1, rival.id), 0, 'the rival also needs its own rack');
+
+	equipment.grant('rocket-rack', world, 'rig');
+	equipment.grant('rocket-rack', world, rival.id);
+	rival.money = rack.price * 2;
+	assert.equal(rockets.buy(world, 2, rival.id), 2, 'the rival buys at its own wall');
+	assert.equal(rockets.stateFor(rival.id).stock, 2);
+	assert.equal(rack.stock, 0, 'the rival rack does not fill the rig rack');
+	assert.equal(rock.funds, rigFunds, 'the rival purchase does not debit rig funds');
+	near(rival.money, 0, 1e-9);
+	assert.equal(rival.ledger[rival.ledger.length - 1].label, '2 rockets');
+
+	rockets.fill(world, 'rig');
+	assert.equal(rack.stock, rack.rackSize, 'test grants also address one owner');
+	assert.equal(rockets.fire(world, rival.id), true);
+	assert.equal(rockets.stateFor(rival.id).stock, 1);
+	assert.equal(rack.stock, rack.rackSize, 'a rival shot spends only its own stock');
+	const slot = flyingSlot();
+	assert.equal(rack.rocketOwner[slot], 1);
+	near(rack.rocketX[slot], rockets.launcherX(world, rival.id), 1e-12);
 });
 
 test('rockets are loaded only at a selling wall, within the rack and the funds', () => {
@@ -125,6 +164,36 @@ test('auto-buy takes up to three per wall visit and stops at the funds and the r
 	assert.equal(rack.stock, rack.rackSize, 'a full rack ends the buying');
 	near(rock.funds, funds - rack.price * rack.rackSize, 1e-9);
 	assert.equal(rack.bought, rack.rackSize);
+});
+
+test('a rival auto-buys only from its own wall, order, and purse', () => {
+	const world = physics.createWorld();
+	players.init(world, 1);
+	rockets.reset(9);
+	ceiling.setCommune(false);
+	const rival = players.state.rivals[0];
+	equipment.grant('rocket-rack', world, rival.id);
+	rockets.setAutoBuy(false, 'rig');
+	rockets.setAutoBuy(true, rival.id);
+	rival.x = physics.platformMax();
+	rival.previousX = rival.x;
+	rival.vx = 0;
+	rival.money = rack.price * 4;
+	const rigFunds = rock.funds;
+
+	for (let i = 0; i < 30; i++) rockets.step(world, c.step);
+	assert.equal(rockets.stateFor(rival.id).stock, rack.visitLimit, 'a rival visit buys up to three rounds');
+	assert.equal(rockets.stateFor(rival.id).bought, rack.visitLimit);
+	near(rival.money, rack.price, 1e-9, 'the rival keeps the unaffordable fourth-round balance');
+	assert.equal(rockets.stateFor(rival.id).autoBuy, true);
+	assert.equal(rack.stock, 0, 'the rig order and stock stay independent');
+	assert.equal(rock.funds, rigFunds, 'the rival debit never reaches the rig ledger');
+	assert.equal(rival.ledger[rival.ledger.length - 1].label, '3 rockets');
+
+	const next = physics.createWorld();
+	players.init(next, 1);
+	assert.equal(rockets.stateFor(rival.id).stock, 0, 'New game clears rival rounds');
+	assert.equal(rockets.stateFor(rival.id).autoBuy, true, 'New game preserves the rival standing order');
 });
 
 test('a short purse buys what it covers, and a sale during the visit pays for the rest', () => {

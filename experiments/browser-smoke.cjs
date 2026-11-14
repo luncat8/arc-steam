@@ -407,9 +407,8 @@ async function main() {
 		assert.equal(radii.flat, 0.18, 'constant size keeps the classic sphere');
 		assert.ok(Math.abs(radii.depth - 0.045) < 1e-9, 'depth scale shrinks the body it flies to a quarter at the roof');
 		assert.equal(radii.floor, 0.18, 'and the floor game keeps the true ball');
-		// Rockets: a fresh run so the rig has the controls, a free rack from the
-		// commons at the wall, then R. The flight, the burst and the shards are
-		// drawn by the real canvas, and the rock answers the shards.
+		// Rockets: a fresh run, a free rack installed from the commons, then R.
+		// The flight, burst and shards are drawn by the real canvas.
 		await page.locator('#reset').click();
 		await page.evaluate(() => {
 			if (!SteamCeiling.state.commune) document.getElementById('commune').click();
@@ -418,6 +417,7 @@ async function main() {
 			world.direction = 0;
 			world.platform.x = SteamPhysics.platformMin();
 			world.platform.vx = 0;
+			if (!SteamEquipment.isInstalled('rocket-rack', 'rig') && !SteamEquipment.install('rocket-rack', world, 'rig')) throw new Error('the commons did not install the rack');
 		});
 		await page.waitForFunction(() => !document.getElementById('rocket-buy').disabled);
 		assert.equal(await page.locator('#rocket-buy').textContent(), 'Buy · free');

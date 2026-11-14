@@ -125,6 +125,7 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	assert.ok(research.nodes.every(node => techRow(node.id) && nodeCard(node.id)));
 	assert.ok(equipment.items.every(item => gearRow(item.id)));
 	assert.equal(gearRow('pad').parentElement, nodeCard('materials'), 'unlocked gear lives inside its research node');
+	assert.equal(gearRow('rocket-rack').parentElement, nodeCard('impact'), 'the fragmentation rack is shop gear under Impact forging');
 	assert.equal(tierRow('radiators').parentElement, nodeCard('thermodynamics'));
 	assert.equal(tierRow('balls').parentElement, nodeCard('impact'));
 	for (const node of research.nodes) assert.ok(Number(nodeCard(node.id).style.gridRow) >= 3, 'research cards reserve the spec and base-chassis rows');
@@ -1893,12 +1894,23 @@ test('the rocket rack buys at a wall, fires on R, and reads its own state', () =
 	}
 	assert.equal(fire.getAttribute('aria-keyshortcuts'), 'R');
 	assert.equal(fire.firstChild.textContent, 'Fire 0 / ' + rack.rackSize + ' ');
-	assert.equal(fire.disabled, true, 'an empty rack cannot fire');
+	assert.equal(fire.disabled, true, 'no rack is installed by default');
 	assert.equal(buy.textContent, 'Buy · ' + rack.price + ' cr');
 	assert.equal(buy.disabled, true);
+	assert.equal(status.hidden, false);
+	assert.match(status.textContent, /No rocket rack installed/);
+	assert.equal(equipment.isInstalled('rocket-rack', 'rig'), false);
 	assert.equal(auto.checked, false);
 
-	fund(rack.price * 4);
+	study('impact');
+	fund(equipment.find('rocket-rack').cost);
+	buttonOf(gearRow('rocket-rack')).dispatch('click');
+	advance(2);
+	assert.equal(equipment.isInstalled('rocket-rack', 'rig'), true, 'Impact forging unlocks the purchasable rack');
+	assert.equal(fire.disabled, true, 'an installed but empty rack cannot fire');
+	assert.equal(status.hidden, true, 'the status clears after installation away from a wall');
+
+	fund(rack.price * 4 + 100);
 	parkAt(12);
 	assert.equal(buy.disabled, true, 'rockets are not loaded in the open');
 	assert.equal(status.hidden, true, 'the line appears only with a reason to show');
@@ -1928,18 +1940,44 @@ test('the rocket rack buys at a wall, fires on R, and reads its own state', () =
 	auto.dispatch('change');
 	assert.equal(rack.autoBuy, false);
 
-	// A rival at the controls leaves the rig's rack alone.
+	// The rival starts without a rack, then researches and buys one from its own purse.
 	const list = dom.element('player-list');
+	const rival = players.state.rivals[0];
+	const rivalRack = rockets.stateFor(rival.id);
 	list.children[1].children[0].dispatch('click');
 	assert.equal(fire.disabled, true);
 	assert.equal(buy.disabled, true);
 	assert.equal(status.hidden, false);
-	assert.match(status.textContent, /The rack is the rig’s/);
+	assert.match(status.textContent, /No rocket rack installed/);
 	dom.key('KeyR');
 	fire.dispatch('click');
 	buy.dispatch('click');
 	assert.equal(rack.fired, 0);
 	assert.equal(rack.stock, 1 + rack.visitLimit);
+
+	rival.money = 1000;
+	assert.equal(research.research('materials', world, rival.id), true);
+	assert.equal(research.research('impact', world, rival.id), true);
+	advance(8);
+	const rivalBot = list.children[1].children[1].children[0];
+	rivalBot.checked = false;
+	rivalBot.dispatch('change');
+	buttonOf(gearRow('rocket-rack')).dispatch('click');
+	assert.equal(equipment.isInstalled('rocket-rack', rival.id), true);
+	assert.equal(rival.money, 20, 'the rack debits the rival purse after its own research');
+	rival.x = physics.platformMax(); rival.previousX = rival.x; rival.vx = 0;
+	harness.sync(world);
+	advance(8);
+	assert.equal(buy.disabled, false, 'the rival can load its rack at its own wall');
+	buy.dispatch('click');
+	assert.equal(rivalRack.stock, 1);
+	assert.equal(rack.stock, 1 + rack.visitLimit, 'the rival purchase leaves rig stock alone');
+	assert.equal(rival.money, 6);
+	assert.equal(fire.disabled, false);
+	dom.key('KeyR');
+	assert.equal(rivalRack.fired, 1, 'R fires from the selected rival');
+	assert.equal(rivalRack.stock, 0);
+	assert.equal(rack.fired, 0, 'a rival shot does not change rig shot counts');
 	list.children[0].children[0].dispatch('click');
 	assert.equal(fire.disabled, false);
 	assert.equal(status.hidden, true);
@@ -1982,6 +2020,11 @@ test('communism hands rockets out, and test mode loads a full rack', () => {
 	harness.sync(world);
 	dom.key('KeyM');
 	advance(8);
+	const rackItem = gearRow('rocket-rack');
+	assert.match(rackItem.children[0].textContent, /FREE/);
+	buttonOf(rackItem).dispatch('click');
+	assert.equal(equipment.isInstalled('rocket-rack', 'rig'), true, 'the commons waives the rack research and cost');
+	advance(2);
 	assert.equal(buy.textContent, 'Buy · free');
 	assert.equal(buy.disabled, false, 'no funds are needed');
 	buy.dispatch('click');
@@ -1995,6 +2038,7 @@ test('communism hands rockets out, and test mode loads a full rack', () => {
 	toggle.checked = true;
 	toggle.dispatch('change');
 	assert.equal(rack.stock, rack.rackSize);
+	assert.equal(rockets.stateFor('rival-1').stock, rack.rackSize, 'test mode fills every installed player rack');
 	assert.match(dom.element('ledger').children[0].textContent, new RegExp('Test installed ' + (rack.rackSize - 1) + ' rockets'));
 	assert.equal(dom.element('rocket-status').hidden, false);
 	assert.match(dom.element('rocket-status').textContent, /Rack full/);
@@ -2014,8 +2058,12 @@ test('the rig bot works its rack and the status line names the trip', () => {
 	toggle.checked = true;
 	toggle.dispatch('change');
 	assert.equal(rockets.state.stock, rockets.state.rackSize);
+	const list = dom.element('player-list');
+	const rivalBot = list.children[1].children[1].children[0];
+	rivalBot.checked = false;
+	rivalBot.dispatch('change');
 	const status = dom.element('autopilot-status');
-	const botBox = dom.element('player-list').children[0].children[1].children[0];
+	const botBox = list.children[0].children[1].children[0];
 	botBox.checked = true;
 	botBox.dispatch('change');
 	assert.equal(players.state.rig.bot, true);

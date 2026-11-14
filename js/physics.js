@@ -99,9 +99,12 @@
 
 	function platformMin() { return config.platformWidth * 0.5 - config.pocketDepth; }
 	function platformMax() { return config.width - config.platformWidth * 0.5; }
-	// The rig trades while it touches either end wall.
-	function atSellWall(world) {
-		return world.platform.x <= platformMin() + 1e-9 || world.platform.x >= platformMax() - 1e-9;
+	// Every platform trades while it touches either end wall.
+	function atSellWall(world, owner) {
+		const id = owner && typeof owner === 'object' ? owner.id : owner;
+		const machine = id && id !== 'rig' ? machineById(world, id) : world;
+		const x = machineBody(machine).x;
+		return x <= platformMin() + 1e-9 || x >= platformMax() - 1e-9;
 	}
 	function brakeAcceleration() { return config.platformBrakeFriction * config.gravity; }
 
