@@ -382,7 +382,7 @@
 			const deckSpeed = -Math.sqrt(Math.max(0, path.endVy * path.endVy - 2 * config.ballGravity * (deckHeight - pile)));
 			out.contactIn = path.time - (deckSpeed - path.endVy) / config.ballGravity;
 			out.contactVy = deckSpeed;
-			out.contactY = deckHeight + config.radius;
+			out.contactY = deckHeight + physics.ballRadiusAt(deckHeight);
 		}
 		// Feasibility is measured against the face mark, from the speed the
 		// platform already carries towards it: the platform must be under the
@@ -639,7 +639,8 @@
 		const bounce = solve(world, angleOn && !suspended(ANGLE) ? wantedAngle : world.pistonAngle, 0);
 		const rise = Math.max(0, bounce.vy);
 		const apex = plan.contactY + rise * rise / (2 * config.ballGravity);
-		const target = config.ceiling - config.radius + strikeHeight(physics.pulseNow());
+		// The apex that matters is the ball's own size under the roof it strikes.
+		const target = config.ceiling - physics.ballRadiusAt(config.ceiling) + strikeHeight(physics.pulseNow());
 		if (apex < target - apexMargin) return true;
 		if (apex > target) return false;
 		return wantedDrive;

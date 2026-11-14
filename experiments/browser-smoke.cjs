@@ -347,6 +347,50 @@ async function main() {
 			SteamCeiling.reset(1);
 			return oneCell && capped && headroom;
 		}), true, 'top-row growth, non-destructive 70% cap and upper-boundary replenishment hold in browser');
+		// The two floor-and-body settings are real: switching DEBRIS re-lays the
+		// pile and the ground the ball rides, and PERSPECTIVE changes the body the
+		// simulation flies, not only the circle it draws.
+		await page.evaluate(() => {
+			SteamCeiling.state.floorPiles.fill(0.1);
+			SteamCeiling.state.floorValues.fill(3);
+		});
+		const beforeDebris = await page.evaluate(() => ({
+			height: SteamCeiling.state.floorPiles[100],
+			ride: SteamCeiling.floorAt(12.5)
+		}));
+		// A readback of the floor band, so "the chamber redrew" is about pixels
+		// and not only about state. Reading the canvas needs no stable layout.
+		const bandShot = () => page.evaluate(() => {
+			const canvas = document.getElementById('c');
+			const context = canvas.getContext('2d');
+			return canvas.toDataURL().slice(-4096) + context.getImageData(0, canvas.height - 40, canvas.width, 40).data.reduce((sum, value) => (sum * 31 + value) % 2147483647, 7);
+		});
+		const beforeShot = await bandShot();
+		await page.selectOption('#debris-compression', '1');
+		await page.waitForTimeout(150);
+		const afterDebris = await page.evaluate(() => ({
+			height: SteamCeiling.state.floorPiles[100],
+			compression: SteamCeiling.state.floorCompression,
+			layers: SteamCeiling.state.floorCellHeight
+		}));
+		assert.equal(afterDebris.compression, 1);
+		assert.ok(Math.abs(afterDebris.height - beforeDebris.height * 4) < 1e-9, 'the same material stands four times taller at 1');
+		assert.ok(Math.abs(afterDebris.layers - 0.125) < 1e-12);
+		assert.notEqual(await bandShot(), beforeShot, 'the chamber redrew with the new ground');
+		await page.selectOption('#debris-compression', '4');
+		const radii = await page.evaluate(() => {
+			SteamPhysics.setBallPerspective(false);
+			const flat = SteamPhysics.ballRadiusAt(SteamCeiling.state.top);
+			SteamPhysics.setBallPerspective(true);
+			return {
+				flat,
+				depth: SteamPhysics.ballRadiusAt(SteamCeiling.state.top),
+				floor: SteamPhysics.ballRadiusAt(0)
+			};
+		});
+		assert.equal(radii.flat, 0.18, 'constant size keeps the classic sphere');
+		assert.ok(Math.abs(radii.depth - 0.045) < 1e-9, 'depth scale shrinks the body it flies to a quarter at the roof');
+		assert.equal(radii.floor, 0.18, 'and the floor game keeps the true ball');
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.waitForTimeout(100);
 		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

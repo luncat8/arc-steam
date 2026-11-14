@@ -17,6 +17,17 @@ Notes for agents working in this repository. Keep entries short and about *why*.
 
 - The shim cannot see real browser behaviour. It let a test "click" disabled buttons for two milestones; in a real browser a disabled `<button>` swallows the click, so refusal messages never showed. Keep `browser-smoke.cjs` running when a browser is available.
 
+## Settings that only change the picture
+
+A view rule must not exist without the simulation agreeing with it: a ball drawn
+as a foreshortened ellipse while the physics flies a circle is a second, wrong
+shape, and players read it as "the setting does nothing". When a setting is meant
+to be seen, make the drawn number *be* the simulated number (one law, one
+radius), and make sure the effect is reachable — a perspective band the ball's
+apex never reaches is invisible, whatever the code does. A stored height in
+metres also does not follow a display scale on its own: re-lay the stored value
+when the scale changes, or the ground will lag the picture by one switch.
+
 ## Running a real Chromium in the sandbox
 
 No system browser exists and the Playwright CDN is blocked, but npm is reachable. Install outside the repository:

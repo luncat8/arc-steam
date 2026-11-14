@@ -194,7 +194,8 @@
 			}
 			if (!best) best = ball;
 			if (ball.state !== 'flying') continue;
-			const landing = crossing(ball.y, ball.vy, machine.y + physics.config.deck + physics.config.radius, physics.config.ballGravity);
+			const seat = physics.config.deck + physics.ballRadiusAt(machine.y + physics.config.deck);
+			const landing = crossing(ball.y, ball.vy, machine.y + seat, physics.config.ballGravity);
 			if (landing < soonest) { soonest = landing; best = ball; }
 		}
 		return best;
@@ -272,6 +273,9 @@
 		// Rock contacts are only traced while the march can reach the layer, which
 		// keeps the heightmap rebuild off the cheap low-flight marches.
 		const rockReach = economy ? economy.state.bottom - config.radius - 0.5 : Infinity;
+		// The ball's own radius at a height, so the forecast meets the same body
+		// the simulation flies: depth scale shrinks a high ball for both.
+		const radiusAt = physics.ballRadiusAt;
 		let x = ball.x;
 		let y = ball.y;
 		let vx = ball.vx;
@@ -287,23 +291,24 @@
 		while (time < limit && samples < capacity - 1) {
 			let step = march;
 			let event = NONE;
+			const radius = radiusAt(y);
 			// A deck surface belongs to the contact found in this step only: a
 			// later ground or rock contact must not inherit a stale face.
 			surface = NO_SURFACE;
 			if (vx) {
-				const wall = vx > 0 ? config.width - config.radius : config.radius;
+				const wall = vx > 0 ? config.width - radius : radius;
 				const wallTime = (wall - x) / vx;
 				if (wallTime >= 0 && wallTime < step) { step = wallTime; event = WALL; }
 			}
 			if (vy > 0) {
-				const discriminant = vy * vy - 2 * gravity * (config.ceiling - config.radius - y);
+				const discriminant = vy * vy - 2 * gravity * (config.ceiling - radius - y);
 				if (discriminant >= 0) {
 					const topTime = (vy - Math.sqrt(discriminant)) / gravity;
 					if (topTime >= 0 && topTime < step) { step = topTime; event = CEILING; }
 				}
 			}
 			// Ground is the rubble surface under the march, not the bare floor.
-			const ground = (economy ? economy.floorAt(x) : 0) + config.radius;
+			const ground = (economy ? economy.floorAt(x) : 0) + radius;
 			const groundTime = y < ground ? 0 : crossing(y, vy, ground, gravity);
 			if (groundTime < step) { step = groundTime; event = GROUND; }
 			// The coasting platform follows the terrain while its chassis pitch
@@ -338,8 +343,8 @@
 			let nx = 0, ny = -1;
 			let contactX = 0;
 			let contactY = 0;
-			if (economy && y + Math.max(0, vy) * step + config.radius > rockReach) {
-				const hit = economy.trace(x, y, vx, vy, step, config.radius, gravity);
+			if (economy && y + Math.max(0, vy) * step + radius > rockReach) {
+				const hit = economy.trace(x, y, vx, vy, step, radius, gravity);
 				// Rock wins over a deck contact found in the same march step, so the
 				// surface it would have landed on is no longer the answer.
 				if (hit.time < step) { step = hit.time; event = ROCK; surface = NO_SURFACE; contactX = hit.x; contactY = hit.y; nx = hit.nx; ny = hit.ny; }
@@ -358,7 +363,7 @@
 				// way up. The simulation only lifts it out, so the same step here
 				// is neither a contact nor a bounce.
 				if (event === GROUND && vy >= 0) {
-					y = (economy ? economy.floorAt(x) : 0) + config.radius + 0.0001;
+					y = (economy ? economy.floorAt(x) : 0) + radiusAt(y) + 0.0001;
 					pathX[samples] = x; pathY[samples] = y; samples++;
 					continue;
 				}
@@ -382,7 +387,7 @@
 					x += nx * 0.0001; y += ny * 0.0001;
 				} else if (event === GROUND) {
 					// The same half-energy ground rebound the simulation applies.
-					y = (economy ? economy.floorAt(x) : 0) + config.radius + 0.0001;
+					y = (economy ? economy.floorAt(x) : 0) + radiusAt(y) + 0.0001;
 					vy = -vy * groundRestitution;
 				} else if (surface === COLLECTOR) {
 					// A full collector returns the ball off its flat strip with

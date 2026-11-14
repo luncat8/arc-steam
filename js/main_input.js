@@ -294,6 +294,9 @@ function resetRun(withTestRock) {
 	world = physics.createWorld();
 	playerApi.init(world);
 	window.SteamCeiling.setShape(ui.shape.value);
+	// The two view-and-shape rules are chamber settings: New game keeps them.
+	physics.setBallPerspective(ui['ball-perspective'].value !== 'flat');
+	window.SteamCeiling.setFloorCompression(ui['debris-compression'].value);
 	ui.balls.value = playerApi.state.ballMode;
 	physics.setGroundBounce(ui['ground-bounce'].value);
 	selectedLayer = 0;
@@ -354,17 +357,21 @@ function bindInput() {
 		autopilotApi.reset();
 		refresh();
 	});
-	// The perspective and the damage overlay are view rules: they redraw the
-	// chamber and touch nothing the simulation reads.
+	// The perspective is the chamber's own law and it resizes the ball for real,
+	// so the ball's collision, the platforms' deck heights and every forecast
+	// are rebuilt with it; the damage overlay is a picture of the strike.
 	ui['ball-perspective'].addEventListener('change', function () {
-		ballPerspective = ui['ball-perspective'].value !== 'flat';
-		sceneDirty = true;
+		physics.setBallPerspective(ui['ball-perspective'].value !== 'flat');
+		autopilotApi.reset();
+		refresh();
 	});
-	// Debris compression scales how tall a pile is drawn, not what is in it:
-	// the piles, their value and the ledger are untouched.
+	// Debris compression re-lays the piles at their new thickness, so the floor
+	// the ball and the platform ride moves with the picture; the material, its
+	// value and the ledger do not.
 	ui['debris-compression'].addEventListener('change', function () {
 		window.SteamCeiling.setFloorCompression(ui['debris-compression'].value);
-		sceneDirty = true;
+		autopilotApi.reset();
+		refresh();
 	});
 	ui['view-modes'].addEventListener('change', viewModeChanged);
 	ui.autopilot.addEventListener('change', autopilotChanged);

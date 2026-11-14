@@ -25,15 +25,38 @@
 	// 4 is the classic 4:1 floor (0.125 m by 0.03125 m); 1 makes square rubble,
 	// 8 the flattest sheet. It scales the drawn height of a pile, never the
 	// material in it: every cells-to-metres conversion below reads this value.
-	const floorCompressionMin = 1;
-	const floorCompressionMax = 8;
-	let floorCompression = 4;
-	function floorCellHeightNow() { return cell / floorCompression; }
-	function setFloorCompression(value) {
-		const next = Math.round(Number(value) * 2) / 2;
-		floorCompression = Number.isFinite(next) ? Math.max(floorCompressionMin, Math.min(floorCompressionMax, next)) : 4;
-		return floorCompression;
+const floorCompressionMin = 1;
+const floorCompressionMax = 8;
+let floorCompression = 4;
+function floorCellHeightNow() { return cell / floorCompression; }
+// A pile is stored in metres, so the same material is a different height at a
+// different factor. Changing the factor therefore re-lays every column by the
+// same ratio: no cell is created or lost, and the surface the ball and the
+// platform ride moves with the picture instead of lagging behind it. A column
+// that the new factor would push through the roof keeps what fits there and
+// books the rest as lost, exactly like a deposit at the cap.
+function setFloorCompression(value) {
+	const next = Math.round(Number(value) * 2) / 2;
+	const factor = Number.isFinite(next) ? Math.max(floorCompressionMin, Math.min(floorCompressionMax, next)) : 4;
+	if (factor === floorCompression) return floorCompression;
+	const ratio = floorCompression / factor;
+	floorCompression = factor;
+	for (let column = 0; column < columns; column++) {
+		const height = floorPiles[column] * ratio;
+		if (height <= pileLimit) {
+			floorPiles[column] = height;
+			continue;
+		}
+		const kept = height > 0 ? pileLimit / height : 0;
+		const lost = 1 - kept;
+		lostCells += lost * height / floorCellHeightNow();
+		lostValue += lost * floorValues[column];
+		floorValues[column] *= kept;
+		floorPiles[column] = pileLimit;
 	}
+	updateFloor();
+	return floorCompression;
+}
 	const defaultPixelSize = 4;
 	const columns = Math.round(width / cell);
 	const initialRows = Math.round((top - initialBottom) / cell);
@@ -54,9 +77,10 @@
 	const gravity = 9.81;
 	const cargoHeight = 0.7;
 	// Fallen rubble piles up on the floor heightmap, the mirror of the rock
-	// surface above. The cap bounds its height; the platform follows the terrain
-	// and its deck remains above the capped pile.
-	const pileLimit = cargoHeight;
+	// surface above. A pile may stand as high as the roof and no higher: the
+	// chamber's own ceiling is the only level a column cannot pass, so rubble
+	// can bury the whole flight room when enough of the rock has come down.
+	const pileLimit = top;
 	// The grader works a swath under the platform centre while it moves,
 	// not ahead of it. Neighbours flow toward their mean and the blade shaves
 	// the top, clamped at the original floor so it cannot dig pits beneath
@@ -534,6 +558,9 @@
 		}
 	}
 
+	// The rock's free face: a column with no intact cell left has no rock at all,
+	// so its surface is the roof rather than the bottom row, and the whole layer
+	// cannot stay behind as solid ground after it was mined away.
 	function updateHeightmap() {
 		updateFirstRow();
 		for (let v = 0; v <= columns; v++) {
@@ -541,7 +568,8 @@
 			const c1 = Math.max(0, Math.min(columns - 1, v - 1));
 			const c2 = Math.max(0, Math.min(columns - 1, v));
 			const c3 = Math.max(0, Math.min(columns - 1, v + 1));
-			heightmap[v] = Math.min(top, bottom + (firstRow[c0] + 3 * firstRow[c1] + 3 * firstRow[c2] + firstRow[c3]) * 0.125 * cell);
+			const top0 = firstRow[c0] * cell, top1 = firstRow[c1] * cell, top2 = firstRow[c2] * cell, top3 = firstRow[c3] * cell;
+			heightmap[v] = Math.min(top, bottom + (top0 + 3 * top1 + 3 * top2 + top3) * 0.125);
 		}
 	}
 
@@ -2036,20 +2064,48 @@
 		return mineralStyles[index];
 	}
 
-	// The rock layer is drawn with a vertical perspective anchored to the upper
-	// chamber span (warpBottom..top): below warpBottom world and drawn coordinates
+	// The chamber is drawn with a vertical perspective anchored to the upper
+	// span (warpBottom..top): below warpBottom world and drawn coordinates
 	// coincide at 1x scale, while above warpBottom vertical scale eases smoothly
 	// from 1x at warpBottom to 0.25x (4x smaller) at top along a monotone cubic.
 	// Anchoring the warp to the chamber instead of the instantaneous row count
 	// prevents visual jumps as new rows slide in from above or compact below.
+	//
+	// This is one law for the whole chamber, not a rule for the rock paper: the
+	// ball reads the same scale at the same height, so its size, its drawn shape
+	// and its collision geometry are three consequences of one number.
 	const warpBottom = initialBottom;
 	const warpSpan = top - warpBottom;
+	// The rock cells shrink to a quarter of their floor size at the roof; the
+	// ball may not be drawn as a smaller body than that, or a ball flying in the
+	// open room above the layer would read as a speck.
+	const depthFloorScale = 0.25;
 	const drawnRowY = new Float64Array(maxRows + 1);
+	let depthScale = true;
+	function setDepthScale(on) {
+		depthScale = Boolean(on);
+		return depthScale;
+	}
+	// The size a body has at a height: the chamber's own vertical scale there,
+	// the very number the rock cells are drawn at. Depth scale hands that number
+	// to the ball as a real size, so the picture and the collision agree at every
+	// height: below the warp it is 1 and the floor game is untouched, and up in
+	// the layer the ball is a body of the size of the cells around it.
+	function perspectiveScale(y) {
+		return depthScale ? rockScale(y) : 1;
+	}
+	// Antiderivative of the warp law, in the same inset coordinate
+	// (y(u) = u + 0.75u^2 - 0.75u^3).
+	function warpIntegral(y) {
+		if (y <= warpBottom) return 0;
+		if (y >= top) return 1;
+		const u = (y - warpBottom) / warpSpan;
+		return u + 0.75 * u * u - 0.75 * u * u * u;
+	}
 	function rockDrawnY(y) {
 		if (y <= warpBottom) return y;
 		if (y >= top) return top;
-		const u = (y - warpBottom) / warpSpan;
-		return warpBottom + warpSpan * (u + 0.75 * u * u * (1 - u));
+		return warpBottom + warpSpan * warpIntegral(y);
 	}
 	function rockWorldY(drawnY) {
 		if (drawnY <= warpBottom) return drawnY;
@@ -2166,15 +2222,25 @@
 	// floorCompression times wider than it is tall, so the DEBRIS setting makes
 	// the same pile read as a flat sheet or a deep bed; the smoothed crest keeps
 	// their heightmap gentle either way.
+	//
+	// A pile may now reach the roof, and the 4:1 default would then be 3 840
+	// tiles a column, so a column is charted in at most maxTileLayers rows: a
+	// pile up to that many tiles tall keeps the exact tile the setting asks for,
+	// and a deeper one is drawn in proportionally taller blocks of the same
+	// material. The area a player sees is the pile either way.
+	const maxTileLayers = 64;
 	function drawFloor(context) {
 		updateFloor();
-		const tile = floorCellHeightNow();
+		const unit = floorCellHeightNow();
 		for (let column = 0; column < columns; column++) {
 			const height = Math.max(0, floorAt((column + 0.5) * cell));
-			for (let y = 0, layer = 0; y < height - 1e-9; y += tile, layer++) {
+			if (!(height > 1e-9)) continue;
+			const tile = Math.max(unit, height / maxTileLayers);
+			const start = height - Math.ceil(height / tile) * tile;
+			for (let y = start, row = 0; y < height - 1e-9; y += tile, row++) {
 				const tileHeight = Math.min(tile, height - y);
-				context.fillStyle = (column + layer) % 2 ? '#443a2d' : '#4a3e2f';
-				context.fillRect(column * cell, y, cell, tileHeight);
+				context.fillStyle = (column + row) % 2 ? '#443a2d' : '#4a3e2f';
+				context.fillRect(column * cell, Math.max(0, y), cell, tileHeight);
 			}
 		}
 		context.strokeStyle = '#8b7454';
@@ -2194,7 +2260,8 @@
 		get baseRow() { return baseRow; }, get generatedRows() { return generatedRows; },
 		get pendingRows() { return queuedShift / cell; }, growthRate, boundaryLookahead,
 		defaultPixelSize, storageLimit, cellMass,
-		rockDrawnY, rockWorldY, rockScale, drawnRowY,
+		rockDrawnY, rockWorldY, rockScale, perspectiveScale, drawnRowY, depthFloorScale,
+		get depthScale() { return depthScale; },
 		get damageRadius() { return damageRadiusNow(); },
 		get baseDamageRadius() { return baseDamageRadius; },
 		get damageMultiplier() { return damageMultiplierNow(); },
@@ -2242,8 +2309,8 @@
 	const api = {
 		hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, damageRadiusNow, damageMultiplierNow,
 		trace, step, harvest, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt,
-		state, setShape, setFloorCompression, setMineralClusterGrowth, generateTestRock, rockDrawnY, rockWorldY, rockScale, collapse, advanceMarket,
-		applyGeology, exportGeology, applyGeologyExport, sampleCell,
+		state, setShape, setFloorCompression, setDepthScale, setMineralClusterGrowth, generateTestRock, rockDrawnY, rockWorldY, rockScale, collapse, advanceMarket,
+		applyGeology, exportGeology, applyGeologyExport, sampleCell, perspectiveScale, setDepthScale,
 		queueGrowth, watchBoundary, grow,
 		get collapseChunkMax() { return collapseChunkMaxNow(); }
 	};

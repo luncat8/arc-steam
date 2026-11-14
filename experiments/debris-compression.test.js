@@ -53,25 +53,37 @@ test('a deposit is the same number of cells at any setting: only its drawn heigh
 test('the floor tiles are compression:1 and the layer count follows the setting', () => {
 	ceiling.reset(21);
 	const state = ceiling.state;
-	const pile = 0.3175;
+	// Under the 64 layers a column is charted in at every tested factor, so the
+	// tile stays exactly the one the setting asks for.
+	const pile = 0.9;
 	state.floorPiles.fill(pile);
 	const tiles = [];
 	const context = { fillRect(x, y, width, height) { tiles.push({ x, y, width, height }); }, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} };
 	for (const compression of [4, 2, 8]) {
 		ceiling.setFloorCompression(compression);
+		// The factor re-lays the column, so the pile is set again at this tile.
+		state.floorPiles.fill(pile);
 		tiles.length = 0;
 		ceiling.drawFloor(context);
 		const full = tiles.find(tile => Math.abs(tile.height - state.floorCellHeight) < 1e-12);
 		assert.ok(full, 'full-height tiles exist at ' + compression);
 		near(full.width / full.height, compression);
-		// Ten whole layers of the 4:1 tile plus the part tile that closes the
-		// crest: the layer count follows the setting, the pile behind it does not.
-		const column0 = tiles.filter(tile => Math.abs(tile.x) < 1e-12);
-		assert.equal(column0.length, Math.ceil(pile / state.floorCellHeight));
-		const top = column0[column0.length - 1];
-		assert.ok(top.height < state.floorCellHeight, 'the last tile closes the pile');
-		near(top.y + top.height, pile, 1e-9);
+		// Whole layers of the tile plus the part tile that closes the crest: the
+		// layer count follows the setting and the column still ends at the pile.
+		const column0 = tiles.filter(tile => Math.abs(tile.x) < 1e-9);
+		assert.equal(column0.length, Math.ceil(pile / state.floorCellHeight - 1e-9));
+		near(column0[column0.length - 1].y + column0[column0.length - 1].height, pile, 1e-9);
+		assert.ok(column0[0].y <= 1e-9, 'the column is drawn from the ground up');
 	}
+	// A pile that would be charted in more than 64 rows is drawn in taller
+	// blocks of the same material instead of thousands of hairlines.
+	ceiling.setFloorCompression(1);
+	state.floorPiles.fill(9);
+	tiles.length = 0;
+	ceiling.drawFloor(context);
+	const column0 = tiles.filter(tile => Math.abs(tile.x) < 1e-9);
+	assert.ok(column0.length <= 64, 'a deep pile is budgeted by area: ' + column0.length);
+	near(column0[column0.length - 1].y + column0[column0.length - 1].height, 9, 1e-9, 'and still fills its column');
 	restore();
 });
 
@@ -107,17 +119,20 @@ test('a grade pass cuts one tile and pays the same share at every setting', () =
 	balanced(world);
 });
 
-test('switching the setting never moves material, and New game keeps the choice', () => {
+test('switching the setting re-lays the same material and New game keeps the choice', () => {
 	const world = physics.createWorld();
 	const state = ceiling.state;
+	ceiling.setFloorCompression(4);
 	state.floorPiles.fill(0.11);
 	state.floorValues.fill(4.5);
-	const piles = Array.from(state.floorPiles);
-	const values = Array.from(state.floorValues);
 	const funds = state.funds;
+	const material = state.floorPiles.reduce((total, height) => total + height / state.floorCellHeight, 0);
+	// Four times the layers in the same column: the height follows the setting,
+	// so the surface the ball and the platform ride moves with the picture.
 	ceiling.setFloorCompression(1);
-	assert.deepEqual(Array.from(state.floorPiles), piles, 'no bucket is re-cut by a view change');
-	assert.deepEqual(Array.from(state.floorValues), values);
+	assert.ok(state.floorPiles.every(height => Math.abs(height - 0.44) < 1e-12), 'one square tile where there were four');
+	near(state.floorPiles.reduce((total, height) => total + height / state.floorCellHeight, 0), material, 1e-9, 'the same cells');
+	assert.ok(state.floorValues.every(value => Math.abs(value - 4.5) < 1e-12), 'the same value');
 	assert.equal(state.funds, funds);
 	balanced(world);
 	// The setting is a chamber rule: a fresh run keeps it and clears the floor.
@@ -129,7 +144,42 @@ test('switching the setting never moves material, and New game keeps the choice'
 	assert.equal(state.floorCompression, 1.5, 'the test-rock run keeps the setting');
 	assert.equal(state.floorPiles.some(height => height > 0), false, 'and starts from a clear floor too');
 	restore();
-	assert.equal(physics.config.radius, 0.18, 'a view rule never resizes the ball');
+	assert.equal(physics.config.radius, 0.18, 'the base radius is never rewritten');
+});
+
+test('a pile may fill the chamber up to its roof, and a flat factor that would' +
+	' push it through the roof books the excess as lost', () => {
+	const state = ceiling.state;
+	ceiling.setFloorCompression(1);
+	ceiling.reset(23);
+	state.floorPiles.fill(0);
+	state.floorValues.fill(0);
+	assert.equal(state.pileLimit, state.top, 'the cap is the roof, not the deck');
+	// The roof is the only level a column cannot pass, so a pile standing at it
+	// survives the same factor that once capped it at the deck.
+	ceiling.setFloorCompression(8);
+	state.floorPiles.fill(state.pileLimit);
+	state.floorValues.fill(6);
+	ceiling.setFloorCompression(4);
+	near(state.floorPiles[0], state.pileLimit, 1e-12, 'the roof holds the pile at the finer tile too');
+	balanced(physics.createWorld());
+	// A flatter tile stands the same material twice as high: what no longer fits
+	// under the roof is booked as lost, exactly like a capped deposit, and the
+	// purse keeps only the material the floor still holds.
+	const world = physics.createWorld();
+	ceiling.setFloorCompression(8);
+	state.floorPiles.fill(6);
+	state.floorValues.fill(36);
+	const beforeLost = state.lostCells;
+	const beforeValue = state.floorValues.reduce((total, value) => total + value, 0);
+	ceiling.setFloorCompression(1);
+	const afterValue = state.floorValues.reduce((total, value) => total + value, 0);
+	near(state.floorPiles[0], state.pileLimit, 1e-12, 'capped by the roof');
+	assert.ok(state.lostCells > beforeLost, 'what the roof cannot hold is lost, not invented');
+	assert.ok(afterValue < beforeValue, 'and its value goes with it');
+	balanced(world);
+	restore();
+	assert.equal(state.pileLimit, state.top);
 });
 
 test('a deeper pile lifts the hull by its own drawn height at every setting', () => {

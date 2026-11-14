@@ -662,7 +662,7 @@
 		const balls = rigWorld ? rigWorld.balls : null;
 		const physics = root.SteamPhysics;
 		if (!balls || !physics) return null;
-		const deck = rival.y + physics.config.deck + physics.config.radius;
+		const deck = rival.y + physics.config.deck + physics.ballRadiusAt(rival.y + physics.config.deck);
 		let floor = null;
 		let flying = null;
 		let soonest = Infinity;
@@ -742,7 +742,8 @@
 		if (ball.state !== 'flying') return true;
 		const physics = root.SteamPhysics;
 		const config = physics.config;
-		const target = config.ceiling - config.radius + strikeHeight(physics.pulseNow(rival.id));
+		// The apex that matters is the ball's own size under the roof it strikes.
+		const target = config.ceiling - physics.ballRadiusAt(config.ceiling) + strikeHeight(physics.pulseNow(rival.id));
 		if (rival.contactOnPiston) {
 			const bounce = solveKeeper(rival, rival.wantedAngle, 0);
 			const rise = Math.max(0, bounce.vy);
@@ -880,7 +881,7 @@
 		if (ball.state !== 'flying') { clearHarvest(rival); return; }
 		// A flight is met at the deck height, one radius off the deck, so the
 		// landing mark is where a deck bounce would happen.
-		const landing = physics.ballLandingTime(ball, rival.y + config.deck + config.radius);
+		const landing = physics.ballLandingTime(ball, rival.y + config.deck + physics.ballRadiusAt(rival.y + config.deck));
 		if (!Number.isFinite(landing)) { clearHarvest(rival); return; }
 		rival.mark = Math.max(0, Math.min(config.width, ball.x + ball.vx * landing));
 		rival.markTime = landing;

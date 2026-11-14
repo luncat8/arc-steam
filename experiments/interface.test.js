@@ -1718,7 +1718,7 @@ test('the free ramp shop toggle follows the selected player and explains the sha
 	assert.equal(players.state.rampsEnabled, true);
 });
 
-test('the perspective setting scales the drawn ball only, and F4 rings its real damage radius', () => {
+test('the perspective setting makes the ball it draws the ball it flies, and F4 rings its real damage radius', () => {
 	// The captured world is the one the page last stepped, so a fresh run needs
 	// one unpaused frame before the pause pins the picture.
 	dom.element('reset').dispatch('click');
@@ -1732,17 +1732,18 @@ test('the perspective setting scales the drawn ball only, and F4 rings its real 
 	const select = dom.element('ball-perspective');
 	assert.equal(select.value, 'on', 'the depth scale is the default');
 	const state = ceiling.state;
-	const ellipses = [];
+	const drawn = [];
 	const canvas = dom.element('c').context;
-	const record = canvas.ellipse;
-	canvas.ellipse = function (x, y, radiusX, radiusY) { ellipses.push({ x, y, radiusX, radiusY }); };
-	// A view change is what marks the scene, so each sample follows one: the
-	// paused page redraws exactly that frame and nothing on the idle ones.
+	const record = { arc: canvas.arc, ellipse: canvas.ellipse };
+	canvas.arc = function (x, y, radius) { drawn.push({ x, y, radiusX: radius, radiusY: radius }); };
+	canvas.ellipse = function (x, y, radiusX, radiusY) { drawn.push({ x, y, radiusX, radiusY }); };
+	// The chamber has other round parts (the garage grader's dome), so a sample
+	// keeps only the shapes drawn at the ball's own column.
 	const shot = raiseOn => {
 		if (raiseOn) select.dispatch('change');
-		ellipses.length = 0;
+		drawn.length = 0;
 		advance(1);
-		return ellipses.slice();
+		return drawn.filter(shape => Math.abs(shape.x - world.balls[0].x) < 1e-9);
 	};
 	// The earlier ball-arrangement tests rebuilt the set, so the page's ball is
 	// read from the chamber rather than through a stale handle.
@@ -1753,94 +1754,103 @@ test('the perspective setting scales the drawn ball only, and F4 rings its real 
 	ball.vx = 0;
 	ball.vy = 0;
 	const frozen = world.time;
-	shot(true);
-	assert.ok(ellipses.length >= 2, 'the ball and its outline are drawn');
+	let marks = shot(true);
+	assert.ok(marks.length >= 2, 'the ball and its outline are drawn');
 	assert.equal(world.time, frozen, 'the pause holds the simulation while the picture changes');
-	assert.equal(ellipses[0].radiusX, physics.config.radius);
-	// Just above the near edge the layer's own law is already at work, so the
-	// drawing is checked against it rather than against a flat radius.
-	harness.near(ellipses[0].radiusY / ellipses[0].radiusX, state.rockScale(ball.y), 1e-12);
+	// The sample straddles the near edge of the warp, so its own law is already
+	// a little under one; what matters is that both axes say the same.
+	assert.equal(marks[0].radiusX, marks[0].radiusY, 'the ball is round: a circle, not a squashed ellipse');
+	// The sample sits just above the near edge, where the law is still 1, so the
+	// classic sphere is drawn whole; the high sample below is where it shrinks.
+	harness.near(marks[0].radiusX, physics.ballRadiusAt(ball.y), 1e-12);
+	harness.near(marks[0].radiusX, physics.config.radius * state.perspectiveScale(ball.y), 1e-12);
 	const radius = physics.config.radius;
-	// High in the layer the rock is drawn small, and so is a ball in the open
-	// space in front of it. Those top rows are cleared so the step leaves the
-	// ball exactly where the sample puts it.
+	// High in the layer the chamber is drawn small, and so is the ball that flies
+	// there: the picture and the collision are the same number. Those top rows
+	// are cleared so the step leaves the ball exactly where the sample puts it.
 	const columns = state.columns;
 	for (let row = state.rows - 3; row < state.rows; row++) for (let column = 0; column < columns; column++) state.strength[row * columns + column] = 0;
 	ball.state = 'flying';
 	ball.x = 12;
 	ball.y = state.top - 0.25;
-	assert.ok(state.rockScale(ball.y) < 0.5, 'the sample is deep enough to matter');
-	shot(true);
-	assert.ok(ellipses[0].radiusY < radius * 0.6, 'a high ball is drawn small: ' + ellipses[0].radiusY);
-	harness.near(ellipses[0].radiusY / ellipses[0].radiusX, state.rockScale(ball.y), 1e-12);
-	assert.equal(ellipses[0].radiusX, radius, 'the width stays true; only the lit face foreshortens');
+	assert.ok(physics.ballRadiusAt(ball.y) < radius * 0.6, 'a high ball is a smaller body: ' + physics.ballRadiusAt(ball.y));
+	marks = shot(true);
+	assert.ok(marks[0].radiusX < radius * 0.6, 'and it is drawn that small: ' + marks[0].radiusX);
+	assert.equal(marks[0].radiusX, marks[0].radiusY, 'still round');
+	harness.near(marks[0].radiusX, physics.ballRadiusAt(ball.y), 1e-12);
+	// Constant size is the classic sphere, in the picture and in the physics.
 	select.value = 'flat';
-	shot(true);
-	assert.ok(Math.abs(ellipses[0].radiusY - radius) < 1e-12, 'flat keeps the drawn radius constant');
-	// Neither picture reached the simulation: the collision radius is the true
-	// one and the drawn ball is only a rendering of it.
-	assert.equal(physics.config.radius, radius);
+	marks = shot(true);
+	assert.ok(Math.abs(marks[0].radiusX - radius) < 1e-12, 'flat keeps the drawn radius constant');
+	assert.equal(physics.ballRadiusAt(ball.y), radius, 'and so does the body the simulation flies');
+	assert.equal(state.depthScale, false);
 	assert.equal(ball.y, state.top - 0.25, 'a paused view change never advances the ball');
 	// F4 adds exactly one dashed ring per ball, at the owner's real damage radius.
 	dom.contextCalls.length = 0;
 	shot(false);
 	assert.equal(dom.contextCalls.includes('setLineDash'), false, 'no ring unless asked');
 	dom.key('F4');
-	shot(false);
-	assert.equal(ellipses.length, 3, 'ball, outline and one damage ring');
+	marks = shot(false);
+	assert.equal(marks.length, 3, 'ball, outline and one damage ring');
 	const expected = ceiling.damageRadiusNow('rig') * state.cell;
-	assert.ok(Math.abs(ellipses[2].radiusX - expected) < 1e-9, 'the ring is the real damage radius in metres');
-	assert.equal(ellipses[2].radiusY, expected, 'and flat draws it round');
+	assert.ok(Math.abs(marks[2].radiusX - expected) < 1e-9, 'the ring is the real damage radius in metres');
+	assert.equal(marks[2].radiusY, expected, 'and flat draws it round');
 	select.value = 'on';
-	shot(true);
-	harness.near(ellipses[2].radiusY, expected * state.rockScale(ball.y), 1e-9);
+	marks = shot(true);
+	harness.near(marks[2].radiusY, expected * state.perspectiveScale(ball.y), 1e-9);
+	harness.near(marks[2].radiusX, expected, 1e-9, 'the reach across is the strike, the height is foreshortened');
 	dom.key('F4');
-	shot(false);
-	assert.equal(ellipses.length, 2, 'F4 hides the ring again');
-	// Both are view rules: New game keeps them and the simulation agrees.
+	marks = shot(false);
+	assert.equal(marks.length, 2, 'F4 hides the ring again');
+	// Both are chamber rules: New game keeps them, and the law the picture reads
+	// is the law the simulation reads after the reset.
 	dom.element('reset').dispatch('click');
 	assert.equal(select.value, 'on');
+	assert.equal(state.depthScale, true);
 	assert.equal(ceiling.state.funds, 0, 'a view rule never touches the purse');
-	canvas.ellipse = record;
+	canvas.arc = record.arc;
+	canvas.ellipse = record.ellipse;
 	setPaused(false);
 });
 
-test('the DEBRIS selector re-lays the floor without moving material, and survives New game', () => {
+test('the DEBRIS selector re-lays the floor and its surface, and survives New game', () => {
 	dom.element('reset').dispatch('click');
 	advance(1);
 	const select = dom.element('debris-compression');
 	assert.equal(select.value, '4', 'the 4:1 tile is the shipped default');
 	const state = ceiling.state;
 	assert.equal(state.floorCellHeight, state.cell / 4);
-	// Four 4:1 layers under every column, which is one whole square tile at
-	// DEBRIS 1 and four tiles at the default.
-	state.floorPiles.fill(state.floorCellHeight * 4);
+	// A tenth of a metre under every column: 3.2 of the 4:1 layers, and only
+	// 0.8 of a square one, so the re-lay at DEBRIS 1 quadruples the height.
+	// Under the roof at either setting, so the re-lay keeps all of it.
+	state.floorPiles.fill(0.1);
 	state.floorValues.fill(2);
-	const piles = Array.from(state.floorPiles);
 	const funds = state.funds;
 	select.value = '1';
 	select.dispatch('change');
 	assert.equal(state.floorCompression, 1);
 	assert.ok(Math.abs(state.floorCellHeight - state.cell) < 1e-12, 'square rubble');
-	assert.deepEqual(Array.from(state.floorPiles), piles, 'a view rule never moves a pile');
+	assert.ok(state.floorPiles.every(height => Math.abs(height - 0.4) < 1e-12), 'the same material stands four times as high');
+	assert.ok(state.floorValues.every(value => Math.abs(value - 2) < 1e-12), 'the value comes with it');
 	assert.equal(state.funds, funds);
-	// The drawn pile follows: one layer per cell of material instead of four.
+	// The floor the ball and the platform ride is the height that is drawn, so
+	// the surface moved with the picture instead of lagging a switch behind.
+	ceiling.drawFloor(dom.element('c').context);
+	assert.ok(Math.abs(ceiling.floorAt(12) - 0.4) < 1e-9, 'the ride height is the drawn height');
+	// The drawn pile follows: one layer per square tile instead of four.
 	const tiles = [];
 	const canvas = dom.element('c').context;
 	const record = canvas.fillRect;
 	canvas.fillRect = function (x, y, width, height) { tiles.push({ x, y, width, height }); };
-	// The filled piles are a scene change of their own, so the paused frame
-	// needs a redraw to show them.
-	dom.element('ball-perspective').dispatch('change');
 	advance(1);
 	assert.ok(tiles.length > 0, 'the chamber was redrawn with the new floor');
-	const underColumn = tiles.filter(tile => Math.abs(tile.x) < 1e-12 && Math.abs(tile.height - state.floorCellHeight) < 1e-12);
-	assert.ok(underColumn.length > 0, 'full-height tiles are drawn at the new setting');
+	// The rubble tiles of column zero: one cell wide, unlike the chamber's walls.
+	const columnZero = tiles.filter(tile => Math.abs(tile.x) < 1e-12 && Math.abs(tile.width - state.cell) < 1e-12);
+	const underColumn = columnZero.filter(tile => Math.abs(tile.height - state.floorCellHeight) < 1e-12);
+	assert.ok(underColumn.length >= 3, 'full-height square tiles are drawn at the new setting');
 	assert.ok(Math.abs(underColumn[0].width / underColumn[0].height - 1) < 1e-12, 'square tiles');
-	// The pile is one square tile deep, drawn as a single layer instead of the
-	// four the 4:1 tile cut it into.
-	const layerCount = tiles.filter(tile => Math.abs(tile.x) < 1e-12 && tile.y < 0.2).length;
-	assert.equal(layerCount, 1, 'one square layer where the 4:1 tile had four');
+	assert.equal(columnZero.length, 4, 'four square layers where the 4:1 tile had thirteen');
+	harness.near(underColumn[0].y, 0, 1e-9, 'laid from the ground up');
 	canvas.fillRect = record;
 	// New game keeps the setting and starts from a clear floor.
 	dom.element('reset').dispatch('click');

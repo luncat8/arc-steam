@@ -14,25 +14,20 @@ function rampColor(ramp, ratio) {
 	const pos = Math.max(0, Math.min(steps, ratio * steps));
 	return ramp[Math.floor(pos)];
 }
-// World height to drawn height through the rock layer's vertical perspective;
-// outside the layer the mapping is the identity.
+// World height to drawn height through the chamber's vertical perspective; below
+// the warp and above the roof the mapping is the identity.
 function rockWarpY(y) {
-	const rock = window.SteamCeiling.state;
-	if (y < rock.bottom || y > rock.top) return y;
-	return rock.rockDrawnY(y);
+	return window.SteamCeiling.rockDrawnY(y);
 }
-// A ball's drawn radius follows the layer's own scale law from its centre, so a
-// deep ball reads at the rock's depth. This is a view rule only: collision,
-// release height and every energy term keep the true radius.
-let ballPerspective = true;
-// The strike footprint is a property of the blow, not of the picture, so it has
-// its own overlay rather than shrinking with the ball.
+// A ball is drawn at the radius it is flown and collided at, so the picture and
+// the physics can never disagree: Depth scale hands the whole chamber one
+// perspective law and the ball is a smaller body higher up, Constant size is the
+// classic 0.18 m sphere everywhere. The setting itself lives with the law, in
+// SteamCeiling, so there is one truth. The strike footprint is a property of the
+// blow, not of the picture, so it still has its own overlay.
 let showDamageRadius = false;
 function ballDrawnScale(y) {
-	if (!ballPerspective) return 1;
-	const rock = window.SteamCeiling.state;
-	if (y < rock.bottom || y > rock.top) return 1;
-	return rock.rockScale(y);
+	return window.SteamCeiling.perspectiveScale(y);
 }
 let width = 0;
 let height = 0;
@@ -227,22 +222,22 @@ function draw() {
 	// One body pass draws every platform, the riding one last. The rig's
 	// machinery rides inside its body so a competitor on top covers it.
 	playerApi.draw(context, drawRigMachinery);
-	// Every ball is drawn where it flies. The rock layer is drawn through a
-	// vertical perspective, so a ball inside the layer is warped with it;
-	// otherwise it stays on the linear world axis. A ball owned by a
+	// Every ball is drawn where it flies and at the radius the simulation flies
+	// it: the chamber's perspective is a warp of the vertical axis, so a body
+	// inside it keeps its own height and loses that height in proportion. That
+	// is a round ball of a smaller radius, not an ellipse. A ball owned by a
 	// competitor carries that player's colour, so ownership needs no label.
-	const rock = window.SteamCeiling.state;
 	const balls = world.balls || [];
 	for (let i = 0; i < balls.length; i++) {
 		const ball = balls[i];
 		const owner = ball.owner ? playerById(ball.owner) : null;
-		const inRock = ball.y >= rock.bottom && ball.y <= rock.top;
-		const ballY = inRock ? rock.rockDrawnY(ball.y) : ball.y;
+		const ballY = rockWarpY(ball.y);
 		const ballScale = ballDrawnScale(ball.y);
+		const radius = config.radius * ballScale;
 		context.fillStyle = owner ? owner.colour : (ball.state === 'grounded' ? '#e6b66e' : '#edf6f1');
-		context.beginPath(); context.ellipse(ball.x, ballY, config.radius, config.radius * ballScale, 0, 0, Math.PI * 2); context.fill();
+		context.beginPath(); context.arc(ball.x, ballY, radius, 0, Math.PI * 2); context.fill();
 		context.strokeStyle = owner ? '#6f5a44' : '#a9c7bc';
-		context.beginPath(); context.ellipse(ball.x, ballY, config.radius + 0.13, (config.radius + 0.13) * ballScale, 0, 0, Math.PI * 2); context.stroke();
+		context.beginPath(); context.arc(ball.x, ballY, radius + 0.13 * ballScale, 0, Math.PI * 2); context.stroke();
 		if (showDamageRadius) drawDamageRadius(ball, ballY, ballScale);
 	}
 	context.restore();
@@ -251,9 +246,9 @@ function draw() {
 	drawPadLabel(offsetX + config.width * 0.5 * scale, floorY + 0.35 * scale + 12, chargingNow);
 }
 
-// The radius an impact will really spend, ringed around a ball that the
-// perspective draws smaller: the owner's own damage radius in metres, with the
-// layer's local vertical scale keeping the ring on the same plane as the ball.
+// The radius an impact will really spend, ringed around a ball the perspective
+// draws smaller: the owner's own damage radius in metres, with the chamber's
+// local scale keeping the ring on the same plane as the ball.
 function drawDamageRadius(ball, ballY, ballScale) {
 	const rock = window.SteamCeiling.state;
 	const radius = window.SteamCeiling.damageRadiusNow(ball.owner || 'rig') * rock.cell;

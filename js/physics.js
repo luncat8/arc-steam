@@ -301,7 +301,27 @@
 	function planeContactTime(x, y, vx, vy, centerX, centerY, centerVx, centerVy, angle, limit, halfExtent) {
 		const nx = -Math.sin(angle);
 		const ny = Math.cos(angle);
-		const signed = nx * (x - centerX) + ny * (y - centerY) - config.radius;
+		if (!root.SteamCeiling || !root.SteamCeiling.state.depthScale) {
+			return faceContactTime(x, y, vx, vy, centerX, centerY, centerVx, centerVy, angle, nx, ny, limit, halfExtent, config.radius);
+		}
+		// The face is met by the body the ball has at the contact height, which
+		// under depth scale is not the body it has where the step began. A few
+		// refinements settle the fixed point, so the contact and the size that
+		// made it agree instead of being one step off.
+		let time = faceContactTime(x, y, vx, vy, centerX, centerY, centerVx, centerVy, angle, nx, ny, limit, halfExtent, ballRadiusAt(y));
+		let used = -1;
+		for (let pass = 0; pass < 4 && Number.isFinite(time); pass++) {
+			const height = y + vy * time - 0.5 * config.ballGravity * time * time;
+			const radius = ballRadiusAt(height);
+			if (Math.abs(radius - used) < 1e-6) break;
+			used = radius;
+			time = faceContactTime(x, y, vx, vy, centerX, centerY, centerVx, centerVy, angle, nx, ny, limit, halfExtent, radius);
+		}
+		return time;
+	}
+
+	function faceContactTime(x, y, vx, vy, centerX, centerY, centerVx, centerVy, angle, nx, ny, limit, halfExtent, radius) {
+		const signed = nx * (x - centerX) + ny * (y - centerY) - radius;
 		const a = -0.5 * config.ballGravity * ny;
 		const b = nx * (vx - centerVx) + ny * (vy - centerVy);
 		if (signed < -1e-9 && b >= 0) return Infinity;
@@ -741,6 +761,27 @@
 		return { owner, holder: null, x, y, vx, vy, state: 'flying' };
 	}
 
+	// The ball's own radius at a height. Depth scale is the chamber's picture
+	// made real: the whole ball, its collision circle included, is drawn and
+	// collided at the chamber's local depth scale, so a ball near the roof is a
+	// smaller ball in a smaller chamber, not a small picture of a large one.
+	// Constant size is the classic 0.18 m sphere at every height. Below the
+	// warp the scale is 1 either way, so the floor game is untouched.
+	function ballRadiusAt(y) {
+		const ceiling = root.SteamCeiling;
+		if (!ceiling) return config.radius;
+		return config.radius * ceiling.perspectiveScale(y);
+	}
+	// A ball set down on a surface sits one of its own radii above it. The ball
+	// is round at its centre height, so a small ball near the roof rests close to
+	// the surface under it, and the same rule sizes the seat on a deck.
+	function placementRadius(surface, fallback) {
+		return ballRadiusAt(surface + (fallback === undefined ? config.radius : fallback));
+	}
+	function setBallPerspective(on) {
+		return root.SteamCeiling ? root.SteamCeiling.setDepthScale(on) : false;
+	}
+
 	function isRigBall(ball) { return !ball.owner || ball.owner === 'rig'; }
 	function ballOwnerId(ball) { return ball && ball.owner ? ball.owner : 'rig'; }
 	function ballMassFor(ball) { return ballMassNow(ballOwnerId(ball)); }
@@ -876,7 +917,7 @@
 			if (!mayPush(ball, id) || ball.state === 'held') continue;
 			if (!best) best = ball;
 			if (ball.state !== 'flying') continue;
-			const time = ballLandingTime(ball, machineBody(machine).y + config.deck + config.radius);
+			const time = ballLandingTime(ball, machineBody(machine).y + config.deck + ballRadiusAt(machineBody(machine).y + config.deck));
 			if (time < bestTime) { bestTime = time; best = ball; }
 		}
 		return best;
@@ -999,7 +1040,7 @@ function spend(world, useful) {
 	function setHeldBallPose(world, ball) {
 		const platform = machineBody(machineById(world, ball.holder));
 		const localX = -config.platformWidth * 0.32;
-		const localY = config.deck + config.radius;
+		const localY = config.deck + ballRadiusAt(platform.y + config.deck);
 		const cosine = Math.cos(platform.angle);
 		const sine = Math.sin(platform.angle);
 		ball.x = platform.x + cosine * localX - sine * localY;
@@ -1040,7 +1081,8 @@ function spend(world, useful) {
 		const faceAngle = baseAngle + machinePistonAngle(machine || world);
 		const along = config.platformWidth * 0.25 - config.pistonCentre;
 		const centreY = platform.y + Math.sin(baseAngle) * config.pistonCentre + Math.cos(baseAngle) * config.deck;
-		return centreY + Math.sin(faceAngle) * along + Math.cos(faceAngle) * config.radius - config.radius;
+		const radius = ballRadiusAt(centreY + config.deck);
+		return centreY + Math.sin(faceAngle) * along + Math.cos(faceAngle) * radius - radius;
 	}
 
 	// Could this machine put a ball back in the air right now? The release's own
@@ -1084,8 +1126,9 @@ function spend(world, useful) {
 		const along = config.platformWidth * 0.25 - config.pistonCentre;
 		const centreX = platform.x + Math.cos(baseAngle) * config.pistonCentre - Math.sin(baseAngle) * config.deck;
 		const centreY = platform.y + Math.sin(baseAngle) * config.pistonCentre + Math.cos(baseAngle) * config.deck;
-		ball.x = centreX + Math.cos(faceAngle) * along - Math.sin(faceAngle) * config.radius;
-		ball.y = centreY + Math.sin(faceAngle) * along + Math.cos(faceAngle) * config.radius;
+		const radius = ballRadiusAt(centreY);
+		ball.x = centreX + Math.cos(faceAngle) * along - Math.sin(faceAngle) * radius;
+		ball.y = centreY + Math.sin(faceAngle) * along + Math.cos(faceAngle) * radius;
 		ball.holder = null;
 		ball.vx = platform.vx;
 		ball.vy = Math.sqrt(2 * (energy - ballMass * config.ballGravity * height) / ballMass);
@@ -1412,7 +1455,7 @@ function spend(world, useful) {
 			const before = ballEnergy(ball);
 			ball.state = 'flying';
 			ball.x = rival.x;
-			ball.y = rival.y + config.deck + config.radius + 0.01;
+			ball.y = rival.y + config.deck + ballRadiusAt(rival.y + config.deck) + 0.01;
 			ball.vx = rival.vx;
 			ball.vy = Math.sqrt(2 * pulseNow(rival.id) / ballMassFor(ball));
 			if (isRigBall(ball)) world.importedEnergy += ballEnergy(ball) - before;
@@ -1439,7 +1482,7 @@ function spend(world, useful) {
 		const sine = Math.sin(body.angle);
 		if (ball.vx * -sine + ball.vy * cosine > -0.01) return;
 		const localY = -(ball.x - body.x) * sine + (ball.y - body.y) * cosine;
-		const surface = config.deck + config.radius;
+		const surface = config.deck + ballRadiusAt(ball.y);
 		if (localY >= surface) return;
 		const push = surface - localY;
 		ball.x -= push * sine;
@@ -1459,7 +1502,8 @@ function spend(world, useful) {
 			// deposit, a grader cut): re-seat on it so the ball is neither
 			// buried nor left floating. Settling down dissipates as heat;
 			// being lifted is work by the prescribed terrain.
-			const rest = terrainHeight(ball.x) + config.radius;
+			const ground = terrainHeight(ball.x);
+			const rest = ground + placementRadius(ground, 0.5);
 			const delta = ballMassFor(ball) * config.ballGravity * (rest - ball.y);
 			if (rigBall) {
 				if (delta > 0) world.terrainWork += delta;
@@ -1475,6 +1519,14 @@ function spend(world, useful) {
 		let remaining = dt;
 		let elapsed = 0;
 		let rockImpulse = false;
+		// Every contact within one step is measured against one body size: the
+		// frame spans one height on both axes, so the ball is round and never
+		// separates from a surface by more than the radius it had coming in.
+		// The floor is the lowest height the frame reaches, where depth scale
+		// makes the body smallest, so a surface below is never met early.
+		const startY = ball.y;
+		const endY = startY + ball.vy * dt - 0.5 * config.ballGravity * dt * dt;
+		const radius = ballRadiusAt(Math.min(startY, endY));
 		for (let event = 0; event < 12 && remaining > 1e-10; event++) {
 			let time = remaining;
 			let type = 0;
@@ -1487,20 +1539,20 @@ function spend(world, useful) {
 			let faceAngle = 0;
 			let faceVx = 0;
 			let faceVy = 0;
-			const wall = ball.vx > 0 ? config.width - config.radius : config.radius;
+			const wall = ball.vx > 0 ? config.width - radius : radius;
 			const wallTime = ball.vx ? (wall - ball.x) / ball.vx : Infinity;
 			if (wallTime >= 0 && wallTime <= time) { time = wallTime; type = 1; }
 			// The floor is a heightmap of fallen rubble: the crossing is solved at
 			// the surface under the ball, and a centre already inside the surface
 			// (a rise ahead of the drift between steps) grounds at once.
 			const floor = root.SteamCeiling ? root.SteamCeiling.floorAt(ball.x) : 0;
-			const groundTime = ball.y < floor + config.radius ? 0 : downwardTime(ball, floor + config.radius);
+			const groundTime = ball.y < floor + radius ? 0 : downwardTime(ball, floor + radius);
 			if (groundTime <= time) { time = groundTime; type = 2; }
-			const topDiscriminant = ball.vy * ball.vy - 2 * config.ballGravity * (config.ceiling - config.radius - ball.y);
+			const topDiscriminant = ball.vy * ball.vy - 2 * config.ballGravity * (config.ceiling - radius - ball.y);
 			const topTime = ball.vy > 0 && topDiscriminant >= 0 ? (ball.vy - Math.sqrt(topDiscriminant)) / config.ballGravity : Infinity;
 			if (topTime >= 0 && topTime <= time) { time = topTime; type = 3; }
 			if (root.SteamCeiling) {
-				const rockHit = root.SteamCeiling.trace(ball.x, ball.y, ball.vx, ball.vy, remaining, config.radius, config.ballGravity);
+				const rockHit = root.SteamCeiling.trace(ball.x, ball.y, ball.vx, ball.vy, remaining, radius, config.ballGravity);
 				if (rockHit.time <= time) {
 					time = rockHit.time;
 					type = 5;
@@ -1547,13 +1599,13 @@ function spend(world, useful) {
 			remaining -= time;
 			elapsed += time;
 			if (!type) return;
-			if (type === 1) { ball.vx = -ball.vx; continue; }
+			if (type === 1) { ball.vx = -ball.vx; ball.x = wall; continue; }
 			if (type === 2) {
 				// Ground is a heightmap, so a surface that rose under a ball
 				// already on its way up only lifts it back out: no second
 				// impulse, and the lift is work by the prescribed terrain.
 				const rest = root.SteamCeiling ? root.SteamCeiling.floorAt(ball.x) : 0;
-				const surface = rest + config.radius;
+				const surface = rest + radius;
 				if (ball.vy >= 0) {
 					const lift = surface - ball.y;
 					ball.y = surface;
@@ -1603,8 +1655,8 @@ function spend(world, useful) {
 					const owner = ballOwnerId(ball);
 					const rockRetention = rockRetentionNow(owner);
 					const damageBudget = 0.5 * ballMassFor(ball) * normalVelocity * normalVelocity * (1 - rockRetention);
-					const contactX = ball.x - rockNx * config.radius;
-					const contactY = ball.y - rockNy * config.radius;
+					const contactX = ball.x - rockNx * radius;
+					const contactY = ball.y - rockNy * radius;
 					const fracture = root.SteamCeiling.damage(contactX, contactY, damageBudget, owner);
 					rockPassiveImpact(world, ball, rockNx, rockNy, fracture);
 					rockImpulse = true;
@@ -1713,6 +1765,7 @@ function spend(world, useful) {
 		retentionNow, rockRetentionNow, ballMassNow, ballMassFor, damageBonusNow, damageRadiusBonusNow, pulseNow, forceNow, speedNow, arrivalSpeed, coverage, travelTime, stopTime, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
 		setGroundBounce, groundRetentionNow, get groundBounceMode() { return groundMode; },
 		settlePose, setPistonAngle, pistonContactTime, solvePiston, solveFace, reflectOnDeck, contactResult, deckBounce,
+		ballRadiusAt, placementRadius, setBallPerspective,
 		setBallMode, mayPush, isRigBall, ballLandingTime, focusBall, heldBall, heldBallMass,
 	machineBody, machineById, machinesOf, machineDrive, machinePistonAngle, heldBallOf, focusBallOf
 };

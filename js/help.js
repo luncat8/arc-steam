@@ -73,27 +73,32 @@
 		{
 			id: 'perspective',
 			label: 'Perspective',
-			title: 'Ball perspective and its damage radius',
+			title: 'Depth scale: one size for the picture and the ball',
 			text: [
-				'The rock layer is drawn through a vertical perspective: unit scale at its near edge, four times smaller at the roof. PERSPECTIVE in the system bar draws each ball by that same law from the ball centre, so a ball deep in the rock reads at the rock’s own depth instead of floating in front of it. Below the layer the scale is 1× either way, and the setting is a view rule that survives New game like the rock shape and the ball arrangement.',
-				'A drawn ball is a picture of a fixed sphere: the collision radius, the release height, the piston contact and every energy term stay at the true 0.18 m whichever setting is chosen. What a smaller ball could misreport is the strike footprint, so the damage overlay draws it: F4 rings each ball with its owner’s own damage radius, scaled by the perspective’s local scale at that height. The ring is the radius in metres that the impact will really spend, so a ball drawn at a quarter size still shows the full reach of its strike.'
+				'The chamber is drawn through a vertical perspective: true size at the floor and up to the near edge of the rock layer at 11.375 m, then compressed to a quarter at the roof, so a cell high in the layer is drawn small. PERSPECTIVE in the system bar decides whether the ball obeys that same law. Depth scale makes the ball the size of the cells around it — the radius it is drawn at is the radius it collides at, the height it rests on a deck, the gap it keeps to a wall and to the roof, and the clearance the ballistic computer flies it through. Constant size is the classic 0.18 m sphere everywhere.',
+				'Below the rock layer both settings fly exactly the same ball, because the law is 1× there: the floor game is untouched either way. The difference shows when a ball is up in the layer, where Depth scale makes it a smaller body in a smaller-looking world instead of a full-size ball in front of a shrunken one. The setting is a chamber rule and survives New game, like the rock shape and the ball arrangement.',
+				'A strike footprint is measured in cells, not in ball radii, so it does not shrink with the ball: F4 rings each ball with its owner’s own damage radius, foreshortened by the chamber’s local scale so the ring lies on the same plane as the ball.'
 			],
 			keys: [
-				['PERSPECTIVE', 'Depth scale follows the rock; constant size does not'],
+				['Depth scale', 'The ball is drawn and collided at the chamber’s own scale'],
+				['Constant size', 'The classic 0.18 m ball at every height'],
 				['F4', 'Show or hide each ball’s damage radius']
 			]
 		},
 		{
 			id: 'debris',
 			label: 'Debris',
-			title: 'Debris Y compression',
+			title: 'Debris Y compression and the pile ceiling',
 			text: [
-				'Fallen rubble is a heightmap of soil layers under every column. DEBRIS in the system bar says how many times wider than tall one layer is drawn. The layer thickness is the cell width divided by that number: 4 gives the classic 4:1 tile, 0.125 m by 0.03125 m; 1 gives square rubble and 8 a layer four times thinner still, so the same pile stands twice as tall at 2 as at 4 and half as tall at 8. The 0.7 m per-column cap is unchanged, so a flatter setting packs more cells under it before the rest is booked as lost.'
+				'Fallen rubble is a heightmap of soil layers under every column. DEBRIS in the system bar says how many times wider than tall one layer is drawn. The layer thickness is the cell width divided by that number: 4 gives the classic 4:1 tile, 0.125 m by 0.03125 m; 1 gives square rubble, 8 a layer four times thinner still, so the same material stands twice as tall at 2 as at 4 and half as tall at 8.',
+				'The number is not just a picture. Changing it re-lays the rubble already on the floor at the new thickness, so a pile that was four thin layers deep becomes one square tile and the surface the ball and the platform ride moves with it — the ground never lags behind what is drawn. A pile may stand as high as the roof: the chamber’s ceiling is the only level a column cannot pass, so with enough rock brought down the rubble can bury the whole flight room. A setting that would push a column through the roof keeps what fits and books the rest as lost, exactly like a deposit at that limit.',
+				'What never changes is the material itself: a pile holds the same cells, the same minerals and the same value at every setting, and the ledger, cargo and funds do not notice the switch.'
 			],
 			keys: [
 				['1', 'Square rubble: 0.125 m of height per cell'],
 				['4', 'The classic 4:1 floor tile, 0.03125 m per cell'],
-				['8', 'The flattest sheet, 0.015625 m per cell']
+				['8', 'The flattest sheet, 0.015625 m per cell'],
+				['Roof', 'The only cap: rubble may fill the chamber']
 			]
 		},
 		{
