@@ -1,5 +1,5 @@
 // Canvas geometry and rendering. Drawing reads game state; input owns state changes.
-// provides: resize, draw, view, playerById, rockWarpY
+// provides: resize, draw, view, playerById, rockWarpY, ballDrawnScale, drawDamageRadius
 // depends: main.js bindings, view/readout state, playerApi
 
 'use strict';
@@ -20,6 +20,19 @@ function rockWarpY(y) {
 	const rock = window.SteamCeiling.state;
 	if (y < rock.bottom || y > rock.top) return y;
 	return rock.rockDrawnY(y);
+}
+// A ball's drawn radius follows the layer's own scale law from its centre, so a
+// deep ball reads at the rock's depth. This is a view rule only: collision,
+// release height and every energy term keep the true radius.
+let ballPerspective = true;
+// The strike footprint is a property of the blow, not of the picture, so it has
+// its own overlay rather than shrinking with the ball.
+let showDamageRadius = false;
+function ballDrawnScale(y) {
+	if (!ballPerspective) return 1;
+	const rock = window.SteamCeiling.state;
+	if (y < rock.bottom || y > rock.top) return 1;
+	return rock.rockScale(y);
 }
 let width = 0;
 let height = 0;
@@ -225,16 +238,30 @@ function draw() {
 		const owner = ball.owner ? playerById(ball.owner) : null;
 		const inRock = ball.y >= rock.bottom && ball.y <= rock.top;
 		const ballY = inRock ? rock.rockDrawnY(ball.y) : ball.y;
-		const ballScale = inRock ? rock.rockScale(ball.y) : 1;
+		const ballScale = ballDrawnScale(ball.y);
 		context.fillStyle = owner ? owner.colour : (ball.state === 'grounded' ? '#e6b66e' : '#edf6f1');
 		context.beginPath(); context.ellipse(ball.x, ballY, config.radius, config.radius * ballScale, 0, 0, Math.PI * 2); context.fill();
 		context.strokeStyle = owner ? '#6f5a44' : '#a9c7bc';
 		context.beginPath(); context.ellipse(ball.x, ballY, config.radius + 0.13, (config.radius + 0.13) * ballScale, 0, 0, Math.PI * 2); context.stroke();
+		if (showDamageRadius) drawDamageRadius(ball, ballY, ballScale);
 	}
 	context.restore();
 	drawSellLabel(offsetX + 8, floorY - scale * 1.4, -Math.PI * 0.5);
 	drawSellLabel(offsetX + config.width * scale - 8, floorY - scale * 1.4, Math.PI * 0.5);
 	drawPadLabel(offsetX + config.width * 0.5 * scale, floorY + 0.35 * scale + 12, chargingNow);
+}
+
+// The radius an impact will really spend, ringed around a ball that the
+// perspective draws smaller: the owner's own damage radius in metres, with the
+// layer's local vertical scale keeping the ring on the same plane as the ball.
+function drawDamageRadius(ball, ballY, ballScale) {
+	const rock = window.SteamCeiling.state;
+	const radius = window.SteamCeiling.damageRadiusNow(ball.owner || 'rig') * rock.cell;
+	context.strokeStyle = '#e6b66e';
+	context.lineWidth = 1.2 / scale;
+	context.setLineDash([0.14, 0.11]);
+	context.beginPath(); context.ellipse(ball.x, ballY, radius, radius * ballScale, 0, 0, Math.PI * 2); context.stroke();
+	context.setLineDash([]);
 }
 
 // Ballistic overlay, drawn in world units inside the chamber transform: one

@@ -45,6 +45,12 @@ function parkRival() {
 }
 
 let clock = 0;
+// The pause button names the action it will take, so a test can pin the state
+// it needs instead of toggling whatever the previous test left behind.
+function setPaused(on) {
+	const button = dom.element('pause');
+	if ((button.textContent === 'Resume') !== on) button.dispatch('click');
+}
 function advance(count) {
 	for (let i = 0; i < count; i++) {
 		clock += 1000 / 60;
@@ -1710,4 +1716,138 @@ test('the free ramp shop toggle follows the selected player and explains the sha
 	dom.element('reset').dispatch('click');
 	assert.equal(button.textContent, 'Uninstall · free');
 	assert.equal(players.state.rampsEnabled, true);
+});
+
+test('the perspective setting scales the drawn ball only, and F4 rings its real damage radius', () => {
+	// The captured world is the one the page last stepped, so a fresh run needs
+	// one unpaused frame before the pause pins the picture.
+	dom.element('reset').dispatch('click');
+	setPaused(false);
+	parkRival();
+	players.setActive(0);
+	advance(1);
+	// The page is paused, so the samples below are the picture of a ball at one
+	// exact height rather than wherever a step left it.
+	setPaused(true);
+	const select = dom.element('ball-perspective');
+	assert.equal(select.value, 'on', 'the depth scale is the default');
+	const state = ceiling.state;
+	const ellipses = [];
+	const canvas = dom.element('c').context;
+	const record = canvas.ellipse;
+	canvas.ellipse = function (x, y, radiusX, radiusY) { ellipses.push({ x, y, radiusX, radiusY }); };
+	// A view change is what marks the scene, so each sample follows one: the
+	// paused page redraws exactly that frame and nothing on the idle ones.
+	const shot = raiseOn => {
+		if (raiseOn) select.dispatch('change');
+		ellipses.length = 0;
+		advance(1);
+		return ellipses.slice();
+	};
+	// The earlier ball-arrangement tests rebuilt the set, so the page's ball is
+	// read from the chamber rather than through a stale handle.
+	const ball = world.balls[0];
+	ball.state = 'held';
+	ball.y = state.bottom + state.cell;
+	ball.x = 18;
+	ball.vx = 0;
+	ball.vy = 0;
+	const frozen = world.time;
+	shot(true);
+	assert.ok(ellipses.length >= 2, 'the ball and its outline are drawn');
+	assert.equal(world.time, frozen, 'the pause holds the simulation while the picture changes');
+	assert.equal(ellipses[0].radiusX, physics.config.radius);
+	// Just above the near edge the layer's own law is already at work, so the
+	// drawing is checked against it rather than against a flat radius.
+	harness.near(ellipses[0].radiusY / ellipses[0].radiusX, state.rockScale(ball.y), 1e-12);
+	const radius = physics.config.radius;
+	// High in the layer the rock is drawn small, and so is a ball in the open
+	// space in front of it. Those top rows are cleared so the step leaves the
+	// ball exactly where the sample puts it.
+	const columns = state.columns;
+	for (let row = state.rows - 3; row < state.rows; row++) for (let column = 0; column < columns; column++) state.strength[row * columns + column] = 0;
+	ball.state = 'flying';
+	ball.x = 12;
+	ball.y = state.top - 0.25;
+	assert.ok(state.rockScale(ball.y) < 0.5, 'the sample is deep enough to matter');
+	shot(true);
+	assert.ok(ellipses[0].radiusY < radius * 0.6, 'a high ball is drawn small: ' + ellipses[0].radiusY);
+	harness.near(ellipses[0].radiusY / ellipses[0].radiusX, state.rockScale(ball.y), 1e-12);
+	assert.equal(ellipses[0].radiusX, radius, 'the width stays true; only the lit face foreshortens');
+	select.value = 'flat';
+	shot(true);
+	assert.ok(Math.abs(ellipses[0].radiusY - radius) < 1e-12, 'flat keeps the drawn radius constant');
+	// Neither picture reached the simulation: the collision radius is the true
+	// one and the drawn ball is only a rendering of it.
+	assert.equal(physics.config.radius, radius);
+	assert.equal(ball.y, state.top - 0.25, 'a paused view change never advances the ball');
+	// F4 adds exactly one dashed ring per ball, at the owner's real damage radius.
+	dom.contextCalls.length = 0;
+	shot(false);
+	assert.equal(dom.contextCalls.includes('setLineDash'), false, 'no ring unless asked');
+	dom.key('F4');
+	shot(false);
+	assert.equal(ellipses.length, 3, 'ball, outline and one damage ring');
+	const expected = ceiling.damageRadiusNow('rig') * state.cell;
+	assert.ok(Math.abs(ellipses[2].radiusX - expected) < 1e-9, 'the ring is the real damage radius in metres');
+	assert.equal(ellipses[2].radiusY, expected, 'and flat draws it round');
+	select.value = 'on';
+	shot(true);
+	harness.near(ellipses[2].radiusY, expected * state.rockScale(ball.y), 1e-9);
+	dom.key('F4');
+	shot(false);
+	assert.equal(ellipses.length, 2, 'F4 hides the ring again');
+	// Both are view rules: New game keeps them and the simulation agrees.
+	dom.element('reset').dispatch('click');
+	assert.equal(select.value, 'on');
+	assert.equal(ceiling.state.funds, 0, 'a view rule never touches the purse');
+	canvas.ellipse = record;
+	setPaused(false);
+});
+
+test('the DEBRIS selector re-lays the floor without moving material, and survives New game', () => {
+	dom.element('reset').dispatch('click');
+	advance(1);
+	const select = dom.element('debris-compression');
+	assert.equal(select.value, '4', 'the 4:1 tile is the shipped default');
+	const state = ceiling.state;
+	assert.equal(state.floorCellHeight, state.cell / 4);
+	// Four 4:1 layers under every column, which is one whole square tile at
+	// DEBRIS 1 and four tiles at the default.
+	state.floorPiles.fill(state.floorCellHeight * 4);
+	state.floorValues.fill(2);
+	const piles = Array.from(state.floorPiles);
+	const funds = state.funds;
+	select.value = '1';
+	select.dispatch('change');
+	assert.equal(state.floorCompression, 1);
+	assert.ok(Math.abs(state.floorCellHeight - state.cell) < 1e-12, 'square rubble');
+	assert.deepEqual(Array.from(state.floorPiles), piles, 'a view rule never moves a pile');
+	assert.equal(state.funds, funds);
+	// The drawn pile follows: one layer per cell of material instead of four.
+	const tiles = [];
+	const canvas = dom.element('c').context;
+	const record = canvas.fillRect;
+	canvas.fillRect = function (x, y, width, height) { tiles.push({ x, y, width, height }); };
+	// The filled piles are a scene change of their own, so the paused frame
+	// needs a redraw to show them.
+	dom.element('ball-perspective').dispatch('change');
+	advance(1);
+	assert.ok(tiles.length > 0, 'the chamber was redrawn with the new floor');
+	const underColumn = tiles.filter(tile => Math.abs(tile.x) < 1e-12 && Math.abs(tile.height - state.floorCellHeight) < 1e-12);
+	assert.ok(underColumn.length > 0, 'full-height tiles are drawn at the new setting');
+	assert.ok(Math.abs(underColumn[0].width / underColumn[0].height - 1) < 1e-12, 'square tiles');
+	// The pile is one square tile deep, drawn as a single layer instead of the
+	// four the 4:1 tile cut it into.
+	const layerCount = tiles.filter(tile => Math.abs(tile.x) < 1e-12 && tile.y < 0.2).length;
+	assert.equal(layerCount, 1, 'one square layer where the 4:1 tile had four');
+	canvas.fillRect = record;
+	// New game keeps the setting and starts from a clear floor.
+	dom.element('reset').dispatch('click');
+	assert.equal(select.value, '1');
+	assert.equal(ceiling.state.floorCompression, 1);
+	assert.equal(ceiling.state.floorPiles.some(height => height > 0), false);
+	select.value = '4';
+	select.dispatch('change');
+	assert.equal(ceiling.state.floorCompression, 4);
 });

@@ -11,7 +11,7 @@ const config = physics.config;
 const canvas = document.getElementById('c');
 const context = canvas.getContext('2d');
 const ids = ['clock', 'drive', 'launch', 'status-bar', 'status-ball', 'status-energy', 'fact-reserve', 'fact-cargo', 'fact-temp', 'prediction-status', 'force', 'force-value', 'piston-angle', 'piston-value',
-	'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'balls', 'ground-bounce', 'commune', 'test-mode', 'view-modes',
+	'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'balls', 'ground-bounce', 'ball-perspective', 'debris-compression', 'commune', 'test-mode', 'view-modes',
 	'platform-spec', 'spec-card', 'progression-tree', 'tree-links', 'progression-status', 'research-progress', 'science-funds', 'science-title',
 	'mineral-cell', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price', 'rock-damage-view',
 	'cluster-settings', 'generate-test-rock', 'fall-test-status',

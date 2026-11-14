@@ -33,7 +33,8 @@
 				['Drag in open air', 'Tilt the piston; left or up raises the angle'],
 				['Hover over rock', 'Inspect its mix, value and remaining strength'],
 				['Click low ground', 'Set a travel target'],
-				['Rock view bar', 'Change what the rock is coloured by']
+				['Rock view bar', 'Change what the rock is coloured by'],
+				['F4', 'Show or hide each ball’s damage radius']
 			]
 		},
 		{
@@ -67,6 +68,32 @@
 				['Lose 50%', 'A half-energy ground rebound, drawn through the next bounce'],
 				['Lose none', 'An elastic ground rebound'],
 				['GROUND ?', 'This topic, from the system bar']
+			]
+		},
+		{
+			id: 'perspective',
+			label: 'Perspective',
+			title: 'Ball perspective and its damage radius',
+			text: [
+				'The rock layer is drawn through a vertical perspective: unit scale at its near edge, four times smaller at the roof. PERSPECTIVE in the system bar draws each ball by that same law from the ball centre, so a ball deep in the rock reads at the rock’s own depth instead of floating in front of it. Below the layer the scale is 1× either way, and the setting is a view rule that survives New game like the rock shape and the ball arrangement.',
+				'A drawn ball is a picture of a fixed sphere: the collision radius, the release height, the piston contact and every energy term stay at the true 0.18 m whichever setting is chosen. What a smaller ball could misreport is the strike footprint, so the damage overlay draws it: F4 rings each ball with its owner’s own damage radius, scaled by the perspective’s local scale at that height. The ring is the radius in metres that the impact will really spend, so a ball drawn at a quarter size still shows the full reach of its strike.'
+			],
+			keys: [
+				['PERSPECTIVE', 'Depth scale follows the rock; constant size does not'],
+				['F4', 'Show or hide each ball’s damage radius']
+			]
+		},
+		{
+			id: 'debris',
+			label: 'Debris',
+			title: 'Debris Y compression',
+			text: [
+				'Fallen rubble is a heightmap of soil layers under every column. DEBRIS in the system bar says how many times wider than tall one layer is drawn. The layer thickness is the cell width divided by that number: 4 gives the classic 4:1 tile, 0.125 m by 0.03125 m; 1 gives square rubble and 8 a layer four times thinner still, so the same pile stands twice as tall at 2 as at 4 and half as tall at 8. The 0.7 m per-column cap is unchanged, so a flatter setting packs more cells under it before the rest is booked as lost.'
+			],
+			keys: [
+				['1', 'Square rubble: 0.125 m of height per cell'],
+				['4', 'The classic 4:1 floor tile, 0.03125 m per cell'],
+				['8', 'The flattest sheet, 0.015625 m per cell']
 			]
 		},
 		{

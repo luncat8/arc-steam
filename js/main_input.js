@@ -221,7 +221,7 @@ function syncForceControl(value) {
 
 function isGameKey(code) {
 	return code === 'Space' || code === 'KeyQ' || code === 'KeyA' || code === 'KeyD' || code === 'KeyW' || code === 'KeyS' || code === 'KeyE'
-		|| code === 'KeyB' || code === 'KeyX' || code === 'KeyZ' || code === 'KeyC' || code === 'KeyM';
+		|| code === 'KeyB' || code === 'KeyX' || code === 'KeyZ' || code === 'KeyC' || code === 'KeyM' || code === 'F4';
 }
 
 function keydown(event) {
@@ -247,6 +247,7 @@ function keydown(event) {
 	if (key === 'Space' || key === 'KeyQ') toggleDrive();
 	if (key === 'KeyE') releaseBall();
 	if (key === 'KeyM') setCommune(!window.SteamCeiling.state.commune);
+	if (key === 'F4') { showDamageRadius = !showDamageRadius; sceneDirty = true; }
 	const channel = channelForKey(key, event.shiftKey);
 	if (channel) toggleChannel(channel);
 }
@@ -352,6 +353,18 @@ function bindInput() {
 		physics.setGroundBounce(ui['ground-bounce'].value);
 		autopilotApi.reset();
 		refresh();
+	});
+	// The perspective and the damage overlay are view rules: they redraw the
+	// chamber and touch nothing the simulation reads.
+	ui['ball-perspective'].addEventListener('change', function () {
+		ballPerspective = ui['ball-perspective'].value !== 'flat';
+		sceneDirty = true;
+	});
+	// Debris compression scales how tall a pile is drawn, not what is in it:
+	// the piles, their value and the ledger are untouched.
+	ui['debris-compression'].addEventListener('change', function () {
+		window.SteamCeiling.setFloorCompression(ui['debris-compression'].value);
+		sceneDirty = true;
 	});
 	ui['view-modes'].addEventListener('change', viewModeChanged);
 	ui.autopilot.addEventListener('change', autopilotChanged);

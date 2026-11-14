@@ -21,7 +21,19 @@
 	const minOpenShare = 1 - maxRockShare;
 	const minBottom = top * minOpenShare;
 	const cell = 0.125;
-	const floorCellHeight = cell / 4;
+	// Debris Y compression: how many times wider than tall a fallen-soil tile is.
+	// 4 is the classic 4:1 floor (0.125 m by 0.03125 m); 1 makes square rubble,
+	// 8 the flattest sheet. It scales the drawn height of a pile, never the
+	// material in it: every cells-to-metres conversion below reads this value.
+	const floorCompressionMin = 1;
+	const floorCompressionMax = 8;
+	let floorCompression = 4;
+	function floorCellHeightNow() { return cell / floorCompression; }
+	function setFloorCompression(value) {
+		const next = Math.round(Number(value) * 2) / 2;
+		floorCompression = Number.isFinite(next) ? Math.max(floorCompressionMin, Math.min(floorCompressionMax, next)) : 4;
+		return floorCompression;
+	}
 	const defaultPixelSize = 4;
 	const columns = Math.round(width / cell);
 	const initialRows = Math.round((top - initialBottom) / cell);
@@ -285,12 +297,12 @@
 			if (graderCutMark[column]) continue;
 			const height = floorPiles[column];
 			if (height <= 0) continue;
-			const cut = Math.min(height, floorCellHeight);
+			const cut = Math.min(height, floorCellHeightNow());
 			const value = floorValues[column] * cut / height;
 			floorValues[column] -= value;
 			floorPiles[column] -= cut;
 			graderBot.value += value;
-			graderBot.cells += cut / floorCellHeight;
+			graderBot.cells += cut / floorCellHeightNow();
 			graderCutMark[column] = 1;
 			changed = true;
 		}
@@ -889,6 +901,8 @@
 		dustCursor = 0;
 		dustAge.fill(dustLife);
 		peeled.fill(0);
+		floorPiles.fill(0);
+		floorValues.fill(0);
 		fallGroups.fill(0);
 		fallCells.fill(0);
 		initialStrength.fill(0);
@@ -1712,8 +1726,9 @@
 	// The pile is capped below the deck line; excess rubble is still counted lost.
 	function deposit(i, x) {
 		const column = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
-		const added = Math.min(pileLimit - floorPiles[column], fragmentCells(i) * floorCellHeight);
-		floorValues[column] += fragmentValue(i) * added / (fragmentCells(i) * floorCellHeight);
+		const tile = floorCellHeightNow();
+		const added = Math.min(pileLimit - floorPiles[column], fragmentCells(i) * tile);
+		floorValues[column] += fragmentValue(i) * added / (fragmentCells(i) * tile);
 		floorPiles[column] += added;
 		updateFloor();
 	}
@@ -1815,10 +1830,10 @@
 			if (height <= 0) continue;
 			const density = floorValues[column] / height;
 			let amount = Math.min(height, cut);
-			let take = amount / floorCellHeight;
+			let take = amount / floorCellHeightNow();
 			if (cells + take > maxCells) {
 				take = maxCells - cells;
-				amount = take * floorCellHeight;
+				amount = take * floorCellHeightNow();
 			}
 			if (take <= 0) break;
 			const taken = density * amount;
@@ -2147,14 +2162,17 @@
 		drawCollapse(context);
 	}
 
-	// Fallen rubble is drawn as shallow floor tiles. Each full cell is four
-	// times wider than it is tall; the smoothed crest keeps their heightmap gentle.
+	// Fallen rubble is drawn as shallow floor tiles. Each full cell is
+	// floorCompression times wider than it is tall, so the DEBRIS setting makes
+	// the same pile read as a flat sheet or a deep bed; the smoothed crest keeps
+	// their heightmap gentle either way.
 	function drawFloor(context) {
 		updateFloor();
+		const tile = floorCellHeightNow();
 		for (let column = 0; column < columns; column++) {
 			const height = Math.max(0, floorAt((column + 0.5) * cell));
-			for (let y = 0, layer = 0; y < height - 1e-9; y += floorCellHeight, layer++) {
-				const tileHeight = Math.min(floorCellHeight, height - y);
+			for (let y = 0, layer = 0; y < height - 1e-9; y += tile, layer++) {
+				const tileHeight = Math.min(tile, height - y);
 				context.fillStyle = (column + layer) % 2 ? '#443a2d' : '#4a3e2f';
 				context.fillRect(column * cell, y, cell, tileHeight);
 			}
@@ -2168,7 +2186,8 @@
 
 	// Stable live view: reading simulation state allocates nothing and invokes no command.
 	const state = Object.freeze({
-		columns, get rows() { return rows; }, initialRows, maxRows, cell, floorCellHeight,
+		columns, get rows() { return rows; }, initialRows, maxRows, cell, get floorCellHeight() { return floorCellHeightNow(); },
+		get floorCompression() { return floorCompression; }, floorCompressionMin, floorCompressionMax,
 		get bottom() { return bottom; }, initialBottom, minBottom, maxRockShare, minOpenShare, top,
 		get lowestRockY() { return lowestIntactY(); },
 		get upperBoundaryY() { return upperBoundaryY(); },
@@ -2223,7 +2242,7 @@
 	const api = {
 		hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, damageRadiusNow, damageMultiplierNow,
 		trace, step, harvest, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt,
-		state, setShape, setMineralClusterGrowth, generateTestRock, rockDrawnY, rockWorldY, rockScale, collapse, advanceMarket,
+		state, setShape, setFloorCompression, setMineralClusterGrowth, generateTestRock, rockDrawnY, rockWorldY, rockScale, collapse, advanceMarket,
 		applyGeology, exportGeology, applyGeologyExport, sampleCell,
 		queueGrowth, watchBoundary, grow,
 		get collapseChunkMax() { return collapseChunkMaxNow(); }
