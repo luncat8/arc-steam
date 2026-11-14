@@ -25,38 +25,38 @@
 	// 4 is the classic 4:1 floor (0.125 m by 0.03125 m); 1 makes square rubble,
 	// 8 the flattest sheet. It scales the drawn height of a pile, never the
 	// material in it: every cells-to-metres conversion below reads this value.
-const floorCompressionMin = 1;
-const floorCompressionMax = 8;
-let floorCompression = 4;
-function floorCellHeightNow() { return cell / floorCompression; }
-// A pile is stored in metres, so the same material is a different height at a
-// different factor. Changing the factor therefore re-lays every column by the
-// same ratio: no cell is created or lost, and the surface the ball and the
-// platform ride moves with the picture instead of lagging behind it. A column
-// that the new factor would push through the roof keeps what fits there and
-// books the rest as lost, exactly like a deposit at the cap.
-function setFloorCompression(value) {
-	const next = Math.round(Number(value) * 2) / 2;
-	const factor = Number.isFinite(next) ? Math.max(floorCompressionMin, Math.min(floorCompressionMax, next)) : 4;
-	if (factor === floorCompression) return floorCompression;
-	const ratio = floorCompression / factor;
-	floorCompression = factor;
-	for (let column = 0; column < columns; column++) {
-		const height = floorPiles[column] * ratio;
-		if (height <= pileLimit) {
-			floorPiles[column] = height;
-			continue;
+	const floorCompressionMin = 1;
+	const floorCompressionMax = 8;
+	let floorCompression = 4;
+	function floorCellHeightNow() { return cell / floorCompression; }
+	// A pile is stored in metres, so the same material is a different height at a
+	// different factor. Changing the factor therefore re-lays every column by the
+	// same ratio: no cell is created or lost, and the surface the ball and the
+	// platform ride moves with the picture instead of lagging behind it. A column
+	// that the new factor would push through the roof keeps what fits there and
+	// books the rest as lost, exactly like a deposit at the cap.
+	function setFloorCompression(value) {
+		const next = Math.round(Number(value) * 2) / 2;
+		const factor = Number.isFinite(next) ? Math.max(floorCompressionMin, Math.min(floorCompressionMax, next)) : 4;
+		if (factor === floorCompression) return floorCompression;
+		const ratio = floorCompression / factor;
+		floorCompression = factor;
+		for (let column = 0; column < columns; column++) {
+			const height = floorPiles[column] * ratio;
+			if (height <= pileLimit) {
+				floorPiles[column] = height;
+				continue;
+			}
+			const kept = height > 0 ? pileLimit / height : 0;
+			const lost = 1 - kept;
+			lostCells += lost * height / floorCellHeightNow();
+			lostValue += lost * floorValues[column];
+			floorValues[column] *= kept;
+			floorPiles[column] = pileLimit;
 		}
-		const kept = height > 0 ? pileLimit / height : 0;
-		const lost = 1 - kept;
-		lostCells += lost * height / floorCellHeightNow();
-		lostValue += lost * floorValues[column];
-		floorValues[column] *= kept;
-		floorPiles[column] = pileLimit;
+		updateFloor();
+		return floorCompression;
 	}
-	updateFloor();
-	return floorCompression;
-}
 	const defaultPixelSize = 4;
 	const columns = Math.round(width / cell);
 	const initialRows = Math.round((top - initialBottom) / cell);
@@ -538,9 +538,9 @@ function setFloorCompression(value) {
 		materials.basePricesInto(mineralBasePrices, mineralAbundance, materials.economy, basePriceReport);
 		for (let m = 0; m < mineralCount; m++) {
 			const entry = mineralTable[m];
-			// The run's own bias swings around the material's average demand,
-			// so a filler stays cheap and an ore stays worth its abundance.
-			demandBias[m] = entry.demandMean * (0.72 + hash(m, seed, 41) * 0.66);
+			// The run's own bias swings around the base quote, which already
+			// carries the material's average demand.
+			demandBias[m] = 0.72 + hash(m, seed, 41) * 0.66;
 			demandPhase[m] = hash(m, seed, 43) * 97;
 			demandPeriod[m] = entry.demandPeriod * (0.85 + hash(m, seed, 47) * 0.3);
 			demandDepth[m] = entry.demandDepth;
@@ -1031,30 +1031,24 @@ function setFloorCompression(value) {
 		updateFloor();
 	}
 
-	function damageWeight(distance, owner) {
-		const t = Math.max(0, 1 - distance / damageRadiusNow(owner));
-		return Math.pow(t, damageFalloffPower);
-	}
-
 	function loosenessGain(amount, before) {
 		const susceptibility = 1 + weakRockSensitivity * (materials.maxStrength / before - 1);
 		return Math.min(1, amount / before * loosedPerWeakened * susceptibility);
 	}
 
-	// An impact weakens the rock around its contact and returns only what it
-	// actually took out. Weakened cells stay standing, so the pendulum of a hit
-	// is answered by intact rock; the collapse scheduler above them decides when
-	// a battered region lets go.
-	function damage(x, y, impactJ, owner) {
+	// The one weakening rule every blow shares: `intensity` joules of strength at
+	// the contact, falling to nothing across `radius` cells. Weakened cells stay
+	// standing, so the pendulum of a hit is answered by intact rock; the collapse
+	// scheduler decides when a battered region lets go. Returns the strength
+	// removed in the caller's joules (`/ gain`); it is a sum over cells and can
+	// exceed the blow, so each caller caps it at the energy it brought.
+	function weaken(x, y, intensity, gain, radius) {
 		const centerColumn = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
 		let firstIntact = 0;
 		while (firstIntact < rows && strength[firstIntact * columns + centerColumn] <= 0) firstIntact++;
 		const rawRow = Math.max(0, Math.min(rows - 1, Math.floor((y - bottom) / cell)));
 		const centerRow = firstIntact < rows ? Math.max(firstIntact, rawRow) : rawRow;
-		const mult = damageMultiplierNow(owner);
-		const budget = impactJ * mult;
-		const radius = damageRadiusNow(owner);
-		const range = damageRangeNow(owner);
+		const range = Math.ceil(radius);
 		let removed = 0;
 		for (let rowOffset = -range; rowOffset <= range; rowOffset++) for (let columnOffset = -range; columnOffset <= range; columnOffset++) {
 			const row = centerRow + rowOffset;
@@ -1067,12 +1061,13 @@ function setFloorCompression(value) {
 			// A blow spends at most half of a cell's remaining strength: the contact
 			// cells stay standing and the ring around them is left loose, to fall
 			// later in a collapse burst. The rest of the impact energy is absorbed.
-			const amount = Math.min(before, budget * damageWeight(distance, owner), before * hitLooseCap);
+			const weight = Math.pow(Math.max(0, 1 - distance / radius), damageFalloffPower);
+			const amount = Math.min(intensity * weight, before * hitLooseCap);
 			strength[index] = before - amount;
 			// The same energy destabilizes low absolute strength more quickly.
 			const looseGain = loosenessGain(amount, before);
 			damageField[index] = Math.min(1, damageField[index] + looseGain);
-			removed += amount / mult;
+			removed += amount / gain;
 			if (strength[index] > 0.0001) continue;
 			// Only the free face lets go. A cell with rock still under it has
 			// nothing to fall into, so the blow leaves it standing shattered at a
@@ -1082,14 +1077,38 @@ function setFloorCompression(value) {
 				strength[index] = initialStrength[index] * heldCellShare;
 				continue;
 			}
-			removed += strength[index] / mult;
+			removed += strength[index] / gain;
 			strength[index] = 0;
 			damageField[index] = 0;
 			spawn(index);
 		}
 		updateHeightmap();
 		scanRegions();
-		return Math.min(impactJ, removed);
+		return removed;
+	}
+
+	// A ball's impact: the owner's strike ball sets how far the blow reaches and
+	// how much strength a joule of it removes.
+	function damage(x, y, impactJ, owner) {
+		const gain = damageMultiplierNow(owner);
+		return Math.min(impactJ, weaken(x, y, impactJ * gain, gain, damageRadiusNow(owner)));
+	}
+
+	// A small projectile's chip: the same rule joule for joule, in a radius of a
+	// few cells that the projectile brings with it instead of an owner's ball.
+	function chip(x, y, impactJ, radius) {
+		if (!(impactJ > 0) || !(radius > 0)) return 0;
+		return Math.min(impactJ, weaken(x, y, impactJ, 1, radius));
+	}
+
+	// The rock's free face above a point, in world space and in the shape a
+	// body collides with: the smoothed profile, or the cell edge in square mode.
+	// A column with no rock left answers with the roof.
+	function surfaceAt(x) {
+		const column = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
+		if (rockShape === 'square') return Math.min(top, bottom + firstRow[column] * cell);
+		const fraction = Math.max(0, Math.min(1, (x - column * cell) / cell));
+		return heightmap[column] + (heightmap[column + 1] - heightmap[column]) * fraction;
 	}
 
 	// Damage alone does not make a strong cell fall; both conditions are needed.
@@ -1753,9 +1772,9 @@ function setFloorCompression(value) {
 		return time >= 0 ? time : Infinity;
 	}
 
-	// A landed fragment adds a thin soil layer under its landing point. The floor
-	// height quantum is one quarter of a rock cell, giving a 4:1 ground tile.
-	// The pile is capped below the deck line; excess rubble is still counted lost.
+	// A landed fragment adds a thin soil layer under its landing point, one
+	// floor tile thick per cell at the current DEBRIS factor. The pile is capped
+	// at the roof; excess rubble is still counted lost.
 	function deposit(i, x) {
 		const column = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
 		const tile = floorCellHeightNow();
@@ -2364,10 +2383,10 @@ function setFloorCompression(value) {
 	reset(1);
 
 	const api = {
-		hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, damageRadiusNow, damageMultiplierNow,
+		hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, chip, surfaceAt, damageRadiusNow, damageMultiplierNow,
 		trace, step, harvest, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt,
 		state, setShape, setFloorCompression, setDepthScale, setMineralClusterGrowth, generateTestRock, rockDrawnY, rockWorldY, rockScale, collapse, advanceMarket,
-		applyGeology, exportGeology, applyGeologyExport, sampleCell, perspectiveScale, setDepthScale,
+		applyGeology, exportGeology, applyGeologyExport, sampleCell, perspectiveScale,
 		queueGrowth, watchBoundary, grow,
 		get collapseChunkMax() { return collapseChunkMaxNow(); }
 	};

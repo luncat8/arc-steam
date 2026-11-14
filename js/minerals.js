@@ -3,9 +3,10 @@
 // sliders and the market all read this file, so no module keeps a second list.
 // `host` marks the host matrix: its mix weight is the constant host weight, it
 // is never computed from a range.
-// `demandMean` is a material's average demand, the multiplier the market's
-// seed-derived demand swings around: 1 is an ordinary ore, and a filler nobody
-// wants quotes a fraction of what its abundance alone would fetch.
+// `demandMean` is a material's average demand, a factor of its base quote: 1
+// is an ordinary ore, and a filler nobody wants is based at a fraction of what
+// its abundance alone would fetch. The market's seed-derived demand swings
+// around that base, and the base table is normalised with it.
 //
 // The ranges were calibrated against earlier targets. The gas signature is
 // intentionally constrained; re-measure and retune the whole table before

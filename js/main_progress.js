@@ -719,6 +719,7 @@ function grantTestState() {
 		SteamEquipment.installRadiator('radiator', world, true, owner);
 		SteamEquipment.installBall('spike', world, true, owner);
 	}
+	SteamRockets.fill(world);
 	const researched = SteamResearch.stateFor(activePlayerId()).completed;
 	let installed = 0;
 	for (const item of SteamEquipment.items) if (SteamEquipment.isInstalled(item.id, activePlayerId())) installed++;

@@ -7,7 +7,7 @@
 // price is an abundance curve over the measured mix. Collapse growth is a third
 // rule again and lives with the fall mechanics, not here.
 // Depends on: js/minerals.js
-// Provides: economy, maxStrength, minStrength, debrisLimit, strengthInto,
+// Provides: economy, maxStrength, debrisLimit, strengthInto,
 // colorInto, valueInto, basePricesInto, priceColorInto, strengthColorInto,
 // desaturateInto
 (function (root) {
@@ -18,10 +18,11 @@
 	const table = minerals.mineralTable;
 	const count = minerals.mineralCount;
 
-	// A cell is worth this much on average before demand. Base prices follow a
-	// rarity curve over the measured abundance, normalised back to this target,
-	// so the spread between ores can change without moving the economy. An
-	// elasticity above 1 makes a rare mineral dearer than its share alone.
+	// A cell is worth this much on average at a neutral market. Base prices
+	// follow a rarity curve over the measured abundance and each material's
+	// average demand, normalised back to this target, so the spread between
+	// ores can change without moving the economy. An elasticity above 1 makes a
+	// rare mineral dearer than its share alone.
 	const economy = Object.freeze({
 		targetCellValue: 12.5,
 		elasticity: 1.3,
@@ -31,17 +32,10 @@
 	// A mineral that has not formed in the sample still needs a finite quote.
 	const minimumShare = 1e-4;
 
-	// The fixed absolute bounds of the table's strength: the weakest and the
-	// strongest pure mineral, so a cell's colour never depends on its own
-	// initial strength. `maxStrength` is the top of the ramp; `minStrength` is a
-	// table fact only, since the collapse rule uses the explicit debris limit
-	// below - a material may be formed already under it.
-	let minStrength = Infinity;
+	// The fixed top of the strength scale: the strongest pure mineral, so a
+	// cell's colour never depends on its own initial strength.
 	let maxStrength = 0;
-	for (let m = 0; m < count; m++) {
-		if (table[m].strength < minStrength) minStrength = table[m].strength;
-		if (table[m].strength > maxStrength) maxStrength = table[m].strength;
-	}
+	for (let m = 0; m < count; m++) if (table[m].strength > maxStrength) maxStrength = table[m].strength;
 	// Rock holding less than this is rubble: it may let go, and the strength
 	// view greys it. It is the one absolute collapse limit, so the table can
 	// carry both rock that always holds here and materials that form below it
@@ -84,19 +78,23 @@
 
 	function clamp01(value) { return value < 0 ? 0 : value > 1 ? 1 : value; }
 
-	// Base quotes from an explicit abundance vector. `report`, when given, gets
-	// the achieved mean next to the nominal target: the floor and cap can pull
-	// the real mean away from the target, and that is reported, not hidden.
+	// Base quotes from an explicit abundance vector: the abundance curve times
+	// the material's average demand, normalised so the average cell is worth the
+	// target at a neutral market. Demand is inside the normalisation on purpose:
+	// a filler nobody wants then makes the ores a little dearer instead of
+	// making the whole rock poorer. `report`, when given, gets the achieved mean
+	// next to the nominal target: the floor and cap can pull the real mean away
+	// from the target, and that is reported, not hidden.
 	function basePricesInto(out, shares, settings, report) {
 		const tuning = settings || economy;
-		let inverseSum = 0;
-		for (let m = 0; m < count; m++) inverseSum += Math.pow(Math.max(shares[m], minimumShare), 1 - tuning.elasticity);
-		const scale = tuning.targetCellValue / inverseSum;
+		let weightSum = 0;
+		for (let m = 0; m < count; m++) weightSum += table[m].demandMean * Math.pow(Math.max(shares[m], minimumShare), 1 - tuning.elasticity);
+		const scale = tuning.targetCellValue / weightSum;
 		let mean = 0;
 		let clamped = 0;
 		for (let m = 0; m < count; m++) {
 			const share = Math.max(shares[m], minimumShare);
-			const raw = scale * Math.pow(share, -tuning.elasticity);
+			const raw = scale * table[m].demandMean * Math.pow(share, -tuning.elasticity);
 			const value = Math.max(tuning.floor, Math.min(tuning.cap, raw));
 			if (value !== raw) clamped++;
 			out[m] = value;
@@ -143,7 +141,7 @@
 	}
 
 	const api = {
-		economy, minimumShare, minStrength, maxStrength, debrisLimit,
+		economy, minimumShare, maxStrength, debrisLimit,
 		strengthInto, colorInto, valueInto, basePricesInto, clamp01,
 		priceColorInto, strengthColorInto, desaturateInto
 	};

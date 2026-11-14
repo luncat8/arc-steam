@@ -36,10 +36,13 @@ loose by nature and cheap by demand.
   5% of the rock without making it a rare tier. The lab gets the matching
   FILLER weight slider so Auto-adjust still calibrates the whole table.
 - Price: the abundance curve alone would make a 5% mineral dear, so the table
-  gains `demandMean`, the average the market's seed-derived demand swings
-  around (`1` for an ordinary ore). Sand sets `0.03`, which quotes roughly
-  0.7–1.1 cr/cell against the 12.5 cr average cell; the 0.4 cr market floor and
-  the existing demand period/depth still apply.
+  gains `demandMean`, a material's average demand (`1` for an ordinary ore). It
+  is a factor of the base quote and sits inside the base-table normalisation,
+  so the filler is cheap in the base column as well as in the live quote, and
+  the average cell stays at the 12.5 cr target instead of losing the filler's
+  share. Sand sets `0.03`, which bases and quotes it at roughly 0.6–1.6 cr/cell;
+  the 0.4 cr market floor and the existing demand period/depth still apply, and
+  the market's seed-derived demand swings around that base.
 
 ## Acceptance
 

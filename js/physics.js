@@ -99,6 +99,10 @@
 
 	function platformMin() { return config.platformWidth * 0.5 - config.pocketDepth; }
 	function platformMax() { return config.width - config.platformWidth * 0.5; }
+	// The rig trades while it touches either end wall.
+	function atSellWall(world) {
+		return world.platform.x <= platformMin() + 1e-9 || world.platform.x >= platformMax() - 1e-9;
+	}
 	function brakeAcceleration() { return config.platformBrakeFriction * config.gravity; }
 
 	function terrainHeight(x) {
@@ -943,6 +947,7 @@
 		if (root.SteamCeiling) root.SteamCeiling.reset(1);
 		if (root.SteamEquipment) root.SteamEquipment.reset();
 		if (root.SteamResearch) root.SteamResearch.reset();
+		if (root.SteamRockets) root.SteamRockets.reset();
 		const world = {
 			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, chargedEnergy: 0, crankEnergy: 0, terrainWork: 0, platformWork: 0,
 			initialEnergy: 0,
@@ -1026,14 +1031,14 @@
 		world.cooledEnergy += removed;
 	}
 
-function spend(world, useful) {
-	const efficiency = engine.efficiency;
-	const delivered = Math.min(useful, world.battery * efficiency);
-	const cost = delivered / efficiency;
-	world.battery -= cost;
-	world.heat += cost - delivered;
-	return delivered;
-}
+	function spend(world, useful) {
+		const efficiency = engine.efficiency;
+		const delivered = Math.min(useful, world.battery * efficiency);
+		const cost = delivered / efficiency;
+		world.battery -= cost;
+		world.heat += cost - delivered;
+		return delivered;
+	}
 
 	// A caught ball rests in the collector span of the platform that caught it,
 	// so the seat travels and pitches with that body and no other.
@@ -1757,13 +1762,13 @@ function spend(world, useful) {
 		if (root.SteamCeiling) {
 			const heldMass = heldBallMass(world);
 			root.SteamCeiling.step(world, dt, dryMass() + heldMass);
-			const minX = platformMin();
-			const maxX = platformMax();
-			if (world.platform.x <= minX + 1e-9 || world.platform.x >= maxX - 1e-9) {
+			if (atSellWall(world)) {
 				const sale = root.SteamCeiling.sellCargo(world.platform.vx, world.time);
 				if (sale > 0) { world.lastSale = sale; world.sales++; }
 			}
 		}
+		// After the sale, so a wall visit can spend what it just earned.
+		if (root.SteamRockets) root.SteamRockets.step(world, dt);
 		cool(world, dt);
 		world.time += dt;
 	}
@@ -1771,7 +1776,7 @@ function spend(world, useful) {
 	const api = {
 		engines, engineNow, selectEngine, reserveNow, packMass,
 		config, createWorld, step, launch, canLaunch, releaseReady, launchCapacity, ballEnergy, totalEnergy, temperature,
-		thermalFactor, coolingPower, platformMass, machineMass, applyMachineMassChange, platformMin, platformMax, dryMass, brakeAcceleration, resolvePlatformContacts,
+		thermalFactor, coolingPower, platformMass, machineMass, applyMachineMassChange, platformMin, platformMax, atSellWall, dryMass, brakeAcceleration, resolvePlatformContacts,
 		platformPitchAt, platformBaseAt, platformPointAt, platformSurfaceAt, planeContactTime, hullDepthAt,
 		chargePadMin, chargePadMax, onChargePad, charging,
 		retentionNow, rockRetentionNow, ballMassNow, ballMassFor, damageBonusNow, damageRadiusBonusNow, pulseNow, forceNow, speedNow, arrivalSpeed, coverage, travelTime, stopTime, recoveryNow, conductanceNow, radiatorArea, applyMassChange,
@@ -1779,8 +1784,8 @@ function spend(world, useful) {
 		settlePose, setPistonAngle, pistonContactTime, solvePiston, solveFace, reflectOnDeck, contactResult, deckBounce,
 		ballRadiusAt, placementRadius, setBallPerspective,
 		setBallMode, mayPush, isRigBall, ballLandingTime, focusBall, heldBall, heldBallMass,
-	machineBody, machineById, machinesOf, machineDrive, machinePistonAngle, heldBallOf, focusBallOf
-};
+		machineBody, machineById, machinesOf, machineDrive, machinePistonAngle, heldBallOf, focusBallOf
+	};
 	root.SteamPhysics = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

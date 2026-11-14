@@ -13,6 +13,7 @@ const ceiling = require('../js/ceiling.js');
 const equipment = require('../js/equipment.js');
 const research = require('../js/research.js');
 const physics = require('../js/physics.js');
+const rockets = require('../js/rockets.js');
 const harness = require('./harness.cjs');
 require('../js/prediction.js');
 const help = require('../js/help.js');
@@ -1873,4 +1874,150 @@ test('the DEBRIS selector re-lays the floor and its surface, and survives New ga
 	select.value = '4';
 	select.dispatch('change');
 	assert.equal(ceiling.state.floorCompression, 4);
+});
+
+test('the rocket rack buys at a wall, fires on R, and reads its own state', () => {
+	for (const channel of ['move', 'smart', 'drive', 'angle']) autopilot.set(channel, false);
+	dom.element('reset').dispatch('click');
+	advance(2);
+	const rack = rockets.state;
+	const fire = dom.element('rocket-fire');
+	const buy = dom.element('rocket-buy');
+	const auto = dom.element('rocket-auto');
+	const status = dom.element('rocket-status');
+	function parkAt(x) {
+		world.platform.x = x; world.platform.vx = 0;
+		world.direction = 0; world.target = NaN;
+		harness.sync(world);
+		advance(8);
+	}
+	assert.equal(fire.getAttribute('aria-keyshortcuts'), 'R');
+	assert.equal(fire.firstChild.textContent, 'Fire 0 / ' + rack.rackSize + ' ');
+	assert.equal(fire.disabled, true, 'an empty rack cannot fire');
+	assert.equal(buy.textContent, 'Buy · ' + rack.price + ' cr');
+	assert.equal(buy.disabled, true);
+	assert.equal(auto.checked, false);
+
+	fund(rack.price * 4);
+	parkAt(12);
+	assert.equal(buy.disabled, true, 'rockets are not loaded in the open');
+	assert.equal(status.hidden, true, 'the line appears only with a reason to show');
+	buy.dispatch('click');
+	assert.equal(rack.stock, 0);
+
+	parkAt(physics.platformMin());
+	assert.equal(buy.disabled, false);
+	assert.equal(status.hidden, true);
+	const funds = ceiling.state.funds;
+	buy.dispatch('click');
+	assert.equal(rack.stock, 1);
+	harness.near(ceiling.state.funds, funds - rack.price, 1e-9);
+	assert.equal(fire.firstChild.textContent, 'Fire 1 / ' + rack.rackSize + ' ');
+	assert.equal(fire.disabled, false);
+	assert.match(dom.element('ledger').children[0].textContent, /Bought 1 rocket · −14 cr/);
+
+	// The standing order tops this visit up to its cap of three purchases.
+	auto.checked = true;
+	auto.dispatch('change');
+	assert.equal(rack.autoBuy, true);
+	advance(4);
+	assert.equal(rack.stock, 1 + rack.visitLimit);
+	advance(30);
+	assert.equal(rack.stock, 1 + rack.visitLimit, 'one visit, one batch');
+	auto.checked = false;
+	auto.dispatch('change');
+	assert.equal(rack.autoBuy, false);
+
+	// A rival at the controls leaves the rig's rack alone.
+	const list = dom.element('player-list');
+	list.children[1].children[0].dispatch('click');
+	assert.equal(fire.disabled, true);
+	assert.equal(buy.disabled, true);
+	assert.equal(status.hidden, false);
+	assert.match(status.textContent, /The rack is the rig’s/);
+	dom.key('KeyR');
+	fire.dispatch('click');
+	buy.dispatch('click');
+	assert.equal(rack.fired, 0);
+	assert.equal(rack.stock, 1 + rack.visitLimit);
+	list.children[0].children[0].dispatch('click');
+	assert.equal(fire.disabled, false);
+	assert.equal(status.hidden, true);
+
+	dom.key('KeyR');
+	assert.equal(rack.fired, 1, 'R fires');
+	assert.equal(rack.aloft, 1);
+	assert.equal(fire.firstChild.textContent, 'Fire ' + rack.visitLimit + ' / ' + rack.rackSize + ' ');
+	assert.equal(fire.disabled, true, 'the tube reloads');
+	dom.key('KeyR', { repeat: true });
+	assert.equal(rack.fired, 1, 'a held key does not empty the rack');
+	advance(Math.ceil(rack.reload * 60) + 8);
+	assert.equal(fire.disabled, false);
+	fire.dispatch('click');
+	assert.equal(rack.fired, 2, 'the button fires too');
+	// The chamber draws the flight, and the rig's energy ledger stays closed.
+	advance(240);
+	assert.equal(rack.bursts, 2);
+	assert.ok(Math.abs(parseFloat(dom.element('error').textContent)) < 1e-4, dom.element('error').textContent);
+
+	// A new run empties the rack; the standing order is the player's and stays.
+	auto.checked = true;
+	auto.dispatch('change');
+	dom.element('reset').dispatch('click');
+	advance(2);
+	assert.equal(rack.stock, 0);
+	assert.equal(auto.checked, true);
+	assert.equal(rack.autoBuy, true);
+	auto.checked = false;
+	auto.dispatch('change');
+});
+
+test('communism hands rockets out, and test mode loads a full rack', () => {
+	dom.element('reset').dispatch('click');
+	advance(2);
+	const rack = rockets.state;
+	const buy = dom.element('rocket-buy');
+	world.platform.x = physics.platformMax(); world.platform.vx = 0;
+	world.direction = 0; world.target = NaN;
+	harness.sync(world);
+	dom.key('KeyM');
+	advance(8);
+	assert.equal(buy.textContent, 'Buy · free');
+	assert.equal(buy.disabled, false, 'no funds are needed');
+	buy.dispatch('click');
+	assert.equal(rack.stock, 1);
+	assert.match(dom.element('ledger').children[0].textContent, /Bought 1 rocket · free/);
+	dom.key('KeyM');
+	advance(2);
+	assert.equal(buy.textContent, 'Buy · ' + rack.price + ' cr');
+
+	const toggle = dom.element('test-mode');
+	toggle.checked = true;
+	toggle.dispatch('change');
+	assert.equal(rack.stock, rack.rackSize);
+	assert.match(dom.element('ledger').children[0].textContent, new RegExp('Test installed ' + (rack.rackSize - 1) + ' rockets'));
+	assert.equal(dom.element('rocket-status').hidden, false);
+	assert.match(dom.element('rocket-status').textContent, /Rack full/);
+	dom.element('reset').dispatch('click');
+	assert.equal(rack.stock, rack.rackSize, 'New game in test mode starts with the rack loaded');
+	toggle.checked = false;
+	toggle.dispatch('change');
+	dom.element('reset').dispatch('click');
+	assert.equal(rack.stock, 0);
+});
+
+test('the rocket help names the rules the rack actually runs', () => {
+	const rack = rockets.state;
+	const topic = help.find('rockets');
+	const text = topic.text.join(' ');
+	assert.match(text, new RegExp('rack holds ' + rack.rackSize + '\\b'));
+	assert.match(text, new RegExp('up to ' + rack.visitLimit + ' after'));
+	assert.match(text, new RegExp('give or take ' + rack.fuseSpread * 100 + '%'));
+	assert.equal(rack.dudChance, 1 / 20);
+	assert.match(text, /one rocket in twenty is a dud/);
+	assert.equal(rack.shardRadiusMin + ' to ' + rack.shardRadiusMax, '1 to 4');
+	assert.match(text, /one to four cells wide/);
+	assert.equal(rack.reload, 0.5);
+	assert.match(topic.keys[0][1], /half a second/);
+	assert.ok(help.find('keys').keys.some(row => row[0] === 'R'), 'the key list names R');
 });

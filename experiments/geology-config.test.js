@@ -131,7 +131,7 @@ test('the strength view is one warm ramp that desaturates into grey rubble', () 
 	const clamped = [0, 0, 0];
 	const rubble = [0, 0, 0];
 	assert.equal(materials.debrisLimit, 0.8);
-	assert.ok(materials.minStrength <= materials.debrisLimit, 'a material may form already below the rubble limit');
+	assert.ok(table.some(mineral => mineral.strength < materials.debrisLimit), 'a material may form already below the rubble limit');
 	materials.strengthColorInto(exhausted, 0);
 	materials.strengthColorInto(full, 1);
 	assert.deepEqual(exhausted, [75, 45, 38], 'the ramp floor is the shipped dark brown');

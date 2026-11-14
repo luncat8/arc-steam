@@ -199,6 +199,18 @@ function releaseBall() {
 	physics.launch(world, ball, playerApi.machineOf(player));
 	refresh();
 }
+// The rocket rack is the rig's own tool, like its grader: the key and both
+// buttons act only while the rig has the controls.
+function fireRocket() {
+	if (!playerApi.rigActive()) return;
+	SteamRockets.fire(world);
+	refresh();
+}
+function buyRocket() {
+	if (!playerApi.rigActive()) return;
+	SteamRockets.buy(world, 1);
+	refresh();
+}
 function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }
 // One force setting per player: the slider and W/S edit the platform being
 // driven, and switching players reads that player's setting back into the
@@ -221,7 +233,7 @@ function syncForceControl(value) {
 
 function isGameKey(code) {
 	return code === 'Space' || code === 'KeyQ' || code === 'KeyA' || code === 'KeyD' || code === 'KeyW' || code === 'KeyS' || code === 'KeyE'
-		|| code === 'KeyB' || code === 'KeyX' || code === 'KeyZ' || code === 'KeyC' || code === 'KeyM' || code === 'F4';
+		|| code === 'KeyR' || code === 'KeyB' || code === 'KeyX' || code === 'KeyZ' || code === 'KeyC' || code === 'KeyM' || code === 'F4';
 }
 
 function keydown(event) {
@@ -246,6 +258,7 @@ function keydown(event) {
 	if (event.repeat) return;
 	if (key === 'Space' || key === 'KeyQ') toggleDrive();
 	if (key === 'KeyE') releaseBall();
+	if (key === 'KeyR') fireRocket();
 	if (key === 'KeyM') setCommune(!window.SteamCeiling.state.commune);
 	if (key === 'F4') { showDamageRadius = !showDamageRadius; sceneDirty = true; }
 	const channel = channelForKey(key, event.shiftKey);
@@ -340,6 +353,12 @@ function bindInput() {
 		}
 	});
 	ui.launch.addEventListener('click', releaseBall);
+	ui['rocket-fire'].addEventListener('click', fireRocket);
+	ui['rocket-buy'].addEventListener('click', buyRocket);
+	ui['rocket-auto'].addEventListener('change', function () {
+		SteamRockets.setAutoBuy(ui['rocket-auto'].checked);
+		refresh();
+	});
 	ui.pause.addEventListener('click', togglePause);
 	ui.shape.addEventListener('change', function () { window.SteamCeiling.setShape(ui.shape.value); sceneDirty = true; });
 	// The ball arrangement re-seats the balls, so the autopilot plan is dropped

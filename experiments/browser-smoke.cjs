@@ -354,10 +354,22 @@ async function main() {
 			SteamCeiling.state.floorPiles.fill(0.1);
 			SteamCeiling.state.floorValues.fill(3);
 		});
-		const beforeDebris = await page.evaluate(() => ({
-			height: SteamCeiling.state.floorPiles[100],
-			ride: SteamCeiling.floorAt(12.5)
-		}));
+		// Read where no platform is near: a chassis shaves the rubble it rides
+		// over, and the game keeps running while the selector is switched.
+		const beforeDebris = await page.evaluate(() => {
+			const rock = SteamCeiling.state;
+			const bodies = SteamPhysics.machinesOf(world).map(machine => SteamPhysics.machineBody(machine).x);
+			let column = 0;
+			let clearance = -1;
+			for (let k = 0; k < rock.columns; k++) {
+				const x = (k + 0.5) * rock.cell;
+				const gap = Math.min(...bodies.map(body => Math.abs(body - x)));
+				if (gap <= clearance) continue;
+				clearance = gap;
+				column = k;
+			}
+			return { column, height: rock.floorPiles[column] };
+		});
 		// A readback of the floor band, so "the chamber redrew" is about pixels
 		// and not only about state. Reading the canvas needs no stable layout.
 		const bandShot = () => page.evaluate(() => {
@@ -368,11 +380,11 @@ async function main() {
 		const beforeShot = await bandShot();
 		await page.selectOption('#debris-compression', '1');
 		await page.waitForTimeout(150);
-		const afterDebris = await page.evaluate(() => ({
-			height: SteamCeiling.state.floorPiles[100],
+		const afterDebris = await page.evaluate(column => ({
+			height: SteamCeiling.state.floorPiles[column],
 			compression: SteamCeiling.state.floorCompression,
 			layers: SteamCeiling.state.floorCellHeight
-		}));
+		}), beforeDebris.column);
 		assert.equal(afterDebris.compression, 1);
 		assert.ok(Math.abs(afterDebris.height - beforeDebris.height * 4) < 1e-9, 'the same material stands four times taller at 1');
 		assert.ok(Math.abs(afterDebris.layers - 0.125) < 1e-12);
@@ -391,6 +403,36 @@ async function main() {
 		assert.equal(radii.flat, 0.18, 'constant size keeps the classic sphere');
 		assert.ok(Math.abs(radii.depth - 0.045) < 1e-9, 'depth scale shrinks the body it flies to a quarter at the roof');
 		assert.equal(radii.floor, 0.18, 'and the floor game keeps the true ball');
+		// Rockets: a fresh run so the rig has the controls, a free rack from the
+		// commons at the wall, then R. The flight, the burst and the shards are
+		// drawn by the real canvas, and the rock answers the shards.
+		await page.locator('#reset').click();
+		await page.evaluate(() => {
+			if (!SteamCeiling.state.commune) document.getElementById('commune').click();
+			for (const channel of ['move', 'smart', 'drive', 'angle']) SteamAutopilot.set(channel, false);
+			world.drive = false;
+			world.direction = 0;
+			world.platform.x = SteamPhysics.platformMin();
+			world.platform.vx = 0;
+		});
+		await page.waitForFunction(() => !document.getElementById('rocket-buy').disabled);
+		assert.equal(await page.locator('#rocket-buy').textContent(), 'Buy · free');
+		await page.locator('#rocket-buy').click();
+		await page.locator('#rocket-buy').click();
+		await page.waitForFunction(() => document.getElementById('rocket-fire').firstChild.textContent === 'Fire 2 / 6 ');
+		await page.locator('#rocket-auto').check();
+		await page.waitForFunction(() => SteamRockets.state.stock === 5, null, { timeout: 30000 });
+		await page.locator('#rocket-auto').uncheck();
+		await page.evaluate(() => { world.platform.x = 9; world.platform.vx = 0; });
+		await page.keyboard.press('KeyR');
+		assert.equal(await page.evaluate(() => SteamRockets.state.fired), 1, 'R fires a rocket');
+		await page.waitForFunction(() => SteamRockets.state.bursts === 1 && SteamRockets.state.shardHits > 0, null, { timeout: 30000 });
+		await page.waitForFunction(() => SteamRockets.state.shardsAloft === 0, null, { timeout: 30000 });
+		assert.equal(await page.evaluate(() => SteamRockets.state.stock), 4);
+		await page.locator('#help-rockets').click();
+		assert.equal(await page.locator('#help-title').textContent(), 'Rockets');
+		await page.keyboard.press('Escape');
+		await page.evaluate(() => document.getElementById('commune').click());
 		await page.setViewportSize({ width: 390, height: 844 });
 		await page.waitForTimeout(100);
 		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -427,7 +469,7 @@ async function main() {
 		assert.equal(await touch.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'the sheet does not overflow');
 		await touch.locator('#help-close').tap();
 		assert.equal(await touch.evaluate(() => document.getElementById('help-drawer').dataset.open), 'false');
-		console.log('PASS: startup, cargo/chamber/controls layout, always-visible rock view modes, cargo-to-market and funds-to-science drawers, view-mode hover/click/arrow keys with paused redraw and touch gating, drive on by default and toggling (Space/Q without pressing GUI controls), piston tilt by slider, chamber wheel and an inverted open-air drag, keyboard force, pause/reset, shape selector, rock-hover tooltip without inspector panel, rock-versus-low click zones, target travel, centre pad note, research/equipment gating, communism mode with free prices and waived gates, ledger, autopilot checkboxes with X/Z/C shortcuts and manual overrides, context help drawer (hover preview, click pin, H/Escape, touch tap and bottom sheet, held panel), narrow layout; no page errors.');
+		console.log('PASS: startup, cargo/chamber/controls layout, always-visible rock view modes, cargo-to-market and funds-to-science drawers, view-mode hover/click/arrow keys with paused redraw and touch gating, drive on by default and toggling (Space/Q without pressing GUI controls), piston tilt by slider, chamber wheel and an inverted open-air drag, keyboard force, pause/reset, shape selector, rock-hover tooltip without inspector panel, rock-versus-low click zones, target travel, centre pad note, research/equipment gating, communism mode with free prices and waived gates, ledger, autopilot checkboxes with X/Z/C shortcuts and manual overrides, context help drawer (hover preview, click pin, H/Escape, touch tap and bottom sheet, held panel), rocket rack (wall purchase, auto-buy, R launch, burst and shard hits), narrow layout; no page errors.');
 	} finally {
 		await browser.close();
 	}

@@ -11,6 +11,7 @@ const ceiling = require('../js/ceiling.js');
 const equipment = require('../js/equipment.js');
 const research = require('../js/research.js');
 const physics = require('../js/physics.js');
+require('../js/rockets.js');
 const harness = require('./harness.cjs');
 require('../js/prediction.js');
 require('../js/help.js');

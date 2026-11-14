@@ -22,6 +22,7 @@
 				['B', 'Brake without reversing (either case)'],
 				['Space / Q', 'Toggle the bounce drive'],
 				['E', 'Release a held ball while the drive is on'],
+				['R', 'Fire a rocket from the rig’s rack'],
 				['X', 'Autopilot · chase the predicted landing'],
 				['⇧X', 'Autopilot · timed intercept'],
 				['Z', 'Autopilot · drive keeper'],
@@ -184,6 +185,22 @@
 				['⇧X', 'Timed intercept · economy brake'],
 				['Z', 'Drive keeper · hit the rock hard'],
 				['C', 'Level bounce · reflect straight up']
+			]
+		},
+		{
+			id: 'rockets',
+			label: 'Rockets',
+			title: 'Rockets',
+			text: [
+				'A rocket is a consumable for the rig’s rack. It leaves the launch tube in the middle of the amber collector, climbs straight up and bursts like a firework. Each shard that reaches the rock chips a patch one to four cells wide with the same weakening rule as a ball strike; the loosened rock then lets go as ordinary debris, so a burst right under the rock drops its yield over the collector that fired it.',
+				'The fuse is cut for the rock face above the tube, give or take 20%. A long fuse bursts on contact and concentrates the shards; a short one bursts early in the open and spreads them thin. About one rocket in twenty is a dud: its fuse fails, it falls back and bursts on whatever ground it lands on.',
+				'Rockets are loaded only while the rig touches a SELL wall. The rack holds 6. With auto-buy on, every wall visit buys up to 3 after the cargo is sold, never past the rack and never beyond the funds. A rocket carries its own charge: it draws nothing from the reserve and adds no heat.',
+				'The price is set so that a rocket into common rock roughly pays for itself. The profit is in rich seams, a burst close under the rock and a collector kept beneath it.'
+			],
+			keys: [
+				['R / Fire', 'Launch one rocket; the rack reloads the tube in half a second'],
+				['Buy', 'Load one rocket at a SELL wall'],
+				['Auto-buy', 'Up to 3 rockets at each wall visit, funds allowing']
 			]
 		},
 		{

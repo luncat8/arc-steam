@@ -66,6 +66,10 @@
 						<div class="eyebrow-row"><p class="eyebrow">RIG AUTOPILOT</p><button id="help-autopilot" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: autopilot duties">?</button></div>
 						<div class="autopilot" id="autopilot"><label><input type="checkbox" id="auto-move" autocomplete="off"><span>Chase the predicted landing</span><i>X</i></label><label><input type="checkbox" id="auto-smart" autocomplete="off"><span>Timed intercept · economy brake</span><i>⇧X</i></label><label><input type="checkbox" id="auto-drive" autocomplete="off"><span>Drive keeper · hit the rock hard</span><i>Z</i></label><label><input type="checkbox" id="auto-angle" autocomplete="off"><span>Level bounce · reflect straight up</span><i>C</i></label></div>
 						<p id="autopilot-status" class="hint" role="status" hidden></p>
+						<div class="eyebrow-row"><p class="eyebrow">ROCKETS</p><button id="help-rockets" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: rockets">?</button></div>
+						<div class="rocket-row"><button id="rocket-fire" type="button" aria-keyshortcuts="R" disabled>Fire 0 / 6 <span>R</span></button><button id="rocket-buy" type="button" disabled>Buy</button></div>
+						<div class="autopilot" id="rocket-orders"><label><input type="checkbox" id="rocket-auto" autocomplete="off"><span>Auto-buy up to 3 at each SELL wall</span></label></div>
+						<p id="rocket-status" class="hint" role="status" hidden></p>
 					</div>
 				</div>
 			</aside>
@@ -157,6 +161,7 @@
 	<script src="js/equipment.js"></script>
 	<script src="js/research.js"></script>
 	<script src="js/physics.js"></script>
+	<script src="js/rockets.js"></script>
 	<script src="js/prediction.js"></script>
 	<script src="js/autopilot.js"></script>
 	<script src="js/players.js"></script>

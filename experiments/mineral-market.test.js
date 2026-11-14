@@ -84,8 +84,11 @@ test('base prices follow measured abundance on a rarity curve and keep the cell 
 	for (const seed of [1, 31]) {
 		const state = reset(seed);
 		const count = state.mineralNames.length;
+		// The curve orders materials of equal demand; a filler's low demand is
+		// a separate factor of its base and is pinned by its own test.
 		for (let a = 0; a < count; a++) for (let b = 0; b < count; b++) {
 			if (state.mineralAbundance[a] >= state.mineralAbundance[b]) continue;
+			if (state.mineralTable[a].demandMean !== state.mineralTable[b].demandMean) continue;
 			assert.ok(state.mineralBasePrices[a] >= state.mineralBasePrices[b],
 				state.mineralNames[a] + ' is rarer than ' + state.mineralNames[b] + ', so it must not be cheaper');
 		}
@@ -135,13 +138,37 @@ test('the filler is cheap by demand, not by abundance', () => {
 			'sand takes a few percent of the rock on seed ' + seed + ': ' + (state.mineralAbundance[sand] * 100).toFixed(2) + '%');
 		assert.ok(quote < state.targetCellValue * 0.15,
 			'a cell of sand is worth a fraction of an average cell: ' + quote.toFixed(2) + ' cr');
-		assert.ok(quote * 5 < state.mineralBasePrices[sand],
-			'its abundance alone would make it dear; low demand is what keeps it cheap');
+		// Rarer than a common ore, yet based far below it: the abundance curve
+		// alone would make it dear, and low demand is what keeps it cheap.
+		const iron = state.mineralIds.indexOf('iron');
+		assert.ok(state.mineralAbundance[sand] < state.mineralAbundance[iron], 'sand is rarer than iron on seed ' + seed);
+		assert.ok(state.mineralBasePrices[sand] * 2 < state.mineralBasePrices[iron], 'and still based well under it');
+		// The base already carries the demand, so the market board compares the
+		// quote with a base it can actually reach.
+		const swing = quote / state.mineralBasePrices[sand];
+		assert.ok(swing > 0.4 && swing < 2, 'the sand quote swings around its own base: ' + swing.toFixed(2));
 		for (let m = 0; m < state.mineralCount; m++) {
 			if (m === sand) continue;
 			assert.ok(state.mineralPrices[m] > quote, state.mineralNames[m] + ' is worth more than the filler');
 		}
 	}
+});
+
+test('a filler\'s low demand is normalised into the base table instead of thinning the rock', () => {
+	const materials = require('../js/rock-materials.js');
+	const minerals = require('../js/minerals.js');
+	const count = minerals.mineralCount;
+	// Shares the floor and the cap leave alone, so the mean is exact.
+	const shares = new Float64Array(count).fill(0.5 / (count - 1));
+	shares[minerals.hostIndex] = 0.5;
+	const base = new Float64Array(count);
+	const report = { target: 0, mean: 0, clamped: 0 };
+	materials.basePricesInto(base, shares, materials.economy, report);
+	assert.equal(report.clamped, 0, 'no quote of this table is clamped');
+	near(report.mean, materials.economy.targetCellValue, 1e-9);
+	const sand = minerals.mineralIds.indexOf('sand');
+	const ore = minerals.mineralIds.indexOf('iron');
+	near(base[sand] / base[ore], minerals.mineralTable[sand].demandMean / minerals.mineralTable[ore].demandMean, 1e-12);
 });
 
 test('the startup market is seeded per run, and demand can make a common ore open dear', () => {

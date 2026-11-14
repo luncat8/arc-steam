@@ -1,5 +1,5 @@
 // Inventory, ledger, status and live text readouts.
-// provides: buildInventory, readout, miningReadout, predictionReadout, autopilotReadout, statusReadout
+// provides: buildInventory, readout, miningReadout, predictionReadout, autopilotReadout, rocketReadout, statusReadout
 // depends: main.js bindings, progression/player/input readout helpers
 
 'use strict';
@@ -370,7 +370,31 @@ function readout() {
 	setText(ui.drive.firstChild, driveOn ? 'Drive on ' : 'Drive off ');
 	const canLaunch = physics.canLaunch(world, watched);
 	setDisabled(ui.launch, !canLaunch);
+	rocketReadout();
 	statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch, driveOn);
+}
+
+// The rack: what a press would do now, and one line only while there is a
+// reason a press does nothing.
+function rocketReadout() {
+	const rockets = SteamRockets.state;
+	const rig = playerApi.rigActive();
+	const atWall = physics.atSellWall(world);
+	const full = rockets.stock >= rockets.rackSize;
+	const unit = rockets.unitPrice;
+	const short = window.SteamCeiling.state.funds < unit;
+	setText(ui['rocket-fire'].firstChild, 'Fire ' + rockets.stock + ' / ' + rockets.rackSize + ' ');
+	setDisabled(ui['rocket-fire'], !rig || !SteamRockets.canFire());
+	setText(ui['rocket-buy'], unit > 0 ? 'Buy · ' + unit + ' cr' : 'Buy · free');
+	setDisabled(ui['rocket-buy'], !rig || !atWall || full || short);
+	setChecked(ui['rocket-auto'], rockets.autoBuy);
+	const reason = !rig ? 'The rack is the rig’s · select YOU to use it'
+		: !atWall ? ''
+		: full ? 'Rack full'
+		: short ? 'Not enough funds for a rocket'
+		: '';
+	setHidden(ui['rocket-status'], !reason);
+	if (reason) setText(ui['rocket-status'], reason);
 }
 
 // The platform rests on the terrain and only leaves it where the ground drops

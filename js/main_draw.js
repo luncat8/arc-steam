@@ -127,6 +127,22 @@ function drawRigMachinery(context, player) {
 	context.strokeRect(tempX, tempTop, tempW, tempBot - tempTop);
 	context.fillStyle = '#e6b66e';
 	context.fillRect(left, 0.55, collectorWidth, 0.15);
+	// The rig's launch tube stands in the middle of its collector, and shows
+	// the nose of the next rocket while the rack holds one.
+	if (isRig) {
+		const tubeX = left + collectorWidth * 0.5;
+		context.fillStyle = '#59686b';
+		context.fillRect(tubeX - 0.06, config.deck, 0.12, 0.2);
+		if (SteamRockets.state.stock > 0) {
+			context.fillStyle = '#e0775e';
+			context.beginPath();
+			context.moveTo(tubeX - 0.04, config.deck + 0.2);
+			context.lineTo(tubeX, config.deck + 0.33);
+			context.lineTo(tubeX + 0.04, config.deck + 0.2);
+			context.closePath();
+			context.fill();
+		}
+	}
 	// The chassis pitch follows the land; piston tilt stays relative to it.
 	const pistonAngle = machine.pistonAngle;
 	const pistonNx = -Math.sin(pistonAngle);
@@ -240,6 +256,7 @@ function draw() {
 		context.beginPath(); context.arc(ball.x, ballY, radius + 0.13 * ballScale, 0, Math.PI * 2); context.stroke();
 		if (showDamageRadius) drawDamageRadius(ball, ballY, ballScale);
 	}
+	SteamRockets.draw(context);
 	context.restore();
 	drawSellLabel(offsetX + 8, floorY - scale * 1.4, -Math.PI * 0.5);
 	drawSellLabel(offsetX + config.width * scale - 8, floorY - scale * 1.4, Math.PI * 0.5);
