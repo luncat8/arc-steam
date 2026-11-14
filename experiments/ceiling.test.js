@@ -52,7 +52,7 @@ test('fallen-soil tiles keep a 4:1 width-to-height ratio and a smooth interpolat
 	const tiles = [];
 	const context = {
 		fillRect(x, y, width, height) { tiles.push({ x, y, width, height }); },
-		beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}
+		beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {}, save() {}, restore() {}, stroke() {}
 	};
 	ceiling.drawFloor(context);
 	assert.ok(tiles.length > 0, 'the rubble is rendered as individual tiles');
@@ -268,10 +268,13 @@ test('extracted, airborne, caught and lost cells stay conserved', () => {
 	ceiling.collapse(10);
 	const state = ceiling.state;
 	const world = { platform: { x: 12, vx: 0 }, heat: 0 };
-	for (let step = 0; step < 2400 && state.airborneCells > 0; step++) {
+	// Previously damaged layers can keep releasing without another hit, so
+	// wait for the loose rock as well as the airborne fragments to settle.
+	for (let step = 0; step < 240 * 120 && (state.airborneCells > 0 || state.looseCells > 0); step++) {
 		ceiling.step(world, 1 / 240, 60);
 		near(state.extractedCells, state.airborneCells + state.caughtCells + state.lostCells);
 	}
+	assert.equal(state.looseCells, 0, 'no further exposed rock is waiting to fall');
 	assert.equal(state.airborneCells, 0);
 	assert.equal(state.extractedCells, state.caughtCells + state.lostCells);
 	near(state.caughtValue, state.cargoValue + state.soldValue);
@@ -326,8 +329,7 @@ test('a single impact does not detach pixels immediately', () => {
 });
 
 test('collapse probability rises with damage', () => {
-	// A light hit leaves the region below the collapse floor; repeated hits in
-	// the same spot push it over and the ceiling lets go.
+	// Repeated hits loosen more of the same area, raising its later release.
 	ceiling.reset(33);
 	let extracted = 0;
 	for (let i = 0; i < 8; i++) { ceiling.damage(8, ceiling.state.bottom + 0.2, 3); ceiling.collapse(0.25); }

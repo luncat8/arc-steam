@@ -82,7 +82,7 @@ test('a landing on the deck is reported as a reachable intercept with the ghost 
 test('predicted deck contacts and the coasting ghost follow the terrain height', () => {
 	const w = physics.createWorld();
 	ceiling.state.floorPiles.fill(0.35);
-	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} });
+	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {}, save() {}, restore() {}, stroke() {} });
 	w.platform.y = 0.35;
 	w.platform.previousY = 0.35;
 	w.platform.vx = 0;

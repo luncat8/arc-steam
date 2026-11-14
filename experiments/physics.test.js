@@ -198,7 +198,7 @@ test('the platform rides over a smooth rubble ramp without clipping the chassis 
 	const state = ceiling.state;
 	state.floorPiles.fill(0);
 	for (let column = 32; column <= 96; column++) state.floorPiles[column] = 0.6 * (column - 32) / (96 - 32);
-	const drawContext = { fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} };
+	const drawContext = { fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {}, save() {}, restore() {}, stroke() {} };
 	ceiling.drawFloor(drawContext);
 	w.platform.x = 4.8;
 	w.platform.previousX = 4.8;
@@ -236,7 +236,7 @@ test('the platform rides over a smooth rubble ramp without clipping the chassis 
 test('collector and piston contact follow a raised terrain-following deck', () => {
 	const w = physics.createWorld();
 	ceiling.state.floorPiles.fill(0.4);
-	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} });
+	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {}, save() {}, restore() {}, stroke() {} });
 	w.platform.y = 0.4;
 	w.platform.previousY = 0.4;
 	w.platform.angle = 0;
@@ -269,12 +269,14 @@ test('collector and piston contact follow a raised terrain-following deck', () =
 test('the ball grounds on fallen rubble at the pile surface and keeps the ledger exact', () => {
 	const w = physics.createWorld();
 	const state = ceiling.state;
-	// Break rock and drop every fragment at x = 3 so the floor piles up there.
+	// Let the already-damaged rock finish releasing, then spread its fragments
+	// into a low, traversable pile around x = 3.
 	for (let x = 1; x < 6; x += 0.5) { ceiling.damage(x, state.bottom + 0.2, 20); ceiling.collapse(2); }
-	ceiling.collapse(10);
+	ceiling.collapse(120);
 	assert.ok(state.extractedCells > 0);
+	assert.equal(state.looseCells, 0, 'the terrain will not keep changing during the flight');
 	for (let i = 0; i < state.active.length; i++) if (state.active[i]) {
-		state.debrisX[i] = 3;
+		state.debrisX[i] = 3 + (i % 48 - 24) * state.cell;
 		state.debrisY[i] = 4;
 		state.debrisVx[i] = 0;
 		state.debrisVy[i] = -1;
@@ -285,7 +287,7 @@ test('the ball grounds on fallen rubble at the pile surface and keeps the ledger
 	assert.equal(state.lostCells, state.extractedCells);
 	const pile = ceiling.floorAt(3);
 	assert.ok(pile > 0.05, 'rubble raised the floor under the landing point');
-	assert.ok(pile <= state.pileLimit, 'the pile stops below the collector deck');
+	assert.ok(pile < c.deck, 'the test pile remains traversable by the collector');
 	w.ball.state = 'flying'; w.ball.x = 3; w.ball.y = 2; w.ball.vx = 0; w.ball.vy = -1;
 	sync(w);
 	run(w, 2);
@@ -447,7 +449,7 @@ test('the tier-1 engine caps at its 12 m/s top speed at full force', () => {
 test('a grounded ball re-seats when rubble rises or is cut beneath it', () => {
 	const w = physics.createWorld();
 	const state = ceiling.state;
-	const drawContext = { fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} };
+	const drawContext = { fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {}, save() {}, restore() {}, stroke() {} };
 	w.ball.x = 3; w.ball.y = 1; w.ball.vx = 0; w.platform.x = 20;
 	sync(w); run(w, 1);
 	assert.equal(w.ball.state, 'grounded');
@@ -934,7 +936,7 @@ test('a rising floor lifts a rebounding ball without a second impulse', () => {
 	const w = physics.createWorld();
 	physics.setGroundBounce('half');
 	const state = ceiling.state;
-	const drawContext = { fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} };
+	const drawContext = { fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {}, save() {}, restore() {}, stroke() {} };
 	state.floorPiles.fill(0.5); ceiling.drawFloor(drawContext);
 	w.platform.x = 3; w.drive = false;
 	w.ball.x = 20; w.ball.y = 0.5 + c.radius - 0.02; w.ball.vx = 0; w.ball.vy = 1;

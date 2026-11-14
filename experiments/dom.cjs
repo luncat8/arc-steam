@@ -111,7 +111,7 @@ const contextCalls = [];
 function createContext() {
 	const context = { calls: contextCalls };
 	const commands = ['clearRect', 'save', 'restore', 'translate', 'scale', 'setTransform', 'beginPath', 'moveTo',
-		'lineTo', 'stroke', 'fill', 'fillRect', 'strokeRect', 'arc', 'ellipse', 'closePath', 'setLineDash', 'fillText', 'rotate'];
+		'lineTo', 'stroke', 'fill', 'fillRect', 'strokeRect', 'arc', 'ellipse', 'closePath', 'clip', 'setLineDash', 'fillText', 'rotate'];
 	for (const command of commands) context[command] = function () { contextCalls.push(command); };
 	return context;
 }

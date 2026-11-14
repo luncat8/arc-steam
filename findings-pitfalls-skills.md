@@ -128,7 +128,7 @@ cd /home/user/arc-steam && LD_LIBRARY_PATH=/tmp/al/lib PLAYWRIGHT_PATH=/tmp/pw/n
 ## Repository conventions that matter
 
 - `git push` may report "Invalid username or token"; that is expected here and the change is applied manually.
-- Worklogs live in `archive/`, one per milestone, ending with a next-step suggestion. `0.1.0-plan.md` is the standalone design artifact, not a log: update its calibration and rules so a fork could reimplement from it alone.
+- Worklogs live in `archive/`, one per milestone, ending with a next-step suggestion. `archive/0.1.0-plan.md` is the standalone design artifact, not a log: update its calibration and rules so a fork could reimplement from it alone.
 - Measurement scripts stay out of `node --test` by using a `.cjs` extension (`mine-trips.cjs`, `dom.cjs`, `harness.cjs`), and useful output is kept under `experiments/logs/`.
 
 - A selected bot is still a bot. Selection changes which machine receives hand input; it must not silently suppress that machine's automatic release. Gate the release on the manual window, not on the active-player index.
@@ -139,3 +139,5 @@ cd /home/user/arc-steam && LD_LIBRARY_PATH=/tmp/al/lib PLAYWRIGHT_PATH=/tmp/pw/n
 - `harvest` limits by whole cells of capacity per column, so a 4-cell hopper over 2-cell columns takes two columns completely, not four partially.
 - Mineral membership from a product of per-channel tails does not blend wide and narrow ranges: one broad box with a single channel just outside beats a nearby narrow box by orders of magnitude, so whole regions become one mineral. Sum the normalised channel distances before the exponential kernel; that keeps the geometry descriptive and makes a narrow range genuinely rare.
 - Calibrating ore prices on the mean value of the whole field overpays the plan and underfunds the player: the free face the platform can actually mine is a biased sample of the field. Measure a normal sold load (60–100 cells) and set the target cell value from that, not from the field average.
+- The Remaining strength view is an absolute `strength / maxStrength` colour, not a measure of how much impact looseness has accumulated: naturally weak rock can be dark while still sound. For collapse debugging inspect `strength`, `damageField`, exposed `firstRow` and the band roll separately; a loose face can otherwise be suppressed by an average of many barely touched cells.
+- A rubble column filled only to its midpoint height cannot match a sloped `floorHeight`: it both overhangs one side and leaves a gap on the other. Cover up to the higher edge, clip to the shared crest, and restore the canvas before drawing the line and subsequent objects. Raster comparisons must account for pixel coverage along steep edges and the crest stroke itself.

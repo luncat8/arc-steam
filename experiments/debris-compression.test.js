@@ -42,7 +42,7 @@ test('a deposit is the same number of cells at any setting: only its drawn heigh
 		near(state.floorPiles[column], cells * state.cell / compression);
 		near(state.floorValues[column] / state.floorPiles[column], value / (cells * tile), 1e-9);
 		// The floor profile is rebuilt by the draw pass, like the rock heightmap.
-		ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} });
+		ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {}, save() {}, restore() {}, stroke() {} });
 		near(ceiling.floorAt((column + 0.5) * state.cell), cells * tile, 1e-9);
 		near(state.floorPiles[column] / state.cell, cells / compression, 1e-12, 'height in cells');
 	}
@@ -58,7 +58,8 @@ test('the floor tiles are compression:1 and the layer count follows the setting'
 	const pile = 0.9;
 	state.floorPiles.fill(pile);
 	const tiles = [];
-	const context = { fillRect(x, y, width, height) { tiles.push({ x, y, width, height }); }, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} };
+	let clips = 0;
+	const context = { fillRect(x, y, width, height) { tiles.push({ x, y, width, height }); }, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() { clips++; }, save() {}, restore() {}, stroke() {} };
 	for (const compression of [4, 2, 8]) {
 		ceiling.setFloorCompression(compression);
 		// The factor re-lays the column, so the pile is set again at this tile.
@@ -84,6 +85,70 @@ test('the floor tiles are compression:1 and the layer count follows the setting'
 	const column0 = tiles.filter(tile => Math.abs(tile.x) < 1e-9);
 	assert.ok(column0.length <= 64, 'a deep pile is budgeted by area: ' + column0.length);
 	near(column0[column0.length - 1].y + column0[column0.length - 1].height, 9, 1e-9, 'and still fills its column');
+	assert.equal(clips, 0, 'flat piles do not need a clip');
+	restore();
+});
+
+test('slopes and steps keep every rubble tile below the physical crest without gaps', () => {
+	ceiling.reset(24);
+	const state = ceiling.state;
+	for (const compression of [1, 4, 8]) {
+		ceiling.setFloorCompression(compression);
+		for (let c = 0; c < state.columns; c++) {
+			state.floorPiles[c] = c < 30 ? 0 : c < 90 ? (c - 30) * 0.025 : c < 120 ? 1.5 : c < 140 ? 8 : 0;
+		}
+		const tiles = Array.from({ length: state.columns }, () => []);
+		let path = [];
+		let clippedPath;
+		let strokePath;
+		let clipped = false;
+		let saved = 0;
+		let clippedTiles = 0;
+		let interiorTiles = 0;
+		const context = {
+			save() { saved++; },
+			restore() { assert.equal(saved, 1); saved--; clipped = false; },
+			beginPath() { path = []; },
+			moveTo(x, y) { path.push([x, y]); },
+			lineTo(x, y) { path.push([x, y]); },
+			closePath() {},
+			clip() { assert.equal(saved, 1); clipped = true; clippedPath = path.slice(); },
+			fillRect(x, y, width, height) {
+				const column = Math.round(x / state.cell);
+				if (clipped) clippedTiles++;
+				else {
+					interiorTiles++;
+					assert.ok(y + height <= Math.min(state.floorHeight[column], state.floorHeight[column + 1]) + 1e-12,
+						'an unclipped tile is fully below the lower crest edge');
+				}
+				near(width, state.cell, 1e-12);
+				tiles[column].push({ y, height });
+			},
+			stroke() { assert.equal(saved, 0, 'the floor clip does not leak to later drawing'); strokePath = path.slice(); }
+		};
+		ceiling.drawFloor(context);
+		assert.ok(clippedTiles > 0 && interiorTiles > clippedTiles, 'only boundary tiles pay for clipping');
+		assert.equal(clippedPath.length, state.columns + 3);
+		assert.deepEqual(clippedPath[0], [0, 0]);
+		assert.deepEqual(clippedPath[1], [state.columns * state.cell, 0]);
+		assert.equal(strokePath.length, state.columns + 1);
+		for (let vertex = 0; vertex <= state.columns; vertex++) {
+			const point = [vertex * state.cell, state.floorHeight[vertex]];
+			assert.deepEqual(clippedPath[state.columns + 2 - vertex], point, 'clip follows the physical crest');
+			assert.deepEqual(strokePath[vertex], point, 'stroke follows that same crest');
+			near(ceiling.floorAt(vertex * state.cell), point[1], 1e-12);
+		}
+		for (let c = 0; c < state.columns; c++) {
+			const height = Math.max(state.floorHeight[c], state.floorHeight[c + 1]);
+			assert.ok(tiles[c].length <= 64, 'the 64-layer budget also holds on slopes');
+			let top = 0;
+			for (const tile of tiles[c]) {
+				near(tile.y, top, 1e-9, 'layers cover from the ground with no overlap or gap');
+				top = tile.y + tile.height;
+			}
+			near(top, height, 1e-9, 'the tiles cover the high edge before clipping');
+		}
+	}
 	restore();
 });
 
@@ -184,7 +249,7 @@ test('a pile may fill the chamber up to its roof, and a flat factor that would' 
 
 test('a deeper pile lifts the hull by its own drawn height at every setting', () => {
 	const state = ceiling.state;
-	const context = { fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} };
+	const context = { fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {}, save() {}, restore() {}, stroke() {} };
 	for (const compression of [4, 2, 1, 8]) {
 		ceiling.setFloorCompression(compression);
 		const world = physics.createWorld();

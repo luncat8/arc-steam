@@ -1,0 +1,26 @@
+Strength-aware collapse: 120-second stock one-ball shifts, seeds 1, 10, 21, 47.
+Policy follows the ball, sends a full cargo to the nearest wall, and launches
+when possible. No competitors, autopilot, purchases or other external inputs.
+Run current code with: node experiments/strength-shift-probe.cjs
+Baseline: commit 152e329; current: strength.1 change. Trajectories diverge, so
+these are comparative samples, not controlled per-hit throughput or a target.
+
+Baseline:
+smooth seed 1 extracted 586 caught 45 lost 539 sold 43 earned 2437.4 cr temperature 119.8 C hits 18 median 10.452 J energy error 2.03e-8 J
+smooth seed 10 extracted 438 caught 19 lost 412 sold 19 earned 129.3 cr temperature 117.2 C hits 20 median 4.453 J energy error 1.18e-8 J
+smooth seed 21 extracted 351 caught 17 lost 334 sold 17 earned 123.4 cr temperature 112.9 C hits 12 median 6.466 J energy error -1.25e-8 J
+smooth seed 47 extracted 565 caught 86 lost 476 sold 7 earned 12.9 cr temperature 133.0 C hits 17 median 6.954 J energy error 1.40e-8 J
+square seed 1 extracted 384 caught 36 lost 344 sold 33 earned 2892.7 cr temperature 120.9 C hits 20 median 5.432 J energy error 1.64e-8 J
+square seed 10 extracted 587 caught 66 lost 514 sold 66 earned 1301.3 cr temperature 128.9 C hits 23 median 4.971 J energy error 1.33e-8 J
+square seed 21 extracted 540 caught 49 lost 488 sold 49 earned 290.2 cr temperature 117.4 C hits 22 median 6.954 J energy error 6.23e-9 J
+square seed 47 extracted 164 caught 16 lost 148 sold 16 earned 31.1 cr temperature 92.4 C hits 8 median 10.326 J energy error -5.94e-9 J
+
+Current:
+smooth seed 1 extracted 246 caught 33 lost 213 sold 33 earned 2936.0 cr temperature 99.6 C hits 5 median 6.954 J energy error 2.54e-8 J
+smooth seed 10 extracted 850 caught 23 lost 827 sold 23 earned 271.9 cr temperature 130.2 C hits 14 median 11.993 J energy error -2.27e-9 J
+smooth seed 21 extracted 227 caught 8 lost 219 sold 8 earned 32.6 cr temperature 96.6 C hits 4 median 5.087 J energy error 6.40e-9 J
+smooth seed 47 extracted 815 caught 52 lost 763 sold 52 earned 294.8 cr temperature 145.6 C hits 12 median 7.187 J energy error 1.07e-8 J
+square seed 1 extracted 973 caught 127 lost 845 sold 27 earned 2880.4 cr temperature 161.8 C hits 18 median 8.980 J energy error 1.40e-8 J
+square seed 10 extracted 529 caught 50 lost 472 sold 30 earned 155.7 cr temperature 134.1 C hits 24 median 2.853 J energy error 1.94e-8 J
+square seed 21 extracted 972 caught 109 lost 862 sold 19 earned 93.6 cr temperature 165.8 C hits 22 median 8.325 J energy error 2.04e-8 J
+square seed 47 extracted 446 caught 43 lost 401 sold 43 earned 112.9 cr temperature 126.5 C hits 15 median 3.168 J energy error 1.94e-8 J

@@ -570,6 +570,16 @@ test('hovering rock shows its tooltip and clicking low commands travel, without 
 	assert.equal(dom.element('mineral-cell').textContent, 'Column ' + (column + 1) + ' / ' + state.columns + ' · Layer ' + state.rows + ' / ' + state.rows, 'travel does not change the inspected cell');
 });
 
+test('the rock inspector distinguishes naturally weak, damaged and loose cells', () => {
+	const state = ceiling.state;
+	const face = state.firstRow[selectedColumn];
+	assert.match(mineralStateTag(state, face, 0.8, 0), /sound$/, 'low strength alone is not impact damage');
+	assert.match(mineralStateTag(state, face, 0.8, 0.1), /weakened$/, 'a light hit is not called sound');
+	assert.match(mineralStateTag(state, face, 0.8, 0.4), /loose$/, 'an exposed eligible cell is loose');
+	assert.match(mineralStateTag(state, face + 1, 0.8, 0.4), /weakened \(held\)$/, 'a buried loose cell is held');
+	assert.match(mineralStateTag(state, face, 0, 0), /fallen$/);
+});
+
 test('the piston angle is set by the slider, the chamber wheel and an air drag', () => {
 	const slider = dom.element('piston-angle');
 	slider.value = '-4';
@@ -664,7 +674,8 @@ test('the autopilot switches, shortcuts and manual overrides share one writer', 
 	assert.equal(autopilot.enabled('move'), true);
 	advance(8);
 	assert.equal(status.hidden, false);
-	assert.match(status.textContent, /^Intercept · 11\.4 m in /);
+	assert.ok(status.textContent.startsWith('Intercept · ' + autopilot.state.interceptX.toFixed(1) + ' m in '),
+		'the status reports the actual intercept over the current terrain');
 	assert.ok(Number.isFinite(world.target), 'the chase commands travel instead of leaving the platform alone');
 	// The two intercept switches are one duty at two levels of care.
 	check('smart', true);
@@ -1850,7 +1861,8 @@ test('the DEBRIS selector re-lays the floor and its surface, and survives New ga
 	assert.ok(underColumn.length >= 3, 'full-height square tiles are drawn at the new setting');
 	assert.ok(Math.abs(underColumn[0].width / underColumn[0].height - 1) < 1e-12, 'square tiles');
 	assert.equal(columnZero.length, 4, 'four square layers where the 4:1 tile had thirteen');
-	harness.near(underColumn[0].y, 0, 1e-9, 'laid from the ground up');
+	harness.near(columnZero[0].y, 0, 1e-9, 'the partial bottom tile starts on the ground');
+	harness.near(columnZero[0].y + columnZero[0].height, underColumn[0].y, 1e-9, 'the bottom tile does not overlap the next layer');
 	canvas.fillRect = record;
 	// New game keeps the setting and starts from a clear floor.
 	dom.element('reset').dispatch('click');

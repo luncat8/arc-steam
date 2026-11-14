@@ -105,7 +105,7 @@ test('below the warp both settings fly the same ball: the floor game is untouche
 		physics.setBallPerspective(!flat);
 		const world = physics.createWorld();
 		state.floorPiles.fill(0.2);
-		ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} });
+		ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {}, save() {}, restore() {}, stroke() {} });
 		const ball = world.ball;
 		ball.state = 'flying';
 		ball.x = 4;
@@ -124,7 +124,7 @@ test('below the warp both settings fly the same ball: the floor game is untouche
 	near(scaled.x, flat.x, 1e-12, 'the same resting place');
 	assert.equal(physics.ballRadiusAt(0.2), c.radius, 'a ball in the rubble is the classic sphere');
 	state.floorPiles.fill(0);
-	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} });
+	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {}, save() {}, restore() {}, stroke() {} });
 	restore();
 });
 

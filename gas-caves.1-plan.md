@@ -1,7 +1,7 @@
 # gas-caves.1 — Stable geological voids
 
 Priority: **low / deferred research**. Depends on the shared geology migration in
-`minerals.3-plan.md`. Not part of the mineral-strength rollout.
+`archive/minerals.3-plan.md`. Not part of the mineral-strength rollout.
 
 ## Goal
 

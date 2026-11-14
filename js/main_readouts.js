@@ -206,7 +206,8 @@ function spent(credits, digits) {
 
 function mineralStateTag(ceiling, layer, remaining, looseness) {
 	if (remaining === 0) return ' · fallen';
-	if (looseness < ceiling.collapseLooseFloor) return ' · remaining strength · sound';
+	if (looseness <= 0) return ' · remaining strength · sound';
+	if (looseness < ceiling.collapseLooseFloor) return ' · remaining strength · weakened';
 	return layer === ceiling.firstRow[selectedColumn]
 		? ' · remaining strength · loose'
 		: ' · remaining strength · weakened (held)';

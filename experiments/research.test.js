@@ -78,6 +78,9 @@ test('research deltas reach the simulation instead of acting as labels', () => {
 	near(physics.pulseNow(), c.pulse + 4);
 	w.ball.state = 'held';
 	w.drive = true;
+	// Funding the research can heat the rig with falling rock; isolate the
+	// pulse delta from thermal derating before measuring it.
+	w.heat = 0;
 	sync(w);
 	assert.ok(physics.launch(w));
 	near(w.lastPush, c.pulse + 4);

@@ -136,7 +136,7 @@ function stairs(height) {
 		const x = (column + 0.5) * state.cell;
 		if (x > 6) state.floorPiles[column] = Math.min(1.6, Math.floor((x - 6) / 1.2) * height);
 	}
-	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} });
+	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {}, save() {}, restore() {}, stroke() {} });
 	world.platform.x = 4;
 	world.platform.vx = 0;
 	world.direction = 1;

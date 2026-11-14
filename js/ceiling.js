@@ -115,35 +115,27 @@ function setFloorCompression(value) {
 	const baseDamageMultiplier = 2;
 	const baseDamageRange = 9;
 	const damageFalloffPower = 2.8;
-	// Delayed collapse. A hit weakens cells and leaves them standing; the rock
-	// only lets go later, in a handful of loose pixels from a region that keeps
-	// failing its roll. Damage in a region is the mean of how far its cells have
-	// been taken down, so a heavily battered pocket of rock becomes the likeliest
-	// place for the next fall without any pixel falling on the hit itself.
+	// Impacts loosen rock; only a later, bounded surface roll detaches it.
 	const collapseRegionsX = 12;
 	const collapseRegionsY = 6;
 	const bandColumns = Math.ceil(columns / collapseRegionsX);
 	const bandRows = Math.ceil(initialRows / collapseRegionsY);
 	const regionCount = collapseRegionsX * collapseRegionsY;
-	// A hit loosens rock instead of tearing it down: the share of a cell's
-	// remaining strength the blow removes becomes the cell's damage, and only
-	// when a region's rock is loose enough does the ceiling start giving way.
-	// A hit loosens a cell far more than it weakens it: the share of a cell's
-	// remaining strength taken becomes four times the share of its looseness it
-	// gains. So the rock keeps answering the ball with intact rock that is close
-	// to letting go, and the ceiling spends its time on the verge of a fall
-	// instead of on the verge of crumbling.
+	// Looseness depends both on the fraction of remaining strength removed and
+	// on absolute weakness relative to the strongest mineral. Weak rock can
+	// therefore become unstable from a small hit without falling untouched.
 	const loosedPerWeakened = 4;
+	const weakRockSensitivity = 0.5;
 	// A blow spends at most this share of a cell's remaining strength, so a single
 	// impact never finishes a cell: the contact cells stay standing and the ring
 	// around them is left loose, to fall later in a collapse burst.
 	const hitLooseCap = 0.5;
 	const collapseLooseFloor = 0.3;
 	const collapseChanceSeconds = 0.25;
-	// One blow never brings a band down: its mean looseness starts around the
-	// loose floor, and the chance to let go ramps to half as the same spot is hit
-	// again and again.
+	// Eligible faces have a nonzero roll even when the surrounding damage is
+	// slight; a more battered band still makes larger, likelier clumps.
 	const collapseChanceMax = 0.5;
+	const collapseSeedChanceShare = 0.5;
 	const collapseChanceSaturation = 1;
 	const collapseChunkMin = 1;
 	const collapseChunkMax = 4;
@@ -224,9 +216,7 @@ function setFloorCompression(value) {
 	let marketBudget = 0;
 	const initialStrength = new Float32Array(maxCount);
 	const strength = new Float32Array(maxCount);
-	// How loose each cell has become, 0 (sound rock) to 1 (about to let go). It
-	// is the share of a cell's remaining strength that impacts have taken since
-	// it last fell, so repeated hits around one spot add up.
+	// Accumulated impact-induced looseness, from 0 (sound) to 1 (most unstable).
 	const damageField = new Float32Array(maxCount);
 	const elements = new Float32Array(maxCount * 3);
 	const minerals = new Float32Array(maxCount * mineralCount);
@@ -1057,7 +1047,10 @@ function setFloorCompression(value) {
 			// later in a collapse burst. The rest of the impact energy is absorbed.
 			const amount = Math.min(before, budget * damageWeight(distance, owner), before * hitLooseCap);
 			strength[index] = before - amount;
-			damageField[index] = Math.min(1, damageField[index] + amount / before * loosedPerWeakened);
+			// The same energy destabilizes low absolute strength more quickly.
+			const susceptibility = 1 + weakRockSensitivity * (materials.maxStrength / before - 1);
+			const looseGain = amount / before * loosedPerWeakened * susceptibility;
+			damageField[index] = Math.min(1, damageField[index] + looseGain);
 			removed += amount / mult;
 			if (strength[index] > 0.0001) continue;
 			// Only the free face lets go. A cell with rock still under it has
@@ -1129,14 +1122,15 @@ function setFloorCompression(value) {
 		let rolled = 0;
 		for (let band = 0; band < collapseRegionsX; band++) {
 			const looseness = scanSurfaceBand(band);
-			if (looseness < collapseLooseFloor || !bandLooseCount) continue;
-			const excess = Math.min(1, (looseness - collapseLooseFloor) / (collapseChanceSaturation - collapseLooseFloor));
+			if (!bandLooseCount) continue;
+			const excess = Math.max(0, Math.min(1, (looseness - collapseLooseFloor) / (collapseChanceSaturation - collapseLooseFloor)));
 			const seedColumn = pickBandSeed(band);
 			const seed = firstRow[seedColumn] * columns + seedColumn;
 			const mineral = dominantMineral(seed);
 			const growth = mineralClusterGrowth[mineral];
 			const releaseFactor = 100 / (100 + growth);
-			if (hash(band, collapseRoll + band, 5) >= collapseChanceMax * excess * releaseFactor) continue;
+			const chance = collapseChanceMax * Math.max(excess, damageField[seed] * collapseSeedChanceShare) * releaseFactor;
+			if (hash(band, collapseRoll + band, 5) >= chance) continue;
 			const baseChunk = collapseChunkMin + excess * (collapseChunkMax - collapseChunkMin);
 			const target = Math.max(1, Math.min(collapseClumpLimit, Math.round(baseChunk * (1 + growth / 100))));
 			if (!peelSurfaceCluster(seedColumn, mineral, target, clusterShare(growth))) continue;
@@ -1324,9 +1318,7 @@ function setFloorCompression(value) {
 		recordFall(size, representative);
 		for (let col = minCol; col <= maxCol; col++) {
 			if (!peeled[col]) continue;
-			const nextRow = firstRow[col] + peeled[col];
-			firstRow[col] = nextRow;
-			if (!testRock && nextRow < rows) damageField[nextRow * columns + col] *= 0.7;
+			firstRow[col] += peeled[col];
 			peeled[col] = 0;
 		}
 		return size;
@@ -2229,19 +2221,62 @@ function setFloorCompression(value) {
 	// and a deeper one is drawn in proportionally taller blocks of the same
 	// material. The area a player sees is the pile either way.
 	const maxTileLayers = 64;
+	const floorTileStart = new Float64Array(columns);
+	const floorTileStep = new Float64Array(columns);
+	const floorTileCount = new Uint8Array(columns);
+	const floorClipStart = new Uint8Array(columns);
+
+	function fillFloorTile(context, column, row, y, topY) {
+		const base = Math.max(0, y);
+		if (!(topY > base)) return;
+		context.fillStyle = (column + row) % 2 ? '#443a2d' : '#4a3e2f';
+		context.fillRect(column * cell, base, cell, topY - base);
+	}
+
 	function drawFloor(context) {
 		updateFloor();
 		const unit = floorCellHeightNow();
+		let needsClip = false;
 		for (let column = 0; column < columns; column++) {
-			const height = Math.max(0, floorAt((column + 0.5) * cell));
+			const height = Math.max(floorHeight[column], floorHeight[column + 1]);
+			floorTileCount[column] = 0;
 			if (!(height > 1e-9)) continue;
+			const low = Math.min(floorHeight[column], floorHeight[column + 1]);
 			const tile = Math.max(unit, height / maxTileLayers);
-			const start = height - Math.ceil(height / tile) * tile;
-			for (let y = start, row = 0; y < height - 1e-9; y += tile, row++) {
-				const tileHeight = Math.min(tile, height - y);
-				context.fillStyle = (column + row) % 2 ? '#443a2d' : '#4a3e2f';
-				context.fillRect(column * cell, Math.max(0, y), cell, tileHeight);
+			const layers = Math.min(maxTileLayers, Math.ceil(height / tile));
+			const start = height - layers * tile;
+			floorTileStart[column] = start;
+			floorTileStep[column] = tile;
+			floorTileCount[column] = layers;
+			let row = 0;
+			for (; row < layers; row++) {
+				const y = start + row * tile;
+				const topY = Math.min(height, y + tile);
+				if (topY > low) break;
+				fillFloorTile(context, column, row, y, topY);
 			}
+			floorClipStart[column] = row;
+			if (row < layers) needsClip = true;
+		}
+		if (needsClip) {
+			// Only boundary tiles need the crest clip; deep tiles remain fast rectangles.
+			context.save();
+			context.beginPath();
+			context.moveTo(0, 0);
+			context.lineTo(width, 0);
+			for (let vertex = columns; vertex >= 0; vertex--) context.lineTo(vertex * cell, floorHeight[vertex]);
+			context.closePath();
+			context.clip();
+			for (let column = 0; column < columns; column++) {
+				const height = Math.max(floorHeight[column], floorHeight[column + 1]);
+				const tile = floorTileStep[column];
+				const start = floorTileStart[column];
+				for (let row = floorClipStart[column]; row < floorTileCount[column]; row++) {
+					const y = start + row * tile;
+					fillFloorTile(context, column, row, y, Math.min(height, y + tile));
+				}
+			}
+			context.restore();
 		}
 		context.strokeStyle = '#8b7454';
 		context.beginPath();
@@ -2268,7 +2303,7 @@ function setFloorCompression(value) {
 		get baseDamageMultiplier() { return baseDamageMultiplier; },
 		get damageRange() { return damageRangeNow(); },
 		damageFalloffPower, pileLimit, graderCut, graderSmooth, graderClearance, graderSwath,
-		loosedPerWeakened, hitLooseCap, collapseLooseFloor, collapseChanceMax, collapseChanceSaturation, collapseChanceSeconds,
+		loosedPerWeakened, weakRockSensitivity, hitLooseCap, collapseLooseFloor, collapseChanceMax, collapseChanceSaturation, collapseChanceSeconds,
 		collapseChunkMin, get collapseChunkMax() { return collapseChunkMaxNow(); }, mineralClusterGrowth, damagePalette,
 		get testRock() { return testRock; },
 		collapseRegionsX, collapseRegionsY, regionDamage, regionEligible, damageField,

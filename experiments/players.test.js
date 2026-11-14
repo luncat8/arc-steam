@@ -28,7 +28,7 @@ function fillFloor(height, value) {
 	const state = ceiling.state;
 	state.floorPiles.fill(height);
 	state.floorValues.fill(value);
-	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} });
+	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {}, save() {}, restore() {}, stroke() {} });
 }
 
 // Stage debris over the collector so a test can fill the rig's hopper without a
@@ -416,7 +416,7 @@ function stairFloor(height) {
 		const x = (column + 0.5) * state.cell;
 		if (x > 6) state.floorPiles[column] = Math.min(1.6, Math.floor((x - 6) / 1.2) * height);
 	}
-	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {} });
+	ceiling.drawFloor({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {}, save() {}, restore() {}, stroke() {} });
 }
 
 test('a wheel drops onto its strut instead of hanging over the tread behind it', () => {
