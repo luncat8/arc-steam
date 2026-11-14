@@ -158,6 +158,7 @@ function autopilotText(plan, ball) {
 	if (plan.move || plan.smart) {
 		text = playerApi.state.selling ? 'Rig · selling full cargo · wall trip'
 			: playerApi.state.recharging ? 'Rig · recharging · centre pad trip'
+			: playerApi.state.rocketing ? (playerApi.state.catching ? 'Rig · rocket fired · holding under the seam' : 'Rig · rocket trip · richest seam')
 			: autopilotApi.suspended('move') ? 'Intercept · manual override' : travelClause(plan, ball);
 	}
 	if (plan.drive) text += (text ? ' · ' : 'Rig · ') + 'Drive keeper · ' + (autopilotApi.suspended('drive') ? 'manual override' : plan.wantedDrive ? 'pulse armed' : 'pulse held');

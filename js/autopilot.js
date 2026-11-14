@@ -68,6 +68,8 @@
 
 	function duty(channel) { return channel === SMART ? MOVE : channel; }
 	function suspended(channel) { return overrides[duty(channel)] > 0; }
+	// A hand on the controls, so a service trip can stand down while it lasts.
+	function handHeld(channel) { return held[duty(channel)]; }
 	function override(channel) {
 		const key = duty(channel);
 		if (key === MOVE ? moveOn || smartOn : enabled(key)) overrides[key] = overrideSeconds;
@@ -719,7 +721,7 @@
 		if (angleOn && !suspended(ANGLE)) commandTilt(world, dt);
 	}
 
-	const api = { state, enabled, set, toggle, override, hold, resume, suspended, overrideSeconds, reset, update, channels: Object.freeze({ MOVE, SMART, DRIVE, ANGLE }) };
+	const api = { state, enabled, set, toggle, override, hold, resume, suspended, handHeld, overrideSeconds, reset, update, channels: Object.freeze({ MOVE, SMART, DRIVE, ANGLE }) };
 	root.SteamAutopilot = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

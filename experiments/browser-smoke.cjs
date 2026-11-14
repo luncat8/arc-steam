@@ -38,24 +38,28 @@ async function main() {
 		page.on('pageerror', error => errors.push(error.message));
 		await page.goto(process.env.TEST_URL || pathToFileURL(path.resolve(__dirname, '../index.html')).href);
 		await page.waitForFunction(() => document.getElementById('clock').textContent !== '0.0 s');
-		// Cargo | chamber | controls share the workspace; telemetry cards lead to drawers.
+		// Players + cargo | chamber | controls share the workspace; telemetry cards lead to drawers.
 		assert.deepEqual(await page.evaluate(() => {
 			const box = selector => document.querySelector(selector).getBoundingClientRect();
+			const side = box('.side-column');
+			const players = box('.scoreboard');
 			const cargo = box('.cargo-panel');
 			const chamber = box('.mine-panel');
 			const controls = box('.controls-panel');
 			const telemetry = box('.telemetry');
 			const workspace = box('.workspace');
 			return [
-				cargo.left < chamber.left && Math.abs(cargo.top - chamber.top) < 1,
+				side.left < chamber.left && Math.abs(side.top - chamber.top) < 1,
+				players.bottom <= cargo.top + 1 && Math.abs(players.left - cargo.left) < 1,
 				chamber.left < controls.left && Math.abs(controls.top - chamber.top) < 1,
 				document.getElementById('market-drawer').hidden,
 				Math.abs(telemetry.width - workspace.width) < 1,
 				getComputedStyle(document.querySelector('.telemetry strong')).fontSize
 			];
-		}), [true, true, true, true, '17px']);
+		}), [true, true, true, true, true, '17px']);
 		// Side panels have independent scroll limits instead of setting canvas height.
-		assert.equal(await page.evaluate(() => ['.cargo-panel', '.controls-panel'].every(selector => getComputedStyle(document.querySelector(selector)).maxHeight !== 'none')), true);
+		assert.equal(await page.evaluate(() => ['.side-column', '.controls-panel'].every(selector => getComputedStyle(document.querySelector(selector)).maxHeight !== 'none')), true);
+		assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.cargo-panel')).overflowY), 'auto');
 		// Rock view modes stay visible beneath the canvas and only change display.
 		await page.locator('#pause').click();
 		const pausedImage = await page.locator('#c').evaluate(canvas => canvas.toDataURL());

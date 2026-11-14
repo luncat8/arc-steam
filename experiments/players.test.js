@@ -1082,3 +1082,124 @@ test('a bot rival spends on its own machine before page-only research', () => {
 	assert.equal(equipment.isInstalled('grader', rival.id), false, 'no rival buys the rig-only blade');
 	near(rival.soldValue, rival.money + rival.spent);
 });
+
+// The rig bot's rocket duty: a third service trip after selling and recharging.
+const rockets = require('../js/rockets.js');
+
+function rocketWorld() {
+	const world = fresh();
+	rockets.reset(1);
+	rockets.setAutoBuy(false);
+	rockets.fill(world);
+	world.initialEnergy = physics.totalEnergy(world);
+	return world;
+}
+
+function stepBot(world) {
+	autopilot.update(world, c.step);
+	players.update(world, c.step);
+	physics.step(world, c.step);
+}
+
+test('the rig bot fires its own rack at the richest seam and catches the burst', () => {
+	const world = rocketWorld();
+	players.setBot(0, true);
+	const stock = rockets.state.stock;
+	const caught = ceiling.state.caughtCells;
+	let mark = NaN;
+	let fired = false;
+	let caughtDuringHold = 0;
+	for (let i = 0; i < 240 * 30 && !fired; i++) {
+		stepBot(world);
+		if (players.state.rocketing && !Number.isFinite(mark)) mark = players.state.rocketMark;
+		if (players.state.catching) caughtDuringHold = ceiling.state.caughtCells - caught;
+		fired = rockets.state.fired > 0;
+	}
+	assert.equal(fired, true, 'the bot fires without being told to');
+	assert.equal(rockets.state.stock, stock - 1, 'the shot comes from the rig\'s own rack');
+	assert.ok(Number.isFinite(mark), 'the trip chose a seam mark');
+	// The mark is the platform centre that puts the tube under the seam.
+	near(world.platform.x, mark, 0.2, 'the platform holds the seam mark');
+	// The hold keeps the collector beneath the burst while the early yield falls.
+	for (let i = 0; i < 240 * 6 && players.state.rocketing; i++) {
+		stepBot(world);
+		caughtDuringHold = Math.max(caughtDuringHold, ceiling.state.caughtCells - caught);
+	}
+	assert.ok(caughtDuringHold > 0, 'the burst\'s early yield lands in the collector');
+	assert.equal(players.state.rocketing, false, 'the trip ends after the fall window');
+	assert.equal(autopilot.suspended('move'), false, 'travel returns to the intercept');
+	near(physics.totalEnergy(world), world.initialEnergy, 1e-6, 'a rocket carries its own charge');
+});
+
+test('a full hopper sells before the rack is worked', () => {
+	const world = rocketWorld();
+	fillCargo(world, 100);
+	world.initialEnergy = physics.totalEnergy(world);
+	players.setBot(0, true);
+	for (let i = 0; i < 240 * 12 && ceiling.state.cargoCells > 0; i++) {
+		stepBot(world);
+		assert.equal(players.state.rocketing, false, 'no rocket trip while the hopper is full');
+		assert.equal(rockets.state.fired, 0, 'the rack waits for the sale');
+	}
+	assert.equal(ceiling.state.cargoCells, 0);
+	for (let i = 0; i < 10; i++) stepBot(world);
+	assert.equal(players.state.selling, false);
+});
+
+test('a short reserve charges before the rack is worked', () => {
+	const world = rocketWorld();
+	world.battery = c.battery * 0.1;
+	world.initialEnergy = physics.totalEnergy(world);
+	players.setBot(0, true);
+	for (let i = 0; i < 240 * 20 && !players.state.recharging; i++) {
+		stepBot(world);
+		assert.equal(players.state.rocketing, false, 'no rocket trip on a short reserve');
+	}
+	assert.equal(players.state.recharging, true);
+	assert.equal(rockets.state.fired, 0);
+	for (let i = 0; i < 240 * 30 && players.state.recharging; i++) stepBot(world);
+	assert.ok(world.battery >= c.battery * 0.95);
+});
+
+test('turning the bot off mid-trip stands the rocket duty down', () => {
+	const world = rocketWorld();
+	players.setBot(0, true);
+	for (let i = 0; i < 240 * 20 && !players.state.rocketing; i++) stepBot(world);
+	assert.equal(players.state.rocketing, true);
+	players.setBot(0, false);
+	assert.equal(players.state.rocketing, false);
+	assert.equal(players.state.catching, false);
+	for (let i = 0; i < 240 * 5; i++) stepBot(world);
+	assert.equal(players.state.rocketing, false, 'a manual rig never starts a trip');
+});
+
+test('a hand on the travel controls stands the rocket trip down', () => {
+	const world = rocketWorld();
+	players.setBot(0, true);
+	for (let i = 0; i < 240 * 20 && !players.state.rocketing; i++) stepBot(world);
+	assert.equal(players.state.rocketing, true);
+	// What a held travel key does: direction, no target, and a hand hold.
+	world.direction = 1;
+	world.target = NaN;
+	autopilot.hold('move', true);
+	stepBot(world);
+	assert.equal(players.state.rocketing, false, 'the hand outranks the trip');
+	assert.equal(world.direction, 1, 'the hand\'s command is not overwritten');
+	// Empty the rack so release returns the intercept rather than a fresh trip.
+	rockets.reset(1);
+	autopilot.hold('move', false);
+	for (let i = 0; i < 240 * 3; i++) stepBot(world);
+	assert.equal(autopilot.suspended('move'), false, 'releasing the keys returns the intercept');
+});
+
+test('an empty rack leaves the bot on the ball', () => {
+	const world = fresh();
+	rockets.reset(1);
+	rockets.setAutoBuy(false);
+	world.initialEnergy = physics.totalEnergy(world);
+	players.setBot(0, true);
+	for (let i = 0; i < 240 * 10; i++) stepBot(world);
+	assert.equal(players.state.rocketing, false);
+	assert.equal(rockets.state.fired, 0);
+	assert.equal(autopilot.suspended('move'), false, 'the intercept keeps the ball');
+});

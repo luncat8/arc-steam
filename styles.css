@@ -61,25 +61,27 @@ main { padding: 8px; display: grid; gap: 8px; }
 .telemetry article[data-warning="EMPTY"] strong, .telemetry article[data-warning="CUTOFF"] strong { color: var(--danger); }
 .telemetry article[data-warning="EMPTY"]::after, .telemetry article[data-warning="CUTOFF"]::after { background: var(--danger); color: #1b0f0c; }
 
-/* Players: one compact line per platform. The row is the switch; the BOT
-   checkbox is the only nested control and keeps its own click target. */
-.scoreboard { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 6px 14px; }
+/* Players: one compact line per platform, stacked in the left column above
+   cargo. The row is the switch; the BOT checkbox is the only nested control
+   and keeps its own click target. */
+.scoreboard { display: flex; flex-direction: column; gap: 6px; padding: 10px 14px; }
+.scoreboard-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .scoreboard .eyebrow { margin: 0; }
-.player-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.player-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .player-row { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--line); border-radius: 5px; background: #0b1316; overflow: hidden; }
 .player-row[data-active="true"] { border-color: var(--accent); background: #14201a; box-shadow: inset 0 0 0 1px #b9ed9133; }
-.player-select { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border: 0; border-radius: 0; background: transparent; text-align: left; }
+.player-select { display: flex; flex: 1 1 auto; align-items: center; gap: 8px; padding: 5px 10px; border: 0; border-radius: 0; background: transparent; text-align: left; min-width: 0; }
 .player-select:hover:not(:disabled) { border-color: transparent; background: #18262a; }
 .player-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .player-row[data-active="true"] .player-dot { box-shadow: 0 0 0 3px #b9ed9133; }
 .player-name { font: 10px ui-monospace, monospace; letter-spacing: 1px; color: #a7b8ba; }
 .player-row[data-active="true"] .player-name { color: #dce6e4; }
-.player-money { font: 11px ui-monospace, monospace; color: var(--accent); white-space: nowrap; }
+.player-money { margin-left: auto; font: 11px ui-monospace, monospace; color: var(--accent); white-space: nowrap; }
 .player-bot { display: flex; align-items: center; gap: 5px; padding: 0 9px; border-left: 1px solid var(--line); font: 9px ui-monospace, monospace; letter-spacing: 1px; color: #94a8ac; cursor: pointer; user-select: none; }
 .player-bot:hover { color: #dce6e4; }
 .player-bot:has(:checked) { color: var(--amber); background: #241d12; }
 .player-bot input { margin: 0; accent-color: var(--amber); }
-.scoreboard button.help-mark { margin-left: auto; }
+
 
 /* Status bar: one fixed strip at the foot of the viewport while the page
    scrolls. The facts on the left stay true all session; the messages on the
@@ -104,8 +106,8 @@ main { padding: 8px; display: grid; gap: 8px; }
 
 /* Cap the chamber, not the page: surplus desktop width belongs to cargo.
    126.54vh is the 1.71 scene ratio at the side panels' 74vh height limit. */
-.workspace { display: grid; gap: 12px; grid-template-columns: minmax(260px, 1fr) minmax(0, min(1282px, calc(126.54vh + 2px))) 250px; grid-template-areas: "cargo mine controls"; }
-.cargo-panel { grid-area: cargo; }
+.workspace { display: grid; gap: 12px; grid-template-columns: minmax(260px, 1fr) minmax(0, min(1282px, calc(126.54vh + 2px))) 250px; grid-template-areas: "side mine controls"; }
+.side-column { grid-area: side; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .mine-panel { grid-area: mine; align-self: start; display: flex; flex-direction: column; }
 .controls-panel { grid-area: controls; }
 /* The ratio matches the chamber's 27.3 x 15.7 m scene plus the renderer's
@@ -347,12 +349,14 @@ button.help-mark:hover, button.help-mark[aria-expanded="true"] { color: #10191d;
 
 /* Side panels scroll independently and do not dictate the canvas height. */
 @media (min-width: 761px) {
-	.controls-panel, .cargo-panel { max-height: 74vh; overflow-y: auto; }
+	.controls-panel, .side-column { max-height: 74vh; }
+	.controls-panel { overflow-y: auto; }
+	.cargo-panel { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 	.controls-panel .panel-title, .cargo-panel .panel-title { position: sticky; top: 0; z-index: 1; }
 }
 @media (max-width: 1279px) {
 	.telemetry { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-	.workspace { grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.8fr); grid-template-areas: "cargo mine" "controls controls"; }
+	.workspace { grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.8fr); grid-template-areas: "side mine" "controls controls"; }
 }
 @media (min-width: 761px) and (max-width: 1100px) {
 	.tree-root-bays { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -371,7 +375,7 @@ button.help-mark:hover, button.help-mark[aria-expanded="true"] { color: #10191d;
 	.system-row select { margin-left: 4px; max-width: 132px; }
 	.telemetry { grid-template-columns: 1fr 1fr; }
 	.telemetry strong { font-size: 13px; }
-	.workspace { grid-template-columns: minmax(0, 1fr); grid-template-areas: "mine" "controls" "cargo"; }
+	.workspace { grid-template-columns: minmax(0, 1fr); grid-template-areas: "mine" "controls" "side"; }
 	.canvas-wrap { aspect-ratio: auto; height: 320px; }
 	.view-switch { margin-left: 0; }
 	.mine-footer { gap: 8px 12px; }

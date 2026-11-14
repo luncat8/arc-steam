@@ -2006,6 +2006,41 @@ test('communism hands rockets out, and test mode loads a full rack', () => {
 	assert.equal(rack.stock, 0);
 });
 
+test('the rig bot works its rack and the status line names the trip', () => {
+	for (const channel of ['move', 'smart', 'drive', 'angle']) autopilot.set(channel, false);
+	dom.element('reset').dispatch('click');
+	advance(2);
+	const toggle = dom.element('test-mode');
+	toggle.checked = true;
+	toggle.dispatch('change');
+	assert.equal(rockets.state.stock, rockets.state.rackSize);
+	const status = dom.element('autopilot-status');
+	const botBox = dom.element('player-list').children[0].children[1].children[0];
+	botBox.checked = true;
+	botBox.dispatch('change');
+	assert.equal(players.state.rig.bot, true);
+	let sawTravel = false;
+	let sawCatch = false;
+	// The readout refreshes on its own clock, so the text is matched whenever
+	// it names the phase the trip is actually in.
+	for (let i = 0; i < 60 * 25 && !(sawTravel && sawCatch); i++) {
+		advance(1);
+		if (!players.state.rocketing) continue;
+		if (players.state.catching && /Rig · rocket fired · holding under the seam/.test(status.textContent)) sawCatch = true;
+		if (!players.state.catching && /Rig · rocket trip · richest seam/.test(status.textContent)) sawTravel = true;
+	}
+	assert.equal(sawTravel, true, 'the status names the rocket trip');
+	assert.equal(sawCatch, true, 'the status names the catch hold');
+	assert.ok(rockets.state.fired > 0, 'the bot fired its own rack');
+	botBox.checked = false;
+	botBox.dispatch('change');
+	assert.equal(players.state.rocketing, false, 'the BOT switch stands the trip down');
+	toggle.checked = false;
+	toggle.dispatch('change');
+	dom.element('reset').dispatch('click');
+	advance(2);
+});
+
 test('the rocket help names the rules the rack actually runs', () => {
 	const rack = rockets.state;
 	const topic = help.find('rockets');

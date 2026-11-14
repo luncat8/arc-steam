@@ -42,6 +42,17 @@
 	// Hysteresis keeps a low-reserve trip from chattering at the pad threshold.
 	const rechargeStart = 0.2;
 	const rechargeStop = 0.95;
+	// The rocket trip is the lowest-priority service: a full hopper sells and a
+	// short reserve charges before the rack is worked. One rocket per trip, then
+	// a cooldown so the intercept gets the platform back between shots.
+	let rocketing = false;
+	let rocketCatching = false;
+	let rocketMark = NaN;
+	let rocketTimer = 0;
+	let rocketWait = 0;
+	const rocketCatchSeconds = 5;
+	const rocketCooldown = 8;
+	const rocketApproachSlack = 0.15;
 	let ballMode = 'shared1';
 	// Half the flat deck less a margin: a landing inside this of the platform
 	// centre arrives on the deck, and inside it the mark is left alone instead
@@ -356,6 +367,8 @@
 		active = 0;
 		selling = false;
 		recharging = false;
+		clearRocketTrip();
+		rocketWait = 0;
 		syncRamps();
 		applyBalls(world);
 		return players;
@@ -477,6 +490,7 @@
 			if (!value) {
 				selling = false;
 				recharging = false;
+				clearRocketTrip();
 				autopilot.reset();
 			}
 			return value;
@@ -496,7 +510,7 @@
 		if (!rig || !root.SteamAutopilot) return rig ? rig.bot : false;
 		const autopilot = root.SteamAutopilot;
 		rig.bot = autopilot.state.move && autopilot.state.drive && autopilot.state.angle;
-		if (!rig.bot) { selling = false; recharging = false; }
+		if (!rig.bot) { selling = false; recharging = false; clearRocketTrip(); }
 		return rig.bot;
 	}
 
@@ -1022,24 +1036,114 @@
 		slewTails(player, left, right, dt);
 	}
 
-	// The full rig bot sells a full hopper, then refills a short reserve at the
-	// centre pad. Both trips own travel through the manual override; the ball
-	// keepers stay live. An ordinary hand command prevents starting either trip.
+	// The richest free-face seam the collector can catch from: the live value of
+	// the exposed rock summed over the collector's own width, so the mark is a
+	// place the bin catches from rather than one rich cell a burst would miss.
+	// Returns the platform-centre mark that puts the launch tube under the seam,
+	// or NaN when no rock left is worth a rocket.
+	function richestSeam() {
+		const rock = root.SteamCeiling.state;
+		const physics = root.SteamPhysics;
+		const config = physics.config;
+		const columns = rock.columns;
+		const cell = rock.cell;
+		const halfCols = Math.max(1, Math.round(config.platformWidth * config.collectorFraction / cell * 0.5));
+		const tubeOffset = config.platformWidth * (config.collectorFraction - 1) * 0.5;
+		const min = physics.platformMin();
+		const max = physics.platformMax();
+		let best = 0;
+		let bestMark = NaN;
+		for (let c = 0; c < columns; c++) {
+			const mark = (c + 0.5) * cell - tubeOffset;
+			if (mark < min || mark > max) continue;
+			let value = 0;
+			for (let k = c - halfCols; k <= c + halfCols; k++) {
+				if (k < 0 || k >= columns) continue;
+				const row = rock.firstRow[k];
+				if (row >= rock.rows) continue;
+				value += rock.prices[row * columns + k];
+			}
+			if (value > best) { best = value; bestMark = mark; }
+		}
+		return bestMark;
+	}
+
+	function rocketReady() {
+		const rockets = root.SteamRockets;
+		return Boolean(rockets && rockets.state.stock > 0 && rockets.canFire() && rocketWait <= 0);
+	}
+
+	function startRocketTrip() {
+		const mark = richestSeam();
+		if (!Number.isFinite(mark)) return false;
+		rocketing = true;
+		rocketCatching = false;
+		rocketMark = mark;
+		return true;
+	}
+
+	function clearRocketTrip() {
+		rocketing = false;
+		rocketCatching = false;
+		rocketMark = NaN;
+		rocketTimer = 0;
+	}
+
+	// Travel puts the tube under the seam; the burst then falls into the bin
+	// while the platform holds station for the early-fall window. Only travel is
+	// borrowed — the drive and tilt keepers stay live, so the ball is still played.
+	function stepRocketTrip(world, dt) {
+		const autopilot = root.SteamAutopilot;
+		const rockets = root.SteamRockets;
+		autopilot.override('move');
+		world.direction = 0;
+		world.target = rocketMark;
+		if (!rocketCatching) {
+			// A hand fire can empty the rack mid-travel; there is nothing to catch.
+			if (rockets.state.stock <= 0) { endRocketTrip(world); return; }
+			if (Math.abs(world.platform.x - rocketMark) > rocketApproachSlack) return;
+			if (!rockets.fire(world)) return;
+			rocketCatching = true;
+			rocketTimer = rocketCatchSeconds;
+			return;
+		}
+		rocketTimer -= dt;
+		if (rocketTimer > 0) return;
+		endRocketTrip(world);
+		rocketWait = rocketCooldown;
+	}
+
+	function endRocketTrip(world) {
+		clearRocketTrip();
+		world.target = NaN;
+		world.direction = 0;
+		root.SteamAutopilot.resume('move');
+	}
+
+	// The rig bot sells a full hopper, refills a short reserve at the centre pad,
+	// then works its rocket rack at the richest seam. All three trips own travel
+	// through the manual override; the ball keepers stay live. An ordinary hand
+	// command prevents starting a trip.
 	function stepRigBot(world, dt) {
 		const rig = players[0];
-		if (!world || !rig || !rig.bot) { selling = recharging = false; return; }
+		if (!world || !rig || !rig.bot) { selling = recharging = false; clearRocketTrip(); return; }
 		const ceiling = root.SteamCeiling;
 		const autopilot = root.SteamAutopilot;
 		const physics = root.SteamPhysics;
 		if (!ceiling || !autopilot || !physics) return;
-		if (!autopilot.state.move || !autopilot.state.drive) { selling = recharging = false; return; }
+		if (!autopilot.state.move || !autopilot.state.drive) { selling = recharging = false; clearRocketTrip(); return; }
+		if (rocketWait > 0) rocketWait = Math.max(0, rocketWait - dt);
 		const full = ceiling.state.cargoCells >= ceiling.state.storageLimit;
-		if (full && !selling) { recharging = false; selling = true; }
-		if (!selling && !recharging) {
+		// A full hopper sells and a short reserve charges before the rack is worked.
+		if (full && !selling) { recharging = false; clearRocketTrip(); selling = true; }
+		if (!selling && !recharging && world.battery < physics.config.battery * rechargeStart) {
+			clearRocketTrip();
+			recharging = true;
+		}
+		if (!selling && !recharging && !rocketing) {
 			if (autopilot.suspended('move')) return;
 			if (full) selling = true;
-			else if (world.battery < physics.config.battery * rechargeStart) recharging = true;
-			else return;
+			else if (!rocketReady() || !startRocketTrip()) return;
 		}
 		if (selling && !full) {
 			selling = false;
@@ -1053,6 +1157,10 @@
 			autopilot.resume('move');
 			return;
 		}
+		// A hand on the travel controls stands the rocket trip down; the hold
+		// keeps the override, so releasing the keys returns the intercept.
+		if (rocketing && autopilot.handHeld('move')) { clearRocketTrip(); return; }
+		if (rocketing) { stepRocketTrip(world, dt); return; }
 		autopilot.override('move');
 		world.direction = 0;
 		world.target = selling ? sellingMark(world.platform.x) : physics.config.width * 0.5;
@@ -1235,6 +1343,9 @@
 		get rig() { return players[0]; },
 		get selling() { return selling; },
 		get recharging() { return recharging; },
+		get rocketing() { return rocketing; },
+		get catching() { return rocketCatching; },
+		get rocketMark() { return rocketMark; },
 		get rampsEnabled() { return rampsEnabled; },
 		get force() { return players[active] ? forceOf(players[active]) : 0; },
 		get ballMode() { return ballMode; },

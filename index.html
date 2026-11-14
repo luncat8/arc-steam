@@ -26,11 +26,6 @@
 			</div>
 		</header>
 		<section class="telemetry panel" aria-label="System telemetry"><article id="reserve-telemetry"><span>ENERGY RESERVE</span><strong id="battery">—</strong><small id="reserve-note">Centre pad refills free at the source’s reload rate · emergency import in the market</small></article><article id="cargo-telemetry"><button id="market-open" class="telemetry-action" type="button" aria-controls="market-drawer" aria-expanded="false" aria-label="Open Market and Ledger"><span>CARGO STORAGE</span><strong id="cargo">—</strong><small id="cargo-note">100 cells maximum · cargo adds mass · open market</small></button></article><article><span>PLATFORM MASS</span><strong id="platform-mass">—</strong><small>Dry chassis + cargo + held ball</small></article><article><button id="science-open" class="telemetry-action" type="button" aria-controls="science-drawer" aria-expanded="false" aria-label="Open Science and Shop"><span>FUNDS / SOLD</span><strong id="funds">—</strong><small id="funds-note">Automatic sale · open science and shop</small></button></article><article><span>BALL ENERGY</span><strong id="ball-energy">—</strong><small>Kinetic + gravitational</small></article><article><span>STORED THERMAL ENERGY</span><strong id="heat">—</strong><small>Cooling exported <span id="cooled">—</span></small></article><article id="thermal-telemetry"><span>MACHINERY TEMPERATURE</span><strong id="temperature">—</strong><small id="thermal-status">Drive output 100% · cooling normally</small></article><article><span>ENERGY BALANCE ERROR</span><strong id="error">—</strong><small>Includes heat, cooling, rock & cargo</small></article></section>
-		<section class="scoreboard panel" aria-label="Players">
-			<span class="eyebrow">PLAYERS</span>
-			<ol id="player-list" class="player-list" aria-label="Players at this mine"></ol>
-			<button id="help-players" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: players and competitors">?</button>
-		</section>
 		<section class="workspace">
 			<section class="mine-panel panel" aria-label="Chamber view" data-topic="chamber">
 				<div class="canvas-wrap"><canvas id="c" tabindex="0" aria-label="Side view of a bouncing ball and movable mining platform"></canvas>
@@ -73,14 +68,20 @@
 					</div>
 				</div>
 			</aside>
-			<article class="cargo-panel panel" data-topic="cargo">
-				<div class="panel-title"><span>CARGO / STORAGE</span><button id="help-cargo" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: cargo and storage">?</button></div>
-				<div class="panel-body">
-					<div class="summary"><div><span>Cargo</span><strong id="cargo-mass">—</strong><small id="cargo-value">—</small></div></div>
-					<dl class="mass-readouts"><div><dt>Extracted</dt><dd id="extracted">—</dd></div><div><dt>Falling</dt><dd id="falling">—</dd></div><div><dt>Caught · lifetime</dt><dd id="caught">—</dd></div><div><dt>Lost</dt><dd id="lost">—</dd></div></dl>
-					<div class="table-wrap"><table><caption>Material quantities in kg; prices in credits per cell (0.6 kg)</caption><thead><tr><th>Material</th><th>cr/cell</th><th>Cargo</th><th>Sold</th></tr></thead><tbody id="inventory-rows"></tbody></table></div>
-				</div>
-			</article>
+			<div class="side-column">
+				<section class="scoreboard panel" aria-label="Players" data-topic="players">
+					<div class="scoreboard-head"><span class="eyebrow">PLAYERS</span><button id="help-players" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: players and competitors">?</button></div>
+					<ol id="player-list" class="player-list" aria-label="Players at this mine"></ol>
+				</section>
+				<article class="cargo-panel panel" data-topic="cargo">
+					<div class="panel-title"><span>CARGO / STORAGE</span><button id="help-cargo" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: cargo and storage">?</button></div>
+					<div class="panel-body">
+						<div class="summary"><div><span>Cargo</span><strong id="cargo-mass">—</strong><small id="cargo-value">—</small></div></div>
+						<dl class="mass-readouts"><div><dt>Extracted</dt><dd id="extracted">—</dd></div><div><dt>Falling</dt><dd id="falling">—</dd></div><div><dt>Caught · lifetime</dt><dd id="caught">—</dd></div><div><dt>Lost</dt><dd id="lost">—</dd></div></dl>
+						<div class="table-wrap"><table><caption>Material quantities in kg; prices in credits per cell (0.6 kg)</caption><thead><tr><th>Material</th><th>cr/cell</th><th>Cargo</th><th>Sold</th></tr></thead><tbody id="inventory-rows"></tbody></table></div>
+					</div>
+				</article>
+			</div>
 		</section>
 
 		<section class="fall-test panel" aria-labelledby="fall-test-title" data-topic="chamber">

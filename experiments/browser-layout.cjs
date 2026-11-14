@@ -35,6 +35,7 @@ async function main() {
 				const cargo = box('.cargo-panel');
 				const canvas = box('#c');
 				const controls = box('.controls-panel');
+				const players = box('.scoreboard');
 				const table = document.querySelector('.cargo-panel .table-wrap');
 				return {
 					pageWidth: document.documentElement.scrollWidth,
@@ -43,11 +44,15 @@ async function main() {
 					canvasWidth: canvas.width, canvasHeight: canvas.height,
 					tableFits: table.scrollWidth <= table.clientWidth + 1,
 					desktop: cargo.right < canvas.left && canvas.right < controls.left,
+					playersAboveCargo: players.bottom <= cargo.top + 1 && Math.abs(players.left - cargo.left) < 1,
+					playersLeft: players.right < canvas.left,
 					stacked: canvas.bottom < controls.top && controls.bottom < cargo.top
 				};
 			});
 			assert.ok(layout.pageWidth <= width, `${width}: no page-level horizontal scroll`);
 			assert.equal(layout.mainWidth, width, `${width}: the page uses the full viewport`);
+			assert.ok(layout.playersAboveCargo, `${width}: players sit directly above cargo`);
+			if (width >= 761) assert.ok(layout.playersLeft, `${width}: players share the left column, not the full width`);
 			if (width >= 1280) {
 				assert.ok(layout.desktop, `${width}: cargo, chamber, controls remain in order`);
 				assert.ok(layout.canvasWidth <= 1280.1, `${width}: canvas width is capped`);
