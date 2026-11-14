@@ -14,6 +14,7 @@ const equipment = require('../js/equipment.js');
 const research = require('../js/research.js');
 const physics = require('../js/physics.js');
 const rockets = require('../js/rockets.js');
+const sandblaster = require('../js/sandblaster.js');
 const harness = require('./harness.cjs');
 require('../js/prediction.js');
 const help = require('../js/help.js');
@@ -2008,6 +2009,158 @@ test('the rocket rack buys at a wall, fires on R, and reads its own state', () =
 	assert.equal(rack.autoBuy, true);
 	auto.checked = false;
 	auto.dispatch('change');
+});
+
+test('the sandblaster buys sand at a wall, blasts on F, and reads its own state', () => {
+	for (const channel of ['move', 'smart', 'drive', 'angle']) autopilot.set(channel, false);
+	dom.element('reset').dispatch('click');
+	advance(2);
+	const sand = sandblaster.state;
+	const fire = dom.element('sandblast-fire');
+	const buy = dom.element('sandblast-buy');
+	const auto = dom.element('sandblast-auto');
+	const status = dom.element('sandblast-status');
+	function parkAt(x) {
+		world.platform.x = x; world.platform.vx = 0;
+		world.direction = 0; world.target = NaN;
+		harness.sync(world);
+		advance(8);
+	}
+	assert.equal(fire.getAttribute('aria-keyshortcuts'), 'F');
+	assert.equal(fire.firstChild.textContent, 'Blast 0 / ' + sand.capacity + ' ');
+	assert.equal(fire.disabled, true, 'no sandblaster is installed by default');
+	assert.equal(buy.textContent, 'Buy · ' + sand.price + ' cr');
+	assert.equal(buy.disabled, true);
+	assert.equal(status.hidden, false);
+	assert.match(status.textContent, /No sandblaster installed/);
+	assert.equal(equipment.isInstalled('sandblaster', 'rig'), false);
+	assert.equal(auto.checked, false);
+
+	study('impact');
+	fund(equipment.find('sandblaster').cost);
+	buttonOf(gearRow('sandblaster')).dispatch('click');
+	advance(2);
+	assert.equal(equipment.isInstalled('sandblaster', 'rig'), true, 'Impact forging unlocks the purchasable nozzle');
+	assert.equal(fire.disabled, true, 'an installed but empty magazine cannot blast');
+	assert.match(status.textContent, /Magazine empty/);
+
+	fund(sand.price * 4 + 100);
+	parkAt(12);
+	assert.equal(buy.disabled, true, 'sand is not loaded in the open');
+	buy.dispatch('click');
+	assert.equal(sand.charges, 0);
+
+	parkAt(physics.platformMin());
+	assert.equal(buy.disabled, false);
+	const funds = ceiling.state.funds;
+	buy.dispatch('click');
+	assert.equal(sand.charges, 1);
+	harness.near(ceiling.state.funds, funds - sand.price, 1e-9);
+	assert.equal(fire.firstChild.textContent, 'Blast 1 / ' + sand.capacity + ' ');
+	assert.equal(fire.disabled, false);
+	assert.match(dom.element('ledger').children[0].textContent, /Bought 1 charge · −3 cr/);
+
+	// The standing order tops this visit up to its cap of ten charges.
+	auto.checked = true;
+	auto.dispatch('change');
+	assert.equal(sand.autoBuy, true);
+	advance(4);
+	assert.equal(sand.charges, 1 + sand.visitLimit);
+	advance(30);
+	assert.equal(sand.charges, 1 + sand.visitLimit, 'one visit, one batch');
+	auto.checked = false;
+	auto.dispatch('change');
+	assert.equal(sand.autoBuy, false);
+
+	// F throws one grain per press; the stream is rate-limited while held.
+	// Park off the centre charge pad so the reserve only moves by the throw.
+	parkAt(8);
+	const battery = world.battery;
+	dom.key('KeyF');
+	advance(1);
+	dom.keyUp('KeyF');
+	assert.equal(sand.fired, 1, 'F throws one grain');
+	assert.equal(sand.charges, sand.visitLimit, 'the grain spends a charge');
+	harness.near(world.battery, battery - sand.shotEnergy, 1e-9, 'the throw draws the reserve');
+	assert.equal(fire.disabled, true, 'the nozzle cools for a tenth of a second');
+	advance(Math.ceil(sand.rate * 1.5 * 60));
+	assert.equal(fire.disabled, false, 'the rate lets the next grain go');
+	dom.key('KeyF');
+	advance(12);
+	dom.keyUp('KeyF');
+	assert.ok(sand.fired >= 3, sand.fired + ' grains thrown while held');
+	// The chamber draws the flight, and the rig's energy ledger stays closed.
+	advance(300);
+	assert.ok(Math.abs(parseFloat(dom.element('error').textContent)) < 1e-4, dom.element('error').textContent);
+	const rigCharges = sand.charges;
+
+	// The rival starts without a nozzle, then researches and buys one from its own purse.
+	const list = dom.element('player-list');
+	const rival = players.state.rivals[0];
+	const rivalSand = sandblaster.stateFor(rival.id);
+	const firedBefore = sand.fired;
+	list.children[1].children[0].dispatch('click');
+	assert.equal(fire.disabled, true);
+	assert.equal(buy.disabled, true);
+	assert.match(status.textContent, /No sandblaster installed/);
+	dom.key('KeyF');
+	fire.dispatch('click');
+	buy.dispatch('click');
+	assert.equal(sand.fired, firedBefore, 'a rival without a nozzle throws nothing');
+
+	rival.money = 1200;
+	assert.equal(research.research('materials', world, rival.id), true);
+	assert.equal(research.research('impact', world, rival.id), true);
+	advance(8);
+	const rivalBot = list.children[1].children[1].children[0];
+	rivalBot.checked = false;
+	rivalBot.dispatch('change');
+	buttonOf(gearRow('sandblaster')).dispatch('click');
+	assert.equal(equipment.isInstalled('sandblaster', rival.id), true);
+	assert.equal(rival.money, 180, 'the nozzle debits the rival purse after its own research');
+	rival.x = physics.platformMax(); rival.previousX = rival.x; rival.vx = 0;
+	harness.sync(world);
+	advance(8);
+	assert.equal(buy.disabled, false, 'the rival can load its magazine at its own wall');
+	buy.dispatch('click');
+	assert.equal(rivalSand.charges, 1);
+	assert.equal(sand.charges, rigCharges, 'the rival purchase leaves the rig magazine alone');
+	assert.equal(rival.money, 177);
+	assert.equal(fire.disabled, false);
+	const rigBattery = world.battery;
+	dom.key('KeyF');
+	advance(1);
+	dom.keyUp('KeyF');
+	assert.equal(rivalSand.fired, 1, 'F fires from the selected rival');
+	assert.equal(rivalSand.charges, 0);
+	assert.equal(sand.fired, firedBefore, 'a rival shot does not change rig shot counts');
+	harness.near(world.battery, rigBattery, 1e-9, 'a rival throw books imported work, not the rig reserve');
+	list.children[0].children[0].dispatch('click');
+	assert.equal(fire.disabled, false);
+
+	// A new run empties the magazine; the standing order is the player's and stays.
+	auto.checked = true;
+	auto.dispatch('change');
+	dom.element('reset').dispatch('click');
+	advance(2);
+	assert.equal(sand.charges, 0);
+	assert.equal(auto.checked, true);
+	assert.equal(sand.autoBuy, true);
+	auto.checked = false;
+	auto.dispatch('change');
+});
+
+test('the sandblaster help names the rules the nozzle actually runs', () => {
+	const sand = sandblaster.state;
+	const topic = help.find('sandblaster');
+	const text = topic.text.join(' ');
+	assert.match(text, new RegExp('magazine holds ' + sand.capacity + '\\b'));
+	assert.match(text, new RegExp('up to ' + sand.visitLimit + '\\b'));
+	assert.match(text, /one-cell radius/);
+	assert.match(text, /one grain never brings a cell down/);
+	assert.equal(sand.shotEnergy, 13.5);
+	assert.match(text, /fixed share of the reserve/);
+	assert.ok(help.find('keys').keys.some(row => row[0] === 'F'), 'the key list names F');
 });
 
 test('communism hands rockets out, and test mode loads a full rack', () => {

@@ -821,6 +821,15 @@
 		return world;
 	}
 
+	// The collector's centre in world coordinates: where a tube or nozzle
+	// fitted in the collector stands. Shared by the rocket rack and the
+	// sandblaster so both launch from the same geometry.
+	function collectorX(world, owner) {
+		const body = machineBody(machineById(world, ownerId(owner)));
+		const offset = config.platformWidth * (config.collectorFraction - 1) * 0.5;
+		return Math.max(0, Math.min(config.width, body.x + offset));
+	}
+
 	// Every platform of the chamber, rig first. Preallocated: the ball solve
 	// walks this list on every step and must not allocate.
 	const machineScratch = [];
@@ -951,6 +960,7 @@
 		if (root.SteamEquipment) root.SteamEquipment.reset();
 		if (root.SteamResearch) root.SteamResearch.reset();
 		if (root.SteamRockets) root.SteamRockets.reset();
+		if (root.SteamSandblaster) root.SteamSandblaster.reset();
 		const world = {
 			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, chargedEnergy: 0, crankEnergy: 0, terrainWork: 0, platformWork: 0,
 			initialEnergy: 0,
@@ -1772,6 +1782,7 @@
 		}
 		// After the sale, so a wall visit can spend what it just earned.
 		if (root.SteamRockets) root.SteamRockets.step(world, dt);
+		if (root.SteamSandblaster) root.SteamSandblaster.step(world, dt);
 		cool(world, dt);
 		world.time += dt;
 	}
@@ -1787,7 +1798,7 @@
 		settlePose, setPistonAngle, pistonContactTime, solvePiston, solveFace, reflectOnDeck, contactResult, deckBounce,
 		ballRadiusAt, placementRadius, setBallPerspective,
 		setBallMode, mayPush, isRigBall, ballLandingTime, focusBall, heldBall, heldBallMass,
-		machineBody, machineById, machinesOf, machineDrive, machinePistonAngle, heldBallOf, focusBallOf
+		machineBody, machineById, collectorX, machinesOf, machineDrive, machinePistonAngle, heldBallOf, focusBallOf
 	};
 	root.SteamPhysics = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;

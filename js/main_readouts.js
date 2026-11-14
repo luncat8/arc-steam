@@ -372,6 +372,7 @@ function readout() {
 	const canLaunch = physics.canLaunch(world, watched);
 	setDisabled(ui.launch, !canLaunch);
 	rocketReadout();
+	sandblastReadout();
 	statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch, driveOn);
 }
 
@@ -397,6 +398,33 @@ function rocketReadout() {
 		: '';
 	setHidden(ui['rocket-status'], !reason);
 	if (reason) setText(ui['rocket-status'], reason);
+}
+
+// The nozzle: what a press would throw now, and one line only while there is
+// a reason a press does nothing.
+function sandblastReadout() {
+	const owner = activePlayerId();
+	const sand = SteamSandblaster.stateFor(owner);
+	const installed = SteamEquipment.isInstalled('sandblaster', owner);
+	const atWall = physics.atSellWall(world, owner);
+	const full = sand.charges >= sand.capacity;
+	const unit = sand.unitPrice;
+	const short = unit > 0 && playerApi.money(playerApi.state.active) < unit;
+	setText(ui['sandblast-fire'].firstChild, 'Blast ' + sand.charges + ' / ' + sand.capacity + ' ');
+	setDisabled(ui['sandblast-fire'], !installed || !SteamSandblaster.canFire(world, owner));
+	setText(ui['sandblast-buy'], unit > 0 ? 'Buy · ' + unit + ' cr' : 'Buy · free');
+	setDisabled(ui['sandblast-buy'], !installed || !atWall || full || short);
+	setChecked(ui['sandblast-auto'], sand.autoBuy);
+	const reason = !installed ? 'No sandblaster installed · fit one in Science + Shop'
+		: sand.charges <= 0 ? 'Magazine empty · buy sand at a SELL wall'
+		: owner !== 'rig' ? ''
+		: world.battery < sand.shotEnergy ? 'Reserve too low to throw a grain'
+		: !atWall ? ''
+		: full ? 'Magazine full'
+		: short ? 'Not enough funds for sand'
+		: '';
+	setHidden(ui['sandblast-status'], !reason);
+	if (reason) setText(ui['sandblast-status'], reason);
 }
 
 // The platform rests on the terrain and only leaves it where the ground drops

@@ -1145,7 +1145,7 @@ test('a rival bot works its own installed rack and leaves the rig rack untouched
 	let mark = NaN;
 	for (let i = 0; i < 240 * 30 && rivalRack.fired === 0; i++) {
 		stepBot(world);
-		if (rival.rocketing && !Number.isFinite(mark)) mark = rival.rocketMark;
+		if (rival.rocketTrip.active && !Number.isFinite(mark)) mark = rival.rocketTrip.mark;
 	}
 	assert.equal(rivalRack.fired, 1, 'the rival bot fires without a hand command');
 	assert.equal(rivalRack.stock, rivalRack.rackSize - 1);
@@ -1155,6 +1155,35 @@ test('a rival bot works its own installed rack and leaves the rig rack untouched
 	assert.ok(slot >= 0, 'the airborne round retains its rival owner');
 	near(rack.rocketX[slot], rockets.launcherX(world, rival.id), physics.speedNow(rival.id) * c.step + 1e-6);
 	assert.equal(players.state.rocketing, false, 'the rival service does not borrow rig autopilot state');
+});
+
+test('a bot rival keeps its own rack on standing order and replenishes it', () => {
+	const world = fresh();
+	const rival = players.state.rivals[0];
+	equipment.grant('rocket-rack', world, rival.id);
+	rockets.setAutoBuy(false, rival.id);
+	assert.equal(rockets.stateFor(rival.id).autoBuy, false, 'the order starts off');
+	assert.equal(rockets.fill(world, rival.id), true);
+	const rivalRack = rockets.stateFor(rival.id);
+	rival.money = rack.price * 6;
+	const rigFunds = ceiling.state.funds;
+	// Fire the rack dry by hand; the service then puts its own rack on order.
+	for (let n = 0; n < rivalRack.rackSize; n++) {
+		assert.equal(rockets.fire(world, rival.id), true);
+		for (let i = 0; i < Math.round(rack.reload / c.step); i++) rockets.step(world, c.step);
+	}
+	assert.equal(rivalRack.stock, 0, 'the rack is dry');
+	players.update(world, c.step);
+	assert.equal(rivalRack.autoBuy, true, 'the bot puts its own rack on order');
+	// Parked at its wall, the standing order loads rounds from its own purse.
+	rival.x = physics.platformMax();
+	rival.previousX = rival.x;
+	rival.vx = 0;
+	for (let i = 0; i < 30; i++) rockets.step(world, c.step);
+	assert.equal(rivalRack.stock, rack.visitLimit, 'the wall visit replenishes the rack');
+	assert.equal(rivalRack.bought, rack.visitLimit);
+	near(rival.money, rack.price * 6 - rack.price * rack.visitLimit, 1e-9);
+	assert.equal(ceiling.state.funds, rigFunds, 'the replenishment never debits the rig');
 });
 
 test('a full rival hopper sells before its rack is worked', () => {
@@ -1169,7 +1198,7 @@ test('a full rival hopper sells before its rack is worked', () => {
 
 	for (let i = 0; i < 240 * 8 && rival.cargoCells > 0; i++) {
 		stepBot(world);
-		assert.equal(rival.rocketing, false, 'the rocket duty yields to full cargo');
+		assert.equal(rival.rocketTrip.active, false, 'the rocket duty yields to full cargo');
 		assert.equal(rivalRack.fired, 0, 'the loaded rack waits for the wall sale');
 	}
 	assert.equal(rival.cargoCells, 0, 'the rival sold its hopper');

@@ -23,6 +23,7 @@
 				['Space / Q', 'Toggle the bounce drive'],
 				['E', 'Release a held ball while the drive is on'],
 				['R', 'Fire from the selected player’s installed rack'],
+				['F', 'Throw a sand grain from the selected player’s nozzle; hold to keep the stream'],
 				['X', 'Autopilot · chase the predicted landing'],
 				['⇧X', 'Autopilot · timed intercept'],
 				['Z', 'Autopilot · drive keeper'],
@@ -202,6 +203,21 @@
 				['R / Fire', 'Launch one rocket from the selected player’s rack; reloads in half a second'],
 				['Buy', 'Load one rocket for that player at a SELL wall'],
 				['Auto-buy', 'Up to 3 rockets at each wall visit, from that player’s funds']
+			]
+		},
+		{
+			id: 'sandblaster',
+			label: 'Sandblaster',
+			title: 'Sandblaster',
+			text: [
+				'The sandblaster is an optional platform tool unlocked by Impact forging, like the rocket rack. Installed in a player’s collector, it throws a stream of abrasive grains straight up at the ceiling. Every grain spends one charge of that player’s magazine and a fixed share of the reserve at the moment it leaves the nozzle, so the mine’s energy ledger sees the full cost of the throw.',
+				'A grain flies ballistically — no motor, no fuse — and chips the rock face through the chamber’s ordinary weakening rule: at most half a cell’s strength per blow across a one-cell radius, so a seam needs several hits and one grain never brings a cell down by itself. The grain then falls back like debris. Any platform whose collector the grain crosses catches it and the charge returns to the owner that fired it; grains that reach the floor or leave the chamber are lost. Firing straight up and holding station is what keeps the abrasive cycling.',
+				'Sand is bought at a SELL wall for that player, debiting its own purse and ledger, and the magazine holds 60 charges. With auto-buy checked, each wall visit tops the magazine up by up to 10, never past the magazine or beyond its funds. The per-player order survives New game, while the magazine and its contents reset. The base energy cost and sand price are calibrated so working ordinary rock roughly breaks even; the profit is in rich seams, cheap energy and good recovery.'
+			],
+			keys: [
+				['F / Blast', 'Throw one grain; hold to keep the stream going'],
+				['Buy', 'Load one charge of sand for that player at a SELL wall'],
+				['Auto-buy', 'Up to 10 charges at each wall visit, from that player’s funds']
 			]
 		},
 		{

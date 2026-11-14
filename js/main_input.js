@@ -17,6 +17,9 @@ let lastReadout = -1;
 let readoutPlayer = -1;
 let leftHeld = false;
 let rightHeld = false;
+// The sandblaster is a hold: the key or the Blast button keeps the nozzle
+// throwing while it is down, and the module's own rate limits the stream.
+let blastHeld = false;
 // An air drag tilts the piston from the angle it had when the drag began.
 let pistonDragActive = false;
 let pistonDragX = 0;
@@ -208,6 +211,16 @@ function buyRocket() {
 	SteamRockets.buy(world, 1, activePlayerId());
 	refresh();
 }
+// The sandblaster is the selected platform's nozzle: a press throws one
+// grain at once and holding keeps the stream going.
+function blastSand() {
+	SteamSandblaster.fire(world, activePlayerId());
+	refresh();
+}
+function buySand() {
+	SteamSandblaster.buy(world, 1, activePlayerId());
+	refresh();
+}
 function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }
 // One force setting per player: the slider and W/S edit the platform being
 // driven, and switching players reads that player's setting back into the
@@ -230,7 +243,7 @@ function syncForceControl(value) {
 
 function isGameKey(code) {
 	return code === 'Space' || code === 'KeyQ' || code === 'KeyA' || code === 'KeyD' || code === 'KeyW' || code === 'KeyS' || code === 'KeyE'
-		|| code === 'KeyR' || code === 'KeyB' || code === 'KeyX' || code === 'KeyZ' || code === 'KeyC' || code === 'KeyM' || code === 'F4';
+		|| code === 'KeyR' || code === 'KeyB' || code === 'KeyX' || code === 'KeyZ' || code === 'KeyC' || code === 'KeyM' || code === 'KeyF' || code === 'F4';
 }
 
 function keydown(event) {
@@ -249,6 +262,7 @@ function keydown(event) {
 	}
 	if (key === 'KeyA') leftHeld = true;
 	if (key === 'KeyD') rightHeld = true;
+	if (key === 'KeyF') blastHeld = true;
 	if (key === 'KeyA' || key === 'KeyD') updateDirection();
 	if (key === 'KeyW') setForce(playerApi.force(playerApi.state.active) + 0.1);
 	if (key === 'KeyS') setForce(playerApi.force(playerApi.state.active) - 0.1);
@@ -271,6 +285,7 @@ function keyup(event) {
 	}
 	if (key === 'KeyA') leftHeld = false;
 	if (key === 'KeyD') rightHeld = false;
+	if (key === 'KeyF') blastHeld = false;
 	if (key === 'KeyA' || key === 'KeyD') updateDirection();
 }
 
@@ -291,7 +306,7 @@ function frame(now) {
 	const elapsed = previous ? Math.min((now - previous) / 1000, 0.1) : 0;
 	previous = now;
 	if (!paused && !document.hidden) accumulator += elapsed * Number(ui.speed.value);
-	while (accumulator >= config.step) { autopilotApi.update(world, config.step); playerApi.update(world, config.step); physics.step(world, config.step); accumulator -= config.step; sceneDirty = true; }
+	while (accumulator >= config.step) { autopilotApi.update(world, config.step); playerApi.update(world, config.step); physics.step(world, config.step); if (blastHeld) SteamSandblaster.fire(world, activePlayerId()); accumulator -= config.step; sceneDirty = true; }
 	if (sceneDirty) { draw(); sceneDirty = false; }
 	if (now - lastReadout > 100 || readoutPlayer !== playerApi.state.active) { refresh(); lastReadout = now; }
 	requestAnimationFrame(frame);
@@ -354,6 +369,19 @@ function bindInput() {
 	ui['rocket-buy'].addEventListener('click', buyRocket);
 	ui['rocket-auto'].addEventListener('change', function () {
 		SteamRockets.setAutoBuy(ui['rocket-auto'].checked, activePlayerId());
+		refresh();
+	});
+	ui['sandblast-fire'].addEventListener('pointerdown', function (event) {
+		ui['sandblast-fire'].setPointerCapture(event.pointerId);
+		blastHeld = true;
+		blastSand();
+	});
+	ui['sandblast-fire'].addEventListener('pointerup', function () { blastHeld = false; });
+	ui['sandblast-fire'].addEventListener('pointercancel', function () { blastHeld = false; });
+	ui['sandblast-fire'].addEventListener('lostpointercapture', function () { blastHeld = false; });
+	ui['sandblast-buy'].addEventListener('click', buySand);
+	ui['sandblast-auto'].addEventListener('change', function () {
+		SteamSandblaster.setAutoBuy(ui['sandblast-auto'].checked, activePlayerId());
 		refresh();
 	});
 	ui.pause.addEventListener('click', togglePause);

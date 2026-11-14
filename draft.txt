@@ -410,3 +410,8 @@ because if some player possible to land on only heavy G>~1.5 planets this cause 
 
 agent told: All 48 planets are generated with spaced geometry when the seeded world is created; adding a bot reveals one rather than moving/generating coordinates.
 i dont know is this cause slow generation. is generation by add and adjust position of planet faster? 
+
+## Sandblaster
+by design by draft is uses debris. because debris returned and preserve mass - it does not need to buy ammo at shop.
+to add more challenge make it use not all cargo debris but only stone and sand if available.
+auto-buy checkbox replace with auto-fire. i expect in late game with powerful energy source good tactics is to keep it always on. 

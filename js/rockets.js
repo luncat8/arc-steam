@@ -266,12 +266,7 @@
 	}
 
 	function launcherX(world, owner) {
-		const physics = root.SteamPhysics;
-		const machine = physics.machineById(world, ownerId(owner));
-		const body = physics.machineBody(machine);
-		const config = physics.config;
-		const offset = config.platformWidth * (config.collectorFraction - 1) * 0.5;
-		return Math.max(0, Math.min(config.width, body.x + offset));
+		return root.SteamPhysics.collectorX(world, ownerId(owner));
 	}
 
 	function fire(world, owner) {
@@ -410,6 +405,8 @@
 
 	function stepOwner(world, dt, owner) {
 		const profile = profileFor(owner);
+		// Snap the tail of the reload to zero: a remainder under half a step
+		// would otherwise leave a floating-point leftover that blocks the fire.
 		if (profile.cooldown > 0) profile.cooldown = profile.cooldown - dt > dt * 0.5 ? profile.cooldown - dt : 0;
 		visit(world, owner);
 	}

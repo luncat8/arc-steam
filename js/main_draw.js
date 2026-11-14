@@ -142,6 +142,18 @@ function drawRigMachinery(context, player) {
 			context.fill();
 		}
 	}
+	// The sandblaster nozzle stands in the collector, angled at the ceiling.
+	if (SteamEquipment.isInstalled('sandblaster', player.id)) {
+		const nozzleX = left + collectorWidth * 0.25;
+		context.fillStyle = '#7a6a4f';
+		context.beginPath();
+		context.moveTo(nozzleX - 0.05, config.deck);
+		context.lineTo(nozzleX + 0.05, config.deck);
+		context.lineTo(nozzleX + 0.02, config.deck + 0.14);
+		context.lineTo(nozzleX - 0.02, config.deck + 0.14);
+		context.closePath();
+		context.fill();
+	}
 	// The chassis pitch follows the land; piston tilt stays relative to it.
 	const pistonAngle = machine.pistonAngle;
 	const pistonNx = -Math.sin(pistonAngle);
@@ -256,6 +268,7 @@ function draw() {
 		if (showDamageRadius) drawDamageRadius(ball, ballY, ballScale);
 	}
 	SteamRockets.draw(context);
+	SteamSandblaster.draw(context);
 	context.restore();
 	drawSellLabel(offsetX + 8, floorY - scale * 1.4, -Math.PI * 0.5);
 	drawSellLabel(offsetX + config.width * scale - 8, floorY - scale * 1.4, Math.PI * 0.5);

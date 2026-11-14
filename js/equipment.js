@@ -48,6 +48,10 @@
 		Object.freeze({
 			id: 'rocket-rack', name: 'Rocket rack', cost: 480, mass: 8, requires: 'impact',
 			effect: 'Installs a 6-round collector tube; rockets cost 14 cr each at either SELL wall, +8 kg.'
+		}),
+		Object.freeze({
+			id: 'sandblaster', name: 'Sandblaster', cost: 520, mass: 7, requires: 'impact',
+			effect: 'Mounts an abrasive nozzle in the collector; hold F to throw a stream of sand grains at the ceiling, spending reserve energy and 1 charge of the 60-charge magazine per grain.'
 		})
 	]);
 	const radiators = Object.freeze([
