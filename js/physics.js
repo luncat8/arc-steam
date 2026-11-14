@@ -1540,7 +1540,10 @@ function spend(world, useful) {
 			let faceVx = 0;
 			let faceVy = 0;
 			const wall = ball.vx > 0 ? config.width - radius : radius;
-			const wallTime = ball.vx ? (wall - ball.x) / ball.vx : Infinity;
+			let wallTime = Infinity;
+			if (ball.x <= radius && ball.vx < 0) wallTime = 0;
+			else if (ball.x >= config.width - radius && ball.vx > 0) wallTime = 0;
+			else if (ball.vx) wallTime = (wall - ball.x) / ball.vx;
 			if (wallTime >= 0 && wallTime <= time) { time = wallTime; type = 1; }
 			// The floor is a heightmap of fallen rubble: the crossing is solved at
 			// the surface under the ball, and a centre already inside the surface
@@ -1660,6 +1663,15 @@ function spend(world, useful) {
 					const fracture = root.SteamCeiling.damage(contactX, contactY, damageBudget, owner);
 					rockPassiveImpact(world, ball, rockNx, rockNy, fracture);
 					rockImpulse = true;
+				}
+				// A rock separation near a wall notch can push the centre past a wall;
+				// clamp inside the chamber and reflect outward horizontal motion cleanly.
+				if (ball.x < radius) {
+					ball.x = radius;
+					if (ball.vx < 0) ball.vx = -ball.vx;
+				} else if (ball.x > config.width - radius) {
+					ball.x = config.width - radius;
+					if (ball.vx > 0) ball.vx = -ball.vx;
 				}
 				continue;
 			}

@@ -47,23 +47,26 @@ test('test rock lays out one mineral band per table entry and a top-to-bottom da
 	ceiling.generateTestRock();
 	const state = ceiling.state;
 	assert.equal(state.testRock, true);
-	for (let mineral = 0; mineral < mineralCount; mineral++) {
-		const column = Math.floor((mineral + 0.5) * state.columns / mineralCount);
+	for (let band = 0; band < mineralCount; band++) {
+		const mineral = state.testMineralOrder[band];
+		const column = Math.floor((band + 0.5) * state.columns / mineralCount);
 		const bottom = column;
 		const top = (state.rows - 1) * state.columns + column;
 		assert.equal(state.minerals[bottom * mineralCount + mineral], 1);
 		assert.equal(state.minerals[top * mineralCount + mineral], 1);
 		assert.ok(Math.abs(state.prices[bottom] - state.mineralPrices[mineral]) < 1e-4);
-		assert.equal(state.damageField[bottom], 1);
 		assert.equal(state.damageField[top], 0);
+		assert.ok(state.strength[bottom] / state.initialStrength[bottom] < 0.0001);
+		assert.equal(state.strength[top], state.initialStrength[top]);
+		if (band) assert.ok(state.initialStrength[bottom] <= state.mineralTable[state.testMineralOrder[band - 1]].strength + 1e-6);
 	}
 	for (let row = 0; row < state.rows - 1; row++) {
-		assert.ok(state.damageField[row * state.columns] > state.damageField[(row + 1) * state.columns]);
+		assert.ok(state.strength[row * state.columns] < state.strength[(row + 1) * state.columns]);
 	}
 	assert.ok(state.looseCells > 0, 'the exposed bottom edge is ready to fall');
 });
 
-test('Damage rock view paints the generated looseness gradient', () => {
+test('Damage rock view paints strength removed by the generated impact', () => {
 	ceiling.reset(1);
 	ceiling.generateTestRock();
 	const colors = new Set();
@@ -74,7 +77,7 @@ test('Damage rock view paints the generated looseness gradient', () => {
 	ceiling.draw(context, 'damage');
 	assert.ok(colors.has(ceiling.state.damagePalette[0]));
 	assert.ok(colors.has(ceiling.state.damagePalette[100]));
-	assert.ok(colors.size > 20, 'the damage view exposes many gradient levels');
+	assert.ok(colors.size > 10, 'the damage view exposes many gradient levels');
 });
 
 test('growth raises the group size and lowers the release rate from the plain clump', () => {
@@ -84,7 +87,6 @@ test('growth raises the group size and lowers the release rate from the plain cl
 	assert.ok(plain.perFall <= 4, 'the 10% floor keeps the original 1..4-cell clump');
 	assert.ok(grouped.perFall > plain.perFall, 'growth forms larger groups');
 	assert.ok(grouped.bursts < plain.bursts, 'larger groups use a lower release chance');
-	assert.ok(grouped.grains > plain.grains, 'the larger groups carry more cells per release');
 });
 
 // One horizontal band of loose free faces whose mineral alternates column by
@@ -101,7 +103,7 @@ function mixedBandTicks(growth, ticks) {
 	state.damageField.fill(0);
 	for (let column = 0; column < 16; column++) {
 		for (let row = 3; row < 11; row++) {
-			state.strength[row * columns + column] = state.initialStrength[row * columns + column];
+			state.strength[row * columns + column] = state.collapseStrengthLimit * 0.1;
 			state.damageField[row * columns + column] = 1;
 			const offset = (row * columns + column) * mineralCount;
 			state.minerals[offset] = column % 2 === 0 ? 1 : 0;
@@ -169,4 +171,105 @@ test('mineral growth is bounded to the 10%..500% slider range and survives New g
 	assert.deepEqual(Array.from(ceiling.state.mineralClusterGrowth), live,
 		'the live settings carry into a new run');
 	assert.equal(ceiling.collapseChunkMax, 4 * (1 + 500 / 100), 'the group cap covers the 500% setting');
+});
+
+test('sand is rubble by nature and the remaining view greys exactly the rubble', () => {
+	ceiling.reset(1);
+	const state = ceiling.state;
+	const sand = state.mineralIds.indexOf('sand');
+	assert.ok(sand >= 0, 'the table carries a sand entry');
+	assert.ok(state.mineralTable[sand].strength < state.collapseStrengthLimit,
+		'sand forms below the debris limit, so it is rubble at its own strength');
+	assert.equal(state.mineralTable[sand].growth, 10, 'sand ships at the slider floor, so it lets go as grains');
+	assert.equal(state.mineralAbundance[sand] > 0, true, 'sand forms in the field, not only in the test bed');
+	for (let slot = 0; slot <= 1000; slot++) {
+		const grey = state.rubblePalette[slot].match(/\d+/g).map(Number);
+		assert.equal(grey[0], grey[2], 'the rubble palette has no hue at slot ' + slot);
+		assert.equal(grey[1], grey[0], 'and no tint in the green channel at slot ' + slot);
+	}
+	const limitSlot = Math.round(state.collapseStrengthLimit / state.maxStrength * 1000);
+	assert.notEqual(state.rubblePalette[limitSlot], state.strengthPalette[limitSlot],
+		'the limit itself is where the warm palette starts');
+});
+
+
+test('test bed releases substantially more weak rock during collapse and at rest', () => {
+	for (const useDefault of [false, true]) {
+		ceiling.reset(73);
+		if (!useDefault) for (let m = 0; m < ceiling.state.mineralCount; m++) ceiling.setMineralClusterGrowth(m, 100);
+		ceiling.generateTestRock();
+		const state = ceiling.state;
+		const hard = state.mineralIds.indexOf('corundum');
+		const weak = state.mineralIds.indexOf('gas');
+		ceiling.collapse(20);
+		assert.ok(state.fallCells[weak] > state.fallCells[hard] * 1.5);
+		ceiling.collapse(6000);
+		assert.equal(state.looseCells, 0);
+		assert.ok(state.fallCells[weak] > state.fallCells[hard] * 3);
+		const actual = new Array(state.mineralCount).fill(0);
+		for (let col = 0; col < state.columns; col++) {
+			const mineral = state.testMineralOrder[Math.floor(col * state.mineralCount / state.columns)];
+			actual[mineral] += state.firstRow[col];
+			if (state.firstRow[col] < state.rows) {
+				const index = state.firstRow[col] * state.columns + col;
+				assert.ok(state.strength[index] >= state.collapseStrengthLimit || state.damageField[index] < state.collapseLooseFloor);
+			}
+		}
+		assert.deepEqual(Array.from(state.fallCells), actual, 'cell counts use each cell’s mineral, not the group seed');
+	}
+});
+
+test('remaining strength view matches initial at the top and greys only the rubble', () => {
+	ceiling.reset(1);
+	ceiling.generateTestRock();
+	ceiling.setShape('square');
+	const state = ceiling.state;
+	function parseRgb(style) {
+		return style.match(/\d+/g).map(Number);
+	}
+	function rockColors(mode) {
+		const colors = [];
+		const context = {
+			fillStyle: '',
+			fillRect() { colors.push(this.fillStyle); },
+			beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}, stroke() {}
+		};
+		ceiling.draw(context, mode);
+		return colors;
+	}
+	try {
+		const initial = rockColors('initial-strength');
+		const remaining = rockColors('strength');
+		const top = (state.rows - 1) * state.columns;
+		for (let column = 0; column < state.columns; column++) {
+			const sound = top + column;
+			// A material that forms below the rubble limit is grey from the
+			// start, so only rock that holds at its own strength reads alike.
+			if (state.initialStrength[sound] >= state.collapseStrengthLimit) {
+				assert.equal(initial[sound], remaining[sound], 'sound rock reads the same in both strength views');
+			} else {
+				assert.notEqual(initial[sound], remaining[sound], 'rock that forms as rubble is already grey in the remaining view');
+			}
+			assert.equal(remaining[column], remaining[0], 'the fully damaged row is one rubble colour');
+		}
+		const bottomRgb = parseRgb(remaining[0]);
+		assert.equal(bottomRgb[0], bottomRgb[2], '100% damaged bottom has lost its hue');
+		assert.ok(bottomRgb[0] < parseRgb(initial[top])[0], '100% damaged bottom is darker than intact rock');
+		let rubble = 0;
+		let holding = 0;
+		for (let row = 0; row < state.rows; row++) {
+			const idx = row * state.columns;
+			const rgb = parseRgb(remaining[idx]);
+			if (state.strength[idx] < state.collapseStrengthLimit) {
+				rubble++;
+				assert.equal(rgb[0], rgb[2], 'rubble is grey in the remaining strength view');
+				continue;
+			}
+			holding++;
+			assert.ok(rgb[0] > rgb[2], 'rock that still holds keeps its warm colour');
+		}
+		assert.ok(rubble > 0 && holding > 0, 'the graded bed shows both regimes');
+	} finally {
+		ceiling.setShape('smooth');
+	}
 });

@@ -126,6 +126,24 @@ test('the shared base-price curve gives the lab and the game the same quote for 
 		'the reference table stays near the nominal cell value');
 });
 
+test('the filler is cheap by demand, not by abundance', () => {
+	for (const seed of [1, 31]) {
+		const state = reset(seed);
+		const sand = state.mineralIds.indexOf('sand');
+		const quote = state.mineralPrices[sand];
+		assert.ok(state.mineralAbundance[sand] > 0.02 && state.mineralAbundance[sand] < 0.09,
+			'sand takes a few percent of the rock on seed ' + seed + ': ' + (state.mineralAbundance[sand] * 100).toFixed(2) + '%');
+		assert.ok(quote < state.targetCellValue * 0.15,
+			'a cell of sand is worth a fraction of an average cell: ' + quote.toFixed(2) + ' cr');
+		assert.ok(quote * 5 < state.mineralBasePrices[sand],
+			'its abundance alone would make it dear; low demand is what keeps it cheap');
+		for (let m = 0; m < state.mineralCount; m++) {
+			if (m === sand) continue;
+			assert.ok(state.mineralPrices[m] > quote, state.mineralNames[m] + ' is worth more than the filler');
+		}
+	}
+});
+
 test('the startup market is seeded per run, and demand can make a common ore open dear', () => {
 	ceiling.reset(1);
 	const first = Array.from(ceiling.state.mineralPrices);

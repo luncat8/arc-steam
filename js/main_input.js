@@ -312,7 +312,7 @@ function resetRun(withTestRock) {
 	if (testMode) grantTestState();
 	if (withTestRock) {
 		window.SteamCeiling.generateTestRock();
-		setText(ui['fall-test-status'], 'Test rock ready · ' + window.SteamCeiling.state.mineralNames.join(' → ') + ' · damage rises from 0% at the top to 100% at the bottom.');
+		setText(ui['fall-test-status'], 'Test rock ready · ' + window.SteamCeiling.state.testMineralOrder.map(i => window.SteamCeiling.state.mineralNames[i]).join(' → ') + ' · pre-applied damage rises from zero at the top to full damage at the bottom.');
 	} else setText(ui['fall-test-status'], 'New run · mineral grouping settings carry over.');
 	setModeStatus();
 	refresh();

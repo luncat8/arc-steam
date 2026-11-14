@@ -69,6 +69,7 @@ for (const id of ['seed', 'reseed', 'frequency', 'frequency-value', 'compression
 	'range-sliders', 'host-weight', 'host-weight-value', 'solve-host',
 	'export-formation', 'import-formation', 'import-panel', 'import-text', 'import-apply', 'import-cancel',
 	'mode', 'specificity', 'specificity-value', 'target-host', 'target-host-value',
+	'target-filler', 'target-filler-value',
 	'target-common', 'target-common-value', 'target-uncommon', 'target-uncommon-value',
 	'target-rare', 'target-rare-value', 'target-veryrare', 'target-veryrare-value',
 	'auto-adjust', 'spread', 'reset-ranges', 'copy-table', 'copy-report', 'help-calibrate',
@@ -656,6 +657,7 @@ function paintEditor() {
 function targetsFromWeights() {
 	const weights = {
 		host: Number(ui['target-host'].value),
+		filler: Number(ui['target-filler'].value),
 		common: Number(ui['target-common'].value),
 		uncommon: Number(ui['target-uncommon'].value),
 		rare: Number(ui['target-rare'].value),
@@ -899,7 +901,7 @@ function bindControls() {
 		ui['target-host-value'].textContent = Math.round(Number(ui['target-host'].value) * 100) + '%';
 		targetsFromWeights();
 	});
-	for (const key of ['target-common', 'target-uncommon', 'target-rare', 'target-veryrare']) {
+	for (const key of ['target-filler', 'target-common', 'target-uncommon', 'target-rare', 'target-veryrare']) {
 		ui[key].addEventListener('input', function () {
 			ui[key + '-value'].textContent = Number(ui[key].value).toFixed(key === 'target-veryrare' ? 3 : 2);
 			targetsFromWeights();

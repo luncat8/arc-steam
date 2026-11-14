@@ -100,7 +100,7 @@ test('the shared strength, colour and price rules are the ones the game uses', (
 	ceiling.generateTestRock();
 	const state = ceiling.state;
 	for (let m = 0; m < count; m++) {
-		const index = Math.floor((m + 0.5) * state.columns / count);
+		const index = Math.floor((state.testMineralOrder.indexOf(m) + 0.5) * state.columns / count);
 		// Stored as Float32, so the pure strength is the table value to that precision.
 		near(state.initialStrength[index], table[m].strength, 1e-6, table[m].id + ' has its pure table strength');
 	}
@@ -125,13 +125,31 @@ test('the shared strength, colour and price rules are the ones the game uses', (
 	assert.equal(state.basePriceReport.target, materials.economy.targetCellValue);
 });
 
-test('the remaining-strength view darkens on the fixed pure-mineral scale', () => {
+test('the strength view is one warm ramp that desaturates into grey rubble', () => {
 	const exhausted = [0, 0, 0];
 	const full = [0, 0, 0];
 	const clamped = [0, 0, 0];
+	const rubble = [0, 0, 0];
+	assert.equal(materials.debrisLimit, 0.8);
+	assert.ok(materials.minStrength <= materials.debrisLimit, 'a material may form already below the rubble limit');
 	materials.strengthColorInto(exhausted, 0);
 	materials.strengthColorInto(full, 1);
-	assert.ok(full[0] > exhausted[0] && full[1] > exhausted[1], 'a full-strength cell is brighter than an exhausted one');
+	assert.deepEqual(exhausted, [75, 45, 38], 'the ramp floor is the shipped dark brown');
+	assert.deepEqual(full, [205, 170, 120], 'the ramp ceiling is the shipped sandstone');
+	assert.ok(full[0] > exhausted[0] && full[1] > exhausted[1] && full[2] > exhausted[2],
+		'a full-strength cell is brighter than an exhausted one');
+	assert.ok(exhausted[0] > exhausted[2] && full[0] > full[2], 'the ramp stays warm from end to end');
+	let previous = -1;
+	for (let i = 0; i <= 100; i++) {
+		const step = [0, 0, 0];
+		materials.strengthColorInto(step, i / 100);
+		assert.ok(step[0] >= previous, 'the ramp rises with strength at step ' + i);
+		previous = step[0];
+	}
+	// HSL lightness is kept exactly, hue is dropped: grey carries no colour of
+	// its own, so only warmth tells a holding cell from rubble.
+	rubble[0] = 120; rubble[1] = 60; rubble[2] = 30;
+	assert.deepEqual(materials.desaturateInto(rubble), [75, 75, 75], 'desaturation keeps the HSL lightness');
 	materials.strengthColorInto(clamped, 2);
 	assert.deepEqual(clamped, full, 'a ratio past the ceiling clamps instead of wrapping');
 	materials.strengthColorInto(clamped, -1);

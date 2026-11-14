@@ -15,8 +15,8 @@ function run(world, seconds) {
 }
 function prepareCargo(world, count, fragmentVx = 0) {
 	for (let x = 1; x < 23 && ceiling.state.extractedCells < count + 40; x += 1.5) {
-		ceiling.damage(x, ceiling.state.bottom + 0.2, 8);
-		ceiling.collapse(4);
+		for (let i = 0; i < 3; i++) ceiling.damage(x, ceiling.state.bottom + 0.2, 8);
+		ceiling.collapse(8);
 	}
 	const state = ceiling.state;
 	let prepared = 0;
@@ -272,7 +272,7 @@ test('the ball grounds on fallen rubble at the pile surface and keeps the ledger
 	// Let the already-damaged rock finish releasing, then spread its fragments
 	// into a low, traversable pile around x = 3.
 	for (let x = 1; x < 6; x += 0.5) { ceiling.damage(x, state.bottom + 0.2, 20); ceiling.collapse(2); }
-	ceiling.collapse(120);
+	ceiling.collapse(6000);
 	assert.ok(state.extractedCells > 0);
 	assert.equal(state.looseCells, 0, 'the terrain will not keep changing during the flight');
 	for (let i = 0; i < state.active.length; i++) if (state.active[i]) {
@@ -1111,5 +1111,44 @@ test('every upward deck or elastic-ground bounce queues one top row while preser
 	run(shaftWorld, 0.5);
 	balanced(shaftWorld);
 	physics.createWorld();
+});
+
+test('wall notches keep the ball inside the chamber walls in both rock shapes and prediction agrees', () => {
+	try {
+		for (const shape of ['smooth', 'square']) {
+			for (const side of ['left', 'right']) {
+				const w = physics.createWorld();
+				ceiling.setShape(shape);
+				const st = ceiling.state;
+				const cols = st.columns;
+				for (let offset = 0; offset < 2; offset++) {
+					const col = side === 'left' ? offset : cols - 1 - offset;
+					for (let row = 0; row < 4; row++) {
+						st.strength[row * cols + col] = 0;
+						st.damageField[row * cols + col] = 0;
+					}
+				}
+				w.ball.state = 'flying';
+				w.ball.holder = null;
+				w.ball.x = side === 'left' ? c.radius + 0.005 : c.width - c.radius - 0.005;
+				w.ball.y = st.bottom - 0.3;
+				w.ball.vx = 0;
+				w.ball.vy = 10;
+				sync(w);
+				const forecast = require('../js/prediction.js').predict(w);
+				assert.ok(forecast.endX >= c.radius - 1e-6 && forecast.endX <= c.width - c.radius + 1e-6,
+					`${shape} ${side} prediction stays inside chamber walls`);
+				for (let s = 0; s < 60; s++) {
+					physics.step(w, c.step);
+					assert.ok(w.ball.x >= c.radius - 1e-9 && w.ball.x <= c.width - c.radius + 1e-9,
+						`${shape} ${side} step ${s} stays inside walls (${w.ball.x})`);
+					balanced(w);
+				}
+			}
+		}
+	} finally {
+		ceiling.setShape('smooth');
+		physics.createWorld();
+	}
 });
 

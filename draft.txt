@@ -94,19 +94,44 @@ and add handler and red line to mark desired value over bar of achieved. press a
 
 near 100% gas has near 0 strength.
 other strength is from generated random table of mineral strength and minerals in cell.
-i expect not 100% 'remain trength' but 100% is max and most cells has lower strength then max. if you can find better way - you can just get mineral map and get strength from it via strength table
+i expect not 100% 'remain strength' but 100% is max and most cells has lower strength then max. if you can find better way - you can just get mineral map and get strength from it via strength table
 
+i run 'Generate test rock'
+i expect it generate strong...weak elements palette left..right
+and apply damage top...down
+
+i expect low-strength (right) minerals fall more actively, i expect final result (when nothing more to fall according to calculated probabilities) is weak minerals side - fall more to debris while strong minerals remain ceiling. 
+so
+ intermediate result : low-strength mineral's debris much more then high-strength
+ final result: low-strength mineral's debris more then high
+
+i expect remain strength (initial - damage) will look: top (no damage) same color as initial, bottom (100% damage) brown more then weakest initial minerals.
+
+avoid wall-issue it is maybe wrong calculated near wall and fast damage.
+
+it should became debris when remain strength is low, and faster if less strength remain.
+
+on view node remain strength should be clearly visible colors of strength enough to not fall (all initial minerals strength) and colors of too weak remain strength and that will fall soon or late.
+
+it should became debris when remain strength is low, and faster if less strength remain.
+
+on view node remain strength should be clearly visible colors of strength enough to not fall (all initial minerals strength) and colors of too weak remain strength and that will fall soon or late.
+
+for remain strength view mode - i think we can use same + set 0 saturation (greyscale) for minerals below debris limit.
+
+add mineral sand with strength initially below limit. sand low cost because low demand, something like 5% of total, minimal cluster agglomeration value (so debris fall like sand).
+if need implement average demand defaults multipliers. we already has some demand mechanics.
 
 rock above: make it 2d array 4*4 px cells by default. ball properly bounce reflect from it surface.
 view modes: 
 - elements r,g,b
 - minerals
 - price
-- remain strength
+- initial strength
+- total remain strength (initial - damage)
+- damage
 
 Storage limit is 100 cells; full storage add similar mass as dry platform mass. Sell automatically when platform touch left or right wall. vertical text 'sell' on walls near platform path. 
-
-
 
 
 platform movement energy exchange on ball capture and bounce and friction while this. we need Newtonian physics and kinetic-thermal energy conversion.

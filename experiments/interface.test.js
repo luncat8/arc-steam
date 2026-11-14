@@ -525,7 +525,7 @@ function fillCargo(count) {
 	harness.sync(world);
 	const state = ceiling.state;
 	const target = state.extractedCells + count;
-	for (let x = 1; x < 23 && state.extractedCells < target; x += 2) { ceiling.damage(x, ceiling.state.bottom + 0.2, 20); ceiling.collapse(2); }
+	for (let x = 1; x < 23 && state.extractedCells < target; x += 2) { for (let i = 0; i < 3; i++) ceiling.damage(x, ceiling.state.bottom + 0.2, 20); ceiling.collapse(6); }
 	let prepared = 0;
 	for (let i = 0; i < state.active.length && prepared < count; i++) {
 		if (!state.active[i]) continue;
@@ -575,8 +575,9 @@ test('the rock inspector distinguishes naturally weak, damaged and loose cells',
 	const face = state.firstRow[selectedColumn];
 	assert.match(mineralStateTag(state, face, 0.8, 0), /sound$/, 'low strength alone is not impact damage');
 	assert.match(mineralStateTag(state, face, 0.8, 0.1), /weakened$/, 'a light hit is not called sound');
-	assert.match(mineralStateTag(state, face, 0.8, 0.4), /loose$/, 'an exposed eligible cell is loose');
-	assert.match(mineralStateTag(state, face + 1, 0.8, 0.4), /weakened \(held\)$/, 'a buried loose cell is held');
+	assert.match(mineralStateTag(state, face, state.collapseStrengthLimit, 0.4), /weakened$/, 'weakest intact strength stays non-falling');
+	assert.match(mineralStateTag(state, face, state.collapseStrengthLimit * 0.5, 0.4), /loose$/, 'an exposed eligible cell is loose');
+	assert.match(mineralStateTag(state, face + 1, state.collapseStrengthLimit * 0.5, 0.4), /weakened \(held\)$/, 'a buried loose cell is held');
 	assert.match(mineralStateTag(state, face, 0, 0), /fallen$/);
 });
 
@@ -1502,7 +1503,7 @@ test('mineral fall sliders and test-rock button wire the controlled setup', () =
 	assert.equal(ceiling.state.testRock, true);
 	assert.equal(ceiling.state.extractedCells, 0, 'the generator starts from a clean run');
 	assert.equal(ceiling.state.mineralClusterGrowth[ironIndex], 125, 'the live setting carries into the new run');
-	assert.match(dom.element('fall-test-status').textContent, /Stone → Iron ore → Copper ore/);
+	assert.match(dom.element('fall-test-status').textContent, /Corundum → Quartz stone → Iron ore/);
 	assert.equal(dom.element('rock-damage-view').getAttribute('value'), 'damage');
 	advance(3);
 	assert.ok(Math.abs(physics.totalEnergy(world) - world.initialEnergy) < 1e-5);

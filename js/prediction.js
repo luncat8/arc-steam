@@ -297,7 +297,8 @@
 			surface = NO_SURFACE;
 			if (vx) {
 				const wall = vx > 0 ? config.width - radius : radius;
-				const wallTime = (wall - x) / vx;
+				let wallTime = (wall - x) / vx;
+				if ((x <= radius && vx < 0) || (x >= config.width - radius && vx > 0)) wallTime = 0;
 				if (wallTime >= 0 && wallTime < step) { step = wallTime; event = WALL; }
 			}
 			if (vy > 0) {
@@ -358,7 +359,10 @@
 			else if (event !== NONE) {
 				// Rock contacts end at the trace's own separated contact point, which
 				// is where the simulation snaps the ball, so the mark and the impact agree.
-				if (event === ROCK) { x = contactX; y = contactY; }
+				if (event === ROCK) {
+					x = contactX < radius ? radius : contactX > config.width - radius ? config.width - radius : contactX;
+					y = contactY;
+				}
 				// A rising rubble surface can catch up with a ball already on its
 				// way up. The simulation only lifts it out, so the same step here
 				// is neither a contact nor a bounce.
@@ -385,6 +389,13 @@
 					const normal = vx * nx + vy * ny;
 					if (normal < 0) { vx -= (1 + rockRetention) * normal * nx; vy -= (1 + rockRetention) * normal * ny; }
 					x += nx * 0.0001; y += ny * 0.0001;
+					if (x < radius) {
+						x = radius;
+						if (vx < 0) vx = -vx;
+					} else if (x > config.width - radius) {
+						x = config.width - radius;
+						if (vx > 0) vx = -vx;
+					}
 				} else if (event === GROUND) {
 					// The same half-energy ground rebound the simulation applies.
 					y = (economy ? economy.floorAt(x) : 0) + radiusAt(y) + 0.0001;

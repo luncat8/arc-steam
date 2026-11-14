@@ -95,6 +95,7 @@ function loadLab() {
 		'desired-sum', 'error-sum',
 		'range-sliders', 'host-weight', 'host-weight-value', 'solve-host',
 		'mode', 'specificity', 'specificity-value', 'target-host', 'target-host-value',
+		'target-filler', 'target-filler-value',
 		'target-common', 'target-common-value', 'target-uncommon', 'target-uncommon-value',
 		'target-rare', 'target-rare-value', 'target-veryrare', 'target-veryrare-value',
 		'auto-adjust', 'spread', 'reset-ranges', 'copy-table', 'copy-report', 'help-calibrate',

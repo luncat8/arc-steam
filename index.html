@@ -45,7 +45,7 @@
 					<span><i class="key-color collector"></i> COLLECTOR · CATCH & STORE</span>
 					<span><i class="key-color reflector"></i> REFLECTOR PISTON · POWERED BOUNCE</span>
 					<span><i class="key-color pad"></i> CHARGE PAD · 3 kW</span>
-					<div class="view-switch"><span id="view-label">ROCK VIEW</span><div id="view-modes" class="view-modes" role="radiogroup" aria-labelledby="view-label"><label><input type="radio" name="rock-view" value="minerals" autocomplete="off" checked>Minerals</label><label><input type="radio" name="rock-view" value="elements" autocomplete="off">Elements R/G/B</label><label><input type="radio" name="rock-view" value="price" autocomplete="off">Price</label><label><input type="radio" name="rock-view" value="strength" autocomplete="off">Remaining strength</label><label><input id="rock-damage-view" type="radio" name="rock-view" value="damage" autocomplete="off">Damage</label></div><button id="help-chamber" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: the chamber and its markers">?</button></div>
+					<div class="view-switch"><span id="view-label">ROCK VIEW</span><div id="view-modes" class="view-modes" role="radiogroup" aria-labelledby="view-label"><label><input type="radio" name="rock-view" value="minerals" autocomplete="off" checked>Minerals</label><label><input type="radio" name="rock-view" value="elements" autocomplete="off">Elements R/G/B</label><label><input type="radio" name="rock-view" value="price" autocomplete="off">Price</label><label><input type="radio" name="rock-view" value="initial-strength" autocomplete="off">Initial strength</label><label><input type="radio" name="rock-view" value="strength" autocomplete="off">Remaining strength</label><label><input id="rock-damage-view" type="radio" name="rock-view" value="damage" autocomplete="off">Damage</label></div><button id="help-chamber" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: the chamber and its markers">?</button></div>
 				</div>
 			</section>
 			<aside class="controls-panel panel" data-topic="movement">
@@ -83,7 +83,7 @@
 			<div class="panel-title"><span id="fall-test-title">MINERAL FALL TEST</span><span class="fall-test-summary">Per-mineral growth and release frequency · applied live</span></div>
 			<div class="fall-test-body">
 				<div id="cluster-settings" class="cluster-test-settings"></div>
-				<div class="fall-test-action"><button id="generate-test-rock" type="button">Generate test rock</button><p>Starts a fresh run with one pure band per mineral, left to right. Test damage is 0% at the top and 100% at the bottom; grouping settings carry over.</p><p id="fall-test-status" role="status">Growth mixes the plain loose-face clump into a connected mineral flake; larger groups also release less often.</p></div>
+				<div class="fall-test-action"><button id="generate-test-rock" type="button">Generate test rock</button><p>Starts a fresh run with pure mineral bands from strongest on the left to weakest on the right. Pre-applied damage rises from zero at the top to full damage at the bottom; grouping settings carry over.</p><p id="fall-test-status" role="status">Growth mixes the plain loose-face clump into a connected mineral flake; larger groups also release less often.</p></div>
 			</div>
 		</section>
 

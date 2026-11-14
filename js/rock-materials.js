@@ -7,8 +7,9 @@
 // price is an abundance curve over the measured mix. Collapse growth is a third
 // rule again and lives with the fall mechanics, not here.
 // Depends on: js/minerals.js
-// Provides: economy, maxStrength, strengthInto, colorInto, valueInto,
-// basePricesInto, priceColorInto, strengthColorInto
+// Provides: economy, maxStrength, minStrength, debrisLimit, strengthInto,
+// colorInto, valueInto, basePricesInto, priceColorInto, strengthColorInto,
+// desaturateInto
 (function (root) {
 	'use strict';
 	const node = typeof module !== 'undefined' && module.exports;
@@ -30,10 +31,22 @@
 	// A mineral that has not formed in the sample still needs a finite quote.
 	const minimumShare = 1e-4;
 
-	// The fixed absolute ceiling of the strength view: the strongest pure
-	// mineral, so a cell's colour does not depend on its own initial strength.
+	// The fixed absolute bounds of the table's strength: the weakest and the
+	// strongest pure mineral, so a cell's colour never depends on its own
+	// initial strength. `maxStrength` is the top of the ramp; `minStrength` is a
+	// table fact only, since the collapse rule uses the explicit debris limit
+	// below - a material may be formed already under it.
+	let minStrength = Infinity;
 	let maxStrength = 0;
-	for (let m = 0; m < count; m++) if (table[m].strength > maxStrength) maxStrength = table[m].strength;
+	for (let m = 0; m < count; m++) {
+		if (table[m].strength < minStrength) minStrength = table[m].strength;
+		if (table[m].strength > maxStrength) maxStrength = table[m].strength;
+	}
+	// Rock holding less than this is rubble: it may let go, and the strength
+	// view greys it. It is the one absolute collapse limit, so the table can
+	// carry both rock that always holds here and materials that form below it
+	// and are loose by nature.
+	const debrisLimit = 0.8;
 
 	// Mineral-weighted impact resistance in J/cell.
 	function strengthInto(mix, offset) {
@@ -98,8 +111,10 @@
 	}
 
 	// Price and strength display ramps, writing RGB into caller-owned storage.
-	// The strength ramp is indexed by remaining/maxStrength, clamped by the
-	// caller so a damaged cell darkens on the same fixed scale.
+	// The strength ramp is indexed by strength/maxStrength, clamped by the
+	// caller so a damaged cell darkens on the same fixed scale. One warm ramp
+	// covers the whole scale: distance from the ceiling is the whole story, so
+	// weaker rock is simply darker.
 	function priceColorInto(rgb, ratio) {
 		const t = clamp01(ratio);
 		rgb[0] = 48 + t * 190;
@@ -116,10 +131,21 @@
 		return rgb;
 	}
 
+	// The same colour with its saturation removed: HSL lightness kept, hue
+	// dropped. The remaining-strength view marks rubble this way, so a grey
+	// cell is one that is weak enough to fall while a warm one still holds.
+	function desaturateInto(rgb) {
+		const light = (Math.max(rgb[0], rgb[1], rgb[2]) + Math.min(rgb[0], rgb[1], rgb[2])) * 0.5;
+		rgb[0] = light;
+		rgb[1] = light;
+		rgb[2] = light;
+		return rgb;
+	}
+
 	const api = {
-		economy, minimumShare, maxStrength,
+		economy, minimumShare, minStrength, maxStrength, debrisLimit,
 		strengthInto, colorInto, valueInto, basePricesInto, clamp01,
-		priceColorInto, strengthColorInto
+		priceColorInto, strengthColorInto, desaturateInto
 	};
 	root.SteamRockMaterials = api;
 	if (node) module.exports = api;

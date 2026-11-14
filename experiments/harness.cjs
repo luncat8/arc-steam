@@ -25,7 +25,7 @@ function earnFunds(world, cells) {
 	const target = ceiling.state.extractedCells + cells;
 	for (let x = 1; x < 23 && ceiling.state.extractedCells < target; x += 2) {
 		if (Math.abs(x - world.platform.x) < 3.5) continue;
-		ceiling.damage(x, ceiling.state.bottom + 0.2, 20);
+		for (let h = 0; h < 2; h++) ceiling.damage(x, ceiling.state.bottom + 0.2, 20);
 		ceiling.collapse(4);
 	}
 	ceiling.collapse(30);

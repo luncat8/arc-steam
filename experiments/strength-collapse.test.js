@@ -10,8 +10,9 @@ function pureIndirect(mineral, impact) {
 	ceiling.generateTestRock();
 	const state = ceiling.state;
 	state.damageField.fill(0);
+	state.strength.set(state.initialStrength);
 	const m = state.mineralIds.indexOf(mineral);
-	const hitColumn = Math.floor((m + 0.5) * state.columns / state.mineralCount);
+	const hitColumn = Math.floor((state.testMineralOrder.indexOf(m) + 0.5) * state.columns / state.mineralCount);
 	const target = hitColumn + 5;
 	assert.equal(state.minerals[target * state.mineralCount + m], 1, 'target is still in the pure mineral band');
 	const before = state.strength[target];
@@ -20,7 +21,7 @@ function pureIndirect(mineral, impact) {
 }
 
 test('a low-power indirect hit loosens weak rock much sooner than hard rock', () => {
-	const weak = pureIndirect('gas', 0.1);
+	const weak = pureIndirect('gas', 0.8);
 	const state = ceiling.state;
 	assert.ok(weak.looseness >= state.collapseLooseFloor, 'one indirect hit makes gas-bearing rock eligible');
 	assert.equal(state.extractedCells, 0, 'the impact itself still does not detach rock');
@@ -28,7 +29,7 @@ test('a low-power indirect hit loosens weak rock much sooner than hard rock', ()
 	assert.ok(state.fallCells[state.mineralIds.indexOf('gas')] > 0, 'weak rock starts falling without another hit');
 	ceiling.collapse(55);
 	assert.equal(state.strength[weak.target], 0, 'the weak indirect target can fall without another hit');
-	const hard = pureIndirect('corundum', 0.1);
+	const hard = pureIndirect('corundum', 0.8);
 	assert.ok(hard.looseness < state.collapseLooseFloor, 'the same hit leaves hard corundum standing');
 	assert.ok(weak.looseness > hard.looseness * 5, 'looseness responds to material strength');
 	assert.ok(Math.abs((weak.before - weak.remaining) - (hard.before - hard.remaining)) < 1e-6,
@@ -36,7 +37,7 @@ test('a low-power indirect hit loosens weak rock much sooner than hard rock', ()
 	ceiling.collapse(20);
 	assert.equal(state.extractedCells, 0, 'hard rock does not fall from this hit');
 	const source = hard.target - 5;
-	for (let hit = 1; hit < 30; hit++) ceiling.damage((source + 0.5) * state.cell, state.bottom + state.cell * 0.5, 0.1);
+	for (let hit = 1; hit < 10; hit++) ceiling.damage((source + 0.5) * state.cell, state.bottom + state.cell * 0.5, 0.8);
 	assert.ok(state.damageField[hard.target] >= state.collapseLooseFloor, 'hard rock can loosen with sufficiently more damage');
 });
 
@@ -66,18 +67,24 @@ test('the response also works for seeded mineral mixtures, not just pure test ba
 	const hard = surface.indexOf(Math.max(...surface));
 	const strengthOfWeak = surface[weak];
 	const strengthOfHard = surface[hard];
-	assert.ok(strengthOfWeak < 1.1 && strengthOfHard > 6, 'the seed contains a weak seam and hard rock');
-	function hitFiveCellsAway(target) {
+	assert.ok(strengthOfWeak >= state.collapseStrengthLimit && strengthOfWeak < 1.1 && strengthOfHard > 6,
+		'the seed contains a non-falling weak seam and hard rock');
+	function hitFiveCellsAway(target, energy) {
 		const source = target >= 5 ? target - 5 : target + 5;
-		ceiling.damage((source + 0.5) * state.cell, state.bottom + state.cell * 0.5, 0.1);
+		ceiling.damage((source + 0.5) * state.cell, state.bottom + state.cell * 0.5, energy);
 		return state.damageField[target];
 	}
-	const weakDamage = hitFiveCellsAway(weak);
-	assert.ok(weakDamage >= state.collapseLooseFloor, 'the mixed weak seam is loose after one indirect hit');
+	hitFiveCellsAway(weak, 0.1);
+	ceiling.collapse(20);
+	assert.equal(state.extractedCells, 0, 'a tiny graze that leaves remaining strength above the weakest mineral never collapses');
+	ceiling.reset(1);
+	const weakDamage = hitFiveCellsAway(weak, 1.2);
+	assert.ok(weakDamage >= state.collapseLooseFloor && state.strength[weak] < state.collapseStrengthLimit,
+		'the mixed weak seam is loose and below the collapse threshold after a low-energy indirect hit');
 	ceiling.collapse(5);
 	assert.ok(state.fallCells[state.mineralIds.indexOf('gas')] > 0, 'the weak seam starts falling without another hit');
 	ceiling.reset(1);
-	const hardDamage = hitFiveCellsAway(hard);
+	const hardDamage = hitFiveCellsAway(hard, 1.2);
 	assert.ok(hardDamage < state.collapseLooseFloor, 'the same hit does not loosen the hard mixture');
 	ceiling.collapse(20);
 	assert.ok(state.strength[hard] > 0, 'the hard target stays standing');
@@ -99,10 +106,10 @@ test('a real low-energy ball impact starts a weak seam falling in both rock shap
 			world.ball.x = (source + 0.5) * state.cell;
 			world.ball.y = state.bottom - c.radius - 0.002;
 			world.ball.vx = 0;
-			world.ball.vy = Math.sqrt(2 * 0.1 / (c.ballMass * (1 - physics.rockRetentionNow())));
+			world.ball.vy = Math.sqrt(2 * 1.2 / (c.ballMass * (1 - physics.rockRetentionNow())));
 			sync(world);
 			for (let step = 0; step < 8; step++) physics.step(world, c.step);
-			assert.ok(world.fractureEnergy > 0.09 && world.fractureEnergy < 0.11, shape + ' receives about 0.1 J');
+			assert.ok(world.fractureEnergy > 1.15 && world.fractureEnergy < 1.25, shape + ' receives about 1.2 J');
 			assert.ok(state.damageField[weak] >= state.collapseLooseFloor, shape + ' loosens the indirect target');
 			assert.equal(state.extractedCells, 0, 'the hit does not detach rock immediately');
 			for (let step = 0; step < 5 * 240; step++) physics.step(world, c.step);
@@ -122,7 +129,7 @@ test('response follows absolute remaining strength, not the original mineral alo
 		const state = ceiling.state;
 		state.damageField.fill(0);
 		const m = state.mineralIds.indexOf(mineral);
-		const source = Math.floor((m + 0.5) * state.columns / state.mineralCount);
+		const source = Math.floor((state.testMineralOrder.indexOf(m) + 0.5) * state.columns / state.mineralCount);
 		const target = source + 5;
 		// Isolate the response of two cells at the same brown remaining strength.
 		state.strength[target] = 0.8;
@@ -162,6 +169,7 @@ test('one loose face can collapse despite nearby slightly touched rock', () => {
 		for (let c = band * 16; c < band * 16 + 16; c++) state.damageField[row * state.columns + c] = 0.001;
 	}
 	state.damageField[column] = state.collapseLooseFloor;
+	state.strength[column] = state.collapseStrengthLimit * 0.25;
 	// A zero-energy hit refreshes the diagnostic after this controlled setup.
 	ceiling.damage((column + 0.5) * state.cell, state.bottom + state.cell * 0.5, 0);
 	assert.ok(state.regionDamage[band] < state.collapseLooseFloor, 'the touched-rock average is diluted');
@@ -181,6 +189,8 @@ test('exposing the next already-loose layer does not erase its damage', () => {
 	const next = state.columns + column;
 	state.damageField[column] = 0.31;
 	state.damageField[next] = 0.31;
+	state.strength[column] = state.collapseStrengthLimit * 0.25;
+	state.strength[next] = state.collapseStrengthLimit * 0.25;
 	try {
 		for (let tick = 0; tick < 240 && state.extractedCells === 0; tick++) ceiling.collapse(0.25);
 		assert.equal(state.extractedCells, 1, 'the first clump contains just the exposed face');
@@ -191,4 +201,61 @@ test('exposing the next already-loose layer does not erase its damage', () => {
 	} finally {
 		state.mineralClusterGrowth.set(growth);
 	}
+});
+
+test('collapse stops at absolute remaining strength even if rock is very loose', () => {
+	ceiling.reset(11);
+	const state = ceiling.state;
+	state.damageField.fill(0);
+	state.strength.fill(0);
+	const strong = 96;
+	const weak = 100;
+	state.strength[strong] = state.collapseStrengthLimit * 1.2;
+	state.strength[weak] = state.collapseStrengthLimit * 0.1;
+	state.damageField[strong] = state.damageField[weak] = 1;
+	ceiling.draw({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}, stroke() {} }, 'minerals');
+	ceiling.collapse(600);
+	assert.ok(state.strength[strong] > state.collapseStrengthLimit, 'damaged but sufficiently strong rock remains');
+	assert.equal(state.strength[weak], 0, 'low remaining strength detaches');
+	assert.equal(state.looseCells, 0);
+});
+
+test('equally weakened faces release at both walls without a neighbour barrier', () => {
+	ceiling.reset(13);
+	const state = ceiling.state;
+	state.strength.fill(0);
+	state.damageField.fill(0);
+	for (const col of [0, state.columns - 1]) {
+		for (let row = 0; row < 4; row++) {
+			const index = row * state.columns + col;
+			state.strength[index] = state.collapseStrengthLimit * 0.1;
+			state.damageField[index] = 1;
+		}
+	}
+	ceiling.draw({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}, stroke() {} }, 'minerals');
+	ceiling.collapse(600);
+	assert.equal(state.firstRow[0], state.rows);
+	assert.equal(state.firstRow[state.columns - 1], state.rows);
+	assert.equal(state.extractedCells, 8);
+});
+
+test('lower remaining strength falls faster under the same damage and grouping', () => {
+	ceiling.reset(23);
+	const state = ceiling.state;
+	state.strength.fill(0);
+	state.damageField.fill(0);
+	state.mineralClusterGrowth.fill(100);
+	for (let col = 0; col < state.columns; col++) {
+		for (let row = 0; row < 8; row++) {
+			const index = row * state.columns + col;
+			state.initialStrength[index] = 7.8;
+			state.strength[index] = state.collapseStrengthLimit * (col < state.columns / 2 ? 0.8 : 0.1);
+			state.damageField[index] = 1;
+		}
+	}
+	ceiling.draw({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}, stroke() {} }, 'minerals');
+	ceiling.collapse(10);
+	const left = state.firstRow.slice(0, state.columns / 2).reduce((a, b) => a + b, 0);
+	const right = state.firstRow.slice(state.columns / 2).reduce((a, b) => a + b, 0);
+	assert.ok(right > left * 2, `weaker faces ${right} should release faster than stronger faces ${left}`);
 });

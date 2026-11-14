@@ -131,10 +131,13 @@ function setFloorCompression(value) {
 	// around them is left loose, to fall later in a collapse burst.
 	const hitLooseCap = 0.5;
 	const collapseLooseFloor = 0.3;
+	// The absolute limit below which a cell is rubble, shared with the strength
+	// view so the grey cells and the cells that may fall are the same ones.
+	const collapseStrengthLimit = materials.debrisLimit;
 	const collapseChanceSeconds = 0.25;
 	// Eligible faces have a nonzero roll even when the surrounding damage is
 	// slight; a more battered band still makes larger, likelier clumps.
-	const collapseChanceMax = 0.5;
+	const collapseChanceMax = 0.7;
 	const collapseSeedChanceShare = 0.5;
 	const collapseChanceSaturation = 1;
 	const collapseChunkMin = 1;
@@ -150,7 +153,6 @@ function setFloorCompression(value) {
 	const clusterGrowthFull = 200;
 	const collapseClumpLimit = collapseChunkMax * (1 + maxClusterGrowth / 100);
 	const clumpDepthCost = 2;
-	const maxSurfaceStep = 1;
 	// A blow that would finish a cell with rock still under it leaves it hanging
 	// at this share of its original strength instead. The free face is the only
 	// rock that can be missing, so a fall always starts on the visible surface
@@ -339,12 +341,19 @@ function setFloorCompression(value) {
 	}
 	const floorScratch = new Float64Array(columns);
 	const floorValueScratch = new Float64Array(columns);
+
+	function rgbText(rgb) {
+		return 'rgb(' + Math.round(rgb[0]) + ' ' + Math.round(rgb[1]) + ' ' + Math.round(rgb[2]) + ')';
+	}
 	const elementColors = new Array(maxCount);
 	const mineralStyles = new Array(maxCount);
 	const priceColors = new Array(maxCount);
 	// Strength and price ramps are shared rules; these caches only stringify
-	// them once, so the render loop allocates no colour text.
-	const strengthPalette = new Array(101);
+	// them once, so the render loop allocates no colour text. The rubble
+	// palette is the same ramp desaturated: warm rock still holds, grey rock is
+	// already weak enough to fall.
+	const strengthPalette = new Array(1001);
+	const rubblePalette = new Array(1001);
 	const rgbScratch = new Float64Array(3);
 	const colorScratch = [0, 0, 0];
 	const strengthScratch = [0, 0, 0];
@@ -359,6 +368,8 @@ function setFloorCompression(value) {
 	const debrisValue = new Float64Array(maxDebris);
 	const debrisMinerals = new Float64Array(maxDebris * mineralCount);
 	const debrisDamage = new Float32Array(maxDebris);
+	const debrisInitialStrength = new Float32Array(maxDebris);
+	const debrisRemainingStrength = new Float32Array(maxDebris);
 	const hit = { time: Infinity, x: 0, y: 0, nx: 0, ny: 0, index: -1 };
 	// Bought energy is the only import into the closed system: 25 cr per kJ of
 	// reserve, measured against a scripted shift grossing roughly 560 cr.
@@ -374,10 +385,14 @@ function setFloorCompression(value) {
 	const soldMinerals = new Float64Array(mineralCount);
 	const fallGroups = new Float64Array(mineralCount);
 	const fallCells = new Float64Array(mineralCount);
+	for (let i = 0; i <= 1000; i++) {
+		materials.strengthColorInto(strengthScratch, i / 1000);
+		strengthPalette[i] = rgbText(strengthScratch);
+		materials.desaturateInto(strengthScratch);
+		rubblePalette[i] = rgbText(strengthScratch);
+	}
 	for (let i = 0; i <= 100; i++) {
 		const remaining = i / 100;
-		materials.strengthColorInto(strengthScratch, remaining);
-		strengthPalette[i] = 'rgb(' + Math.round(strengthScratch[0]) + ' ' + Math.round(strengthScratch[1]) + ' ' + Math.round(strengthScratch[2]) + ')';
 		damagePalette[i] = 'rgb(' + Math.round(65 + remaining * 185) + ' ' + Math.round(160 - remaining * 112) + ' ' + Math.round(190 - remaining * 152) + ')';
 	}
 	let seed = 1;
@@ -487,7 +502,7 @@ function setFloorCompression(value) {
 			const value = materials.valueInto(minerals, offset, mineralPrices);
 			prices[index] = value;
 			materials.priceColorInto(colorScratch, (value - minPrice) / span);
-			priceColors[index] = 'rgb(' + Math.round(colorScratch[0]) + ' ' + Math.round(colorScratch[1]) + ' ' + Math.round(colorScratch[2]) + ')';
+			priceColors[index] = rgbText(colorScratch);
 		}
 	}
 
@@ -523,7 +538,9 @@ function setFloorCompression(value) {
 		materials.basePricesInto(mineralBasePrices, mineralAbundance, materials.economy, basePriceReport);
 		for (let m = 0; m < mineralCount; m++) {
 			const entry = mineralTable[m];
-			demandBias[m] = 0.72 + hash(m, seed, 41) * 0.66;
+			// The run's own bias swings around the material's average demand,
+			// so a filler stays cheap and an ore stays worth its abundance.
+			demandBias[m] = entry.demandMean * (0.72 + hash(m, seed, 41) * 0.66);
 			demandPhase[m] = hash(m, seed, 43) * 97;
 			demandPeriod[m] = entry.demandPeriod * (0.85 + hash(m, seed, 47) * 0.3);
 			demandDepth[m] = entry.demandDepth;
@@ -656,13 +673,13 @@ function setFloorCompression(value) {
 		for (let m = 0; m < mineralCount; m++) mineralAbundance[m] /= initialCells;
 	}
 
-	// The controlled bed: one pure band per table entry, left to right, so every
-	// mineral of the table is testable in place. The band's strength is the
-	// table's own pure strength.
+	// The test bed orders pure minerals by strength without changing their table IDs.
+	const testMineralOrder = Array.from({ length: mineralCount }, (_, i) => i)
+		.sort((a, b) => mineralTable[b].strength - mineralTable[a].strength);
 	function populateTestRow(row, rowDamage) {
 		for (let column = 0; column < columns; column++) {
 			const index = row * columns + column;
-			const mineral = Math.min(mineralCount - 1, Math.floor(column * mineralCount / columns));
+			const mineral = testMineralOrder[Math.min(mineralCount - 1, Math.floor(column * mineralCount / columns))];
 			const entry = mineralTable[mineral];
 			const elementOffset = index * 3;
 			const mineralOffset = index * mineralCount;
@@ -673,8 +690,11 @@ function setFloorCompression(value) {
 			}
 			prices[index] = mineralPrices[mineral];
 			initialStrength[index] = entry.strength;
-			strength[index] = initialStrength[index];
-			damageField[index] = rowDamage;
+			// Pre-damage spans 0% at the top down to 100% at the bottom face,
+			// leaving fully damaged cells present until the collapse scheduler releases them.
+			const amount = entry.strength * rowDamage * 0.99999;
+			strength[index] = entry.strength - amount;
+			damageField[index] = loosenessGain(amount, entry.strength);
 			const color = entry.color;
 			mineralStyles[index] = 'rgb(' + color[0] + ' ' + color[1] + ' ' + color[2] + ')';
 			elementColors[index] = 'rgb(' + Math.round(elements[elementOffset] * 255) + ' ' + Math.round(elements[elementOffset + 1] * 255) + ' ' + Math.round(elements[elementOffset + 2] * 255) + ')';
@@ -766,7 +786,7 @@ function setFloorCompression(value) {
 		for (let c = 0; c < columns; c++) {
 			let r = firstRow[c];
 			if (!testRock) {
-				while (r < rows && strength[r * columns + c] > 0 && damageField[r * columns + c] >= collapseLooseFloor) r++;
+				while (r < rows && collapseEligible(r * columns + c)) r++;
 			}
 			const y = Math.min(top, bottom + r * cell);
 			if (y > highest) highest = y;
@@ -825,7 +845,7 @@ function setFloorCompression(value) {
 				for (let c = firstCol; c <= lastCol; c++) {
 					let r = firstRow[c];
 					if (!testRock) {
-						while (r < rows && strength[r * columns + c] > 0 && damageField[r * columns + c] >= collapseLooseFloor) r++;
+						while (r < rows && collapseEligible(r * columns + c)) r++;
 					}
 					const y = Math.min(top, bottom + r * cell);
 					if (y > localRoof) localRoof = y;
@@ -900,10 +920,7 @@ function setFloorCompression(value) {
 		return moved;
 	}
 
-	// Controlled comparison bed: one pure mineral band per table entry, with
-	// looseness rising from untouched at the roof to ready-to-fall at the
-	// exposed lower edge. Elements take the centre of each band, so the
-	// inspector shows the signature that formed the band.
+	// Controlled comparison bed: the same graded damage is applied to each band.
 	function generateTestRock() {
 		testRock = true;
 		syncField();
@@ -1019,6 +1036,11 @@ function setFloorCompression(value) {
 		return Math.pow(t, damageFalloffPower);
 	}
 
+	function loosenessGain(amount, before) {
+		const susceptibility = 1 + weakRockSensitivity * (materials.maxStrength / before - 1);
+		return Math.min(1, amount / before * loosedPerWeakened * susceptibility);
+	}
+
 	// An impact weakens the rock around its contact and returns only what it
 	// actually took out. Weakened cells stay standing, so the pendulum of a hit
 	// is answered by intact rock; the collapse scheduler above them decides when
@@ -1048,8 +1070,7 @@ function setFloorCompression(value) {
 			const amount = Math.min(before, budget * damageWeight(distance, owner), before * hitLooseCap);
 			strength[index] = before - amount;
 			// The same energy destabilizes low absolute strength more quickly.
-			const susceptibility = 1 + weakRockSensitivity * (materials.maxStrength / before - 1);
-			const looseGain = amount / before * loosedPerWeakened * susceptibility;
+			const looseGain = loosenessGain(amount, before);
 			damageField[index] = Math.min(1, damageField[index] + looseGain);
 			removed += amount / mult;
 			if (strength[index] > 0.0001) continue;
@@ -1071,21 +1092,9 @@ function setFloorCompression(value) {
 		return Math.min(impactJ, removed);
 	}
 
-	// Only the rock's free bottom face may let go, and across a uniformly loose
-	// span no column runs far ahead of equally loose neighbours — keeping broad
-	// falls cohesive without letting an unworked wall freeze a vertical shaft.
-	function canStepSurface(column, row) {
-		if (row >= rows) return false;
-		const floor = Math.max(collapseLooseFloor, damageField[row * columns + column] * 0.5);
-		if (column > 0) {
-			const left = firstRow[column - 1] + peeled[column - 1];
-			if (left < rows && damageField[left * columns + column - 1] >= floor && row > left + maxSurfaceStep) return false;
-		}
-		if (column < columns - 1) {
-			const right = firstRow[column + 1] + peeled[column + 1];
-			if (right < rows && damageField[right * columns + column + 1] >= floor && row > right + maxSurfaceStep) return false;
-		}
-		return true;
+	// Damage alone does not make a strong cell fall; both conditions are needed.
+	function collapseEligible(index) {
+		return strength[index] > 0 && strength[index] < collapseStrengthLimit && damageField[index] >= collapseLooseFloor;
 	}
 
 	// Advance the collapse scheduler by a span of chamber time. The chamber
@@ -1100,7 +1109,7 @@ function setFloorCompression(value) {
 	function cellWeakness(index) {
 		const initial = initialStrength[index];
 		const lost = initial > 0 ? 1 - strength[index] / initial : 0;
-		return damageField[index] + lost * 2;
+		return damageField[index] + lost * 2 + (1 - strength[index] / collapseStrengthLimit) * 2;
 	}
 
 	function compatibleMineral(index, seedIndex, mineral) {
@@ -1112,9 +1121,7 @@ function setFloorCompression(value) {
 		return diff < 0.22;
 	}
 
-	// Each horizontal surface band rolls at most once per tick over its live
-	// free-surface front, so crossing a vertical row multiple never accelerates
-	// a recessed column into an interior shaft.
+	// Each horizontal surface band rolls at most once per tick over its exposed faces.
 	function collapseTick(dt) {
 		collapseClock += dt;
 		if (collapseClock < collapseChanceSeconds) return;
@@ -1129,7 +1136,8 @@ function setFloorCompression(value) {
 			const mineral = dominantMineral(seed);
 			const growth = mineralClusterGrowth[mineral];
 			const releaseFactor = 100 / (100 + growth);
-			const chance = collapseChanceMax * Math.max(excess, damageField[seed] * collapseSeedChanceShare) * releaseFactor;
+			const weakness = Math.pow(Math.max(0, 1 - strength[seed] / collapseStrengthLimit), 1.5);
+			const chance = collapseChanceMax * Math.max(excess, damageField[seed] * collapseSeedChanceShare) * releaseFactor * weakness;
 			if (hash(band, collapseRoll + band, 5) >= chance) continue;
 			const baseChunk = collapseChunkMin + excess * (collapseChunkMax - collapseChunkMin);
 			const target = Math.max(1, Math.min(collapseClumpLimit, Math.round(baseChunk * (1 + growth / 100))));
@@ -1162,7 +1170,7 @@ function setFloorCompression(value) {
 				touched++;
 			}
 			const faceIndex = face * columns + column;
-			if (damageField[faceIndex] >= collapseLooseFloor && canStepSurface(column, face)) {
+			if (collapseEligible(faceIndex)) {
 				const w = cellWeakness(faceIndex);
 				bandLoose[bandLooseCount++] = column;
 				bandWeightTotal += w * w;
@@ -1200,7 +1208,7 @@ function setFloorCompression(value) {
 				if (damage <= 0) continue;
 				total += damage;
 				touched++;
-				if (row === firstRow[column] && damage >= collapseLooseFloor && canStepSurface(column, row)) loose++;
+				if (row === firstRow[column] && collapseEligible(index)) loose++;
 			}
 			regionDamage[region] = touched ? total / touched : 0;
 			regionEligible[region] = loose;
@@ -1273,8 +1281,8 @@ function setFloorCompression(value) {
 					const row = firstRow[col] + peeled[col];
 					if (row >= rows || !touchesLump(row, col)) continue;
 					const index = row * columns + col;
-					if (strength[index] <= 0 || damageField[index] < collapseLooseFloor) continue;
-					if (!compatibleMineral(index, seedIndex, mineral) || !canStepSurface(col, row)) continue;
+					if (!collapseEligible(index)) continue;
+					if (!compatibleMineral(index, seedIndex, mineral)) continue;
 					const across = Math.abs(col - seedColumn);
 					const tie = (col - seedColumn) * lean > 0 ? -0.05 : 0.05;
 					const cost = across + peeled[col] * clumpDepthCost + (row - seedRow) * 1.25 - cellWeakness(index) * 0.6 + tie;
@@ -1291,7 +1299,7 @@ function setFloorCompression(value) {
 					const row = firstRow[col] + peeled[col];
 					if (row >= rows) continue;
 					const index = row * columns + col;
-					if (strength[index] <= 0 || damageField[index] < collapseLooseFloor) continue;
+					if (!collapseEligible(index)) continue;
 					bestCol = col;
 					break;
 				}
@@ -1310,12 +1318,13 @@ function setFloorCompression(value) {
 		for (let i = 0; i < size; i++) {
 			const index = clusterCells[i];
 			spawnFragment(index);
+			fallCells[dominantMineral(index)]++;
 			strength[index] = 0;
 			damageField[index] = 0;
 			puff(index);
 			collapseCells++;
 		}
-		recordFall(size, representative);
+		recordFall(representative);
 		for (let col = minCol; col <= maxCol; col++) {
 			if (!peeled[col]) continue;
 			firstRow[col] += peeled[col];
@@ -1345,8 +1354,7 @@ function setFloorCompression(value) {
 		context.fillStyle = 'rgba(226, 196, 138, 0.5)';
 		for (let column = 0; column < columns; column++) {
 			const row = firstRow[column];
-			if (row >= rows || damageField[row * columns + column] < collapseLooseFloor) continue;
-			if (!canStepSurface(column, row)) continue;
+			if (row >= rows || !collapseEligible(row * columns + column)) continue;
 			const faceY = rockShape === 'square'
 				? drawnRowY[row]
 				: rockDrawnY((heightmap[column] + heightmap[column + 1]) * 0.5);
@@ -1364,7 +1372,7 @@ function setFloorCompression(value) {
 		let total = 0;
 		for (let column = 0; column < columns; column++) {
 			const row = firstRow[column];
-			if (row < rows && damageField[row * columns + column] >= collapseLooseFloor && canStepSurface(column, row)) total++;
+			if (row < rows && collapseEligible(row * columns + column)) total++;
 		}
 		return total;
 	}
@@ -1385,10 +1393,9 @@ function setFloorCompression(value) {
 	// A fall is counted as one let-go event with the cells it took, whichever
 	// mix of the two release rules produced it, so the readout compares the
 	// settings on the same terms.
-	function recordFall(size, representative) {
+	function recordFall(representative) {
 		const mineral = dominantMineral(representative);
 		fallGroups[mineral]++;
-		fallCells[mineral] += size;
 	}
 
 	// One grain of falling rock: a single cell, drawn at its own cell size and
@@ -1411,6 +1418,8 @@ function setFloorCompression(value) {
 			debrisVx[i] = 0;
 			debrisVy[i] = 0;
 			debrisDamage[i] = damageField[index];
+			debrisInitialStrength[i] = initialStrength[index];
+			debrisRemainingStrength[i] = strength[index];
 			extractedCells++;
 			return;
 		}
@@ -1442,6 +1451,8 @@ function setFloorCompression(value) {
 		debrisCells[target] = nextCells;
 		debrisValue[target] += prices[index];
 		debrisDamage[target] = (previousDamage * prevCells + damageField[index]) / nextCells;
+		debrisInitialStrength[target] = (debrisInitialStrength[target] * prevCells + initialStrength[index]) / nextCells;
+		debrisRemainingStrength[target] = (debrisRemainingStrength[target] * prevCells + strength[index]) / nextCells;
 		const mOffset = target * mineralCount;
 		for (let m = 0; m < mineralCount; m++) debrisMinerals[mOffset + m] += cellMass * minerals[offset + m];
 		exportedEnergy += beforeE - fragmentMechanical(target);
@@ -1451,7 +1462,8 @@ function setFloorCompression(value) {
 	// A single cell let go on its own (a hit that finishes a free-face cell).
 	function spawn(index) {
 		spawnFragment(index);
-		recordFall(1, index);
+		fallCells[dominantMineral(index)]++;
+		recordFall(index);
 	}
 
 	function traceSmooth(x, y, vx, vy, duration, radius, traceGravity) {
@@ -2046,13 +2058,22 @@ function setFloorCompression(value) {
 		return total;
 	}
 
-	function colorFor(index, mode, damage) {
+	function strengthSlot(value) {
+		return Math.round(materials.clamp01(value / materials.maxStrength) * 1000);
+	}
+
+	function colorFor(index, mode, fragment) {
 		if (mode === 'elements') return elementColors[index];
 		if (mode === 'price') return priceColors[index];
 		// The fixed absolute ceiling: the strongest pure mineral, so a cell's
-		// colour never depends on its own initial strength.
-		if (mode === 'strength') return strengthPalette[Math.round(materials.clamp01(strength[index] / materials.maxStrength) * 100)];
-		if (mode === 'damage') return damagePalette[Math.round(Math.max(0, Math.min(1, damage === undefined ? damageField[index] : damage)) * 100)];
+		// colour never depends on its own initial strength. Both strength views
+		// share one scale; only the remaining view marks rubble, because rubble
+		// is what remaining strength means for a fall.
+		const initial = fragment === undefined ? initialStrength[index] : debrisInitialStrength[fragment];
+		const remaining = fragment === undefined ? strength[index] : debrisRemainingStrength[fragment];
+		if (mode === 'initial-strength') return strengthPalette[strengthSlot(initial)];
+		if (mode === 'strength') return (remaining < collapseStrengthLimit ? rubblePalette : strengthPalette)[strengthSlot(remaining)];
+		if (mode === 'damage') return damagePalette[Math.round(materials.clamp01((initial - remaining) / materials.maxStrength) * 100)];
 		return mineralStyles[index];
 	}
 
@@ -2204,7 +2225,7 @@ function setFloorCompression(value) {
 		const halfGrain = grain * 0.5;
 		for (let i = 0; i < maxDebris; i++) if (active[i]) {
 			const drawnY = Math.min(rockDrawnY(debrisY[i]), ceilingUnder(debrisX[i], halfGrain) - halfGrain);
-			context.fillStyle = colorFor(debrisCell[i], mode, debrisDamage[i]);
+			context.fillStyle = colorFor(debrisCell[i], mode, i);
 			context.fillRect(debrisX[i] - halfGrain, drawnY - halfGrain, grain, grain);
 		}
 		drawCollapse(context);
@@ -2303,9 +2324,10 @@ function setFloorCompression(value) {
 		get baseDamageMultiplier() { return baseDamageMultiplier; },
 		get damageRange() { return damageRangeNow(); },
 		damageFalloffPower, pileLimit, graderCut, graderSmooth, graderClearance, graderSwath,
-		loosedPerWeakened, weakRockSensitivity, hitLooseCap, collapseLooseFloor, collapseChanceMax, collapseChanceSaturation, collapseChanceSeconds,
+		loosedPerWeakened, weakRockSensitivity, hitLooseCap, collapseLooseFloor, collapseStrengthLimit, collapseChanceMax, collapseChanceSaturation, collapseChanceSeconds,
 		collapseChunkMin, get collapseChunkMax() { return collapseChunkMaxNow(); }, mineralClusterGrowth, damagePalette,
-		get testRock() { return testRock; },
+		strengthPalette, rubblePalette,
+		get testRock() { return testRock; }, testMineralOrder,
 		collapseRegionsX, collapseRegionsY, regionDamage, regionEligible, damageField,
 		get looseCells() { return looseCells(); },
 		graderBot, blade, graderShare, floorValues,

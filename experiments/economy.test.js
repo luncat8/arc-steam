@@ -36,7 +36,7 @@ test('recharge imports energy at the documented price and keeps the balance exac
 
 test('a short budget buys a partial recharge and an exhausted one refuses', () => {
 	const w = physics.createWorld();
-	earnFunds(w, 20);
+	earnFunds(w, 5);
 	const funds = ceiling.state.funds;
 	assert.ok(funds > 0 && funds < c.battery / 1000 * price(), 'the load does not cover a full reserve');
 	w.battery = 0;

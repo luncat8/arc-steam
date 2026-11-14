@@ -206,8 +206,10 @@ function spent(credits, digits) {
 
 function mineralStateTag(ceiling, layer, remaining, looseness) {
 	if (remaining === 0) return ' · fallen';
-	if (looseness <= 0) return ' · remaining strength · sound';
-	if (looseness < ceiling.collapseLooseFloor) return ' · remaining strength · weakened';
+	// Sound means held by its own strength; a material that forms below the
+	// debris limit is already rubble even before anything loosened it.
+	if (looseness <= 0) return remaining < ceiling.collapseStrengthLimit ? ' · remaining strength · rubble' : ' · remaining strength · sound';
+	if (looseness < ceiling.collapseLooseFloor || remaining >= ceiling.collapseStrengthLimit) return ' · remaining strength · weakened';
 	return layer === ceiling.firstRow[selectedColumn]
 		? ' · remaining strength · loose'
 		: ' · remaining strength · weakened (held)';
@@ -241,8 +243,8 @@ function miningReadout() {
 		if (renderedFallCells[i] === cells) continue;
 		renderedFallCells[i] = cells;
 		const groups = ceiling.fallGroups[i];
-		setText(ui[clusterNoteIds[i]], groups > 0
-			? groups + ' falls · ' + (cells / groups).toFixed(1) + ' cells/fall'
+		setText(ui[clusterNoteIds[i]], groups > 0 || cells > 0
+			? groups + ' seeded falls · ' + cells + ' cells fallen'
 			: '10% is the plain loose-face clump');
 	}
 	setText(ui.extracted, ceiling.extractedCells + ' cells');

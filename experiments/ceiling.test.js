@@ -74,8 +74,9 @@ test('radial 2D damage weakens nearby cells and the loosened ring falls later', 
 	assert.equal(state.extractedCells, 0);
 	assert.equal(state.lostCells, 0);
 	assert.equal(state.airborneCells, 0);
-	// The weakened ring around the crater lets go in a later collapse burst.
-	ceiling.collapse(10);
+	// Further impacts bring the contact below the absolute collapse threshold.
+	for (let i = 0; i < 3; i++) ceiling.damage(6.25, state.bottom + 0.06, 3);
+	ceiling.collapse(60);
 	const extracted = state.extractedCells;
 	assert.ok(extracted > 0);
 	assert.equal(state.airborneCells, extracted);
@@ -149,7 +150,7 @@ test('overlapping contacts resolve at the surface instead of being skipped', () 
 
 test('storage stops at 100 cells, adds one dry-platform mass, and sells at once', () => {
 	ceiling.reset(5);
-	for (let x = 1; x < 23; x += 2) { ceiling.damage(x, ceiling.state.bottom + 0.2, 20); ceiling.collapse(2); }
+	for (let x = 1; x < 23; x += 2) { for (let i = 0; i < 3; i++) ceiling.damage(x, ceiling.state.bottom + 0.2, 20); ceiling.collapse(5); }
 	const state = ceiling.state;
 	assert.equal(state.lostCells, 0);
 	assert.equal(state.airborneCells, state.extractedCells);
@@ -202,7 +203,7 @@ test('multiple broken cells are never lost on fracture and all broken mass falls
 	ceiling.reset(11);
 	const state = ceiling.state;
 	const initialEnergy = ceiling.state.energy;
-	for (let x = 1; x < 23; x += 1.5) { ceiling.damage(x, ceiling.state.bottom + 0.5, 25); ceiling.collapse(2); }
+	for (let x = 1; x < 23; x += 1.5) { for (let i = 0; i < 4; i++) ceiling.damage(x, ceiling.state.bottom + 0.5, 25); ceiling.collapse(10); }
 	const extracted = state.extractedCells;
 	assert.ok(extracted > 400);
 	assert.equal(state.lostCells, 0);
@@ -217,8 +218,8 @@ test('multiple broken cells are never lost on fracture and all broken mass falls
 		state.debrisY[i] = 4;
 	}
 	const energyBefore = ceiling.state.energy;
-	ceiling.damage(12.25, ceiling.state.bottom + 0.06, 10);
-	ceiling.collapse(10);
+	for (let i = 0; i < 4; i++) ceiling.damage(12.25, ceiling.state.bottom + 0.06, 10);
+	ceiling.collapse(30);
 	assert.ok(state.extractedCells > 0);
 	assert.equal(state.lostCells, 0);
 	assert.equal(state.airborneCells, state.active.length + state.extractedCells);
@@ -228,7 +229,7 @@ test('multiple broken cells are never lost on fracture and all broken mass falls
 
 test('cargo tracks per-mineral mass and each wall sale appends a frozen ledger entry', () => {
 	ceiling.reset(7);
-	for (let x = 1; x < 23; x += 2) { ceiling.damage(x, ceiling.state.bottom + 0.2, 20); ceiling.collapse(2); }
+	for (let x = 1; x < 23; x += 2) { for (let h = 0; h < 2; h++) ceiling.damage(x, ceiling.state.bottom + 0.2, 20); ceiling.collapse(2); }
 	const state = ceiling.state;
 	const world = { platform: { x: 12, vx: 0 }, heat: 0 };
 	for (let i = 0; i < state.active.length; i++) if (state.active[i]) {
@@ -313,11 +314,13 @@ test('lost fragments pile up on the floor heightmap under their landing point', 
 
 // 0.3.1 acceptance: delayed ceiling collapse.
 test('a single impact does not detach pixels immediately', () => {
-	ceiling.reset(11);
+	ceiling.reset(1);
 	const state = ceiling.state;
 	const before = state.extractedCells;
 	const beforeLoose = state.looseCells;
-	const removed = ceiling.damage(8, state.bottom + 0.2, 40);
+	const surface = Array.from(state.strength.slice(0, state.columns));
+	const weak = surface.indexOf(Math.min(...surface));
+	const removed = ceiling.damage((weak + 0.5) * state.cell, state.bottom + 0.2, 40);
 	assert.ok(removed > 0);
 	// The blow spends at most half of a cell's remaining strength, so the ring
 	// around the contact stays standing and nothing is extracted in the same call.
@@ -341,7 +344,7 @@ test('collapse probability rises with damage', () => {
 test('only exposed, damaged pixels detach, and a clump is bounded', () => {
 	ceiling.reset(47);
 	const state = ceiling.state;
-	ceiling.damage(8, state.bottom + 0.2, 200);
+	for (let i = 0; i < 4; i++) ceiling.damage(8, state.bottom + 0.2, 200);
 	ceiling.collapse(60);
 	assert.ok(state.extractedCells > 0);
 	// Every detached cell was on the surface of its own column when it fell: the
