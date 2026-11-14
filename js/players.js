@@ -329,6 +329,7 @@
 			tailLeft: 0, tailRight: 0,
 			playing: null, mark: NaN, markTime: 0, commanded: false,
 			harvesting: false, harvestTarget: NaN, harvestDirection: 1,
+			rocketing: false, rocketCatching: false, rocketMark: NaN, rocketTimer: 0, rocketWait: 0,
 			tiltManual: 0, driveManual: 0, wantedAngle: 0,
 			keeperAge: keeperInterval, keeperBall: null, keeperState: '', keeperBounces: -1, keeperPushes: -1,
 			contactOnPiston: false, contactVx: 0, contactVy: 0, contactY: 0,
@@ -500,6 +501,7 @@
 		player.direction = 0;
 		player.braking = false;
 		player.keeperAge = keeperInterval;
+		if (!value) clearRivalRocketTrip(player);
 		return value;
 	}
 
@@ -637,7 +639,7 @@
 		const mark = bot ? rival.mark : rival.target;
 		if (!Number.isFinite(mark)) return 0;
 		const distance = mark - rival.x;
-		const slack = bot && !rival.harvesting ? deckSlack : approachSlack;
+		const slack = bot && rival.rocketing ? rocketApproachSlack : bot && !rival.harvesting ? deckSlack : approachSlack;
 		const reach = Math.abs(distance) - slack;
 		if (reach <= 0) {
 			if (!bot) rival.target = NaN;
@@ -909,6 +911,7 @@
 		if (rival.tiltManual > 0) rival.tiltManual = Math.max(0, rival.tiltManual - dt);
 		if (rival.driveManual > 0) rival.driveManual = Math.max(0, rival.driveManual - dt);
 		stepBallPolicy(rival, dt);
+		stepRivalRocketTrip(rival, dt);
 		rival.previousX = rival.x;
 		rival.previousY = rival.y;
 		rival.previousAngle = rival.angle;
@@ -1068,9 +1071,12 @@
 		return bestMark;
 	}
 
-	function rocketReady() {
+	function rocketReady(owner, wait) {
+		const id = owner || 'rig';
 		const rockets = root.SteamRockets;
-		return Boolean(rockets && rockets.state.stock > 0 && rockets.canFire() && rocketWait <= 0);
+		const profile = rockets && rockets.stateFor(id);
+		const delay = wait === undefined ? id === 'rig' ? rocketWait : 0 : wait;
+		return Boolean(profile && profile.stock > 0 && rockets.canFire(id) && delay <= 0);
 	}
 
 	function startRocketTrip() {
@@ -1089,6 +1095,57 @@
 		rocketTimer = 0;
 	}
 
+	function clearRivalRocketTrip(rival) {
+		rival.rocketing = false;
+		rival.rocketCatching = false;
+		rival.rocketMark = NaN;
+		rival.rocketTimer = 0;
+	}
+
+	function startRivalRocketTrip(rival) {
+		const mark = richestSeam();
+		if (!Number.isFinite(mark)) return false;
+		rival.rocketing = true;
+		rival.rocketCatching = false;
+		rival.rocketMark = mark;
+		return true;
+	}
+
+	// A rival bot can work its own rack after a sale. Its drive and tilt keepers
+	// still play the ball while travel goes to the richest reachable seam.
+	function stepRivalRocketTrip(rival, dt) {
+		if (rival.rocketWait > 0) rival.rocketWait = Math.max(0, rival.rocketWait - dt);
+		const ceiling = root.SteamCeiling;
+		const full = ceiling && rival.cargoCells >= ceiling.state.storageLimit;
+		if (!rival.bot || rival.manual > 0 || rival.braking || rival.direction || full) {
+			clearRivalRocketTrip(rival);
+			return;
+		}
+		const rockets = root.SteamRockets;
+		if (!rockets) return;
+		if (!rival.rocketing && (rival.rocketWait > 0 || !rocketReady(rival.id, rival.rocketWait) || !startRivalRocketTrip(rival))) return;
+		if (!rival.rocketCatching && rockets.stateFor(rival.id).stock <= 0) {
+			clearRivalRocketTrip(rival);
+			return;
+		}
+		if (rival.rocketCatching) {
+			rival.rocketTimer -= dt;
+			if (rival.rocketTimer <= 0) {
+				clearRivalRocketTrip(rival);
+				rival.rocketWait = rocketCooldown;
+				return;
+			}
+		} else if (Math.abs(rival.x - rival.rocketMark) <= rocketApproachSlack) {
+			if (!rockets.fire(rigWorld, rival.id)) return;
+			rival.rocketCatching = true;
+			rival.rocketTimer = rocketCatchSeconds;
+		}
+		rival.mark = rival.rocketMark;
+		rival.markTime = 0;
+		rival.harvesting = false;
+		clearHarvest(rival);
+	}
+
 	// Travel puts the tube under the seam; the burst then falls into the bin
 	// while the platform holds station for the early-fall window. Only travel is
 	// borrowed — the drive and tilt keepers stay live, so the ball is still played.
@@ -1100,9 +1157,9 @@
 		world.target = rocketMark;
 		if (!rocketCatching) {
 			// A hand fire can empty the rack mid-travel; there is nothing to catch.
-			if (rockets.state.stock <= 0) { endRocketTrip(world); return; }
+			if (rockets.stateFor('rig').stock <= 0) { endRocketTrip(world); return; }
 			if (Math.abs(world.platform.x - rocketMark) > rocketApproachSlack) return;
-			if (!rockets.fire(world)) return;
+			if (!rockets.fire(world, 'rig')) return;
 			rocketCatching = true;
 			rocketTimer = rocketCatchSeconds;
 			return;

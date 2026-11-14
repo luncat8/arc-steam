@@ -3,7 +3,7 @@
 // The price in js/rockets.js is read against the `all` row: what the bin
 // catches, valued at ordinary-rock prices.
 const ceiling = require('../js/ceiling.js');
-require('../js/equipment.js');
+const equipment = require('../js/equipment.js');
 require('../js/research.js');
 const physics = require('../js/physics.js');
 const players = require('../js/players.js');
@@ -47,8 +47,9 @@ function sample(seed, p, fired) {
 	world.platform.x = p;
 	world.platform.previousX = p;
 	if (fired) {
-		rockets.fill(world);
-		rockets.fire(world);
+		if (!equipment.grant('rocket-rack', world, 'rig') || !rockets.fill(world, 'rig') || !rockets.fire(world, 'rig')) {
+			throw new Error('the rocket yield probe could not install and load the rig rack');
+		}
 	}
 	const rock = ceiling.state;
 	const commonCell = commonCellValue(rock);

@@ -199,16 +199,13 @@ function releaseBall() {
 	physics.launch(world, ball, playerApi.machineOf(player));
 	refresh();
 }
-// The rocket rack is the rig's own tool, like its grader: the key and both
-// buttons act only while the rig has the controls.
+// Rockets belong to the selected platform; each rack, stock and order is its own.
 function fireRocket() {
-	if (!playerApi.rigActive()) return;
-	SteamRockets.fire(world);
+	SteamRockets.fire(world, activePlayerId());
 	refresh();
 }
 function buyRocket() {
-	if (!playerApi.rigActive()) return;
-	SteamRockets.buy(world, 1);
+	SteamRockets.buy(world, 1, activePlayerId());
 	refresh();
 }
 function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }
@@ -356,7 +353,7 @@ function bindInput() {
 	ui['rocket-fire'].addEventListener('click', fireRocket);
 	ui['rocket-buy'].addEventListener('click', buyRocket);
 	ui['rocket-auto'].addEventListener('change', function () {
-		SteamRockets.setAutoBuy(ui['rocket-auto'].checked);
+		SteamRockets.setAutoBuy(ui['rocket-auto'].checked, activePlayerId());
 		refresh();
 	});
 	ui.pause.addEventListener('click', togglePause);

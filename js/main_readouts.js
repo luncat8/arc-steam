@@ -378,18 +378,19 @@ function readout() {
 // The rack: what a press would do now, and one line only while there is a
 // reason a press does nothing.
 function rocketReadout() {
-	const rockets = SteamRockets.state;
-	const rig = playerApi.rigActive();
-	const atWall = physics.atSellWall(world);
+	const owner = activePlayerId();
+	const rockets = SteamRockets.stateFor(owner);
+	const installed = SteamEquipment.isInstalled('rocket-rack', owner);
+	const atWall = physics.atSellWall(world, owner);
 	const full = rockets.stock >= rockets.rackSize;
 	const unit = rockets.unitPrice;
-	const short = window.SteamCeiling.state.funds < unit;
+	const short = unit > 0 && playerApi.money(playerApi.state.active) < unit;
 	setText(ui['rocket-fire'].firstChild, 'Fire ' + rockets.stock + ' / ' + rockets.rackSize + ' ');
-	setDisabled(ui['rocket-fire'], !rig || !SteamRockets.canFire());
+	setDisabled(ui['rocket-fire'], !installed || !SteamRockets.canFire(owner));
 	setText(ui['rocket-buy'], unit > 0 ? 'Buy · ' + unit + ' cr' : 'Buy · free');
-	setDisabled(ui['rocket-buy'], !rig || !atWall || full || short);
+	setDisabled(ui['rocket-buy'], !installed || !atWall || full || short);
 	setChecked(ui['rocket-auto'], rockets.autoBuy);
-	const reason = !rig ? 'The rack is the rig’s · select YOU to use it'
+	const reason = !installed ? 'No rocket rack installed · fit one in Science + Shop'
 		: !atWall ? ''
 		: full ? 'Rack full'
 		: short ? 'Not enough funds for a rocket'

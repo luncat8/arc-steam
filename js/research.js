@@ -40,7 +40,7 @@
 		}),
 		Object.freeze({
 			id: 'impact', name: 'Impact forging', cost: 320, requires: Object.freeze(['materials']),
-			effect: 'Strike-head metallurgy: trade rock bounce retention for deeper fracture.'
+			effect: 'Fracture metallurgy unlocks hardened strike balls and the optional rocket rack.'
 		}),
 		Object.freeze({
 			id: 'ballistics', name: 'Ballistic computer', cost: 520, requires: Object.freeze(['electromagnetics']),

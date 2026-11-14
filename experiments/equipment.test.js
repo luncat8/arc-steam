@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
-const { ceiling, equipment, research, physics, c, near, balanced, sync, run, earnFunds, unlockResearch, buy } = require('./harness.cjs');
+const { ceiling, equipment, research, physics, c, near, balanced, sync, run, earnFunds, afford, unlockResearch, buy } = require('./harness.cjs');
 const players = require('../js/players.js');
 
 test('purchase needs funds and the unlocking research, debits once, and appends frozen ledger entries', () => {
@@ -30,6 +30,35 @@ test('purchase needs funds and the unlocking research, debits once, and appends 
 	assert.equal(buyEntry.credits, 250);
 	assert.ok(Object.isFrozen(buyEntry));
 	assert.equal(equipment.install('coil', w), false, 'the coil is locked behind its own research');
+	physics.createWorld();
+});
+
+test('the rocket rack is per-player equipment unlocked by Impact forging', () => {
+	const w = physics.createWorld();
+	players.init(w, 1);
+	const rival = players.state.rivals[0];
+	const rack = equipment.find('rocket-rack');
+	assert.equal(rack.requires, 'impact');
+	assert.equal(rack.mass, 8);
+	assert.equal(equipment.isUnlocked(rack.id, 'rig'), false);
+	assert.equal(equipment.install(rack.id, w, 'rig'), false, 'the rack is locked before Impact forging');
+	assert.equal(equipment.isUnlocked(rack.id, rival.id), false, 'the rival has its own prerequisite');
+
+	research.grant('impact', w, 'rig');
+	assert.equal(equipment.isUnlocked(rack.id, 'rig'), true);
+	assert.equal(equipment.isUnlocked(rack.id, rival.id), false, 'one player\'s research unlocks nothing for another');
+	afford(w, rack.cost);
+	const rigFunds = ceiling.state.funds;
+	assert.equal(equipment.install(rack.id, w, 'rig'), true);
+	near(ceiling.state.funds, rigFunds - rack.cost);
+	near(equipment.stateFor('rig').massDelta, rack.mass);
+
+	rival.money = rack.cost;
+	research.grant('impact', w, rival.id);
+	assert.equal(equipment.install(rack.id, w, rival.id), true);
+	assert.equal(rival.money, 0, 'the rival pays for its rack with its purse');
+	near(ceiling.state.funds, rigFunds - rack.cost, 1e-9);
+	near(equipment.stateFor(rival.id).massDelta, rack.mass);
 	physics.createWorld();
 });
 

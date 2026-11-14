@@ -44,6 +44,10 @@
 			id: 'flywheel', name: 'Brake flywheel', cost: 480, mass: 14, requires: 'storage',
 			recoveryFraction: 0.55,
 			effect: 'Returns 55% of braking energy to reserve at 90% efficiency (wall stops unrecovered).'
+		}),
+		Object.freeze({
+			id: 'rocket-rack', name: 'Rocket rack', cost: 480, mass: 8, requires: 'impact',
+			effect: 'Installs a 6-round collector tube; rockets cost 14 cr each at either SELL wall, +8 kg.'
 		})
 	]);
 	const radiators = Object.freeze([

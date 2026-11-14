@@ -127,13 +127,12 @@ function drawRigMachinery(context, player) {
 	context.strokeRect(tempX, tempTop, tempW, tempBot - tempTop);
 	context.fillStyle = '#e6b66e';
 	context.fillRect(left, 0.55, collectorWidth, 0.15);
-	// The rig's launch tube stands in the middle of its collector, and shows
-	// the nose of the next rocket while the rack holds one.
-	if (isRig) {
+	// The installed rack lives in the collector and shows its next round.
+	if (SteamEquipment.isInstalled('rocket-rack', player.id)) {
 		const tubeX = left + collectorWidth * 0.5;
 		context.fillStyle = '#59686b';
 		context.fillRect(tubeX - 0.06, config.deck, 0.12, 0.2);
-		if (SteamRockets.state.stock > 0) {
+		if (SteamRockets.stateFor(player.id).stock > 0) {
 			context.fillStyle = '#e0775e';
 			context.beginPath();
 			context.moveTo(tubeX - 0.04, config.deck + 0.2);

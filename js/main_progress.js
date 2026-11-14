@@ -543,15 +543,14 @@ function buildUpgrades() {
 		researchRows.push(sci);
 
 		const unlockedItems = itemsByResearch[node.id];
-		if (unlockedItems) {
-			for (const unlockedItem of unlockedItems) buildEquipmentSlot(card, unlockedItem);
-		} else if (node.id === 'thermodynamics') {
+		if (unlockedItems) for (const unlockedItem of unlockedItems) buildEquipmentSlot(card, unlockedItem);
+		if (node.id === 'thermodynamics') {
 			const record = buildTierSlot(card, radiatorSpec);
 			bindPreview(record);
 		} else if (node.id === 'impact') {
 			const record = buildTierSlot(card, ballSpec);
 			bindPreview(record);
-		} else {
+		} else if (!unlockedItems) {
 			const cap = document.createElement('div');
 			cap.className = 'node-cap';
 			cap.textContent = '◈ ACTIVE ON RESEARCH · NO EXTRA PURCHASE';
@@ -718,8 +717,8 @@ function grantTestState() {
 		SteamEquipment.installAll(world, owner);
 		SteamEquipment.installRadiator('radiator', world, true, owner);
 		SteamEquipment.installBall('spike', world, true, owner);
+		SteamRockets.fill(world, owner);
 	}
-	SteamRockets.fill(world);
 	const researched = SteamResearch.stateFor(activePlayerId()).completed;
 	let installed = 0;
 	for (const item of SteamEquipment.items) if (SteamEquipment.isInstalled(item.id, activePlayerId())) installed++;

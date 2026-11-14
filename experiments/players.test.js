@@ -1085,12 +1085,14 @@ test('a bot rival spends on its own machine before page-only research', () => {
 
 // The rig bot's rocket duty: a third service trip after selling and recharging.
 const rockets = require('../js/rockets.js');
+const rack = rockets.state;
 
 function rocketWorld() {
 	const world = fresh();
 	rockets.reset(1);
-	rockets.setAutoBuy(false);
-	rockets.fill(world);
+	rockets.setAutoBuy(false, 'rig');
+	equipment.grant('rocket-rack', world, 'rig');
+	rockets.fill(world, 'rig');
 	world.initialEnergy = physics.totalEnergy(world);
 	return world;
 }
@@ -1129,6 +1131,50 @@ test('the rig bot fires its own rack at the richest seam and catches the burst',
 	assert.equal(players.state.rocketing, false, 'the trip ends after the fall window');
 	assert.equal(autopilot.suspended('move'), false, 'travel returns to the intercept');
 	near(physics.totalEnergy(world), world.initialEnergy, 1e-6, 'a rocket carries its own charge');
+});
+
+test('a rival bot works its own installed rack and leaves the rig rack untouched', () => {
+	const world = fresh();
+	const rival = players.state.rivals[0];
+	autopilot.reset();
+	equipment.grant('rocket-rack', world, rival.id);
+	rockets.setAutoBuy(false, rival.id);
+	assert.equal(rockets.fill(world, rival.id), true);
+	const rivalRack = rockets.stateFor(rival.id);
+	const rigStock = rockets.state.stock;
+	let mark = NaN;
+	for (let i = 0; i < 240 * 30 && rivalRack.fired === 0; i++) {
+		stepBot(world);
+		if (rival.rocketing && !Number.isFinite(mark)) mark = rival.rocketMark;
+	}
+	assert.equal(rivalRack.fired, 1, 'the rival bot fires without a hand command');
+	assert.equal(rivalRack.stock, rivalRack.rackSize - 1);
+	assert.equal(rockets.state.stock, rigStock, 'the rival uses only its own rounds');
+	assert.ok(Number.isFinite(mark));
+	const slot = rack.rocketOwner.findIndex((owner, i) => owner === 1 && rack.rocketState[i] !== rack.FREE);
+	assert.ok(slot >= 0, 'the airborne round retains its rival owner');
+	near(rack.rocketX[slot], rockets.launcherX(world, rival.id), physics.speedNow(rival.id) * c.step + 1e-6);
+	assert.equal(players.state.rocketing, false, 'the rival service does not borrow rig autopilot state');
+});
+
+test('a full rival hopper sells before its rack is worked', () => {
+	const world = fresh();
+	const rival = players.state.rivals[0];
+	equipment.grant('rocket-rack', world, rival.id);
+	rockets.setAutoBuy(false, rival.id);
+	assert.equal(rockets.fill(world, rival.id), true);
+	rival.cargoCells = 100;
+	rival.cargoValue = 100;
+	const rivalRack = rockets.stateFor(rival.id);
+
+	for (let i = 0; i < 240 * 8 && rival.cargoCells > 0; i++) {
+		stepBot(world);
+		assert.equal(rival.rocketing, false, 'the rocket duty yields to full cargo');
+		assert.equal(rivalRack.fired, 0, 'the loaded rack waits for the wall sale');
+	}
+	assert.equal(rival.cargoCells, 0, 'the rival sold its hopper');
+	for (let i = 0; i < 240 * 25 && rivalRack.fired === 0; i++) stepBot(world);
+	assert.equal(rivalRack.fired, 1, 'the rival returns to its own rocket trip after selling');
 });
 
 test('a full hopper sells before the rack is worked', () => {
