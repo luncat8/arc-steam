@@ -21,7 +21,7 @@ const ids = ['clock', 'drive', 'launch', 'status-bar', 'status-ball', 'status-en
 	'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry', 'mineral-tooltip', 'science-drawer', 'market-drawer', 'science-open', 'science-close', 'market-open', 'market-close',
 	'telemetry', 'player-list', 'control-title', 'rig-drive',
 	'rocket-fire', 'rocket-buy', 'rocket-auto', 'rocket-status',
-	'sandblast-fire', 'sandblast-buy', 'sandblast-auto', 'sandblast-status'];
+	'sandblast-fire', 'sandblast-auto', 'sandblast-status'];
 // One mark per help topic, plus the drawer it feeds.
 for (const topic of window.SteamHelp.topics) ids.push('help-' + topic.id);
 ids.push('help-drawer', 'help-close', 'help-head', 'help-title', 'help-body', 'help-index');

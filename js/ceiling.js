@@ -76,6 +76,7 @@
 	const cellMass = 0.6;
 	const gravity = 9.81;
 	const cargoHeight = 0.7;
+	const cargoSnap = 1e-9;
 	// Fallen rubble piles up on the floor heightmap, the mirror of the rock
 	// surface above. A pile may stand as high as the roof and no higher: the
 	// chamber's own ceiling is the only level a column cannot pass, so rubble
@@ -364,7 +365,10 @@
 	const debrisVx = new Float64Array(maxDebris);
 	const debrisVy = new Float64Array(maxDebris);
 	const debrisCell = new Uint16Array(maxDebris);
-	const debrisCells = new Uint16Array(maxDebris);
+	// A hopper can catch only part of a falling cell just before filling up.
+	// Keep the remaining fractional mass, value and energy in flight instead
+	// of truncating it to zero cells in an integer buffer.
+	const debrisCells = new Float64Array(maxDebris);
 	const debrisValue = new Float64Array(maxDebris);
 	const debrisMinerals = new Float64Array(maxDebris * mineralCount);
 	const debrisDamage = new Float32Array(maxDebris);
@@ -1776,10 +1780,14 @@
 	// floor tile thick per cell at the current DEBRIS factor. The pile is capped
 	// at the roof; excess rubble is still counted lost.
 	function deposit(i, x) {
+		spill(x, fragmentCells(i), fragmentValue(i));
+	}
+
+	function spill(x, cells, value) {
 		const column = Math.max(0, Math.min(columns - 1, Math.floor(x / cell)));
 		const tile = floorCellHeightNow();
-		const added = Math.min(pileLimit - floorPiles[column], fragmentCells(i) * tile);
-		floorValues[column] += fragmentValue(i) * added / (fragmentCells(i) * tile);
+		const added = Math.min(pileLimit - floorPiles[column], cells * tile);
+		floorValues[column] += value * added / (cells * tile);
 		floorPiles[column] += added;
 		updateFloor();
 	}
@@ -2029,6 +2037,29 @@
 		const physics = root.SteamPhysics;
 		if (!physics || !world) return 0;
 		return price(Math.max(0, physics.config.battery - world.battery) / 1000 * fuelPrice);
+	}
+
+	// A platform tool works with loose hopper material: it takes a mass of one
+	// mineral out at the live quote and puts it back at the value it left
+	// with, so a round trip changes nothing. Whole cells are restored exactly,
+	// so the full-hopper rule is not left a rounding error short.
+	function unloadCargo(mineral, mass) {
+		const cells = mass / cellMass;
+		const value = Math.min(cargoValue, cells * mineralPrices[mineral]);
+		cargoMinerals[mineral] = Math.max(0, cargoMinerals[mineral] - mass);
+		cargoCells = Math.max(0, cargoCells - cells);
+		cargoValue -= value;
+		return value;
+	}
+
+	function loadCargo(mineral, mass, value) {
+		const cells = cargoCells + mass / cellMass;
+		if (cells > storageLimit + cargoSnap) return false;
+		const whole = Math.round(cells);
+		cargoCells = Math.abs(cells - whole) < cargoSnap ? whole : cells;
+		cargoMinerals[mineral] += mass;
+		cargoValue += value;
+		return true;
 	}
 
 	function sellCargo(platformVelocity, time) {
@@ -2334,7 +2365,7 @@
 		get upperBoundaryY() { return upperBoundaryY(); },
 		get baseRow() { return baseRow; }, get generatedRows() { return generatedRows; },
 		get pendingRows() { return queuedShift / cell; }, growthRate, boundaryLookahead,
-		defaultPixelSize, storageLimit, cellMass,
+		defaultPixelSize, storageLimit, cellMass, cargoHeight,
 		rockDrawnY, rockWorldY, rockScale, perspectiveScale, drawnRowY, depthFloorScale,
 		get depthScale() { return depthScale; },
 		get damageRadius() { return damageRadiusNow(); },
@@ -2384,7 +2415,7 @@
 
 	const api = {
 		hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, chip, surfaceAt, damageRadiusNow, damageMultiplierNow,
-		trace, step, harvest, sellCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt,
+		trace, step, harvest, spill, sellCargo, unloadCargo, loadCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt,
 		state, setShape, setFloorCompression, setDepthScale, setMineralClusterGrowth, generateTestRock, rockDrawnY, rockWorldY, rockScale, collapse, advanceMarket,
 		applyGeology, exportGeology, applyGeologyExport, sampleCell, perspectiveScale,
 		queueGrowth, watchBoundary, grow,

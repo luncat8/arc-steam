@@ -66,7 +66,7 @@
 		crankForce: 60, crankMaxSpeed: 0.8,
 		recoveryEfficiency: 0.9,
 		ambientTemperature: 20, heatCapacity: 300,
-		convectiveConductance: 1.1, radiatorConvectionCoefficient: 50,
+		convectiveConductance: 1.1, radiatorConvectionCoefficient: 72,
 		radiatingArea: 0.08, emissivity: 0.85,
 		thermalDerateStart: 85, thermalCutoff: 135,
 		// Left-wall pocket lets the asymmetric collector slide into the wall so

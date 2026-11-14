@@ -250,12 +250,12 @@ function miningReadout() {
 	}
 	setText(ui.extracted, ceiling.extractedCells + ' cells');
 	setText(ui.falling, ceiling.airborneCells + ' cells');
-	setText(ui.caught, ceiling.caughtCells + ' cells');
-	setText(ui.lost, ceiling.lostCells + ' cells');
+	setText(ui.caught, Math.round(ceiling.caughtCells) + ' cells');
+	setText(ui.lost, Math.round(ceiling.lostCells) + ' cells');
 	setText(ui['cargo-mass'], ceiling.cargoMass.toFixed(1) + ' kg');
-	setText(ui['cargo-value'], ceiling.cargoValue.toFixed(1) + ' cr · ' + ceiling.cargoCells + ' cells');
+	setText(ui['cargo-value'], ceiling.cargoValue.toFixed(1) + ' cr · ' + cellCount(ceiling.cargoCells) + ' cells');
 	setText(ui['sold-mass'], (ceiling.soldCells * ceiling.cellMass).toFixed(1) + ' kg');
-	setText(ui['sold-value'], ceiling.soldValue.toFixed(1) + ' cr · ' + ceiling.soldCells + ' cells');
+	setText(ui['sold-value'], ceiling.soldValue.toFixed(1) + ' cr · ' + cellCount(ceiling.soldCells) + ' cells');
 	setText(ui['sale-count'], ceiling.ledger.length + ' entries');
 	setText(ui.credits, ceiling.commune ? 'commons' : ceiling.funds.toFixed(1) + ' cr');
 	// Recharge is offered whenever the reserve is short and funds cover a joule.
@@ -344,7 +344,7 @@ function readout() {
 	const cargoFull = ceiling.cargoCells >= ceiling.storageLimit;
 	setWarning('cargo-telemetry', cargoFull ? 'FULL' : '');
 	setText(ui['cargo-note'], cargoFull ? 'Full · extra fragments are refused until you sell at a wall' : '100 cells maximum · cargo adds mass');
-	ui.cargo.textContent = ceiling.cargoCells + ' / ' + ceiling.storageLimit;
+	ui.cargo.textContent = cellCount(ceiling.cargoCells) + ' / ' + ceiling.storageLimit;
 	ui['platform-mass'].textContent = (physics.dryMass() + ceiling.cargoMass + heldMass).toFixed(1) + ' kg';
 	ui.funds.textContent = ceiling.commune ? 'commons' : ceiling.funds.toFixed(1) + ' cr';
 	setText(ui['funds-note'], ceiling.commune ? 'Nothing costs · sales still measured' : 'Automatic sale at either wall');
@@ -400,28 +400,27 @@ function rocketReadout() {
 	if (reason) setText(ui['rocket-status'], reason);
 }
 
-// The nozzle: what a press would throw now, and one line only while there is
-// a reason a press does nothing.
+// The nozzle takes grains out of the hopper, so cargo is not always whole cells.
+function cellCount(cells) { return Math.round(cells * 10) / 10; }
+
+// The nozzle: count the feed and explain why a blast or BOT duty waits.
 function sandblastReadout() {
 	const owner = activePlayerId();
 	const sand = SteamSandblaster.stateFor(owner);
 	const installed = SteamEquipment.isInstalled('sandblaster', owner);
-	const atWall = physics.atSellWall(world, owner);
-	const full = sand.charges >= sand.capacity;
-	const unit = sand.unitPrice;
-	const short = unit > 0 && playerApi.money(playerApi.state.active) < unit;
-	setText(ui['sandblast-fire'].firstChild, 'Blast ' + sand.charges + ' / ' + sand.capacity + ' ');
+	const bot = playerApi.state.players[playerApi.state.active].bot;
+	const engine = bot ? physics.engineNow(owner) : null;
+	const underpowered = bot && physics.reserveNow(owner) / engine.reload < sand.shotEnergy * sand.rate;
+	setText(ui['sandblast-fire'].firstChild, 'Blast ' + SteamSandblaster.grainsAboard(world, owner) + ' ');
 	setDisabled(ui['sandblast-fire'], !installed || !SteamSandblaster.canFire(world, owner));
-	setText(ui['sandblast-buy'], unit > 0 ? 'Buy · ' + unit + ' cr' : 'Buy · free');
-	setDisabled(ui['sandblast-buy'], !installed || !atWall || full || short);
-	setChecked(ui['sandblast-auto'], sand.autoBuy);
+	setChecked(ui['sandblast-auto'], sand.autoFire);
 	const reason = !installed ? 'No sandblaster installed · fit one in Science + Shop'
-		: sand.charges <= 0 ? 'Magazine empty · buy sand at a SELL wall'
-		: owner !== 'rig' ? ''
-		: world.battery < sand.shotEnergy ? 'Reserve too low to throw a grain'
-		: !atWall ? ''
-		: full ? 'Magazine full'
-		: short ? 'Not enough funds for sand'
+		: SteamSandblaster.hopperFull(world, owner) ? 'Hopper full · sell at a wall to blast again'
+		: SteamSandblaster.feed(world, owner) < 0 ? 'No sand or stone in the hopper · catch debris to feed the nozzle'
+		: owner === 'rig' && world.battery < sand.shotEnergy ? 'Reserve too low to throw a grain'
+		: sand.botPaused ? 'BOT nozzle paused · cycle BOT or check Auto-fire to resume'
+		: underpowered && !sand.autoFire ? 'BOT needs an engine that can carry the ' + (sand.shotEnergy * sand.rate / 1000).toFixed(1) + ' kW stream'
+		: owner === 'rig' && bot && playerApi.state.sandCooling && !sand.autoFire ? 'BOT cooling nozzle · wait for the machine to cool'
 		: '';
 	setHidden(ui['sandblast-status'], !reason);
 	if (reason) setText(ui['sandblast-status'], reason);
@@ -441,7 +440,7 @@ function statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperat
 	const ceiling = window.SteamCeiling.state;
 	setText(ui['fact-reserve'], (world.battery / 1000).toFixed(2) + ' kJ');
 	setTone(ui['fact-reserve'], reserveWarning === 'EMPTY' ? 'danger' : reserveWarning ? 'warn' : '');
-	setText(ui['fact-cargo'], ceiling.cargoCells + '/' + ceiling.storageLimit);
+	setText(ui['fact-cargo'], cellCount(ceiling.cargoCells) + '/' + ceiling.storageLimit);
 	setTone(ui['fact-cargo'], cargoFull ? 'warn' : '');
 	setText(ui['fact-temp'], temperature.toFixed(0) + ' °C');
 	setTone(ui['fact-temp'], thermalFactor === 0 ? 'danger' : thermalFactor < 1 ? 'warn' : '');

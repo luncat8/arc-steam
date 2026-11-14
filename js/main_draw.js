@@ -142,15 +142,15 @@ function drawRigMachinery(context, player) {
 			context.fill();
 		}
 	}
-	// The sandblaster nozzle stands in the collector, angled at the ceiling.
+	// The nozzle's centre is the collector launch point used by the flight.
 	if (SteamEquipment.isInstalled('sandblaster', player.id)) {
-		const nozzleX = left + collectorWidth * 0.25;
+		const nozzleX = left + collectorWidth * 0.5;
 		context.fillStyle = '#7a6a4f';
 		context.beginPath();
 		context.moveTo(nozzleX - 0.05, config.deck);
 		context.lineTo(nozzleX + 0.05, config.deck);
-		context.lineTo(nozzleX + 0.02, config.deck + 0.14);
-		context.lineTo(nozzleX - 0.02, config.deck + 0.14);
+		context.lineTo(nozzleX + 0.02, config.deck + SteamSandblaster.state.nozzleHeight);
+		context.lineTo(nozzleX - 0.02, config.deck + SteamSandblaster.state.nozzleHeight);
 		context.closePath();
 		context.fill();
 	}

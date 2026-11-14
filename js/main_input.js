@@ -217,10 +217,6 @@ function blastSand() {
 	SteamSandblaster.fire(world, activePlayerId());
 	refresh();
 }
-function buySand() {
-	SteamSandblaster.buy(world, 1, activePlayerId());
-	refresh();
-}
 function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }
 // One force setting per player: the slider and W/S edit the platform being
 // driven, and switching players reads that player's setting back into the
@@ -379,9 +375,8 @@ function bindInput() {
 	ui['sandblast-fire'].addEventListener('pointerup', function () { blastHeld = false; });
 	ui['sandblast-fire'].addEventListener('pointercancel', function () { blastHeld = false; });
 	ui['sandblast-fire'].addEventListener('lostpointercapture', function () { blastHeld = false; });
-	ui['sandblast-buy'].addEventListener('click', buySand);
 	ui['sandblast-auto'].addEventListener('change', function () {
-		SteamSandblaster.setAutoBuy(ui['sandblast-auto'].checked, activePlayerId());
+		SteamSandblaster.setAutoFire(ui['sandblast-auto'].checked, activePlayerId());
 		refresh();
 	});
 	ui.pause.addEventListener('click', togglePause);

@@ -1600,8 +1600,8 @@ test('a tier family previews the selected tier as a swap, not as a stack', () =>
 	const select = selectOf(bay);
 	buttonOf(bay).dispatch('pointerenter');
 	assert.equal(select.value, 'vent', 'the first unowned tier is preselected');
-	assert.equal(specValue(spec, 8), '9.10 W/K', 'the strip shows the cooling the vent would add');
-	assert.equal(spec.children[8].children[1].children[1].textContent, '+7.50 W/K');
+	assert.equal(specValue(spec, 8), '12.40 W/K', 'the strip shows the cooling the vent would add');
+	assert.equal(spec.children[8].children[1].children[1].textContent, '+10.80 W/K');
 	assert.equal(spec.children[0].children[1].children[1].textContent, '+4.1 kg');
 	// Changing the tier under an open preview re-reads the strip at once.
 	select.value = 'bank';
@@ -2011,13 +2011,14 @@ test('the rocket rack buys at a wall, fires on R, and reads its own state', () =
 	auto.dispatch('change');
 });
 
-test('the sandblaster buys sand at a wall, blasts on F, and reads its own state', () => {
+test('the sandblaster feeds on the hopper, blasts on F, auto-fires, and reads its own state', () => {
 	for (const channel of ['move', 'smart', 'drive', 'angle']) autopilot.set(channel, false);
 	dom.element('reset').dispatch('click');
 	advance(2);
 	const sand = sandblaster.state;
+	const rock = ceiling.state;
+	const stone = rock.mineralIds.indexOf('stone');
 	const fire = dom.element('sandblast-fire');
-	const buy = dom.element('sandblast-buy');
 	const auto = dom.element('sandblast-auto');
 	const status = dom.element('sandblast-status');
 	function parkAt(x) {
@@ -2026,11 +2027,10 @@ test('the sandblaster buys sand at a wall, blasts on F, and reads its own state'
 		harness.sync(world);
 		advance(8);
 	}
+	assert.throws(() => dom.element('sandblast-buy'), /missing/, 'there is no sand to buy');
 	assert.equal(fire.getAttribute('aria-keyshortcuts'), 'F');
-	assert.equal(fire.firstChild.textContent, 'Blast 0 / ' + sand.capacity + ' ');
+	assert.equal(fire.firstChild.textContent, 'Blast 0 ');
 	assert.equal(fire.disabled, true, 'no sandblaster is installed by default');
-	assert.equal(buy.textContent, 'Buy · ' + sand.price + ' cr');
-	assert.equal(buy.disabled, true);
 	assert.equal(status.hidden, false);
 	assert.match(status.textContent, /No sandblaster installed/);
 	assert.equal(equipment.isInstalled('sandblaster', 'rig'), false);
@@ -2041,58 +2041,54 @@ test('the sandblaster buys sand at a wall, blasts on F, and reads its own state'
 	buttonOf(gearRow('sandblaster')).dispatch('click');
 	advance(2);
 	assert.equal(equipment.isInstalled('sandblaster', 'rig'), true, 'Impact forging unlocks the purchasable nozzle');
-	assert.equal(fire.disabled, true, 'an installed but empty magazine cannot blast');
-	assert.match(status.textContent, /Magazine empty/);
+	assert.equal(fire.disabled, true, 'an installed nozzle over an empty hopper cannot blast');
+	assert.match(status.textContent, /No sand or stone in the hopper/);
 
-	fund(sand.price * 4 + 100);
-	parkAt(12);
-	assert.equal(buy.disabled, true, 'sand is not loaded in the open');
-	buy.dispatch('click');
-	assert.equal(sand.charges, 0);
-
-	parkAt(physics.platformMin());
-	assert.equal(buy.disabled, false);
-	const funds = ceiling.state.funds;
-	buy.dispatch('click');
-	assert.equal(sand.charges, 1);
-	harness.near(ceiling.state.funds, funds - sand.price, 1e-9);
-	assert.equal(fire.firstChild.textContent, 'Blast 1 / ' + sand.capacity + ' ');
+	// Stocking the hopper is a test setup grant. Park off the centre charge
+	// pad so the reserve only moves by the throw.
+	parkAt(8);
+	assert.equal(ceiling.loadCargo(stone, 12 * sand.grainMass, 0.2), true);
+	harness.sync(world);
+	advance(8);
+	assert.equal(fire.firstChild.textContent, 'Blast 12 ');
 	assert.equal(fire.disabled, false);
-	assert.match(dom.element('ledger').children[0].textContent, /Bought 1 charge · −3 cr/);
-
-	// The standing order tops this visit up to its cap of ten charges.
-	auto.checked = true;
-	auto.dispatch('change');
-	assert.equal(sand.autoBuy, true);
-	advance(4);
-	assert.equal(sand.charges, 1 + sand.visitLimit);
-	advance(30);
-	assert.equal(sand.charges, 1 + sand.visitLimit, 'one visit, one batch');
-	auto.checked = false;
-	auto.dispatch('change');
-	assert.equal(sand.autoBuy, false);
+	assert.equal(status.hidden, true);
 
 	// F throws one grain per press; the stream is rate-limited while held.
-	// Park off the centre charge pad so the reserve only moves by the throw.
-	parkAt(8);
 	const battery = world.battery;
 	dom.key('KeyF');
 	advance(1);
 	dom.keyUp('KeyF');
 	assert.equal(sand.fired, 1, 'F throws one grain');
-	assert.equal(sand.charges, sand.visitLimit, 'the grain spends a charge');
+	assert.equal(sandblaster.grainsAboard(world), 11, 'the grain left the hopper');
 	harness.near(world.battery, battery - sand.shotEnergy, 1e-9, 'the throw draws the reserve');
-	assert.equal(fire.disabled, true, 'the nozzle cools for a tenth of a second');
+	assert.equal(sandblaster.canFire(world), false, 'the nozzle cools for a tenth of a second');
 	advance(Math.ceil(sand.rate * 1.5 * 60));
 	assert.equal(fire.disabled, false, 'the rate lets the next grain go');
+	assert.match(fire.firstChild.textContent, /^Blast \d+ $/, 'the readout counts the grains aboard');
+	assert.match(dom.element('cargo').textContent, /^\d+(\.\d)? \/ /, 'the cargo readout follows in tenths of a cell at most');
 	dom.key('KeyF');
 	advance(12);
 	dom.keyUp('KeyF');
 	assert.ok(sand.fired >= 3, sand.fired + ' grains thrown while held');
+
+	// Auto-fire keeps the stream going with no key held.
+	const held = sand.fired;
+	advance(30);
+	assert.equal(sand.fired, held, 'nothing is thrown once the key is up');
+	auto.checked = true;
+	auto.dispatch('change');
+	assert.equal(sand.autoFire, true);
+	advance(60);
+	assert.ok(sand.fired >= held + 5, (sand.fired - held) + ' grains thrown by the standing order');
+	auto.checked = false;
+	auto.dispatch('change');
+	assert.equal(sand.autoFire, false);
 	// The chamber draws the flight, and the rig's energy ledger stays closed.
-	advance(300);
+	advance(600);
+	assert.equal(sand.chamberAloft, 0);
 	assert.ok(Math.abs(parseFloat(dom.element('error').textContent)) < 1e-4, dom.element('error').textContent);
-	const rigCharges = sand.charges;
+	assert.equal(sand.recovered + sand.lost, sand.fired);
 
 	// The rival starts without a nozzle, then researches and buys one from its own purse.
 	const list = dom.element('player-list');
@@ -2101,11 +2097,11 @@ test('the sandblaster buys sand at a wall, blasts on F, and reads its own state'
 	const firedBefore = sand.fired;
 	list.children[1].children[0].dispatch('click');
 	assert.equal(fire.disabled, true);
-	assert.equal(buy.disabled, true);
 	assert.match(status.textContent, /No sandblaster installed/);
 	dom.key('KeyF');
+	advance(2);
+	dom.keyUp('KeyF');
 	fire.dispatch('click');
-	buy.dispatch('click');
 	assert.equal(sand.fired, firedBefore, 'a rival without a nozzle throws nothing');
 
 	rival.money = 1200;
@@ -2118,48 +2114,87 @@ test('the sandblaster buys sand at a wall, blasts on F, and reads its own state'
 	buttonOf(gearRow('sandblaster')).dispatch('click');
 	assert.equal(equipment.isInstalled('sandblaster', rival.id), true);
 	assert.equal(rival.money, 180, 'the nozzle debits the rival purse after its own research');
-	rival.x = physics.platformMax(); rival.previousX = rival.x; rival.vx = 0;
-	harness.sync(world);
+	assert.equal(players.loadCargo(rival, stone, 3 * sand.grainMass, 0), true);
 	advance(8);
-	assert.equal(buy.disabled, false, 'the rival can load its magazine at its own wall');
-	buy.dispatch('click');
-	assert.equal(rivalSand.charges, 1);
-	assert.equal(sand.charges, rigCharges, 'the rival purchase leaves the rig magazine alone');
-	assert.equal(rival.money, 177);
-	assert.equal(fire.disabled, false);
+	assert.equal(fire.disabled, false, 'the rival nozzle feeds on the rival hopper');
+	const sandIndex = rock.mineralIds.indexOf('sand');
+	const rivalAbrasive = rival.cargoMinerals[stone] + rival.cargoMinerals[sandIndex];
+	const rigStone = rock.cargoMinerals[stone];
 	const rigBattery = world.battery;
 	dom.key('KeyF');
 	advance(1);
 	dom.keyUp('KeyF');
 	assert.equal(rivalSand.fired, 1, 'F fires from the selected rival');
-	assert.equal(rivalSand.charges, 0);
+	harness.near(rival.cargoMinerals[stone] + rival.cargoMinerals[sandIndex], rivalAbrasive - sand.grainMass, 1e-9, 'the grain is the rival hopper\'s own sand or stone');
+	assert.equal(rock.cargoMinerals[stone], rigStone, 'the rival throw leaves the rig hopper alone');
+	assert.equal(rival.money, 180, 'and costs the rival nothing');
 	assert.equal(sand.fired, firedBefore, 'a rival shot does not change rig shot counts');
 	harness.near(world.battery, rigBattery, 1e-9, 'a rival throw books imported work, not the rig reserve');
+	assert.equal(auto.checked, false, 'each platform has its own auto-fire order');
 	list.children[0].children[0].dispatch('click');
-	assert.equal(fire.disabled, false);
 
-	// A new run empties the magazine; the standing order is the player's and stays.
+	// A new run clears the grains; the standing order is the player's and stays.
 	auto.checked = true;
 	auto.dispatch('change');
 	dom.element('reset').dispatch('click');
 	advance(2);
-	assert.equal(sand.charges, 0);
+	assert.equal(sand.fired, 0);
 	assert.equal(auto.checked, true);
-	assert.equal(sand.autoBuy, true);
+	assert.equal(sand.autoFire, true);
 	auto.checked = false;
 	auto.dispatch('change');
+});
+
+test('BOT engages the fitted sandblaster and the Auto-fire checkbox can pause it', () => {
+	for (const channel of ['move', 'smart', 'drive', 'angle']) autopilot.set(channel, false);
+	dom.element('reset').dispatch('click');
+	advance(2);
+	study('impact');
+	fund(equipment.find('sandblaster').cost);
+	buttonOf(gearRow('sandblaster')).dispatch('click');
+	world.platform.x = 8;
+	world.platform.previousX = 8;
+	world.platform.vx = 0;
+	world.direction = 0;
+	world.target = NaN;
+	assert.equal(ceiling.loadCargo(ceiling.state.mineralIds.indexOf('stone'), 80 * sandblaster.state.grainMass, 1), true);
+	harness.sync(world);
+	const bot = dom.element('player-list').children[0].children[1].children[0];
+	const auto = dom.element('sandblast-auto');
+	assert.equal(auto.checked, false);
+	bot.checked = true;
+	bot.dispatch('change');
+	advance(8);
+	assert.equal(sandblaster.state.botFire, true);
+	assert.equal(auto.checked, true, 'the panel reflects the bot-owned stream');
+	assert.ok(sandblaster.state.fired > 0, 'the page loop actually fires the bot’s nozzle');
+	auto.checked = false;
+	auto.dispatch('change');
+	advance(8);
+	assert.equal(sandblaster.state.autoFire, false);
+	assert.equal(auto.checked, false, 'unchecking pauses the bot without flickering back on');
+	assert.match(dom.element('sandblast-status').textContent, /BOT nozzle paused/);
+	bot.checked = false;
+	bot.dispatch('change');
 });
 
 test('the sandblaster help names the rules the nozzle actually runs', () => {
 	const sand = sandblaster.state;
 	const topic = help.find('sandblaster');
 	const text = topic.text.join(' ');
-	assert.match(text, new RegExp('magazine holds ' + sand.capacity + '\\b'));
-	assert.match(text, new RegExp('up to ' + sand.visitLimit + '\\b'));
+	assert.match(text, new RegExp('Every grain is ' + sand.grainMass * 1000 + ' g of sand, or of stone'));
+	assert.match(text, /Nothing is bought/);
+	assert.match(text, /Ores are never thrown/);
+	assert.match(text, /stops while the hopper is full/);
 	assert.match(text, /one-cell radius/);
 	assert.match(text, /one grain never brings a cell down/);
-	assert.equal(sand.shotEnergy, 13.5);
+	assert.equal(sand.shotEnergy, 135);
+	assert.match(text, new RegExp(sand.shotEnergy + ' J per grain'));
+	assert.match(text, new RegExp(sand.rate + ' grains a second'));
 	assert.match(text, /fixed share of the reserve/);
+	assert.match(text, /live particle, not a streak/);
+	assert.match(text, /BOT turns on a separate, temporary stream/);
+	assert.ok(topic.keys.some(row => row[0] === 'Auto-fire'), 'the topic names auto-fire');
 	assert.ok(help.find('keys').keys.some(row => row[0] === 'F'), 'the key list names F');
 });
 

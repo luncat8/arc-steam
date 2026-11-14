@@ -23,6 +23,37 @@ test('ceiling state is a stable property view, separate from command methods', (
 	assert.equal(state.funds, 0);
 });
 
+test('a partially caught fragment keeps its fractional mass, value and energy on a full hopper', () => {
+	const { physics } = require('./harness.cjs');
+	const world = physics.createWorld();
+	const state = ceiling.state;
+	const mineral = state.mineralIds.indexOf('stone');
+	assert.equal(ceiling.loadCargo(mineral, 99.5 * state.cellMass, 3), true);
+	// A single seeded fragment crosses the collector just as the last half
+	// cell fits. The other half stays in flight and lands as floor rubble.
+	const x = physics.collectorX(world, 'rig');
+	state.active[0] = 1;
+	state.debrisCell[0] = 0;
+	state.debrisCells[0] = 1;
+	state.debrisValue[0] = 2;
+	state.debrisMinerals[mineral] = state.cellMass;
+	state.debrisX[0] = x;
+	state.debrisY[0] = state.cargoHeight + 0.04;
+	state.debrisVx[0] = 0;
+	state.debrisVy[0] = -2;
+	world.initialEnergy = physics.totalEnergy(world);
+	for (let i = 0; i < 240 && state.cargoCells < 100; i++) ceiling.step(world, physics.config.step, physics.dryMass());
+	near(state.cargoCells, 100);
+	near(state.debrisCells[0], 0.5, 1e-9, 'the uncollected half cell remains in the same falling slot');
+	near(state.airborneCells, 0.5, 1e-9);
+	for (let i = 0; i < 240 && state.airborneCells > 0; i++) ceiling.step(world, physics.config.step, physics.dryMass());
+	near(state.caughtCells, 0.5);
+	near(state.lostCells, 0.5);
+	near(state.lostValue, 1);
+	near(state.cargoMinerals[mineral], 100 * state.cellMass, 1e-9);
+	near(physics.totalEnergy(world), world.initialEnergy, 1e-6);
+});
+
 test('seeded 2D element and mineral fields repeat and normalize', () => {
 	ceiling.reset(42);
 	const state = ceiling.state;

@@ -39,9 +39,13 @@
 	let active = 0;
 	let selling = false;
 	let recharging = false;
+	let rigSandCooling = false;
 	// Hysteresis keeps a low-reserve trip from chattering at the pad threshold.
 	const rechargeStart = 0.2;
 	const rechargeStop = 0.95;
+	// Start the charge trip with a second of stream draw in hand instead of
+	// waiting for the same 20% reserve that the nozzle's auto-fire hold uses.
+	const streamChargeLead = 1;
 	// The rocket trip is the lowest-priority service: a full hopper sells and a
 	// short reserve charges before the rack is worked. One rocket per trip, then
 	// a cooldown so the intercept gets the platform back between shots. The rig
@@ -316,6 +320,7 @@
 
 	function createRival(index) {
 		const rival = {
+			cargoMinerals: new Float64Array(root.SteamCeiling ? root.SteamCeiling.state.mineralCount : 0),
 			index: index + 1, id: 'rival-' + (index + 1), name: 'RIVAL ' + (index + 1),
 			colour: index % 2 ? '#8f86c9' : '#c98c5a', kind: 'rival', bot: true,
 			force: 0.6, x: startSlots[index % startSlots.length], y: 0, angle: 0, vx: 0, spin: 0,
@@ -366,6 +371,7 @@
 		active = 0;
 		selling = false;
 		recharging = false;
+		rigSandCooling = false;
 		clearRocketTrip();
 		syncRamps();
 		applyBalls(world);
@@ -489,6 +495,7 @@
 				selling = false;
 				recharging = false;
 				clearRocketTrip();
+				if (root.SteamSandblaster) root.SteamSandblaster.clearBotFire('rig');
 				autopilot.reset();
 			}
 			return value;
@@ -498,7 +505,10 @@
 		player.direction = 0;
 		player.braking = false;
 		player.keeperAge = keeperInterval;
-		if (!value) clearRivalRocketTrip(player);
+		if (!value) {
+			clearRivalRocketTrip(player);
+			if (root.SteamSandblaster) root.SteamSandblaster.clearBotFire(player.id);
+		}
 		return value;
 	}
 
@@ -509,7 +519,10 @@
 		if (!rig || !root.SteamAutopilot) return rig ? rig.bot : false;
 		const autopilot = root.SteamAutopilot;
 		rig.bot = autopilot.state.move && autopilot.state.drive && autopilot.state.angle;
-		if (!rig.bot) { selling = false; recharging = false; clearRocketTrip(); }
+		if (!rig.bot) {
+			selling = false; recharging = false; clearRocketTrip();
+			if (root.SteamSandblaster) root.SteamSandblaster.clearBotFire('rig');
+		}
 		return rig.bot;
 	}
 
@@ -583,6 +596,32 @@
 		if (harvest.cells <= 0) return;
 		rival.cargoCells += harvest.cells;
 		rival.cargoValue += harvest.value;
+		// Floor rubble is blended, so a harvest carries the rock's measured mix.
+		const mass = harvest.cells * ceiling.state.cellMass;
+		const abundance = ceiling.state.mineralAbundance;
+		for (let m = 0; m < abundance.length; m++) rival.cargoMinerals[m] += mass * abundance[m];
+	}
+
+	// The competitor's side of the hopper rule in js/ceiling.js: loose material
+	// leaves at the live quote and returns at the value it left with.
+	function unloadCargo(rival, mineral, mass) {
+		const rock = root.SteamCeiling.state;
+		const cells = mass / rock.cellMass;
+		const value = Math.min(rival.cargoValue, cells * rock.mineralPrices[mineral]);
+		rival.cargoMinerals[mineral] = Math.max(0, rival.cargoMinerals[mineral] - mass);
+		rival.cargoCells = Math.max(0, rival.cargoCells - cells);
+		rival.cargoValue -= value;
+		return value;
+	}
+
+	function loadCargo(rival, mineral, mass, value) {
+		const rock = root.SteamCeiling.state;
+		const cells = rival.cargoCells + mass / rock.cellMass;
+		if (cells > rock.storageLimit + 1e-9) return false;
+		rival.cargoCells = cells;
+		rival.cargoMinerals[mineral] += mass;
+		rival.cargoValue += value;
+		return true;
 	}
 
 	function invest(rival) {
@@ -619,6 +658,7 @@
 		rival.soldValue += value;
 		rival.cargoCells = 0;
 		rival.cargoValue = 0;
+		rival.cargoMinerals.fill(0);
 		if (rival.bot) invest(rival);
 		return value;
 	}
@@ -909,6 +949,7 @@
 		if (rival.driveManual > 0) rival.driveManual = Math.max(0, rival.driveManual - dt);
 		stepBallPolicy(rival, dt);
 		stepRivalRocketTrip(rival, dt);
+		stepRivalSandblaster(rival);
 		rival.previousX = rival.x;
 		rival.previousY = rival.y;
 		rival.previousAngle = rival.angle;
@@ -1122,6 +1163,29 @@
 
 	function clearRivalRocketTrip(rival) { endRocketTripState(rival.rocketTrip); }
 
+	// A bot only orders a stream its installed engine can replenish at the pad:
+	// a hand-crank pack cannot carry a 20-grain/s draw. This checks the owner's
+	// own engine and reserve size even for rivals, whose energy stays outside
+	// the rig's ledger. Feed and hopper space are separate from the short
+	// per-grain cooldown, so the order does not flicker between shots.
+	function sandStreamReady(world, owner) {
+		const sand = root.SteamSandblaster;
+		const physics = root.SteamPhysics;
+		if (!sand || !physics || !root.SteamEquipment || !root.SteamEquipment.isInstalled('sandblaster', owner)
+			|| sand.feed(world, owner) < 0 || sand.hopperFull(world, owner)) return false;
+		const engine = physics.engineNow(owner);
+		const profile = sand.stateFor(owner);
+		return physics.reserveNow(owner) / engine.reload >= profile.shotEnergy * profile.rate;
+	}
+
+	function stepRivalSandblaster(rival) {
+		const sand = root.SteamSandblaster;
+		if (!sand) return;
+		if (!rival.bot) { sand.clearBotFire(rival.id); return; }
+		sand.setBotFire(rival.manual <= 0 && !rival.braking && !rival.direction
+			&& !rival.rocketTrip.active && sandStreamReady(rigWorld, rival.id), rival.id);
+	}
+
 	// A rival bot can work its own rack after a sale. Its drive and tilt keepers
 	// still play the ball while travel goes to the richest reachable seam.
 	function stepRivalRocketTrip(rival, dt) {
@@ -1163,46 +1227,94 @@
 		}
 	}
 
+	function rigSandThermallyReady(world) {
+		const physics = root.SteamPhysics;
+		const temperature = physics.temperature(world);
+		// A high-rate stream can heat a bare machine faster than it cools. Stop
+		// before drive derating and wait for a cooler restart, so BOT can still
+		// reach the pad and follow the ball. A player can override this with F.
+		if (temperature >= physics.config.thermalDerateStart - 5) rigSandCooling = true;
+		else if (temperature <= physics.config.thermalDerateStart - 20) rigSandCooling = false;
+		return !rigSandCooling;
+	}
+
+	function setRigSandblaster(world, enabled) {
+		const sand = root.SteamSandblaster;
+		if (!sand) return;
+		const ready = enabled && sandStreamReady(world, 'rig')
+			&& world.battery >= root.SteamPhysics.config.battery * rechargeStart + sand.state.shotEnergy
+			&& rigSandThermallyReady(world);
+		sand.setBotFire(ready, 'rig');
+	}
+
 	// The rig bot sells a full hopper, refills a short reserve at the centre pad,
-	// then works its rocket rack at the richest seam. All three trips own travel
-	// through the manual override; the ball keepers stay live. An ordinary hand
-	// command prevents starting a trip.
+	// then works its rocket rack at the richest seam. The nozzle is a fourth,
+	// concurrent duty: it pauses for these trips and manual travel, and gives
+	// the charge decision a second of its own draw as a safety lead. Trips own
+	// travel through the manual override; the ball keepers stay live.
 	function stepRigBot(world, dt) {
 		const rig = players[0];
-		if (!world || !rig || !rig.bot) { selling = recharging = false; clearRocketTrip(); return; }
+		const sand = root.SteamSandblaster;
+		if (!world || !rig || !rig.bot) {
+			selling = recharging = false; clearRocketTrip();
+			if (sand) sand.clearBotFire('rig');
+			return;
+		}
 		const ceiling = root.SteamCeiling;
 		const autopilot = root.SteamAutopilot;
 		const physics = root.SteamPhysics;
-		if (!ceiling || !autopilot || !physics) return;
-		if (!autopilot.state.move || !autopilot.state.drive) { selling = recharging = false; clearRocketTrip(); return; }
+		if (!ceiling || !autopilot || !physics) { if (sand) sand.clearBotFire('rig'); return; }
+		if (!autopilot.state.move || !autopilot.state.drive) {
+			selling = recharging = false; clearRocketTrip();
+			if (sand) sand.clearBotFire('rig');
+			return;
+		}
 		if (rigRocketTrip.wait > 0) rigRocketTrip.wait = Math.max(0, rigRocketTrip.wait - dt);
 		const full = ceiling.state.cargoCells >= ceiling.state.storageLimit;
+		const hasFeed = sand && root.SteamEquipment && root.SteamEquipment.isInstalled('sandblaster', 'rig')
+			&& !full && sand.feed(world, 'rig') >= 0;
+		const botStreamReady = hasFeed && !sand.state.botPaused && sandStreamReady(world, 'rig') && rigSandThermallyReady(world);
+		const streamDraw = hasFeed && (sand.state.autoFire || botStreamReady)
+			? sand.state.shotEnergy * sand.state.rate * streamChargeLead : 0;
+		// Even while the reserve is above 20%, a running stream can cross that
+		// line before the next charge decision. Start the trip with headroom.
+		const chargeAt = physics.config.battery * rechargeStart + streamDraw;
 		// A full hopper sells and a short reserve charges before the rack is worked.
 		if (full && !selling) { recharging = false; clearRocketTrip(); selling = true; }
-		if (!selling && !recharging && world.battery < physics.config.battery * rechargeStart) {
+		if (!selling && !recharging && world.battery < chargeAt) {
 			clearRocketTrip();
 			recharging = true;
 		}
 		if (!selling && !recharging && !rigRocketTrip.active) {
-			if (autopilot.suspended('move')) return;
+			if (autopilot.suspended('move')) { setRigSandblaster(world, false); return; }
 			if (full) selling = true;
-			else if (!rocketReady() || !startRocketTripState(rigRocketTrip)) return;
+			else if (!rocketReady() || !startRocketTripState(rigRocketTrip)) {
+				setRigSandblaster(world, !autopilot.handHeld('move'));
+				return;
+			}
 		}
 		if (selling && !full) {
 			selling = false;
 			world.target = NaN;
 			autopilot.resume('move');
+			setRigSandblaster(world, false);
 			return;
 		}
 		if (recharging && !full && world.battery >= physics.config.battery * rechargeStop) {
 			recharging = false;
 			world.target = NaN;
 			autopilot.resume('move');
+			setRigSandblaster(world, false);
 			return;
 		}
 		// A hand on the travel controls stands the rocket trip down; the hold
 		// keeps the override, so releasing the keys returns the intercept.
-		if (rigRocketTrip.active && autopilot.handHeld('move')) { clearRocketTrip(); return; }
+		if (rigRocketTrip.active && autopilot.handHeld('move')) {
+			clearRocketTrip();
+			setRigSandblaster(world, false);
+			return;
+		}
+		setRigSandblaster(world, !selling && !recharging && !rigRocketTrip.active && !autopilot.handHeld('move'));
 		if (rigRocketTrip.active) { stepRocketTrip(world, dt); return; }
 		autopilot.override('move');
 		world.direction = 0;
@@ -1386,6 +1498,7 @@
 		get rig() { return players[0]; },
 		get selling() { return selling; },
 		get recharging() { return recharging; },
+		get sandCooling() { return rigSandCooling; },
 		get rocketing() { return rigRocketTrip.active; },
 		get catching() { return rigRocketTrip.catching; },
 		get rocketMark() { return rigRocketTrip.mark; },
@@ -1398,7 +1511,7 @@
 	});
 
 	const api = {
-		init, update, surfaceAt, draw, renderPlatform, profileAt, money, purchase, load, force, activeSpeed, activeTarget, rigActive,
+		init, update, surfaceAt, draw, renderPlatform, profileAt, money, purchase, load, unloadCargo, loadCargo, force, activeSpeed, activeTarget, rigActive,
 		setActive, setBot, syncRigBot, command, commandTarget, commandBrake, clearCommand, setForce, setBallMode,
 		machineOf, pistonAngleOf, setPistonAngleOf, overrideMachine, syncRamps,
 		state, bodyTop, bodyBottom, tailAngle, tailReach, tailFullGap, bladeSwath, bladeCut,

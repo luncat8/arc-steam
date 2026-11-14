@@ -51,7 +51,7 @@
 		}),
 		Object.freeze({
 			id: 'sandblaster', name: 'Sandblaster', cost: 520, mass: 7, requires: 'impact',
-			effect: 'Mounts an abrasive nozzle in the collector; hold F to throw a stream of sand grains at the ceiling, spending reserve energy and 1 charge of the 60-charge magazine per grain.'
+			effect: 'Mounts an abrasive nozzle in the collector; hold F or set auto-fire to throw up to 20 grains a second at the ceiling. Each grain draws 135 J and 20 g of hopper sand or stone, then falls back to be caught again.'
 		})
 	]);
 	const radiators = Object.freeze([
