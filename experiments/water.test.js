@@ -184,6 +184,37 @@ test('a new chamber keeps the pump order and resets the chemistry', () => {
 	assert.equal(water.settings.erosion, true);
 });
 
+// A rival body is not the world: it has no `platform` field, so every geometry
+// helper the jet uses must resolve the owner's own machine rather than assume the
+// rig. This is the shape of a crash that reached the browser once.
+test('a rival fires from its own collector, not the rig\'s', () => {
+	const world = physics.createWorld();
+	players.init(world, 1);
+	water.reset(1);
+	const rival = players.state.rivals[0];
+	equipment.grant('watergun', world, rival.id);
+	// The nozzle is the rival's own collector, a metre and a bit left of its centre.
+	const nozzle = water.nozzleOf(world, rival.id);
+	near(nozzle.x, physics.collectorX(world, rival.id), 1e-9, 'the rival nozzle is its own collector');
+	assert.ok(Math.abs(nozzle.x - physics.collectorX(world, 'rig')) > 1, 'and not the rig collector');
+	// Firing a rival shot must not throw and must cost the rival, not the rig.
+	water.setAim(rival.x, 14.5);
+	const reserve = world.battery;
+	const imported = world.importedEnergy;
+	assert.equal(water.fire(world, rival.id), true, 'a rival jet fires from its own body');
+	advanceSteps(world, 0.2);
+	assert.equal(world.battery, reserve, 'the rig reserve is untouched');
+	assert.ok(world.importedEnergy > imported, 'a rival throw is imported work, not rig reserve');
+	// The standing bot order is the path the crash reached the browser through.
+	water.clearBotFire(rival.id);
+	water.setBotFire(true, rival.id);
+	const before = water.totals.droplets;
+	advanceSteps(world, 1);
+	assert.ok(water.totals.droplets > before, 'the rival bot stream runs');
+	water.clearBotFire(rival.id);
+});
+
+
 test('determinism: the same seed plays the same wash', () => {
 	function run() {
 		const world = fresh();
