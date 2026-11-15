@@ -157,16 +157,18 @@ function drawRigMachinery(context, player) {
 	// The water cannon points where the jet would go, so the nozzle is the aim.
 	if (SteamEquipment.isInstalled('watergun', player.id)) {
 		const nozzle = SteamWater.nozzleOf(world, player.id);
+		const nozzleX = left + collectorWidth * 0.5;
+		const nozzleY = config.deck + 0.14;
 		context.strokeStyle = '#7fb6d9';
 		context.lineWidth = 0.07;
 		context.beginPath();
-		context.moveTo(nozzle.x - nozzle.dx * 0.05, nozzle.y - nozzle.dy * 0.05);
-		context.lineTo(nozzle.x + nozzle.dx * 0.26, nozzle.y + nozzle.dy * 0.26);
+		context.moveTo(nozzleX - nozzle.dx * 0.05, nozzleY - nozzle.dy * 0.05);
+		context.lineTo(nozzleX + nozzle.dx * 0.26, nozzleY + nozzle.dy * 0.26);
 		context.stroke();
 		context.lineWidth = 1 / scale;
 		context.fillStyle = '#bfe6f7';
 		context.beginPath();
-		context.arc(nozzle.x, nozzle.y, 0.045, 0, Math.PI * 2);
+		context.arc(nozzleX, nozzleY, 0.045, 0, Math.PI * 2);
 		context.fill();
 	}
 	// The chassis pitch follows the land; piston tilt stays relative to it.
