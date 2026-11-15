@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Arc Steam — Solubility Lab (0.3.6 prototype)</title>
+<title>Arc Steam — Solubility Lab (0.3.6b prototype)</title>
 <style>
 :root {
   --bg:#0f1216; --panel:#161b22; --line:#262d38; --text:#dfe3e8; --dim:#8b95a1;
@@ -25,7 +25,7 @@ canvas { display:block; background:#0b0e11; border:1px solid var(--line); border
 #legend { display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:6px; font-size:11px; color:var(--dim); }
 #legend .sw { display:inline-block; width:10px; height:10px; border-radius:2px;
   vertical-align:-1px; margin-right:4px; border:1px solid rgba(255,255,255,.15); }
-aside { width:380px; flex:1 1 380px; display:flex; flex-direction:column; gap:12px; min-width:340px; }
+aside { width:400px; flex:1 1 400px; display:flex; flex-direction:column; gap:12px; min-width:340px; }
 .panel { background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:10px 12px; }
 .panel h2 { font-size:12px; margin:0 0 8px; color:var(--dim); font-weight:600;
   text-transform:uppercase; letter-spacing:.8px; }
@@ -38,7 +38,7 @@ aside { width:380px; flex:1 1 380px; display:flex; flex-direction:column; gap:12
 label.inline { color:var(--dim); font-size:11px; }
 input[type=text] { width:80px; background:#10151b; color:var(--text); border:1px solid var(--line);
   border-radius:4px; padding:3px 6px; font:inherit; font-size:12px; }
-.sl { display:grid; grid-template-columns: 118px 1fr 52px; gap:4px 8px; align-items:center; margin:2px 0; }
+.sl { display:grid; grid-template-columns: 128px 1fr 52px; gap:4px 8px; align-items:center; margin:2px 0; }
 .sl label { font-size:11px; color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .sl input[type=range] { width:100%; margin:0; }
 .sl .val { font-size:11px; text-align:right; color:var(--text); }
@@ -65,8 +65,8 @@ kbd { background:#1d232c; border:1px solid var(--line); border-radius:3px; paddi
 </head>
 <body>
 <header>
-  <h1>Arc Steam · Solubility Lab <span class="tag">— water line prototype (0.3.6 draft)</span></h1>
-  <div class="subtitle">Water is a G+B liquid: it strips salts and gas-bearers, carries loose grains, chips nothing.</div>
+  <h1>Arc Steam · Solubility Lab <span class="tag">— water line prototype (0.3.6b: 13-mineral chemistry, pump, placers)</span></h1>
+  <div class="subtitle">Water is a G+B liquid: it dissolves salts and hydrates, decomposes gas-salts, carries loose grains by density — and the platform pumps the brine dry.</div>
 </header>
 <main>
   <section id="stage">
@@ -74,8 +74,8 @@ kbd { background:#1d232c; border:1px solid var(--line); border-radius:3px; paddi
     <div id="legend"></div>
     <canvas id="chart" width="1200" height="118" style="margin-top:10px"></canvas>
     <div class="hint">
-      <kbd>LMB hold</kbd> fire jet toward cursor (nozzle slides overhead) &nbsp;·&nbsp; <kbd>RMB hold</kbd> gentle pour at cursor &nbsp;·&nbsp;
-      <kbd>F</kbd> hold to fire &nbsp;·&nbsp; <kbd>Space</kbd> pause &nbsp;·&nbsp; beaker mode immerses the whole sample
+      <kbd>LMB hold</kbd> fire jet / pump brine (mode) &nbsp;·&nbsp; <kbd>RMB hold</kbd> gentle pour &nbsp;·&nbsp;
+      <kbd>F</kbd> fire &nbsp;·&nbsp; <kbd>Space</kbd> pause &nbsp;·&nbsp; brine tints: salt green · vitriol blue · mixed teal
     </div>
   </section>
   <aside>
@@ -84,6 +84,7 @@ kbd { background:#1d232c; border:1px solid var(--line); border-radius:3px; paddi
         <label class="inline">Mode</label>
         <button class="btn on" id="modeJet">Jet</button>
         <button class="btn" id="modeBeaker">Beaker</button>
+        <button class="btn" id="modePump">Pump</button>
         <button class="btn" id="btnFill" style="display:none">Fill</button>
         <button class="btn" id="btnDrain" style="display:none">Drain</button>
       </div>
@@ -92,6 +93,13 @@ kbd { background:#1d232c; border:1px solid var(--line); border-radius:3px; paddi
         <button class="btn on" id="viewColor">Color</button>
         <button class="btn" id="viewStrength">Strength</button>
         <button class="btn" id="viewSol">Solubility</button>
+      </div>
+      <div class="row">
+        <label class="inline">Scene</label>
+        <button class="btn on" id="sceneField">Field</button>
+        <button class="btn" id="sceneColumns">Columns</button>
+        <button class="btn" id="scenePlacer">Placer</button>
+        <button class="btn on" id="btnFeed" style="display:none">Feed</button>
         <span style="flex:1"></span>
         <label class="inline">Speed</label>
         <button class="btn small" data-speed="0.5">0.5x</button>
@@ -111,6 +119,11 @@ kbd { background:#1d232c; border:1px solid var(--line); border-radius:3px; paddi
     <div class="panel" id="controls"></div>
 
     <div class="panel">
+      <h2>Platform hopper (pumped brine, value at reference quotes)</h2>
+      <div class="ledger" id="hopperBody"></div>
+    </div>
+
+    <div class="panel">
       <h2>Sample ledger (grams)</h2>
       <table id="statsTable"></table>
     </div>
@@ -124,12 +137,17 @@ kbd { background:#1d232c; border:1px solid var(--line); border-radius:3px; paddi
       <summary>The model (short)</summary>
       <div class="model-txt">
         <ul>
-          <li><b>Water is a G+B compound</b> (crystal non-metal + gas, the H2O of this world): polar, kin to gas B, hungry for metal R, unable to break the G-framework.</li>
-          <li><b>Solubility is a class in the mineral table</b>, like strength: <span class="cls-instant">instant (Rock salt, new)</span>, <span class="cls-fast">fast (Gas-bearing rock)</span>, <span class="cls-slow">slow (Fluorite)</span>, none (silicates, quartz, corundum, native metals, sand). A cell dissolves per mineral, mixture-weighted, the same way strengthInto() weighs strength.</li>
-          <li><b>Dissolution is selective extraction</b>: water strips the soluble mineral out of the mix; the insoluble skeleton keeps its own strength and crumbles through the existing debrisLimit only when undermined.</li>
-          <li><b>Water saturates</b>: a parcel of water dissolves only up to its capacity, so fresh flow cuts and standing puddles stall.</li>
-          <li><b>Erosion is a separate, mechanical process</b>: flowing water entrains loose grains above a speed threshold and releases them when it slows. A carried grain keeps its mineral, mass and value; it never dissolves by being carried (only soluble grains in contact with water still dissolve chemically).</li>
-          <li><b>The jet is weak</b>: droplets book impact energy (default 0.05 J vs 3–7.8 J/cell strengths) — cranking the slider shows what real chipping would take; dissolution is what water is for.</li>
+          <li><b>Water is a G+B compound</b> (crystal non-metal + gas, the H2O of this world): polar, kin to gas B, hungry for metal R, unable to break the G-framework. Water never chips intact rock — the jet is a delivery system (0.05 J vs 1.3–7.8 J/cell strengths).</li>
+          <li><b>Solubility is a class in the 13-mineral table</b>, weighed per mineral the way strengthInto() weighs strength:
+            <span class="cls-instant">instant (Halite, Blue Vitriol)</span>,
+            <span class="cls-fast">fast (Fizzy Halite, Gas rock)</span>,
+            <span class="cls-slow">slow (Fluorite-salt)</span>, none (silicates, dry chalcopyrite, native metals, sand).</li>
+          <li><b>Three wet reactions</b>. Full dissolution: halite and vitriol enter the water 100% (green +G brine, blue +GB brine; blends read teal). Decomposition: fizzy halite (R2G3B) vents its B share as lost gas (16.7%), the rest dissolves green, and the bed's inclusions — quartz, chalcopyrite or the host stone — remain as the residue skeleton; gas rock vents 85% and drops 15% as stone debris; fluorite-salt leaches only its salt matrix and stops at a 45% concentrate floor (the B never enters solution, so nothing valuable vents). Entrainment: see below.</li>
+          <li><b>Saturation stands</b>: a parcel of water dissolves at most its capacity (default 60 g per water unit) — fresh flow cuts, brine stalls, downstream salt survives a loaded stream.</li>
+          <li><b>Erosion is mechanical and density-sorted</b>: a flow lifts a resting grain only above v_crit(rho) = 0.78·max(0.35, rho−1)/erosionPower (x0.7 to cells/s), carries it for one 0.18–0.5 s hop — shorter for heavier grains — and drops it when the flow slows to 0.65·v_crit. Sand (rho 1.6) washes in a trickle; quartz (2.6) hops in a sluice; silver (10.5) barely moves; a liberated gold nugget (19.3) never leaves the trap.</li>
+          <li><b>Gold panning</b>: a loose gold-bearing-quartz grain washed by flowing water liberates into 25% pure-gold nugget (92% of the value, rho 19.3, stays) + 75% quartz gangue (washes away).</li>
+          <li><b>The platform pumps the brine dry</b>: in Pump mode hold LMB — the hose sucks water units and their exact per-mineral load into the hopper, booked in grams and value. Solids are never pumped: dry collection and panning stay their own game.</li>
+          <li><b>Vented gas is gone for good</b> — the expensive lesson: gas quotes at the reference cap (150/cell), and wet degassing burns it into bubbles. The ledger books the loss in value, not just grams.</li>
         </ul>
       </div>
     </details>
@@ -140,13 +158,15 @@ kbd { background:#1d232c; border:1px solid var(--line); border-radius:3px; paddi
 (function () {
 'use strict';
 // ============================================================================
-// Solubility lab for the 0.3.6 water gun. Single file, no deps, repo style:
-// the mineral table below is copied from js/minerals.js and extended with a
-// `sol` class field plus one new mineral (Rock salt). The cell model mirrors
-// rock-materials.js: a cell is a mineral mix, strength is strengthInto(mix),
-// debrisLimit is the one absolute collapse limit. Dissolution removes per
-// mineral from the mix; the remaining mix keeps its strength and collapses
-// through debrisLimit when undermined. Everything is booked to the gram.
+// Solubility lab 0.3.6b for the water gun line. Single file, no deps, repo
+// style. The mineral table follows 0.3.6-Solubility-plan.md section 4.1 (13
+// formation minerals: chalcopyrite split into a dry half and Blue Vitriol,
+// plus Halite in HHL and Fizzy Halite in HHH) with the reaction splits fixed
+// per the review: fizzy vents exactly its B share (R2G3B -> 16.7%), gas rock
+// vents 85% and drops 15% as stone debris, fluorite leaches to a 45%
+// concentrate floor, and saturation (60 g/wu) is kept. The cell model mirrors
+// rock-materials.js: strengthInto(mix), debrisLimit 0.8. Erosion is the
+// Shields-style saltation of plan section 7. Everything books to the gram.
 // ============================================================================
 const COLS = 120, ROWS = 34, CELL_PX = 10;
 const ROCK_TOP = 10;               // rows 0..9 open air, 10..32 rock, 33 drain
@@ -156,51 +176,69 @@ const DEBRIS_LIMIT = 0.8;          // J/cell, from rock-materials.js
 const GRAVITY = 55;                // cells/s^2 for water and grains
 const DT = 1 / 60;
 
-// --- mineral table: copied from js/minerals.js, plus `sol` and Rock salt ---
+// --- mineral table: repo order + plan 4.1 rows; `rho` is specific gravity,
+// `price` the reference quote per full cell (measured on the real geology,
+// 8 seeds x 192x120, target cell value 12.5), `dye` the brine tint. Reaction
+// splits: ventF (lost gas), residueF (re-materialised solid), brine = rest.
 const ANY = Object.freeze([0, 1]);
 const mineralTable = [
   { id:'stone', name:'Stone', symbol:'St', analog:'mixed silicate host', host:true,
     r:ANY, g:ANY, b:ANY, rarity:'host', strength:4.2, growth:120, color:[138,130,122],
-    demandPeriod:380, demandDepth:0.30, demandMean:1, sol:'none' },
+    demandPeriod:380, demandDepth:0.30, demandMean:1, sol:'none', rho:2.8, price:2.90 },
   { id:'iron', name:'Iron ore', symbol:'Fe', analog:'Fe2O3',
     r:[0.28,0.99], g:[0.00,0.54], b:[0.00,0.63], rarity:'common', strength:5.4, growth:220,
-    color:[184,91,64], demandPeriod:220, demandDepth:0.35, demandMean:1, sol:'none' },
-  { id:'copper', name:'Copper ore', symbol:'Cu', analog:'CuFeS2',
-    r:[0.31,0.79], g:[0.02,0.38], b:[0.21,0.69], rarity:'uncommon', strength:4.8, growth:140,
-    color:[65,174,133], demandPeriod:130, demandDepth:0.55, demandMean:1, sol:'none' },
+    color:[184,91,64], demandPeriod:220, demandDepth:0.35, demandMean:1, sol:'none', rho:5.2, price:5.01 },
+  { id:'copper', name:'Chalcopyrite', symbol:'Cu', analog:'CuFeS2 (dry sulfide)',
+    r:[0.31,0.79], g:[0.02,0.38], b:[0.18,0.46], rarity:'uncommon', strength:4.8, growth:140,
+    color:[65,174,133], demandPeriod:130, demandDepth:0.55, demandMean:1, sol:'none', rho:4.8, price:27.23 },
+  { id:'vitriol', name:'Blue Vitriol', symbol:'Vi', analog:'CuSO4·5H2O hydrate',
+    r:[0.42,0.78], g:[0.06,0.36], b:[0.54,0.78], rarity:'uncommon', strength:1.8, growth:140,
+    color:[86,126,214], demandPeriod:130, demandDepth:0.55, demandMean:1, sol:'instant', rho:2.3,
+    price:22.04, dye:[70,120,235] },
   { id:'quartz', name:'Quartz stone', symbol:'Si', analog:'SiO2',
     r:[0.00,0.48], g:[0.23,0.87], b:[0.00,0.56], rarity:'common', strength:6.0, growth:70,
-    color:[222,216,198], demandPeriod:340, demandDepth:0.32, demandMean:1, sol:'none' },
+    color:[222,216,198], demandPeriod:340, demandDepth:0.32, demandMean:1, sol:'none', rho:2.6, price:5.21 },
   { id:'corundum', name:'Corundum', symbol:'Al', analog:'Al2O3',
     r:[0.10,0.40], g:[0.70,0.95], b:[0.05,0.30], rarity:'rare', strength:7.8, growth:40,
-    color:[74,96,196], demandPeriod:200, demandDepth:0.40, demandMean:1, sol:'none' },
-  { id:'fluorite', name:'Fluorite', symbol:'Fl', analog:'CaF2 (salt lattice, B-rich)',
+    color:[74,96,196], demandPeriod:200, demandDepth:0.40, demandMean:1, sol:'none', rho:4.0, price:38.87 },
+  { id:'fluorite', name:'Fluorite-salt', symbol:'Fl', analog:'CaF2·NaCl leachable matrix',
     r:[0.07,0.38], g:[0.11,0.54], b:[0.62,0.98], rarity:'uncommon', strength:3.0, growth:45,
-    color:[163,106,196], demandPeriod:150, demandDepth:0.60, demandMean:1, sol:'slow' },
+    color:[163,106,196], demandPeriod:150, demandDepth:0.60, demandMean:1, sol:'slow', rho:3.1,
+    price:12.23, dye:[110,190,90], leach:0.45 },
   { id:'silver', name:'Native silver', symbol:'Ag', analog:'native Ag',
     r:[0.67,0.96], g:[0.26,0.55], b:[0.04,0.33], rarity:'rare', strength:3.5, growth:180,
-    color:[196,206,216], demandPeriod:180, demandDepth:0.50, demandMean:1, sol:'none' },
+    color:[196,206,216], demandPeriod:180, demandDepth:0.50, demandMean:1, sol:'none', rho:10.5, price:44.65 },
   { id:'gold', name:'Gold-bearing quartz', symbol:'Au', analog:'Au in SiO2 gangue',
     r:[0.82,0.98], g:[0.06,0.26], b:[0.42,0.66], rarity:'very rare', strength:3.4, growth:60,
-    color:[224,180,62], demandPeriod:420, demandDepth:0.35, demandMean:1, sol:'none' },
+    color:[224,180,62], demandPeriod:420, demandDepth:0.35, demandMean:1, sol:'none', rho:5.6, price:147.35 },
   { id:'gas', name:'Gas-bearing rock', symbol:'Gb', analog:'volatile inclusions',
     r:[0.00,0.20], g:[0.00,0.20], b:[0.80,1.00], rarity:'uncommon', strength:0.8, growth:20,
-    color:[188,200,130], demandPeriod:120, demandDepth:0.60, demandMean:1, sol:'fast' },
+    color:[188,200,130], demandPeriod:120, demandDepth:0.60, demandMean:1, sol:'fast', rho:1.2,
+    price:150.00, ventF:0.85, residueF:0.15 },
   { id:'sand', name:'Sand', symbol:'Sd', analog:'loose quartz grains',
     r:[0.02,0.38], g:[0.28,0.68], b:[0.25,0.55], rarity:'filler', strength:0.5, growth:10,
-    color:[206,178,132], demandPeriod:300, demandDepth:0.30, demandMean:0.03, sol:'none' },
-  // NEW for the water line: the instant tier. R and G sit in balance at a
-  // simple salt stoichiometry with almost no trapped gas, the one empty zone
-  // of the existing range table. Soft (1.2 J/cell) but holds above
-  // debrisLimit, so removal is dissolution, not collapse. Evaporite beds.
-  { id:'salt', name:'Rock salt', symbol:'Ha', analog:'NaCl',
-    r:[0.40,0.72], g:[0.34,0.66], b:[0.02,0.28], rarity:'uncommon', strength:1.2, growth:24,
-    color:[238,234,226], demandPeriod:260, demandDepth:0.35, demandMean:0.15, sol:'instant' }
+    color:[206,178,132], demandPeriod:300, demandDepth:0.30, demandMean:0.03, sol:'none', rho:1.6, price:0.87 },
+  // The plan's new salts, in the measured-empty HHL and HHH octants.
+  { id:'halite', name:'Halite', symbol:'Ha', analog:'NaCl (R·G salt)',
+    r:[0.62,0.92], g:[0.68,0.96], b:[0.04,0.34], rarity:'uncommon', strength:1.6, growth:24,
+    color:[240,238,228], demandPeriod:260, demandDepth:0.35, demandMean:0.15, sol:'instant',
+    rho:2.2, price:2.52, dye:[46,198,130] },
+  { id:'fizzy', name:'Fizzy Halite', symbol:'Fz', analog:'R2G3B gas-salt',
+    r:[0.64,0.94], g:[0.68,0.96], b:[0.68,0.96], rarity:'uncommon', strength:1.3, growth:20,
+    color:[212,236,196], demandPeriod:200, demandDepth:0.40, demandMean:0.2, sol:'fast',
+    rho:1.9, price:3.65, ventF:0.167, dye:[92,210,120] },
+  // Not a formation mineral: only liberated from gold-quartz grains by washing.
+  { id:'nugget', name:'Pure gold', symbol:'Au+', analog:'liberated native Au', gen:false,
+    r:ANY, g:ANY, b:ANY, rarity:'very rare', strength:3.0, growth:0,
+    color:[255,208,64], demandPeriod:420, demandDepth:0.35, demandMean:1, sol:'none', rho:19.3,
+    price:541.85 }
 ];
 const M = mineralTable.length;
 const IDX = {};
 for (let m = 0; m < M; m++) IDX[mineralTable[m].id] = m;
-const SOLUBLE = [IDX.salt, IDX.gas, IDX.fluorite];
+const SOLUBLE = [IDX.halite, IDX.vitriol, IDX.fizzy, IDX.gas, IDX.fluorite];
+const FORMATION = [];
+for (let m = 0; m < M; m++) if (mineralTable[m].gen !== false) FORMATION.push(m);
 let maxStrength = 0;
 for (let m = 0; m < M; m++) if (mineralTable[m].strength > maxStrength) maxStrength = mineralTable[m].strength;
 
@@ -211,13 +249,14 @@ const tuning = {
   fireRate: 12,        // droplets/s
   satCap: 60,          // grams a unit of water can hold before it stalls
   wetDecay: 0.08,      // wetness lost per second
+  pumpRate: 10,        // water units/s the platform hose sucks
   rateInstant: 0.45,   // mass fraction/s at full wetness in fresh water
   rateFast: 0.12,
   rateSlow: 0.035,
   grainFactor: 3,      // grains have more surface: rate multiplier
-  entrainBase: 2.5,    // flow speed (cells/s) that lifts a 60 g grain
-  releaseThresh: 1.4,  // flow speed below which a carried grain is released
-  sandShed: 0.08       // wet sand mass fraction/s shed as grains
+  erosionPower: 1,     // divides every v_crit: the sluice's strength
+  sandShed: 0.08,      // wet sand mass fraction/s shed as grains
+  liberate: 0.5        // gold-quartz liberation progress/s at full wash
 };
 function clsRate(cls) {
   if (cls === 'instant') return tuning.rateInstant;
@@ -226,6 +265,11 @@ function clsRate(cls) {
   return 0;
 }
 const CLS_COLOR = { instant:'#eae6da', fast:'#7fd28a', slow:'#b89ae0' };
+// Shields-style pickup threshold, plan section 7.1, scaled x0.7 m/s -> cells/s.
+function vCrit(m) {
+  const rho = mineralTable[m].rho;
+  return 0.7 * 0.78 / Math.max(0.05, tuning.erosionPower) * Math.max(0.35, rho - 1);
+}
 
 // --- seeded RNG --------------------------------------------------------------
 function mulberry32(seed) {
@@ -246,6 +290,8 @@ const damage = new Float32Array(NC);       // J booked by impacts (the chip path
 const wet = new Float32Array(NC);
 const crust = new Float32Array(NC);        // grams precipitated back onto the cell
 const bubbleAcc = new Float32Array(NC);
+const residueAcc = new Float32Array(NC);   // grams of re-materialised debris waiting to spawn
+const leachFloor = new Float32Array(NC);   // fluorite fraction that never dissolves (concentrate)
 const wetList = [];                        // indices of cells with wet > 0
 const dirty = new Set();                   // cells touched this tick (collapse check)
 let stats = null;
@@ -271,12 +317,34 @@ function topSolidRow(c, fromRow) {
   for (let r = Math.max(0, fromRow | 0); r < ROWS; r++) if (occupied(c, r)) return r;
   return ROWS;
 }
+function freshStats() {
+  return {
+    initial: new Float64Array(M),
+    dissolvedRock: new Float64Array(M),
+    dissolvedGrain: new Float64Array(M),
+    grainsSpawned: new Float64Array(M),
+    waterFired: 0, waterOut: 0, loadOut: 0, precipitated: 0, gasReleased: 0,
+    gasRock: 0, gasGrain: 0, sliver: 0, evapWater: 0, tapWater: 0,
+    converted: 0, seeded: 0, gasLostValue: 0,
+    liberated: 0, liberatedValue: 0, liberatedNuggetValue: 0,
+    rateEma: { instant: 0, fast: 0, slow: 0 },
+    tickDissolved: { instant: 0, fast: 0, slow: 0 },
+    grainDissolvedNow: 0
+  };
+}
+function clearParticles() {
+  droplets.length = 0; flows.length = 0; grains.length = 0; bubbles.length = 0;
+  packedSediment = 0;
+  hopper.water = 0; hopper.loads.fill(0);
+  pool.active = false; pool.filling = false; pool.draining = false;
+  pool.level = ROWS; pool.target = ROWS; pool.volume = 0;
+  pool.loads = new Float64Array(M);
+  firing = false; pouring = false; pumping = false; fireAcc = 0; pourAcc = 0; feedAcc = 0;
+}
 
-function genField(seed) {
-  rng = mulberry32(seed >>> 0);
-  mix.fill(0); damage.fill(0); wet.fill(0); crust.fill(0); bubbleAcc.fill(0);
-  inWet.fill(0); sandAcc.fill(0);
-  wetList.length = 0; dirty.clear();
+// --- scene: field (the default world sample) ---------------------------------
+function genFieldScene() {
+  const midRow = (ROCK_TOP + DRAIN_ROW) >> 1;
   for (let r = ROCK_TOP; r < DRAIN_ROW; r++)
     for (let c = 0; c < COLS; c++) mix[cellIndex(c, r) * M + IDX.stone] = 1;
   const stain = function (c, r, m, w) {
@@ -287,9 +355,9 @@ function genField(seed) {
     for (let k = 0; k < M; k++) sum += mix[o + k];
     for (let k = 0; k < M; k++) mix[o + k] /= sum;
   };
-  const bed = function (m, count, wMin, wMax) {          // horizontal evaporite bed
+  const bed = function (m, count, wMin, wMax) {          // evaporite bed, may outcrop
     for (let n = 0; n < count; n++) {
-      let r = ROCK_TOP + 2 + Math.floor(rng() * (DRAIN_ROW - ROCK_TOP - 6));
+      let r = ROCK_TOP + Math.floor(rng() * (DRAIN_ROW - ROCK_TOP - 6));
       let c = Math.floor(rng() * (COLS - 30));
       const len = 28 + Math.floor(rng() * 30), th = 1 + Math.floor(rng() * 2.4);
       const w = wMin + rng() * (wMax - wMin);
@@ -299,12 +367,29 @@ function genField(seed) {
       }
     }
   };
-  const walk = function (m, count, w) {                   // diagonal vein
+  // Fizzy beds: the salt matrix plus bedded inclusions (quartz or dry
+  // chalcopyrite) — leaching the salt leaves the inclusion skeleton.
+  const bedFizzy = function (inc, count) {
     for (let n = 0; n < count; n++) {
-      let c = Math.floor(rng() * COLS), r = ROCK_TOP + 2 + Math.floor(rng() * (DRAIN_ROW - ROCK_TOP - 4));
+      let r = ROCK_TOP + Math.floor(rng() * (DRAIN_ROW - ROCK_TOP - 6));
+      let c = Math.floor(rng() * (COLS - 30));
+      const len = 28 + Math.floor(rng() * 30), th = 1 + Math.floor(rng() * 2.4);
+      const w = 3.5 + rng() * 3.5, iw = 0.7 + rng() * 0.6;
+      for (let i = 0; i < len; i++, c++) {
+        if (rng() < 0.22) r += rng() < 0.5 ? -1 : 1;
+        for (let t = 0; t < th; t++) { stain(c, r + t, IDX.fizzy, w); stain(c, r + t, inc, iw); }
+      }
+    }
+  };
+  const walk = function (m, count, w, rLo, rHi) {        // diagonal vein, depth-gated
+    const lo = rLo === undefined ? ROCK_TOP + 2 : rLo;
+    const hi = rHi === undefined ? DRAIN_ROW - 4 : rHi;
+    for (let n = 0; n < count; n++) {
+      let c = Math.floor(rng() * COLS), r = lo + Math.floor(rng() * Math.max(1, hi - lo));
       const len = 18 + Math.floor(rng() * 22);
       for (let i = 0; i < len; i++) {
         c += rng() < 0.5 ? -1 : 1; r += rng() < 0.42 ? (rng() < 0.5 ? -1 : 1) : 0;
+        r = Math.max(lo, Math.min(hi, r));
         stain(c, r, m, w * (0.7 + rng() * 0.5));
       }
     }
@@ -321,27 +406,95 @@ function genField(seed) {
     }
   };
   // Seam weights are absolute mass added against the stone host (1.0), so a
-  // weight of 4-8 leaves the soluble mineral at 75-89% of the cell: strong
+  // weight of 3.5-8 leaves the soluble mineral at 75-89% of the cell: strong
   // enough to hold at its own strength, weak enough that leaching the binder
   // drops the residue under debrisLimit and the skeleton crumbles to grains.
-  bed(IDX.salt, 4, 3.5, 8.0);         // the new instant tier, in beds
+  bed(IDX.halite, 4, 3.5, 8.0);
+  bedFizzy(IDX.quartz, 2);
+  bedFizzy(IDX.copper, 2);
   bed(IDX.sand, 4, 1.8, 2.6);
   blob(IDX.gas, 6, 4.0, 6.5);
   walk(IDX.fluorite, 5, 0.55);
-  walk(IDX.iron, 6, 0.60); walk(IDX.copper, 5, 0.50); walk(IDX.quartz, 5, 0.55);
+  // The element split: Blue Vitriol veins in the upper (oxidised) half,
+  // dry Chalcopyrite in the lower half — one copper family, two gens.
+  walk(IDX.vitriol, 5, 0.55, ROCK_TOP + 2, midRow - 1);
+  walk(IDX.copper, 5, 0.50, midRow, DRAIN_ROW - 4);
+  walk(IDX.iron, 6, 0.60); walk(IDX.quartz, 5, 0.55);
   walk(IDX.corundum, 3, 0.45); walk(IDX.silver, 3, 0.50); walk(IDX.gold, 2, 0.45);
+  // Deterministic outcrops, so the three wet reactions always have a target
+  // the jet can reach: a white halite band, a blue vitriol patch, and a
+  // fizzy bed with bedded chalcopyrite inclusions (leach the salt, keep ore).
+  for (let c = 15; c <= 45; c++) {
+    stain(c, ROCK_TOP, IDX.halite, 6); stain(c, ROCK_TOP + 1, IDX.halite, 6);
+  }
+  for (let c = 55; c <= 65; c++) {
+    stain(c, ROCK_TOP, IDX.vitriol, 5); stain(c, ROCK_TOP + 1, IDX.vitriol, 5);
+  }
+  for (let c = 70; c <= 100; c++) {
+    stain(c, ROCK_TOP, IDX.fizzy, 5); stain(c, ROCK_TOP, IDX.copper, 1.0);
+    stain(c, ROCK_TOP + 1, IDX.fizzy, 5); stain(c, ROCK_TOP + 1, IDX.copper, 1.0);
+  }
+}
 
-  stats = {
-    initial: new Float64Array(M),
-    dissolvedRock: new Float64Array(M),
-    dissolvedGrain: new Float64Array(M),
-    grainsSpawned: new Float64Array(M),
-    waterFired: 0, waterOut: 0, loadOut: 0, precipitated: 0, gasReleased: 0,
-    gasRock: 0, gasGrain: 0, sliver: 0, evapWater: 0, tapWater: 0,
-    rateEma: { instant: 0, fast: 0, slow: 0 },
-    tickDissolved: { instant: 0, fast: 0, slow: 0 },
-    grainDissolvedNow: 0
+// --- scene: columns (one pure column per formation mineral) ------------------
+const COL_R0 = ROCK_TOP + 2, COL_H = 16;
+function genColumnsScene() {
+  const per = Math.floor((COLS - 8) / FORMATION.length);
+  for (let i = 0; i < FORMATION.length; i++) {
+    const m = FORMATION[i];
+    const c0 = 4 + i * per;
+    for (let c = c0; c < c0 + per - 1; c++) {
+      for (let r = COL_R0; r < COL_R0 + COL_H; r++) mix[cellIndex(c, r) * M + m] = 1;
+    }
+  }
+}
+
+// --- scene: placer (sloped sluice with pit traps and a wash feed) -------------
+let feedOn = true;
+function genPlacerScene() {
+  // a steady downhill grade (one step per 8 columns) keeps the wash moving
+  // right; three pit traps sit below the grade line, where the flow churns
+  // and drops its load - the heavy concentrate stays, the light gangue washes on
+  const slopeTop = function (c) {
+    return 12 + Math.floor(c / 8) +
+      (((c >= 30 && c <= 33) || (c >= 60 && c <= 63) || (c >= 90 && c <= 93)) ? 2 : 0);
   };
+  for (let c = 0; c < COLS; c++) {
+    const top = slopeTop(c);
+    for (let r = top; r < DRAIN_ROW; r++) mix[cellIndex(c, r) * M + IDX.stone] = 1;
+  }
+  // rubble pile on the upper slope: quartz + sand gangue, gold-quartz ore, some iron
+  const pile = [[IDX.quartz, 90, 30, 60], [IDX.sand, 50, 25, 45], [IDX.gold, 30, 35, 70], [IDX.iron, 12, 40, 70]];
+  let seeded = 0;
+  for (const p of pile) {
+    for (let i = 0; i < p[1]; i++) {
+      const mass = p[2] + rng() * (p[3] - p[2]);
+      seeded += mass;
+      spawnGrain(8 + rng() * 18, slopeTop(9) - 0.8 + rng() * 0.5, p[0], mass, 0, 0);
+    }
+  }
+  stats.seeded = seeded;
+}
+
+// --- scene plumbing -----------------------------------------------------------
+let scene = 'field';
+function genScene(which, seed) {
+  scene = which;
+  rng = mulberry32(seed >>> 0);
+  mix.fill(0); damage.fill(0); wet.fill(0); crust.fill(0); bubbleAcc.fill(0);
+  residueAcc.fill(0); leachFloor.fill(0);
+  inWet.fill(0); sandAcc.fill(0);
+  wetList.length = 0; dirty.clear();
+  stats = freshStats();
+  clearParticles();
+  if (scene === 'columns') genColumnsScene();
+  else if (scene === 'placer') genPlacerScene();
+  else genFieldScene();
+  // fluorite leach floor: the concentrate fraction that never dissolves
+  for (let idx = 0; idx < NC; idx++) {
+    const o = idx * M;
+    if (mix[o + IDX.fluorite] > 0.02) leachFloor[idx] = mix[o + IDX.fluorite] * mineralTable[IDX.fluorite].leach;
+  }
   for (let idx = 0; idx < NC; idx++) {
     const o = idx * M;
     for (let m = 0; m < M; m++) stats.initial[m] += mix[o + m] * M_PER_CELL;
@@ -349,17 +502,19 @@ function genField(seed) {
 }
 
 // --- particle stores --------------------------------------------------------
-const droplets = [];   // {x,y,vx,vy,vol,load}
-const flows = [];      // {x,y,vx,vy,vol,load,age,dir,stuck,dead}
-const grains = [];     // {x,y,vx,vy,m,mass,carried,rest,inPool}
+const droplets = [];   // {x,y,vx,vy,vol,dead}
+const flows = [];      // {x,y,vx,vy,vol,loads[M],age,dir,stuck,dead}
+const grains = [];     // {x,y,vx,vy,m,mass,floor,carried,rest,gone,hop,lib,leached}
 const bubbles = [];    // {x,y}
-const pool = { active: false, level: ROWS, target: ROWS, volume: 0, load: 0 };
-let mode = 'jet';      // 'jet' | 'beaker'
-let firing = false, pouring = false;
+const pool = { active:false, level:ROWS, target:ROWS, volume:0, loads:new Float64Array(M) };
+const hopper = { water:0, loads:new Float64Array(M) };   // the platform's dry end
+let mode = 'jet';      // 'jet' | 'beaker' | 'pump'
+let firing = false, pouring = false, pumping = false;
 let aimX = 60, aimY = 20;                 // cursor in cell units
-let fireAcc = 0;
+let fireAcc = 0, pourAcc = 0, feedAcc = 0;
 // The nozzle rides the top of the chamber and slides toward the cursor's
 // column (the platform-travel stand-in), so the whole field is in reach.
+// In Pump mode the hose hangs from the same carriage down to the cursor.
 const NOZZLE = { x: 2.2, y: 1.4 };
 function moveNozzle(dt) {
   const target = Math.max(3, Math.min(COLS - 3, aimX));
@@ -368,7 +523,7 @@ function moveNozzle(dt) {
 
 function spawnDroplet(dx, dy, speed) {
   if (droplets.length > 500) return;
-  droplets.push({ x: NOZZLE.x, y: NOZZLE.y, vx: dx * speed, vy: dy * speed, vol: 1, load: 0 });
+  droplets.push({ x: NOZZLE.x, y: NOZZLE.y, vx: dx * speed, vy: dy * speed, vol: 1, dead: false });
 }
 function aimDir() {
   let dx = aimX - NOZZLE.x, dy = aimY - NOZZLE.y;
@@ -381,36 +536,65 @@ function aimDir() {
 }
 function spawnFlow(x, y, vx, vol) {
   if (flows.length > 700) return null;
-  const f = { x, y, vx, vy: 0, vol, load: 0, age: 0, dir: vx >= 0 ? 1 : -1, stuck: 0, dead: false };
+  const f = { x, y, vx, vy: 0, vol, loads: new Float64Array(M), age: 0, dir: vx >= 0 ? 1 : -1, stuck: 0, dead: false };
   flows.push(f); return f;
 }
 function killFlow(f) { f.dead = true; }
+function loadOf(carrier) {
+  let s = 0;
+  for (let m = 0; m < M; m++) s += carrier.loads[m];
+  return s;
+}
 
-// Books one dissolution event: the carrier keeps the dissolved load, except
-// gas rock, where the B-fraction (0.85) leaves as bubbles and only the rest
-// stays in the water. Also feeds the class-rate meters and bubble spawning.
-function bookDissolve(m, dm, x, y, carrier, isGrain) {
+// --- the reaction bookkeeping -------------------------------------------------
+// One dm leaving a solid splits exactly: ventF as lost gas (bubbles, value
+// gone), residueF re-materialised as solid debris of the residue mineral,
+// the rest as brine riding the carrier. Rock delta and the dissolved-stream
+// delta both stay exact.
+function bookDissolve(m, ventMass, brineMass, x, y, carrier, isGrain) {
   const min = mineralTable[m];
-  if (carrier) carrier.load += min.id === 'gas' ? dm * 0.15 : dm;
-  stats.tickDissolved[min.sol] += dm;
-  if (min.id === 'gas') {
-    const gasPart = dm * 0.85;
-    stats.gasReleased += gasPart;
-    if (isGrain) stats.gasGrain += gasPart; else stats.gasRock += gasPart;
+  if (carrier && brineMass > 0) carrier.loads[m] += brineMass;
+  stats.tickDissolved[min.sol] += ventMass + brineMass;
+  if (ventMass > 0) {
+    stats.gasReleased += ventMass;
+    if (isGrain) stats.gasGrain += ventMass; else stats.gasRock += ventMass;
+    stats.gasLostValue += ventMass * min.price / 1000;      // the expensive lesson, in currency
     const cx = Math.max(0, Math.min(COLS - 1, x | 0)), cy = Math.max(0, Math.min(ROWS - 1, y | 0));
     const gi = cellIndex(cx, cy);
-    bubbleAcc[gi] += dm;
+    bubbleAcc[gi] += ventMass;
     while (bubbleAcc[gi] > 70) {
       bubbleAcc[gi] -= 70;
       if (bubbles.length < 400) bubbles.push({ x: cx + 0.5, y: cy });
     }
   }
 }
+function flushResidue(idx) {
+  const c = idx % COLS, r = (idx / COLS) | 0;
+  while (residueAcc[idx] >= 30) {
+    const g = Math.min(30 + rng() * 25, residueAcc[idx]);
+    spawnGrain(c + 0.2 + rng() * 0.6, r + 0.3 + rng() * 0.4, IDX.stone, g, (rng() - 0.5) * 1.5, -0.3);
+    residueAcc[idx] -= g;
+  }
+}
+function reactSplit(m, dm, idx, x, y, carrier, isGrain) {
+  const min = mineralTable[m];
+  const ventMass = dm * (min.ventF || 0);
+  const resMass = dm * (min.residueF || 0);
+  const brineMass = dm - ventMass - resMass;
+  if (isGrain) stats.dissolvedGrain[m] += ventMass + brineMass;
+  else stats.dissolvedRock[m] += ventMass + brineMass;
+  if (resMass > 0) {
+    stats.converted += resMass;          // cell mass that became debris, not brine
+    residueAcc[idx] += resMass;
+    flushResidue(idx);
+  }
+  bookDissolve(m, ventMass, brineMass, x, y, carrier, isGrain);
+}
 function satMultOf(carrier) {
   if (!carrier) return 1;
   const v = carrier.vol !== undefined ? carrier.vol : carrier.volume;   // pool vs flow/droplet
   const cap = Math.max(0.01, v * tuning.satCap);
-  return Math.max(0, 1 - carrier.load / cap);
+  return Math.max(0, 1 - loadOf(carrier) / cap);
 }
 // --- wetness bookkeeping ----------------------------------------------------
 const inWet = new Uint8Array(NC);
@@ -418,6 +602,10 @@ const sandAcc = new Float32Array(NC);
 function wetCell(idx, v) {
   if (!inWet[idx]) { inWet[idx] = 1; wetList.push(idx); }
   if (v > wet[idx]) wet[idx] = v;
+}
+function worthWetting(o) {
+  for (let i = 0; i < SOLUBLE.length; i++) if (mix[o + SOLUBLE[i]] > 0.0004) return true;
+  return mix[o + IDX.sand] > 0.02;
 }
 
 // --- grains -------------------------------------------------------------------
@@ -446,7 +634,10 @@ function spawnGrain(x, y, m, mass, vx, vy) {
       return;
     }
   }
-  grains.push({ x, y, vx, vy, m, mass, carried: null, rest: false, gone: false });
+  const min = mineralTable[m];
+  grains.push({ x, y, vx, vy, m, mass,
+    floor: min.id === 'fluorite' ? mass * min.leach : 0,   // the concentrate that never dissolves
+    carried: null, rest: false, gone: false, hop: 0, lib: 0, leached: false });
   stats.grainsSpawned[m] += mass;
 }
 function sampleMineral(o, mf) {
@@ -515,10 +706,15 @@ function dissolveCell(idx, carrier, dt) {
     const f = mix[o + m];
     if (f <= 0.0004) continue;
     let dm = M_PER_CELL * f * clsRate(mineralTable[m].sol) * w * sat * dt;
+    if (m === IDX.fluorite) {
+      // leach floor: only the salt matrix goes, the B-rich concentrate stays
+      const avail = (f - leachFloor[idx]) * M_PER_CELL;
+      if (avail <= 4) continue;
+      if (dm > avail) dm = avail;
+    }
     if (dm >= M_PER_CELL * f) dm = M_PER_CELL * f;
     mix[o + m] -= dm / M_PER_CELL;
-    stats.dissolvedRock[m] += dm;
-    bookDissolve(m, dm, c, r, carrier, false);
+    reactSplit(m, dm, idx, c, r, carrier, false);
     dirty.add(idx);
   }
 }
@@ -541,10 +737,10 @@ function shedSand(idx, dt) {
 }
 
 // --- droplets -----------------------------------------------------------------
-let pourAcc = 0;
 function stepDroplets(dt) {
   for (let i = droplets.length - 1; i >= 0; i--) {
     const d = droplets[i];
+    if (d.dead) { droplets[i] = droplets[droplets.length - 1]; droplets.pop(); continue; }
     let hit = false;
     const hs = dt / 2;
     for (let s = 0; s < 2 && !hit; s++) {
@@ -558,7 +754,7 @@ function stepDroplets(dt) {
         hit = true; break;
       }
       if (d.y >= DRAIN_ROW) {
-        stats.waterOut += d.vol; stats.loadOut += d.load;
+        stats.waterOut += d.vol;
         hit = true; break;
       }
       const c = d.x | 0, r = d.y | 0;
@@ -620,7 +816,11 @@ function stepFlows(dt) {
     if (f.dead) continue;
     const key = (f.y | 0) * COLS + (f.x | 0);
     const other = byCell.get(key);
-    if (other) { other.vol += f.vol; other.load += f.load; f.dead = true; }
+    if (other) {
+      other.vol += f.vol;
+      for (let m = 0; m < M; m++) other.loads[m] += f.loads[m];
+      f.dead = true;
+    }
     else byCell.set(key, f);
   }
   compactFlows();
@@ -633,25 +833,26 @@ function stepFlows(dt) {
     if (f.vol < 0.05) {                                  // dried out: the load precipitates as crust
       const c = Math.max(0, Math.min(COLS - 1, f.x | 0));
       const sr = topSolidRow(c, Math.max(0, f.y | 0));
-      if (sr < ROWS) crust[cellIndex(c, sr)] += f.load;
-      stats.precipitated += f.load; stats.evapWater += f.vol;
+      const l = loadOf(f);
+      if (sr < ROWS) crust[cellIndex(c, sr)] += l;
+      stats.precipitated += l; stats.evapWater += f.vol;
       f.dead = true; continue;
     }
     if (pool.active && f.y >= pool.level) {
       pool.level = Math.max(0.5, pool.level - f.vol / (COLS * 0.4));
-      pool.load += f.load;
+      for (let m = 0; m < M; m++) pool.loads[m] += f.loads[m];
       f.dead = true; continue;
     }
     const c = Math.max(0, Math.min(COLS - 1, f.x | 0));
     const sr = topSolidRow(c, Math.max(0, f.y | 0));
     if (sr === DRAIN_ROW) {                              // reached the floor grate
-      stats.waterOut += f.vol; stats.loadOut += f.load;
+      stats.waterOut += f.vol; stats.loadOut += loadOf(f);
       f.dead = true; continue;
     }
     if (sr >= ROWS) {                                    // free fall
       f.vy += GRAVITY * dt;
       f.y += f.vy * dt; f.x += f.vx * dt * 0.4;
-      if (f.y >= DRAIN_ROW) { stats.waterOut += f.vol; stats.loadOut += f.load; f.dead = true; }
+      if (f.y >= DRAIN_ROW) { stats.waterOut += f.vol; stats.loadOut += loadOf(f); f.dead = true; }
       continue;
     }
     if (sr > f.y + 1.05) {                               // falling toward a surface below
@@ -685,7 +886,9 @@ function stepFlows(dt) {
       dissolveCell(idx, f, dt);
       shedSand(idx, dt);
     }
-    // entrain resting grains (the mechanical, reversible process)
+    // entrain resting grains: the mechanical, reversible process.
+    // Pickup needs speed > v_crit(rho), rolls a per-second chance, and the
+    // ride is one short hop - lighter grains hop longer, so a sluice sorts.
     const speed = Math.hypot(f.vx, f.vy);
     if (speed > 0.5) {
       const gc = f.x | 0, gr = f.y | 0;
@@ -693,10 +896,14 @@ function stepFlows(dt) {
         const arr = grainGrid.get((gr + dr) * COLS + (gc + dc));
         if (!arr) continue;
         for (const g of arr) {
-          if (!g.rest || g.carried) continue;
+          if (!g.rest || g.carried || g.gone) continue;
           if (Math.hypot(g.x - f.x, g.y - f.y) > 1.6) continue;
-          if (speed >= tuning.entrainBase * Math.sqrt(g.mass / 60)) {
+          const vc = vCrit(g.m);
+          if (speed > vc && rng() < Math.min(1, 3.8 * (speed / vc - 1) * dt)) {
             g.carried = f; g.rest = false;
+            const rho = mineralTable[g.m].rho;
+            g.hop = 0.50 - 0.32 * Math.min(1, (rho - 1) / 18.3);   // heavy grains hop shorter
+            g.vy = -(0.45 + rng() * 0.9) * 0.7;                    // the lift impulse
           }
         }
       }
@@ -719,13 +926,14 @@ function stepPool(dt) {
     const newLevel = Math.min(ROWS - 0.4, pool.level + rowsPerSec * dt);
     const dV = Math.min(pool.volume, (newLevel - pool.level) * COLS * 0.4);
     const frac = pool.volume > 1e-6 ? Math.min(1, dV / pool.volume) : 1;
-    stats.waterOut += dV; stats.loadOut += pool.load * frac;
-    pool.load *= (1 - frac); pool.volume -= dV;
+    stats.waterOut += dV; stats.loadOut += loadOf(pool) * frac;
+    for (let m = 0; m < M; m++) pool.loads[m] *= (1 - frac);
+    pool.volume -= dV;
     pool.level = newLevel;
     if (pool.level >= ROWS - 0.4) {
       pool.draining = false; pool.active = false;
-      stats.waterOut += pool.volume; stats.loadOut += pool.load;
-      pool.volume = 0; pool.load = 0; pool.level = ROWS;
+      stats.waterOut += pool.volume; stats.loadOut += loadOf(pool);
+      pool.volume = 0; pool.loads.fill(0); pool.level = ROWS;
     }
   }
   pool.volume = Math.max(0.01, (ROWS - pool.level) * COLS * 0.4);
@@ -734,8 +942,7 @@ function stepPool(dt) {
     const rowOff = r * COLS;
     for (let c = 0; c < COLS; c++) {
       const idx = rowOff + c, o = idx * M;
-      if (mix[o + IDX.salt] <= 0.0004 && mix[o + IDX.gas] <= 0.0004 &&
-          mix[o + IDX.fluorite] <= 0.0004 && mix[o + IDX.sand] <= 0.02) continue;
+      if (!worthWetting(o)) continue;
       wetCell(idx, 1); dirty.add(idx);
       dissolveCell(idx, pool, dt);
       shedSand(idx, dt);
@@ -746,15 +953,21 @@ function stepPool(dt) {
 // --- grains -------------------------------------------------------------------
 function grainDissolve(g, carrier, dt) {
   const min = mineralTable[g.m];
+  if (g.leached) return;
   let dm = g.mass * clsRate(min.sol) * tuning.grainFactor * satMultOf(carrier) * dt;
-  if (dm > g.mass - 5) dm = g.mass - 5;
+  if (min.id === 'fluorite') {
+    // the grain leaches down to its concentrate floor, then survives
+    const avail = g.mass - g.floor;
+    if (avail <= 5) { g.leached = true; return; }
+    if (dm > avail) dm = avail;
+  } else if (dm > g.mass - 5) dm = g.mass - 5;
   if (dm <= 0) return;
   g.mass -= dm;
-  stats.dissolvedGrain[g.m] += dm;
-  bookDissolve(g.m, dm, g.x, g.y, carrier, true);
-  if (g.mass <= 5) {                                     // fully dissolved
-    stats.dissolvedGrain[g.m] += g.mass;
-    bookDissolve(g.m, g.mass, g.x, g.y, carrier, true);
+  const c = Math.max(0, Math.min(COLS - 1, g.x | 0)), r = Math.max(0, Math.min(ROWS - 1, g.y | 0));
+  const idx = cellIndex(c, r);
+  reactSplit(g.m, dm, idx, g.x, g.y, carrier, true);
+  if (g.mass <= 5 && min.id !== 'fluorite') {            // fully dissolved
+    reactSplit(g.m, g.mass, idx, g.x, g.y, carrier, true);
     g.mass = 0; g.gone = true;
   }
 }
@@ -763,22 +976,43 @@ function stepGrains(dt) {
     const g = grains[i];
     if (g.gone) { grains[i] = grains[grains.length - 1]; grains.pop(); continue; }
     const min = mineralTable[g.m];
-    if (g.carried) {
-      const c = g.carried;
-      if (c.dead || c.vol < 0.06) { g.carried = null; g.vy = 0; }
-      else {
-        const sp = Math.hypot(c.vx, c.vy);
-        if (sp < tuning.releaseThresh) { g.carried = null; g.vx = c.vx * 0.4; g.vy = 0; }
-        else {
-          g.x += c.vx * dt; g.y += c.vy * dt;
-          g.vx = c.vx; g.vy = c.vy;
-          if (min.sol !== 'none') grainDissolve(g, c, dt);
-          if ((pool.active && g.y >= pool.level) ||
-              (g.x >= 0 && g.x < COLS && g.y >= 0 && occupied(g.x | 0, g.y | 0))) {
-            g.carried = null; g.vy = 0;
-          }
+    // gold panning: a loose gold-quartz grain under an active wash liberates
+    if (g.m === IDX.gold) {
+      const wash = g.carried ? Math.hypot(g.carried.vx, g.carried.vy)
+        : (pool.active && g.y >= pool.level ? 0.9 : 0);
+      if (wash > 0.6) {
+        g.lib += tuning.liberate * Math.min(2.2, wash) * dt;
+        if (g.lib >= 1) {
+          const m0 = g.mass;
+          stats.liberated++;
+          stats.liberatedValue += m0 * min.price / 1000;
+          stats.liberatedNuggetValue += m0 * 0.25 * mineralTable[IDX.nugget].price / 1000;
+          spawnGrain(g.x, g.y, IDX.nugget, m0 * 0.25, g.vx * 0.2, 0);   // heavy: stays in the trap
+          spawnGrain(g.x, g.y, IDX.quartz, m0 * 0.75, g.vx * 0.8, 0);   // light: washes away
+          g.gone = true;
+          grains[i] = grains[grains.length - 1]; grains.pop();
           continue;
         }
+      }
+    }
+    if (g.carried) {
+      const c = g.carried;
+      const sp = Math.hypot(c.vx, c.vy);
+      g.hop -= dt;
+      if (c.dead || c.vol < 0.06 || g.hop <= 0 || sp < 0.65 * vCrit(g.m)) {
+        g.carried = null; g.vx = c.dead ? g.vx * 0.5 : c.vx * 0.4; g.vy = 0;
+      } else {
+        const rho = min.rho;
+        g.x += c.vx * dt;
+        g.y += (c.vy + (1 - 1 / rho) * 2.2) * dt;        // carried, but still sinking by buoyancy
+        g.vx = c.vx; g.vy = c.vy;
+        if (min.sol !== 'none') grainDissolve(g, c, dt);  // chemical contact persists while carried
+        if (g.gone) { grains[i] = grains[grains.length - 1]; grains.pop(); continue; }
+        if ((pool.active && g.y >= pool.level) ||
+            (g.x >= 0 && g.x < COLS && g.y >= 0 && occupied(g.x | 0, g.y | 0))) {
+          g.carried = null; g.vy = 0;
+        }
+        continue;
       }
     }
     if (g.rest) {
@@ -824,6 +1058,49 @@ function stepBubbles(dt) {
   }
 }
 
+// --- the platform pump ----------------------------------------------------------
+// The under-platform suction: swallow droplets whole, take a proportional cut
+// of every surface parcel in reach, and if the head is under the pool's
+// surface, a proportional cut of the well-mixed pool. Solute leaves the water
+// for the hopper exactly; the water is spent (v1: unlimited tank).
+function stepPump(dt) {
+  if (mode !== 'pump' || !pumping) return;
+  const px = aimX, py = aimY, R = 2.8;
+  let budget = tuning.pumpRate * dt;
+  for (const d of droplets) {
+    if (d.dead || budget <= 0) continue;
+    if (Math.hypot(d.x - px, d.y - py) <= R) { hopper.water += d.vol; budget -= d.vol; d.dead = true; }
+  }
+  for (const f of flows) {
+    if (f.dead || budget <= 0.001) continue;
+    if (Math.hypot(f.x - px, f.y - py) > R || f.vol <= 0.02) continue;
+    const take = Math.min(f.vol, budget);
+    const k = take / f.vol;
+    for (let m = 0; m < M; m++) { hopper.loads[m] += f.loads[m] * k; f.loads[m] *= (1 - k); }
+    hopper.water += take; f.vol -= take; budget -= take;
+    if (f.vol < 0.05) {                                   // sucked dry: leftovers crust out
+      const c = Math.max(0, Math.min(COLS - 1, f.x | 0));
+      const sr = topSolidRow(c, Math.max(0, f.y | 0));
+      const l = loadOf(f);
+      if (sr < ROWS) crust[cellIndex(c, sr)] += l;
+      stats.precipitated += l; stats.evapWater += f.vol;
+      f.vol = 0; f.dead = true;
+    }
+  }
+  if (pool.active && budget > 0.001 && py >= pool.level) {
+    const dV = Math.min(budget, pool.volume);
+    const frac = pool.volume > 1e-6 ? dV / pool.volume : 1;
+    for (let m = 0; m < M; m++) { hopper.loads[m] += pool.loads[m] * frac; pool.loads[m] *= (1 - frac); }
+    pool.volume -= dV; hopper.water += dV;
+    pool.level = Math.min(ROWS - 0.4, ROWS - pool.volume / (COLS * 0.4));
+    if (pool.volume <= 0.5) {                             // the last of it goes to the hopper
+      for (let m = 0; m < M; m++) { hopper.loads[m] += pool.loads[m]; pool.loads[m] = 0; }
+      pool.active = false; pool.filling = false; pool.draining = false;
+      pool.level = ROWS; pool.volume = 0; pool.target = ROWS;
+    }
+  }
+}
+
 // --- wetness decay ------------------------------------------------------------
 function decayWet(dt) {
   for (let i = wetList.length - 1; i >= 0; i--) {
@@ -840,7 +1117,7 @@ function decayWet(dt) {
 let simTime = 0;
 function step(dt) {
   moveNozzle(dt);
-  if (firing) {
+  if (firing && mode === 'jet') {
     fireAcc += dt * tuning.fireRate;
     while (fireAcc >= 1) {
       fireAcc -= 1;
@@ -856,16 +1133,27 @@ function step(dt) {
       pourAcc -= 1;
       if (droplets.length < 500) {
         droplets.push({ x: aimX + (rng() - 0.5) * 1.5, y: Math.max(0.5, aimY - 3),
-          vx: (rng() - 0.5) * 2, vy: 1.2, vol: 0.5, load: 0 });
+          vx: (rng() - 0.5) * 2, vy: 1.2, vol: 0.5, dead: false });
         stats.waterFired += 0.5;
       }
     }
   } else pourAcc = 0;
+  if (scene === 'placer' && feedOn) {                     // the sluice's wash feed
+    feedAcc += dt * 26;
+    while (feedAcc >= 1) {
+      feedAcc -= 1;
+      if (droplets.length < 500) {
+        droplets.push({ x: 5 + (rng() - 0.5) * 1.2, y: 1.5, vx: 0.6 + rng() * 0.8, vy: 2, vol: 0.5, dead: false });
+        stats.waterFired += 0.5;
+      }
+    }
+  } else feedAcc = 0;
   stepDroplets(dt);
   stepFlows(dt);
   stepPool(dt);
   stepGrains(dt);
   stepBubbles(dt);
+  stepPump(dt);
   decayWet(dt);
   collapsePass();
   const k = 1 - Math.exp(-dt / 2.5);
@@ -874,12 +1162,28 @@ function step(dt) {
     stats.tickDissolved[cls] = 0;
   }
 }
+
 // --- rendering ------------------------------------------------------------------
 const cv = document.getElementById('field');
 const ctx = cv.getContext('2d');
 let view = 'color';
 let pointerOver = false;
 
+// The brine's look: mass-weighted dye of everything in solution, with an
+// opacity that follows concentration toward saturation.
+function dyeOf(loads, vol) {
+  let tot = 0, r = 0, g = 0, b = 0;
+  for (let m = 0; m < M; m++) {
+    const l = loads[m];
+    if (l <= 0) continue;
+    const dye = mineralTable[m].dye;
+    if (!dye) continue;
+    r += l * dye[0]; g += l * dye[1]; b += l * dye[2]; tot += l;
+  }
+  if (tot <= 0.01) return null;
+  const conc = Math.min(1, tot / Math.max(0.02, vol * tuning.satCap));
+  return { r: r / tot, g: g / tot, b: b / tot, conc: conc, load: tot };
+}
 function drawCell(idx, mf, x, y) {
   const o = idx * M;
   if (view === 'color') {
@@ -933,7 +1237,7 @@ function drawNozzle() {
   ctx.moveTo(NOZZLE.x * CELL_PX, NOZZLE.y * CELL_PX);
   ctx.lineTo((NOZZLE.x + d.dx * 1.7) * CELL_PX, (NOZZLE.y + d.dy * 1.7) * CELL_PX);
   ctx.stroke();
-  if (pointerOver) {
+  if (pointerOver && mode === 'jet') {
     ctx.strokeStyle = 'rgba(232,184,75,0.4)'; ctx.lineWidth = 1;
     ctx.setLineDash([3, 6]);
     ctx.beginPath();
@@ -942,6 +1246,22 @@ function drawNozzle() {
     ctx.stroke();
     ctx.setLineDash([]);
   }
+}
+function drawHose() {
+  if (mode !== 'pump') return;
+  ctx.strokeStyle = pumping ? '#e8b84b' : 'rgba(232,184,75,0.55)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash(pumping ? [5, 4] : []);
+  ctx.lineDashOffset = -simTime * 30;
+  ctx.beginPath();
+  ctx.moveTo(NOZZLE.x * CELL_PX, 0);
+  ctx.lineTo(aimX * CELL_PX, aimY * CELL_PX);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.strokeStyle = 'rgba(232,184,75,0.3)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(aimX * CELL_PX, aimY * CELL_PX, 2.8 * CELL_PX, 0, 6.2832);
+  ctx.stroke();
 }
 function render() {
   ctx.fillStyle = '#0b0e11';
@@ -969,22 +1289,39 @@ function render() {
       drawCell(idx, mf, x, y);
     }
   }
+  if (scene === 'columns') {                          // label every test column
+    const per = Math.floor((COLS - 8) / FORMATION.length);
+    ctx.font = '9px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'center';
+    for (let i = 0; i < FORMATION.length; i++) {
+      const m = FORMATION[i];
+      ctx.fillStyle = 'rgb(' + mineralTable[m].color.join(',') + ')';
+      ctx.fillText(mineralTable[m].symbol, (4 + i * per + (per - 1) / 2) * CELL_PX, (COL_R0 - 0.7) * CELL_PX);
+    }
+    ctx.textAlign = 'left';
+  }
   if (pool.active) {
     const py = pool.level * CELL_PX;
-    ctx.fillStyle = 'rgba(64,140,196,0.30)';
+    const d = dyeOf(pool.loads, pool.volume);
+    let cr = 64, cg = 140, cb = 196;
+    if (d) { const k = 0.55 * d.conc; cr = cr * (1 - k) + d.r * k; cg = cg * (1 - k) + d.g * k; cb = cb * (1 - k) + d.b * k; }
+    ctx.fillStyle = 'rgba(' + (cr | 0) + ',' + (cg | 0) + ',' + (cb | 0) + ',0.30)';
     ctx.fillRect(0, py, cv.width, cv.height - py);
     ctx.fillStyle = 'rgba(150,205,240,0.85)';
     ctx.fillRect(0, py, cv.width, 1.5);
   }
   for (const f of flows) {
     if (f.dead) continue;
-    ctx.fillStyle = 'rgba(88,183,216,0.85)';
+    const d = dyeOf(f.loads, f.vol);
+    let cr = 88, cg = 183, cb = 216;
+    if (d) { const k = 0.8 * d.conc; cr = cr * (1 - k) + d.r * k; cg = cg * (1 - k) + d.g * k; cb = cb * (1 - k) + d.b * k; }
+    ctx.fillStyle = 'rgba(' + (cr | 0) + ',' + (cg | 0) + ',' + (cb | 0) + ',0.85)';
     ctx.beginPath();
     ctx.arc(f.x * CELL_PX, f.y * CELL_PX, f.stuck > 0.3 ? 3.4 : 2.4, 0, 6.2832);
     ctx.fill();
   }
   ctx.fillStyle = '#9adcf2';
-  for (const d of droplets) ctx.fillRect(d.x * CELL_PX - 1.2, d.y * CELL_PX - 1.2, 2.4, 2.4);
+  for (const d of droplets) { if (!d.dead) ctx.fillRect(d.x * CELL_PX - 1.2, d.y * CELL_PX - 1.2, 2.4, 2.4); }
   for (const g of grains) {
     if (g.gone) continue;
     if (g.carried) {
@@ -1001,6 +1338,7 @@ function render() {
     ctx.arc(b.x * CELL_PX, b.y * CELL_PX, 1.9, 0, 6.2832);
     ctx.stroke();
   }
+  drawHose();
   drawNozzle();
 }
 
@@ -1029,7 +1367,7 @@ function drawChart() {
   chartCtx.fillStyle = '#8b95a1';
   chartCtx.font = '11px ui-monospace, Menlo, monospace';
   if (n < 2) {
-    chartCtx.fillText('dissolution rate (g/s, stacked by class) and grains in transit (line) - fire or fill to gather data', 12, 20);
+    chartCtx.fillText('dissolution rate (g/s, stacked by class) and grains in transit (line) - fire, fill or wash to gather data', 12, 20);
     return;
   }
   let yMax = 1, tMax = 1;
@@ -1075,17 +1413,18 @@ const SLIDERS = [
     ['jetEnergy', 'Jet impact energy (J)', 0.01, 3, 0.01],
     ['fireRate', 'Fire rate (1/s)', 4, 24, 1],
     ['satCap', 'Saturation capacity (g/wu)', 20, 160, 5],
-    ['wetDecay', 'Drying rate (1/s)', 0.02, 0.3, 0.01]
+    ['wetDecay', 'Drying rate (1/s)', 0.02, 0.3, 0.01],
+    ['pumpRate', 'Pump rate (wu/s)', 2, 40, 1]
   ]],
   ['Dissolution rates', [
-    ['rateInstant', 'instant: Rock salt (1/s)', 0.1, 1.0, 0.01],
-    ['rateFast', 'fast: Gas rock (1/s)', 0.03, 0.4, 0.005],
-    ['rateSlow', 'slow: Fluorite (1/s)', 0.01, 0.12, 0.002],
+    ['rateInstant', 'instant: Halite, Vitriol (1/s)', 0.1, 1.0, 0.01],
+    ['rateFast', 'fast: Fizzy, Gas rock (1/s)', 0.03, 0.4, 0.005],
+    ['rateSlow', 'slow: Fluorite-salt (1/s)', 0.01, 0.12, 0.002],
     ['grainFactor', 'Grain surface factor (x)', 1, 6, 0.5]
   ]],
-  ['Erosion', [
-    ['entrainBase', 'Entrain threshold (cells/s)', 1, 8, 0.1],
-    ['releaseThresh', 'Release threshold (cells/s)', 0.4, 4, 0.1],
+  ['Erosion & panning', [
+    ['erosionPower', 'Erosion power (v_crit divide)', 0.4, 3, 0.05],
+    ['liberate', 'Gold liberation rate (1/s)', 0.1, 2, 0.05],
     ['sandShed', 'Sand shedding (1/s)', 0.02, 0.5, 0.01]
   ]]
 ];
@@ -1121,24 +1460,29 @@ function buildLegend() {
   const el = document.getElementById('legend');
   el.innerHTML = '';
   for (const min of mineralTable) {
+    if (min.gen === false) continue;                    // the nugget is a product, not a rock
     const s = document.createElement('span');
     const sw = document.createElement('span');
     sw.className = 'sw';
     sw.style.background = 'rgb(' + min.color.join(',') + ')';
     s.appendChild(sw);
-    s.appendChild(document.createTextNode(min.name + (min.sol !== 'none' ? ' [' + min.sol + ']' : '') + (min.id === 'salt' ? ' (new)' : '')));
+    s.appendChild(document.createTextNode(min.name + (min.sol !== 'none' ? ' [' + min.sol + ']' : '') +
+      ' \u03c1' + min.rho + (min.id === 'halite' || min.id === 'vitriol' || min.id === 'fizzy' ? ' (new)' : '')));
     el.appendChild(s);
   }
+  const dye = document.createElement('span');
+  dye.textContent = 'brine: green +G · blue +GB';
+  el.appendChild(dye);
 }
 let statRows = null, ratePrev = null, ratePrevT = 0, rateEmaM = null;
 function buildStatsTable() {
   const tbl = document.getElementById('statsTable');
-  tbl.innerHTML = '<thead><tr><th>Mineral</th><th>init kg</th><th>left kg</th><th>rock diss g</th><th>grain diss g</th><th>g/s</th><th>grains spn/run/rest</th></tr></thead>';
+  tbl.innerHTML = '<thead><tr><th>Mineral</th><th>init kg</th><th>left kg</th><th>rock diss g</th><th>grain diss g</th><th>g/s</th><th>grains spn/run/rest</th><th>pumped g</th></tr></thead>';
   statRows = [];
   for (let m = 0; m < M; m++) {
     const tr = document.createElement('tr');
     const cells = [];
-    for (let k = 0; k < 7; k++) {
+    for (let k = 0; k < 8; k++) {
       const td = document.createElement('td');
       if (k === 0) {
         const sw = document.createElement('span');
@@ -1159,6 +1503,9 @@ function buildStatsTable() {
 function fmtG(v) {
   if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
   return v >= 10 ? v.toFixed(0) : v.toFixed(1);
+}
+function fmtV(v) {
+  return v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
 }
 function updateStatsTable() {
   const leftByMin = new Float64Array(M);
@@ -1185,13 +1532,39 @@ function updateStatsTable() {
     c[4].textContent = fmtG(stats.dissolvedGrain[m]);
     c[5].textContent = rateEmaM[m] >= 0.05 ? rateEmaM[m].toFixed(1) : '0';
     c[6].textContent = (stats.grainsSpawned[m] / 1000).toFixed(1) + 'k/' + counts.run[m] + '/' + counts.rest[m];
+    c[7].textContent = fmtG(hopper.loads[m]);
   }
   ratePrevT = simTime;
 }
+function hopperValue() {
+  let v = 0;
+  for (let m = 0; m < M; m++) v += hopper.loads[m] * mineralTable[m].price / 1000;
+  return v;
+}
+// Residue mass waiting in the staging buffers: already off the rock, not yet
+// a grain. The ledger counts it as solid mass on its way to debris.
+function stagedResidue() {
+  let s = 0;
+  for (let idx = 0; idx < NC; idx++) s += residueAcc[idx];
+  return s;
+}
+function updateHopper() {
+  let html = '', tot = 0;
+  for (let m = 0; m < M; m++) {
+    const l = hopper.loads[m];
+    if (l < 0.05) continue;
+    tot += l;
+    html += '<div><span class="k">' + mineralTable[m].name + '</span><span>' + fmtG(l) + ' g &middot; \u00a4' + fmtV(l * mineralTable[m].price / 1000) + '</span></div>';
+  }
+  if (!html) html = '<div><span class="k">nothing pumped yet</span><span>&mdash;</span></div>';
+  html += '<div><span class="k">Total</span><span>' + fmtG(tot) + ' g &middot; \u00a4' + fmtV(hopperValue()) + '</span></div>';
+  html += '<div><span class="k">Water pumped</span><span>' + hopper.water.toFixed(0) + ' wu</span></div>';
+  document.getElementById('hopperBody').innerHTML = html;
+}
 function updateLedger() {
-  let inWater = pool.load, flowVol = 0, dropVol = 0;
-  for (const f of flows) { if (!f.dead) { inWater += f.load; flowVol += f.vol; } }
-  for (const d of droplets) dropVol += d.vol;
+  let inWater = loadOf(pool), flowVol = 0, dropVol = 0;
+  for (const f of flows) { if (!f.dead) { inWater += loadOf(f); flowVol += f.vol; } }
+  for (const d of droplets) { if (!d.dead) dropVol += d.vol; }
   let gm = packedSediment, transit = 0, restg = 0;
   for (const g of grains) { if (!g.gone) { gm += g.mass; if (g.carried) transit++; else if (g.rest) restg++; } }
   let remaining = 0, dR = 0, dG = 0, init = 0;
@@ -1204,18 +1577,22 @@ function updateLedger() {
     dR += stats.dissolvedRock[m]; dG += stats.dissolvedGrain[m];
     init += stats.initial[m];
   }
-  const delta = init - remaining - dR - dG - gm;
-  const subDelta = dR + dG - stats.loadOut - inWater - stats.precipitated - stats.gasRock - stats.gasGrain - stats.sliver;
+  const hopperLoad = loadOf(hopper);
+  const staged = stagedResidue();
+  const delta = init + stats.seeded - remaining - dR - dG - gm - staged;
+  const subDelta = dR + dG - stats.loadOut - inWater - stats.precipitated - stats.gasRock - stats.gasGrain - stats.sliver - hopperLoad;
   const ok = Math.abs(delta) < 0.5 && Math.abs(subDelta) < 0.5;
   const waterIn = stats.waterFired + stats.tapWater;
   const waterPlay = pool.volume + flowVol + dropVol;
   document.getElementById('ledgerBody').innerHTML =
-    '<div><span class="k">Rock</span><span>' + (init / 1000).toFixed(1) + ' kg init &rarr; ' + (remaining / 1000).toFixed(1) + ' kg left</span></div>' +
+    '<div><span class="k">Rock</span><span>' + ((init + stats.seeded) / 1000).toFixed(1) + ' kg init (' + (stats.seeded / 1000).toFixed(1) + ' rubble seeded) &rarr; ' + (remaining / 1000).toFixed(1) + ' kg left</span></div>' +
     '<div><span class="k">Dissolved, rock</span><span>' + fmtG(dR) + ' g &mdash; drained ' + fmtG(stats.loadOut) + ' · in water ' + fmtG(inWater) + ' · crust ' + fmtG(stats.precipitated) + ' · gas ' + fmtG(stats.gasRock) + '</span></div>' +
     '<div><span class="k">Dissolved, grains</span><span>' + fmtG(dG) + ' g (gas part ' + fmtG(stats.gasGrain) + ' g)</span></div>' +
-    '<div><span class="k">Grains</span><span>' + grains.length + ' live (' + transit + ' carried, ' + restg + ' resting, ' + (packedSediment / 1000).toFixed(1) + ' kg packed)</span></div>' +
-    '<div><span class="k">Gas released (B)</span><span>' + fmtG(stats.gasReleased) + ' g</span></div>' +
-    '<div><span class="k">Water</span><span>' + waterIn.toFixed(0) + ' in / ' + stats.waterOut.toFixed(0) + ' drained / ' + stats.evapWater.toFixed(0) + ' evap / ' + waterPlay.toFixed(0) + ' in play</span></div>' +
+    '<div><span class="k">Converted to debris</span><span>' + fmtG(stats.converted) + ' g gas-rock stone residue (' + fmtG(staged) + ' g still forming)</span></div>' +
+    '<div><span class="k">Grains</span><span>' + grains.length + ' live (' + transit + ' carried, ' + restg + ' resting, ' + (packedSediment / 1000).toFixed(1) + ' kg packed)' + (stats.liberated ? ' · ' + stats.liberated + ' gold liberated' : '') + '</span></div>' +
+    '<div><span class="k">Pumped to hopper</span><span>' + fmtG(hopperLoad) + ' g &middot; \u00a4' + fmtV(hopperValue()) + ' · ' + hopper.water.toFixed(0) + ' wu water</span></div>' +
+    '<div><span class="k">Gas vented (lost)</span><span>' + fmtG(stats.gasReleased) + ' g &asymp; \u00a4' + fmtV(stats.gasLostValue) + ' gone</span></div>' +
+    '<div><span class="k">Water</span><span>' + waterIn.toFixed(0) + ' in / ' + stats.waterOut.toFixed(0) + ' drained / ' + stats.evapWater.toFixed(0) + ' evap / ' + hopper.water.toFixed(0) + ' pumped / ' + waterPlay.toFixed(0) + ' in play</span></div>' +
     '<div><span class="k">Conservation</span><span class="' + (ok ? 'ok' : 'bad') + '">rock delta ' + delta.toFixed(3) + ' g, water-load delta ' + subDelta.toFixed(3) + ' g ' + (ok ? 'OK' : 'BROKEN') + '</span></div>';
 }
 
@@ -1228,37 +1605,46 @@ function setView(v) {
 }
 function setMode(m) {
   mode = m;
+  firing = false; pumping = false;
   document.getElementById('modeJet').classList.toggle('on', m === 'jet');
   document.getElementById('modeBeaker').classList.toggle('on', m === 'beaker');
+  document.getElementById('modePump').classList.toggle('on', m === 'pump');
   document.getElementById('btnFill').style.display = m === 'beaker' ? '' : 'none';
   document.getElementById('btnDrain').style.display = m === 'beaker' ? '' : 'none';
 }
+function setScene(s) {
+  if (s === scene) return;
+  scene = s;                                  // genScene/resetAll regenerate it
+  document.getElementById('sceneField').classList.toggle('on', s === 'field');
+  document.getElementById('sceneColumns').classList.toggle('on', s === 'columns');
+  document.getElementById('scenePlacer').classList.toggle('on', s === 'placer');
+  document.getElementById('btnFeed').style.display = s === 'placer' ? '' : 'none';
+  resetAll(parseInt(document.getElementById('seedInput').value, 10) || 1337);
+}
 function resetAll(seed) {
   NOZZLE.x = 2.2;
-  droplets.length = 0; flows.length = 0; grains.length = 0; bubbles.length = 0;
-  packedSediment = 0;
-  pool.active = false; pool.filling = false; pool.draining = false;
-  pool.level = ROWS; pool.target = ROWS; pool.volume = 0; pool.load = 0;
-  firing = false; pouring = false; fireAcc = 0; pourAcc = 0;
   for (const k in chartData) chartData[k].length = 0;
   simTime = 0; ratePrevT = 0;
-  genField(seed);
+  genScene(scene, seed);
   buildStatsTable();
-  updateStatsTable(); updateLedger(); drawChart();
+  updateStatsTable(); updateLedger(); updateHopper(); drawChart();
 }
 function wire() {
   cv.addEventListener('pointerdown', function (e) {
     cv.setPointerCapture(e.pointerId);
     aimX = e.offsetX / CELL_PX; aimY = e.offsetY / CELL_PX;
-    if (e.button === 0) firing = true;
+    if (e.button === 0) {
+      if (mode === 'pump') pumping = true;
+      else firing = true;
+    }
     if (e.button === 2) pouring = true;
   });
   cv.addEventListener('pointermove', function (e) {
     pointerOver = true;
     aimX = e.offsetX / CELL_PX; aimY = e.offsetY / CELL_PX;
   });
-  cv.addEventListener('pointerup', function () { firing = false; pouring = false; });
-  cv.addEventListener('pointerleave', function () { pointerOver = false; firing = false; pouring = false; });
+  cv.addEventListener('pointerup', function () { firing = false; pouring = false; pumping = false; });
+  cv.addEventListener('pointerleave', function () { pointerOver = false; firing = false; pouring = false; pumping = false; });
   cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   window.addEventListener('keydown', function (e) {
     if (e.code === 'KeyF') firing = true;
@@ -1271,10 +1657,18 @@ function wire() {
   document.getElementById('viewSol').onclick = function () { setView('solubility'); };
   document.getElementById('modeJet').onclick = function () { setMode('jet'); };
   document.getElementById('modeBeaker').onclick = function () { setMode('beaker'); };
+  document.getElementById('modePump').onclick = function () { setMode('pump'); };
   document.getElementById('btnFill').onclick = function () {
     pool.active = true; pool.filling = true; pool.draining = false; pool.target = ROCK_TOP - 3;
   };
   document.getElementById('btnDrain').onclick = function () { pool.draining = true; pool.filling = false; };
+  document.getElementById('sceneField').onclick = function () { setScene('field'); };
+  document.getElementById('sceneColumns').onclick = function () { setScene('columns'); };
+  document.getElementById('scenePlacer').onclick = function () { setScene('placer'); };
+  document.getElementById('btnFeed').onclick = function () {
+    feedOn = !feedOn;
+    document.getElementById('btnFeed').classList.toggle('on', feedOn);
+  };
   for (const b of document.querySelectorAll('[data-speed]')) {
     b.onclick = function () {
       speed = parseFloat(b.dataset.speed);
@@ -1322,17 +1716,18 @@ function frame(now) {
     uiAcc = 0;
     updateStatsTable();
     updateLedger();
+    updateHopper();
     drawChart();
   }
 }
 
 // --- probe handle (headless tests) --------------------------------------------------------
 window.__lab = {
-  version: '0.3.6-solubility-lab',
+  version: '0.3.6b-solubility-lab',
   tuning: tuning,
   snapshot: function () {
-    let inWater = pool.load, flowVol = 0;
-    for (const f of flows) { if (!f.dead) { inWater += f.load; flowVol += f.vol; } }
+    let inWater = loadOf(pool), flowVol = 0;
+    for (const f of flows) { if (!f.dead) { inWater += loadOf(f); flowVol += f.vol; } }
     let transit = 0, restg = 0, gm = packedSediment;
     for (const g of grains) {
       if (g.gone) continue;
@@ -1348,16 +1743,22 @@ window.__lab = {
     for (let m = 0; m < M; m++) {
       dR += stats.dissolvedRock[m]; dG += stats.dissolvedGrain[m]; init += stats.initial[m];
     }
+    const hopperLoad = loadOf(hopper);
+    const staged = stagedResidue();
     return {
-      mode: mode, paused: paused, poolLevel: +pool.level.toFixed(2),
+      scene: scene, mode: mode, paused: paused, poolLevel: +pool.level.toFixed(2),
       waterFired: +stats.waterFired.toFixed(1), waterOut: +stats.waterOut.toFixed(1),
       loadOut: +stats.loadOut.toFixed(1), inWaterLoad: +inWater.toFixed(1),
       precipitated: +stats.precipitated.toFixed(1), gasReleased: +stats.gasReleased.toFixed(1),
+      gasLostValue: +stats.gasLostValue.toFixed(2),
       dissolvedRock: +dR.toFixed(1), dissolvedGrain: +dG.toFixed(1),
+      converted: +stats.converted.toFixed(1), liberated: stats.liberated,
+      hopperLoad: +hopperLoad.toFixed(1), hopperValue: +hopperValue().toFixed(2),
+      hopperWater: +hopper.water.toFixed(1),
       grainsTotal: grains.length, grainsTransit: transit, grainsRest: restg,
       flows: flows.length, droplets: droplets.length, bubbles: bubbles.length,
-      rockLeftKg: +(remaining / 1000).toFixed(2), rockInitKg: +(init / 1000).toFixed(2),
-      delta: +(init - remaining - dR - dG - gm).toFixed(3),
+      rockLeftKg: +(remaining / 1000).toFixed(2), rockInitKg: +((init + stats.seeded) / 1000).toFixed(2),
+      delta: +(init + stats.seeded - remaining - dR - dG - gm - staged).toFixed(3),
       rateEma: { instant: +stats.rateEma.instant.toFixed(2), fast: +stats.rateEma.fast.toFixed(2), slow: +stats.rateEma.slow.toFixed(2) }
     };
   },
@@ -1366,6 +1767,8 @@ window.__lab = {
   drain: function () { pool.draining = true; },
   setFiring: function (v) { firing = !!v; },
   setPouring: function (v) { pouring = !!v; },
+  setPumping: function (v) { pumping = !!v; },
+  setFeed: function (v) { feedOn = !!v; document.getElementById('btnFeed').classList.toggle('on', feedOn); },
   aim: function (x, y) { aimX = x; aimY = y; },
   // scripted probes need a target: the n-th cell whose share of a mineral
   // clears the threshold, topmost first (a surface the jet can actually hit)
@@ -1389,14 +1792,43 @@ window.__lab = {
     }
     return out;
   },
-  setMode: setMode, setView: setView, reset: resetAll,
+  hopper: function () {
+    const out = { water: +hopper.water.toFixed(1), value: +hopperValue().toFixed(2), byMineral: {} };
+    for (let m = 0; m < M; m++) if (hopper.loads[m] > 0.05) out.byMineral[mineralTable[m].id] = +hopper.loads[m].toFixed(1);
+    return out;
+  },
+  brineDye: function () {
+    const loads = new Float64Array(M);
+    let vol = pool.volume;
+    for (let m = 0; m < M; m++) loads[m] += pool.loads[m];
+    for (const f of flows) { if (!f.dead) { for (let m = 0; m < M; m++) loads[m] += f.loads[m]; vol += f.vol; } }
+    const d = dyeOf(loads, vol);
+    return d ? { r: d.r | 0, g: d.g | 0, b: d.b | 0, conc: +d.conc.toFixed(3), load: +d.load.toFixed(1) } : null;
+  },
+  grainStats: function () {
+    const out = { carried: 0, resting: 0, byMineral: {} };
+    for (const min of mineralTable) out.byMineral[min.id] = { count: 0, mass: 0, sumX: 0, sumY: 0 };
+    for (const g of grains) {
+      if (g.gone) continue;
+      const s = out.byMineral[mineralTable[g.m].id];
+      s.count++; s.mass += g.mass; s.sumX += g.x; s.sumY += g.y;
+      if (g.carried) out.carried++; else if (g.rest) out.resting++;
+    }
+    for (const id in out.byMineral) {
+      const s = out.byMineral[id];
+      if (s.count > 0) { s.mass = +s.mass.toFixed(1); s.meanX = +(s.sumX / s.count).toFixed(2); s.meanY = +(s.sumY / s.count).toFixed(2); }
+      delete s.sumX; delete s.sumY;
+    }
+    return out;
+  },
+  setMode: setMode, setView: setView, setScene: setScene, reset: resetAll,
   // raw probe access for scripted runs
   cellInfo: function (c, r) {
     const idx = cellIndex(c, r), o = idx * M, shares = {};
     for (let m = 0; m < M; m++) shares[mineralTable[m].id] = +mix[o + m].toFixed(3);
     return { c: c, r: r, shares: shares, massFrac: +massFrac(idx).toFixed(3),
       wet: +wet[idx].toFixed(2), damage: +damage[idx].toFixed(2),
-      strength: +strengthInto(idx).toFixed(2) };
+      strength: +strengthInto(idx).toFixed(2), leachFloor: +leachFloor[idx].toFixed(3) };
   },
   dropletsDebug: function () {
     return droplets.map(function (d) {
@@ -1405,13 +1837,13 @@ window.__lab = {
   },
   flowsDebug: function () {
     return flows.slice(0, 10).map(function (f) {
-      return { x: +f.x.toFixed(1), y: +f.y.toFixed(1), vx: +f.vx.toFixed(1), vol: +f.vol.toFixed(2), load: +f.load.toFixed(1), stuck: +f.stuck.toFixed(1) };
+      return { x: +f.x.toFixed(1), y: +f.y.toFixed(1), vx: +f.vx.toFixed(1), vol: +f.vol.toFixed(2), load: +loadOf(f).toFixed(1), stuck: +f.stuck.toFixed(1) };
     });
   }
 };
 
 // --- init ----------------------------------------------------------------------------------
-genField(1337);
+genScene('field', 1337);
 buildControls();
 buildLegend();
 buildStatsTable();
