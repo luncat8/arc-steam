@@ -312,11 +312,13 @@
 	// ---- Gun ----
 	// The cannon sits in the collector, the same launch point the sandblaster and
 	// the rocket tube use, so the nozzle is where the collector really is.
-	function nozzleOf(target, owner) {
+	// `world` is the chamber, not a machine: a rival body has no `platform` field,
+	// so nozzleOf must resolve the owner's machine itself.
+	function nozzleOf(world, owner) {
 		const physics = root.SteamPhysics;
 		const id = ownerIdOf(owner);
-		const body = physics.machineBody(physics.machineById(target, id));
-		nozzle.x = physics.collectorX(target, id);
+		const body = physics.machineBody(physics.machineById(world, id));
+		nozzle.x = physics.collectorX(world, id);
 		nozzle.y = body.y + physics.config.deck + 0.14;
 		let dx = aim.x - nozzle.x;
 		let dy = aim.y - nozzle.y;
@@ -346,7 +348,7 @@
 		const machine = root.SteamPhysics.machineById(target, id);
 		const body = root.SteamPhysics.machineBody(machine);
 		// The gun points where the jet must go, not where the bound machine body is.
-		const muzzle = nozzleOf(machine, id);
+		const muzzle = nozzleOf(target, id);
 		const slot = freeDroplet();
 		if (slot < 0) return false;
 		const angle = (random() - 0.5) * jetSpread;
