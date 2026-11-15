@@ -53,7 +53,7 @@
 		},
 		{
 			id: 'iron', name: 'Iron ore', symbol: 'Fe', analog: 'Fe₂O₃',
-			octant: 'HLL (R↑ G↓ B↓)', r: [0.28, 0.99], g: [0.00, 0.54], b: [0.00, 0.63],
+			octant: 'HLL (R↑ G↓ B↓)', r: [0.287, 0.983], g: [0.006, 0.535], b: [0.007, 0.624],
 			repRgb: [0.76, 0.22, 0.20],
 			color: [184, 91, 64], strength: 5.4, density: 5.2, price: 5.01,
 			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
@@ -63,7 +63,7 @@
 		},
 		{
 			id: 'copper', name: 'Chalcopyrite', symbol: 'Cu', analog: 'CuFeS₂ (dry Cu)',
-			octant: 'HLL (R↑ G↓ B↓)', r: [0.31, 0.79], g: [0.02, 0.38], b: [0.18, 0.46],
+			octant: 'HLL (R↑ G↓ B↓)', r: [0.232, 0.667], g: [0.037, 0.363], b: [0.193, 0.447],
 			repRgb: [0.60, 0.20, 0.30],
 			color: [198, 130, 64], strength: 4.8, density: 4.8, price: 27.23,
 			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
@@ -83,7 +83,7 @@
 		},
 		{
 			id: 'quartz', name: 'Quartz', symbol: 'Qz', analog: 'SiO₂',
-			octant: 'LHL (R↓ G↑ B↓)', r: [0.00, 0.48], g: [0.23, 0.87], b: [0.00, 0.56],
+			octant: 'LHL (R↓ G↑ B↓)', r: [0.001, 0.482], g: [0.230, 0.870], b: [0.002, 0.562],
 			repRgb: [0.18, 0.64, 0.24],
 			color: [212, 210, 224], strength: 6.0, density: 2.6, price: 5.21,
 			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
@@ -93,7 +93,7 @@
 		},
 		{
 			id: 'corundum', name: 'Corundum', symbol: 'Al', analog: 'Al₂O₃',
-			octant: 'LHL (R↓ G↑↑ B↓)', r: [0.10, 0.40], g: [0.70, 0.95], b: [0.05, 0.30],
+			octant: 'LHL (R↓ G↑↑ B↓)', r: [0.099, 0.401], g: [0.699, 0.951], b: [0.049, 0.301],
 			repRgb: [0.24, 0.86, 0.16],
 			color: [216, 74, 128], strength: 7.8, density: 4.0, price: 38.87,
 			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
@@ -103,7 +103,7 @@
 		},
 		{
 			id: 'fluorite', name: 'Fluorite-Salt', symbol: 'CaF₂', analog: 'CaF₂·NaCl',
-			octant: 'LLH/LHH (R↓ G· B↑)', r: [0.07, 0.38], g: [0.11, 0.54], b: [0.62, 0.98],
+			octant: 'LLH/LHH (R↓ G· B↑)', r: [0.066, 0.384], g: [0.104, 0.546], b: [0.615, 0.985],
 			repRgb: [0.26, 0.44, 0.78],
 			color: [108, 182, 152], strength: 3.0, density: 3.1, price: 12.23,
 			sol: 'slow', dissolveSpeed: 0.88, brine: 0.55, vent: 0, residue: 0.45, dye: [56, 220, 140],
@@ -113,7 +113,7 @@
 		},
 		{
 			id: 'silver', name: 'Silver', symbol: 'Ag', analog: 'Ag',
-			octant: 'HLL (R↑↑ G· B↓)', r: [0.67, 0.96], g: [0.26, 0.55], b: [0.04, 0.33],
+			octant: 'HLL (R↑↑ G· B↓)', r: [0.673, 0.957], g: [0.263, 0.547], b: [0.043, 0.327],
 			repRgb: [0.84, 0.38, 0.16],
 			color: [208, 220, 232], strength: 3.5, density: 10.5, price: 44.65,
 			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
@@ -123,7 +123,7 @@
 		},
 		{
 			id: 'gold', name: 'Gold-quartz', symbol: 'Au', analog: 'Au in SiO₂',
-			octant: 'HLH edge (R↑↑ G↓ B·)', r: [0.82, 0.98], g: [0.06, 0.26], b: [0.42, 0.66],
+			octant: 'HLH edge (R↑↑ G↓ B·)', r: [0.823, 0.977], g: [0.063, 0.257], b: [0.424, 0.656],
 			repRgb: [0.90, 0.16, 0.54],
 			color: [232, 198, 92], strength: 3.4, density: 5.6, price: 147.35,
 			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
@@ -143,7 +143,7 @@
 		},
 		{
 			id: 'sand', name: 'Sand', symbol: 'Sd', analog: 'SiO₂ loose',
-			octant: 'LLL/LHL (R↓ G· B·)', r: [0.02, 0.38], g: [0.28, 0.68], b: [0.25, 0.55],
+			octant: 'LLL/LHL (R↓ G· B·)', r: [0.022, 0.378], g: [0.283, 0.677], b: [0.324, 0.619],
 			repRgb: [0.20, 0.48, 0.40],
 			color: [204, 178, 126], strength: 0.5, density: 1.6, price: 0.87,
 			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
@@ -153,7 +153,7 @@
 		},
 		{
 			id: 'halite', name: 'Halite', symbol: 'NaCl', analog: 'NaCl (R·G salt)',
-			octant: 'HHL (R↑ G↑ B↓)', r: [0.62, 0.92], g: [0.68, 0.96], b: [0.04, 0.34],
+			octant: 'HHL (R↑ G↑ B↓)', r: [0.616, 0.924], g: [0.676, 0.964], b: [0.036, 0.344],
 			repRgb: [0.78, 0.82, 0.18],
 			color: [110, 228, 148], strength: 1.6, density: 2.2, price: 2.52,
 			sol: 'instant', dissolveSpeed: 1.65, brine: 1.0, vent: 0, residue: 0, dye: [38, 228, 128],
@@ -163,7 +163,7 @@
 		},
 		{
 			id: 'fizzy', name: 'Fizzy Halite', symbol: 'R₂G₂B₂', analog: 'R₂G₂B₂ gas-salt',
-			octant: 'HHH (R↑ G↑ B↑)', r: [0.64, 0.94], g: [0.68, 0.96], b: [0.68, 0.96],
+			octant: 'HHH (R↑ G↑ B↑)', r: [0.636, 0.944], g: [0.677, 0.963], b: [0.677, 0.963],
 			repRgb: [0.78, 0.82, 0.84],
 			color: [174, 242, 184], strength: 1.3, density: 1.9, price: 3.65,
 			sol: 'fast', dissolveSpeed: 1.50, brine: 2 / 3, vent: 1 / 3, residue: 0, dye: [86, 226, 142],
@@ -230,36 +230,60 @@
 		};
 	}
 
-	// Continuous composition law f(R, G, B) -> { halite, vitriol, gas, solid, speed, density }
-	// Writes into preallocated `out` object to avoid hot-path allocations.
+	// Continuous composition law f(R, G, B) -> reaction channels.
+	// High B is not automatically free gas: hydrates keep it in blue solution,
+	// a crystal skeleton keeps it bound (Fluorite's 45% leach floor), and only
+	// free B escapes. Writes into a preallocated `out` (no hot-path allocation).
 	function evaluateCompositionLaw(r, g, b, out) {
 		const ionic = smoothstep(0.22, 0.56, r * g);
 		const hydrate = smoothstep(0.15, 0.42, r * b * (1.0 - 0.65 * g));
 		const degasRaw = smoothstep(0.56, 0.86, b) * (0.35 + 0.65 * (1.0 - r * (1.0 - g)));
+		const degas = clamp(degasRaw * (0.42 + 0.48 * (1.0 - r)), 0, 1);
 
-		// Normalize reactive fractions so halite + vitriol + gas <= 1.0
+		const crystalB = smoothstep(0.10, 0.30, g) * (1.0 - smoothstep(0.35, 0.50, r)) * smoothstep(0.55, 0.70, b);
+		const hydrateB = smoothstep(0.45, 0.62, r) * (1.0 - smoothstep(0.35, 0.55, g)) * smoothstep(0.50, 0.65, b);
+		const boundB = Math.min(1, crystalB + hydrateB);
+		const freeB = Math.max(0, 1.0 - boundB);
+		const gasRock = smoothstep(0.20, 0.40, b) * (1.0 - smoothstep(0.15, 0.30, g)) * (1.0 - smoothstep(0.25, 0.40, r)) * freeB;
+
 		let fHal = ionic * (1.0 - 0.35 * degasRaw);
-		let fVit = hydrate * (1.0 - 0.45 * ionic);
-		let fGas = degasRaw * (0.42 + 0.48 * (1.0 - r));
-		const reactSum = fHal + fVit + fGas;
-		if (reactSum > 1.0) {
-			const inv = 1.0 / reactSum;
-			fHal *= inv;
-			fVit *= inv;
-			fGas *= inv;
-		}
-		const fSolid = Math.max(0, 1.0 - fHal - fVit - fGas);
-		const reactTotal = fHal + fVit + fGas;
-		const speed = reactTotal >= 0.22 ? (0.45 + 1.25 * reactTotal) : 0;
-		const density = clamp(2.0 + 7.5 * r * r - 0.8 * b, 1.2, 11.5);
+		let fVit = hydrate * (1.0 - 0.85 * ionic) + degas * hydrateB;
+		let fGas = degas * freeB;
 
-		out.halite = reactTotal >= 0.22 ? fHal : 0;
-		out.vitriol = reactTotal >= 0.22 ? fVit : 0;
-		out.gas = reactTotal >= 0.22 ? fGas : 0;
-		out.solid = reactTotal >= 0.22 ? fSolid : 1.0;
-		out.speed = speed;
-		out.solubility = reactTotal >= 0.22 ? reactTotal : 0;
-		out.density = density;
+		// Crystal-bound B: 55% salt matrix brine, 45% unleachable concentrate.
+		let crystalBrine = 0.55 * crystalB;
+		const keepC = 1.0 - crystalB;
+		fHal = fHal * keepC + crystalBrine;
+		fVit *= keepC;
+		fGas *= keepC;
+		// Free gas rock: 85% vented, 15% stone residue. Bound-B and free-B
+		// classifications are disjoint, so Fluorite never vents.
+		const keepG = 1.0 - gasRock;
+		fHal *= keepG;
+		fVit *= keepG;
+		crystalBrine *= keepG;
+		fGas = fGas * keepG + 0.85 * gasRock;
+
+		let reactTotal = fHal + fVit + fGas;
+		if (reactTotal > 1.0) {
+			const inv = 1.0 / reactTotal;
+			fHal *= inv; fVit *= inv; fGas *= inv; crystalBrine *= inv;
+			reactTotal = 1.0;
+		}
+		crystalBrine = Math.min(crystalBrine, fHal);
+		const fSolid = Math.max(0, 1.0 - reactTotal);
+		// Smooth low-reactivity floor replaces the old arbitrary 0.22 cutoff.
+		const gate = smoothstep(0.02, 0.22, reactTotal);
+		out.halite = fHal;
+		out.vitriol = fVit;
+		out.gas = fGas;
+		out.solid = fSolid;
+		out.crystal = crystalBrine;
+		out.boundB = boundB;
+		out.freeB = freeB;
+		out.speed = reactTotal > 0 ? (0.45 + 1.25 * reactTotal) * gate : 0;
+		out.solubility = reactTotal;
+		out.density = clamp(2.0 + 7.5 * r * r - 0.8 * b, 1.2, 11.5);
 		return out;
 	}
 
@@ -311,6 +335,23 @@
 		return rem;
 	}
 
+	// A soluble cement around *different* insoluble minerals is an inclusion seam:
+	// leaching removes the binder and the clasts lose their support. A residue of
+	// the same mineral (pure Fluorite concentrate) stays a coherent skeleton.
+	function underminedSkeleton(state, idx) {
+		let solMask = 0, resMask = 0, solMass = 0;
+		const off = idx * GEO_MINERAL_COUNT;
+		for (let m = 0; m < GEO_MINERAL_COUNT; m++) {
+			const w = state.rockMix[off + m];
+			if (w <= 0.0001) continue;
+			const def = MINERALS[m];
+			const soluble = def.brine + def.vent;
+			if (soluble > 0) { solMask |= 1 << m; solMass += w * soluble; }
+			if (def.residue > 0) resMask |= 1 << def.residueMineral;
+		}
+		return resMask !== 0 && (solMask & resMask) === 0 && solMass >= 0.5;
+	}
+
 	// Evaluate one rock cell's dissolution & value split under active model ('table' | 'formula').
 	// Fills CHEM_* per-mineral fractions of the original cell and guarantees
 	// brine + gas + residue === 1 in mass and in value.
@@ -325,26 +366,51 @@
 			out.halite = 0; out.vitriol = 0; out.gas = 0; out.solid = 1;
 			out.solubility = 0; out.speed = 0;
 			out.valHalite = 0; out.valVitriol = 0; out.valGas = 0; out.valSolid = baseVal;
-			out.residueMineral = MINERALS[domMin].residueMineral;
+			let bestRes = -1, bestW = 0;
+			const off = idx * GEO_MINERAL_COUNT;
+			for (let m = 0; m < GEO_MINERAL_COUNT; m++) {
+				const w = state.rockMix[off + m];
+				if (w <= 0.0001) continue;
+				const def = MINERALS[m];
+				const rm = w * def.residue;
+				if (rm <= 0) continue;
+				CHEM_RES[m] = rm;
+				CHEM_RES_VAL[m] = rm * MINERALS[def.residueMineral].price;
+				if (rm > bestW) { bestW = rm; bestRes = def.residueMineral; }
+			}
+			out.residueMineral = bestRes >= 0 ? bestRes : MINERALS[domMin].residueMineral;
 			out.density = MINERALS[domMin].density;
 			out.remStrength = skeletonStrengthFormula(state, idx, out);
+			out.crystal = 0;
+			out.undermined = underminedSkeleton(state, idx);
 			return out;
 		}
 
 		if (state.model === 'formula') {
 			evaluateCompositionLaw(state.rockR[idx], state.rockG[idx], state.rockB[idx], out);
-			const avgPrice = state.rockMass && state.rockMass[idx] > 1e-12 ? baseVal / state.rockMass[idx] : baseVal;
-			CHEM_BRINE[11] = out.halite; CHEM_BRINE_VAL[11] = out.halite * avgPrice;
-			CHEM_BRINE[3] = out.vitriol; CHEM_BRINE_VAL[3] = out.vitriol * avgPrice;
-			CHEM_GAS[9] = out.gas; CHEM_GAS_VAL[9] = out.gas * avgPrice;
-			CHEM_RES[domMin] = out.solid; CHEM_RES_VAL[domMin] = out.solid * avgPrice;
-			out.valHalite = CHEM_BRINE_VAL[11];
+			const unit = state.rockUnitPrice[idx] > 0 ? state.rockUnitPrice[idx] :
+				(state.rockMass && state.rockMass[idx] > 1e-12 ? baseVal / state.rockMass[idx] : baseVal);
+			const resMin = out.crystal > 0.25 ? MIN_FLUORITE : MINERALS[domMin].residueMineral;
+			const resQuote = MINERALS[resMin].price;
+			const ionicBrine = Math.max(0, out.halite - out.crystal);
+			CHEM_BRINE[11] = ionicBrine; CHEM_BRINE_VAL[11] = ionicBrine * unit;
+			CHEM_BRINE[6] = out.crystal; CHEM_BRINE_VAL[6] = out.crystal * unit;
+			CHEM_BRINE[3] = out.vitriol; CHEM_BRINE_VAL[3] = out.vitriol * unit;
+			CHEM_GAS[9] = out.gas;
+			CHEM_RES[domMin] = out.solid;
+			const brineVal = (out.halite + out.vitriol) * unit;
+			const resVal = out.solid * resQuote;
+			// Gas loss carries the value destroyed when gas rock re-materialises
+			// as cheap stone, so the exact value ledger still closes.
+			CHEM_GAS_VAL[9] = Math.max(0, unit - brineVal - resVal);
+			CHEM_RES_VAL[domMin] = resVal;
+			out.valHalite = CHEM_BRINE_VAL[11] + CHEM_BRINE_VAL[6];
 			out.valVitriol = CHEM_BRINE_VAL[3];
 			out.valGas = CHEM_GAS_VAL[9];
 			out.valSolid = Math.max(0, baseVal - out.valHalite - out.valVitriol - out.valGas);
-			out.residueMineral = MINERALS[domMin].residueMineral;
+			out.residueMineral = resMin;
 			out.remStrength = (state.rockMechMax[idx] || MINERALS[domMin].strength) * out.solid;
-			out.speed = out.solubility > 0 ? out.speed : 0;
+			out.undermined = underminedSkeleton(state, idx);
 			return out;
 		}
 
@@ -361,9 +427,10 @@
 			const bMass = w * def.brine;
 			const gMass = w * def.vent;
 			const rMass = w * def.residue;
+			const resQuote = MINERALS[def.residueMineral].price;
 			CHEM_BRINE[m] = bMass; CHEM_BRINE_VAL[m] = bMass * def.price;
-			CHEM_GAS[m] = gMass; CHEM_GAS_VAL[m] = gMass * def.price;
-			CHEM_RES[m] = rMass; CHEM_RES_VAL[m] = rMass * def.price;
+			CHEM_GAS[m] = gMass; CHEM_GAS_VAL[m] = gMass * def.price + rMass * (def.price - resQuote);
+			CHEM_RES[m] = rMass; CHEM_RES_VAL[m] = rMass * resQuote;
 			if (m === 3) fVit += bMass; else fHal += bMass;
 			fGas += gMass;
 			fSolid += rMass;
@@ -389,6 +456,8 @@
 		out.residueMineral = bestResMin;
 		out.density = dens > 0 ? dens : MINERALS[domMin].density;
 		out.remStrength = rem;
+		out.crystal = 0;
+		out.undermined = underminedSkeleton(state, idx);
 		return out;
 	}
 
@@ -446,6 +515,7 @@
 			rockMechMax: new Float32Array(ROCK_N),
 			rockValue: new Float64Array(ROCK_N),
 			rockMass: new Float64Array(ROCK_N),
+			rockUnitPrice: new Float64Array(ROCK_N),
 			rockExhausted: new Uint8Array(ROCK_N),
 			rockDirty: true,
 
@@ -534,8 +604,8 @@
 			_chem: {
 				halite: 0, vitriol: 0, gas: 0, solid: 1,
 				solubility: 0, speed: 0, density: 2.8, remStrength: 0,
-				valHalite: 0, valVitriol: 0, valGas: 0, valSolid: 0,
-				residueMineral: 0
+					valHalite: 0, valVitriol: 0, valGas: 0, valSolid: 0,
+					residueMineral: 0, crystal: 0, undermined: false
 			},
 			_loadScratch: new Float64Array(MINERAL_COUNT),
 			_loadValScratch: new Float64Array(MINERAL_COUNT),
@@ -565,6 +635,7 @@
 		state.rockMechMax[idx] = def.strength;
 		state.rockValue[idx] = def.price;
 		state.rockMass[idx] = 1.0;
+		state.rockUnitPrice[idx] = def.price;
 		state.rockExhausted[idx] = 0;
 	}
 
@@ -590,6 +661,7 @@
 		state.rockMechMax[idx] = Math.max(0.4, str);
 		state.rockValue[idx] = val;
 		state.rockMass[idx] = 1.0;
+		state.rockUnitPrice[idx] = val;
 		state.rockExhausted[idx] = 0;
 	}
 
@@ -600,6 +672,7 @@
 		state.rockDissolve[idx] = 0;
 		state.rockMass[idx] = 0;
 		state.rockValue[idx] = 0;
+		state.rockUnitPrice[idx] = 0;
 		state.rockExhausted[idx] = 0;
 	}
 
@@ -892,7 +965,7 @@
 				for (let r = ceilStart; r < ROCK_H; r++) {
 					if (field && COMPILED_GEO) {
 						field.elements(c, ROCK_H - 1 - r, vals);
-						COMPILED_GEO.mixInto(vals, 0.08, mix, 0);
+						COMPILED_GEO.mixInto(vals, 0.0883, mix, 0);
 						setRockMixCell(state, c, r, mix, vals);
 					} else {
 						setRockPureCell(state, c, r, MIN_STONE);
@@ -1043,6 +1116,25 @@
 			if (bm !== 0) { scratch[m] = bm; scratchVal[m] = CHEM_BRINE_VAL[m] * dProg; brineMass += bm; brineVal += scratchVal[m]; }
 			if (gm !== 0) { gasMass += gm; gasVal += CHEM_GAS_VAL[m] * dProg; }
 		}
+		const relMass = brineMass + gasMass;
+		const relValue = brineVal + gasVal;
+		// Cumulative slices are fractions of the ORIGINAL cell; guard float-epsilon
+		// overshoot so a never-negative rock cell keeps the exact ledger closed.
+		let scale = 1;
+		if (relMass > 0 && relMass > state.rockMass[idx]) {
+			scale = Math.max(0, state.rockMass[idx] / relMass);
+		}
+		if (relValue > 0 && relValue > state.rockValue[idx]) {
+			scale = Math.min(scale, Math.max(0, state.rockValue[idx] / relValue));
+		}
+		if (scale < 1) {
+			for (let m = 0; m < GEO_MINERAL_COUNT; m++) {
+				scratch[m] *= scale;
+				scratchVal[m] *= scale;
+			}
+			brineMass *= scale; brineVal *= scale;
+			gasMass *= scale; gasVal *= scale;
+		}
 		if (brineMass > 1e-12 || gasMass > 1e-12) {
 			state.totalReactedMass += brineMass + gasMass;
 			state.totalReactedValue += brineVal + gasVal;
@@ -1096,22 +1188,35 @@
 				spawnDebris(state, wx + (rng() - 0.5) * 0.08, wy - 0.06, (rng() - 0.5) * 0.9, -0.4 - rng() * 0.6,
 					chem.residueMineral, residueMassTotal, residueValueTotal, DEBRIS_FALLING, false, 0);
 			} else {
+				let chemResMass = 0, chemResVal = 0, lastResM = -1;
+				for (let m = 0; m < GEO_MINERAL_COUNT; m++) {
+					const rm = CHEM_RES[m];
+					if (rm <= 1e-9) continue;
+					chemResMass += rm;
+					chemResVal += CHEM_RES_VAL[m];
+					lastResM = m;
+				}
+				const massScale = chemResMass > 0 ? residueMassTotal / chemResMass : 1;
+				const valScale = chemResVal > 0 ? residueValueTotal / chemResVal : 1;
 				let spawnedMass = 0, spawnedVal = 0;
 				for (let m = 0; m < GEO_MINERAL_COUNT; m++) {
 					const rm = CHEM_RES[m];
 					if (rm <= 1e-9) continue;
-					// Last component takes the exact remainder.
-					spawnedMass += rm;
-					const rv = CHEM_RES_VAL[m];
-					spawnedVal += rv;
+					// Last component takes the exact remainder, so the spawned
+					// residue equals the value still carried by the rock cell.
+					const pm = m === lastResM ? Math.max(0, residueMassTotal - spawnedMass) : rm * massScale;
+					const pv = m === lastResM ? Math.max(0, residueValueTotal - spawnedVal) : CHEM_RES_VAL[m] * valScale;
+					spawnedMass += pm;
+					spawnedVal += pv;
 					spawnDebris(state, wx + (rng() - 0.5) * 0.08, wy - 0.06, (rng() - 0.5) * 0.9, -0.4 - rng() * 0.6,
-						MINERALS[m].residueMineral, rm, rv, DEBRIS_FALLING, false, 0);
+						MINERALS[m].residueMineral, pm, pv, DEBRIS_FALLING, false, 0);
 				}
 				// Mix weights below the loop threshold: fold the remainder into the dominant residue.
 				const remM = residueMassTotal - spawnedMass;
 				if (remM > 1e-9) {
+					const remV = Math.max(0, residueValueTotal - spawnedVal);
 					spawnDebris(state, wx, wy - 0.06, 0, -0.4, chem.residueMineral, remM,
-						Math.max(0, residueValueTotal - spawnedVal), DEBRIS_FALLING, false, 0);
+						remV, DEBRIS_FALLING, false, 0);
 				}
 			}
 		}
@@ -1182,13 +1287,20 @@
 	}
 
 	// Apply chemical exposure + weak mechanical impulse to one boundary rock cell.
-	// Dissolution is saturation-limited; detachment requires skeleton < DEBRIS_LIMIT.
+	// Dissolution is saturation-limited; detachment requires a weakened skeleton.
 	function exposeRockCell(state, c, r, chemIntensity, mechImpulse, depositFluidIdx, dt) {
 		if (c <= 2 || c >= ROCK_W - 3 || r <= 2 || r >= ROCK_H - 2) return;
 		const idx = r * ROCK_W + c;
 		if (!state.rockSolid[idx]) return;
 
 		const chem = evaluateCellChemistry(state, idx, state._chem);
+		const progAtStart = state.rockDissolve[idx];
+		const damage = Math.max(0, state.rockMechMax[idx] - state.rockMechHp[idx]);
+		// Inclusion seams lose their binder as leaching advances; coherent
+		// skeletons (pure Fluorite concentrate) keep their residue strength.
+		const effStrength = chem.undermined ?
+			Math.max(0, chem.remStrength * (1 - progAtStart) - damage) : chem.remStrength;
+		const collapses = effStrength < DEBRIS_LIMIT;
 
 		if (chem.speed > 0 && chemIntensity > 0 && !state.rockExhausted[idx]) {
 			const sat = saturationFactor(state, depositFluidIdx);
@@ -1204,16 +1316,20 @@
 					releaseDissolvedSlice(state, idx, dProg, depositFluidIdx, wx, wy);
 					const prog = state.rockDissolve[idx];
 					if (prog >= 1.0) {
-						if (chem.remStrength < DEBRIS_LIMIT) detachRockCellChemical(state, c, r, depositFluidIdx);
+						if (collapses) detachRockCellChemical(state, c, r, depositFluidIdx);
 						else exhaustRockCell(state, c, r, depositFluidIdx);
 						return;
 					}
-					if (chem.remStrength < DEBRIS_LIMIT && prog > 0.55 && state.rng() < (prog - 0.50) * 6 * dt) {
+					if (collapses && prog > 0.55 && state.rng() < (prog - 0.50) * 6 * dt) {
 						detachRockCellChemical(state, c, r, depositFluidIdx);
 						return;
 					}
 				}
 			}
+		} else if (state.rockExhausted[idx] && collapses && chemIntensity > 0) {
+			// Undermined standing skeleton finally lets go under continued jet wash.
+			detachRockCellChemical(state, c, r, depositFluidIdx);
+			return;
 		}
 
 		if (mechImpulse > 0) {
@@ -1668,6 +1784,12 @@
 			// Leach floor reached: Fluorite stays Fluorite concentrate; Gas leaves Stone.
 			const residueMin = def.residueMineral;
 			if (residueMin !== minIdx) {
+				// Re-materialised stone must carry the stone quote, not the gas quote.
+				const targetValue = state.dMass[i] * MINERALS[residueMin].price;
+				if (state.dValue[i] > targetValue) {
+					state.lostGasValue += state.dValue[i] - targetValue;
+					state.dValue[i] = targetValue;
+				}
 				state.dMin[i] = residueMin;
 				state.dDensity[i] = MINERALS[residueMin].density;
 			}

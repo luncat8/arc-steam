@@ -123,6 +123,21 @@ function findCell(state, minIdx) {
 	return -1;
 }
 
+function basinWithGrain(minIdx, mass) {
+	const state = Lab.createSimulation({ scene: 'columns', model: 'table', seed: 37 });
+	state.pumpOn = false;
+	state.erosionOn = false;
+	for (let k = 0; k < 30; k++) Lab.applyCursorTool(state, 12, 1.3, 'pour', 1 / 12);
+	Lab.spawnDebrisGrain(state, 12, 1.05, minIdx, mass);
+	return state;
+}
+
+function countDebris(state, minIdx) {
+	let count = 0;
+	for (let i = 0; i < state.debrisCount; i++) if (state.dMin[i] === minIdx) count++;
+	return count;
+}
+
 test('saturation cap stalls dissolution until fresh water arrives', () => {
 	const fresh = Lab.createSimulation({ scene: 'columns', model: 'table', seed: 37 });
 	fresh.rigX = 3.2; fresh.rigY = 1.45; fresh.aimX = 1.42; fresh.aimY = 10.0; fresh.firing = true;
@@ -149,15 +164,6 @@ test('saturation cap stalls dissolution until fresh water arrives', () => {
 });
 
 test('submerged soluble grains dissolve at surface-area rate; Fluorite stops at its 45% floor', () => {
-	function basinWithGrain(minIdx, mass) {
-		const state = Lab.createSimulation({ scene: 'columns', model: 'table', seed: 37 });
-		state.pumpOn = false;
-		state.erosionOn = false;
-		for (let k = 0; k < 30; k++) Lab.applyCursorTool(state, 12, 1.3, 'pour', 1 / 12);
-		Lab.spawnDebrisGrain(state, 12, 1.05, minIdx, mass);
-		return state;
-	}
-
 	const halite = basinWithGrain(Lab.MIN_HALITE, 0.55);
 	stepFor(halite, 4.0);
 	const mHal = Lab.measureMetrics(halite);
@@ -278,4 +284,141 @@ test('karst showcase performance and file:// standalone HTML cleanliness', () =>
 	const html = fs.readFileSync(path.join(__dirname, '..', 'prototypes', 'solubility-lab.html'), 'utf8');
 	assert.ok(!/https?:\/\//i.test(html), 'solubility-lab.html must not contain external URLs');
 	assert.ok(!/type=["']module["']/i.test(html), 'solubility-lab.html must use classic <script> tags for file:// compatibility');
+});
+
+test('Mode B bound-B channels agree with Mode A stoichiometry at every octant center', () => {
+	const out = {};
+	const cubeCenters = [
+		['LLL', 0.25, 0.25, 0.25], ['LLH', 0.25, 0.25, 0.75],
+		['LHL', 0.25, 0.75, 0.25], ['LHH', 0.25, 0.75, 0.75],
+		['HLL', 0.75, 0.25, 0.25], ['HLH', 0.75, 0.25, 0.75],
+		['HHL', 0.75, 0.75, 0.25], ['HHH', 0.75, 0.75, 0.75]
+	];
+	for (const [name, r, g, b] of cubeCenters) {
+		Lab.evaluateCompositionLaw(r, g, b, out);
+		const total = out.halite + out.vitriol + out.gas + out.solid;
+		assert.ok(Math.abs(total - 1) < 1e-9, `${name} channel mass ${total}`);
+		assert.ok(out.halite >= 0 && out.vitriol >= 0 && out.gas >= 0 && out.solid >= 0, `${name} negative channel`);
+		assert.ok(out.crystal >= 0 && out.crystal <= out.halite + 1e-9, `${name} crystal-bound B must stay green brine`);
+		assert.ok(out.boundB + out.freeB >= 1 - 1e-9, `${name} bound-B and free-B must partition B`);
+		assert.ok(out.gas <= out.freeB + 1e-9, `${name} bound-B must never vent`);
+		assert.ok(out.speed >= 0, `${name} smooth reactivity gate must not create negative speed`);
+	}
+
+	const expected = [
+		{ name: 'Blue Vitriol', rgb: [0.60, 0.21, 0.66], halite: 0, vitriol: 0.903, gas: 0.004, solid: 0.093 },
+		{ name: 'Halite', rgb: [0.77, 0.82, 0.19], halite: 1, vitriol: 0, gas: 0, solid: 0 },
+		{ name: 'Fluorite', rgb: [0.225, 0.325, 0.80], halite: 0.55, vitriol: 0, gas: 0, solid: 0.45 },
+		{ name: 'Gas rock', rgb: [0.10, 0.10, 0.90], halite: 0, vitriol: 0, gas: 0.85, solid: 0.15 },
+		{ name: 'Fizzy R2G2B2', rgb: [0.80, 0.80, 0.80], halite: 0.586, vitriol: 0.076, gas: 0.338, solid: 0 }
+	];
+	for (const e of expected) {
+		Lab.evaluateCompositionLaw(...e.rgb, out);
+		assert.ok(Math.abs(out.halite - e.halite) < 0.02, `${e.name} green brine ${out.halite}`);
+		assert.ok(Math.abs(out.vitriol - e.vitriol) < 0.02, `${e.name} blue brine ${out.vitriol}`);
+		assert.ok(Math.abs(out.gas - e.gas) < 0.02, `${e.name} gas ${out.gas}`);
+		assert.ok(Math.abs(out.solid - e.solid) < 0.02, `${e.name} residue ${out.solid}`);
+	}
+	Lab.evaluateCompositionLaw(0.225, 0.325, 0.80, out);
+	assert.ok(Math.abs(out.crystal - 0.55) < 1e-6, `Fluorite bound-B brine must be 55%, got ${out.crystal}`);
+	const gasFrac = out.gas;
+	assert.equal(gasFrac, 0, 'Fluorite bound-B must vent zero gas');
+
+	for (const model of ['table', 'formula']) {
+		const state = Lab.createSimulation({ scene: 'columns', model, seed: 37 });
+		state.rigX = 7.17; state.rigY = 1.45;
+		state.aimX = 7.17; state.aimY = 10.0; state.firing = true;
+		stepFor(state, 3.0);
+		const m = Lab.measureMetrics(state);
+		assert.ok(m.waterFluoriteMass + m.pumpedFluoriteMass > 5.5, `${model} Fluorite green brine ${m.waterFluoriteMass + m.pumpedFluoriteMass}`);
+		assert.equal(m.lostGasMass, 0, `${model} Fluorite must vent zero gas`);
+		assert.ok(m.exhaustedCells > 0, `${model} Fluorite skeleton must stand exhausted`);
+		assert.ok(m.massDrift < 1e-6 && m.valueDrift < 1e-6, `${model} Fluorite drift ${m.massDrift}/${m.valueDrift}`);
+	}
+});
+
+test('Gas rock re-materialises as stone-quoted residue and books destroyed value into gas loss', () => {
+	const state = basinWithGrain(Lab.MIN_GAS, 1.0);
+	stepFor(state, 8.0);
+	const m = Lab.measureMetrics(state);
+	const stoneQuote = Lab.MINERALS[Lab.MIN_STONE].price;
+	const gasQuote = Lab.MINERALS[Lab.MIN_GAS].price;
+	assert.ok(Math.abs(m.debrisMass - 0.15) < 1e-9, `stone residue mass ${m.debrisMass}`);
+	assert.ok(Math.abs(m.debrisValue - 0.15 * stoneQuote) < 1e-9, `stone residue value ${m.debrisValue}`);
+	assert.ok(Math.abs(m.lostGasMass - 0.85) < 1e-9, `vented gas mass ${m.lostGasMass}`);
+	assert.ok(Math.abs(m.lostGasValue - (gasQuote - 0.15 * stoneQuote)) < 1e-9, `destroyed gas value ${m.lostGasValue}`);
+	assert.ok(countDebris(state, Lab.MIN_STONE) > 0, 'Gas residue must carry stone mineral identity');
+	assert.ok(m.massDrift < 1e-9 && m.valueDrift < 1e-9, `gas ledger drift ${m.massDrift}/${m.valueDrift}`);
+});
+
+test('dynamic skeleton collapse releases Copper clasts from a Halite-cemented karst seam', () => {
+	const state = Lab.createSimulation({ scene: 'karst', model: 'table', seed: 37 });
+	state.rigX = 17.6; state.rigY = 1.45;
+	state.aimX = 17.6; state.aimY = 10.5; state.firing = true;
+	stepFor(state, 6.0);
+	const m = Lab.measureMetrics(state);
+	assert.ok(m.cellsDissolved > 0, `mixed seam must dissolve, got ${m.cellsDissolved}`);
+	assert.ok(countDebris(state, Lab.MIN_COPPER) > 0, 'Halite-cemented Chalcopyrite must drop Copper clasts');
+	assert.ok(m.massDrift < 1e-6 && m.valueDrift < 1e-6, `karst seam drift ${m.massDrift}/${m.valueDrift}`);
+
+	// Static residue strength is above debrisLimit; only binder loss + jet damage
+	// makes an inclusion seam collapse. A coherent Fluorite concentrate does not.
+	const mixed = Lab.createSimulation({ scene: 'columns', model: 'table', seed: 37 });
+	const idx = findCell(mixed, Lab.MIN_HALITE);
+	const off = idx * 13;
+	for (let m = 0; m < 13; m++) mixed.rockMix[off + m] = 0;
+	mixed.rockMix[off + Lab.MIN_HALITE] = 0.75;
+	mixed.rockMix[off + Lab.MIN_COPPER] = 0.25;
+	const chem = {};
+	Lab.evaluateCellChemistry(mixed, idx, chem);
+	assert.equal(chem.undermined, true, 'different-mineral clasts in a soluble cement must be undermined');
+	assert.ok(chem.remStrength > Lab.DEBRIS_LIMIT, `static 75/25 skeleton ${chem.remStrength} is not a static collapse`);
+	const fluIdx = findCell(mixed, Lab.MIN_FLUORITE);
+	Lab.evaluateCellChemistry(mixed, fluIdx, chem);
+	assert.equal(chem.undermined, false, 'pure Fluorite concentrate must stay a coherent skeleton');
+});
+
+test('pump removes brine proportionally; fresh water is required to restore saturation', () => {
+	const state = Lab.createSimulation({ scene: 'columns', model: 'table', seed: 37 });
+	state.pumpOn = true; state.pumpRate = 0.1; state.firing = false;
+	state.rigX = 12; state.rigY = 1.45;
+	const idx = Lab.fluidIndexAt(12, 1.0);
+	const off = idx * Lab.MINERAL_COUNT + Lab.MIN_HALITE;
+	const quote = Lab.MINERALS[Lab.MIN_HALITE].price;
+	const load = state.satCap * 1.5;
+	state.water[idx] = 1;
+	state.waterFlooded += 1;
+	state.loads[off] = load;
+	state.loadValues[off] = load * quote;
+	state.loadTotal[idx] = load;
+	state.totalReactedMass += load;
+	state.totalReactedValue += load * quote;
+	assert.equal(Lab.saturationFactor(state, idx), 0, 'saturated / overshot parcel must stall');
+	assert.ok(Lab.measureMetrics(state).maxSaturation > 1.49, 'overshoot must be visible in maxSaturation');
+
+	stepFor(state, 1 / 60);
+	const pumped = Lab.measureMetrics(state);
+	assert.ok(pumped.pumpedSoluteMass > 0, 'pump must extract dissolved brine');
+	let water = 0, solute = 0;
+	for (let i = 0; i < state.water.length; i++) { water += state.water[i]; solute += state.loadTotal[i]; }
+	assert.ok(Math.abs(solute / water - load) < 1e-6, `pump must remove water and load together, ratio ${solute / water}`);
+	assert.ok(pumped.maxSaturation > 1.0, 'pumping alone must not dilute the remaining brine');
+
+	let loaded = -1, best = 0;
+	for (let i = 0; i < state.loadTotal.length; i++) {
+		if (state.loadTotal[i] > best) { best = state.loadTotal[i]; loaded = i; }
+	}
+	assert.ok(loaded >= 0, 'a loaded parcel must remain after one pump step');
+	assert.ok(Lab.saturationFactor(state, loaded) < 1e-9, 'remaining brine must still be saturated');
+	const fc = loaded % Lab.FLUID_W;
+	const fr = Math.floor(loaded / Lab.FLUID_W);
+	const x = (fc + 0.5) * (Lab.WORLD_W / Lab.FLUID_W);
+	const y = (fr + 0.5) * (Lab.WORLD_H / Lab.FLUID_H);
+	for (let k = 0; k < 3; k++) Lab.applyCursorTool(state, x, y, 'pour', 1.0);
+	const recovered = Lab.measureMetrics(state);
+	assert.ok(Lab.saturationFactor(state, loaded) > 0.85, `fresh water must restore saturation, got ${Lab.saturationFactor(state, loaded)}`);
+	assert.ok(recovered.waterMass > pumped.waterMass + 10, 'fresh water must dilute the parcel');
+	assert.ok(recovered.waterSoluteMass / recovered.waterMass < state.satCap * 0.5, 'global brine concentration must fall');
+	assert.ok(recovered.massDrift < 1e-9 && recovered.valueDrift < 1e-9 && recovered.waterDrift < 1e-9,
+		`pump/dilution drift ${recovered.massDrift}/${recovered.valueDrift}/${recovered.waterDrift}`);
 });

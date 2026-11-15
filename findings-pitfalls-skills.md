@@ -125,6 +125,9 @@ cd /home/user/arc-steam && LD_LIBRARY_PATH=/tmp/al/lib PLAYWRIGHT_PATH=/tmp/pw/n
 - Purchases, research and recharges all go through `SteamCeiling.purchase`/`recharge`, so the ledger stays the single money trail; only the entry `type` differs.
 - A mode that only changes prices belongs in the economy, not in a new module. One flag behind `purchase`/`recharge` makes research, equipment and bought energy free at once, and `research.status` / `equipment.isUnlocked` can ask the economy for the gate instead of knowing how the mode works. One source of truth for "what does this cost now" beats a second pricing path.
 
+- Exact conservation ledgers must detach a partially leached cell using its *remaining* `rockMass` / `rockValue`, not the original chemistry fractions. Cumulative slice float error made a residue spawn exceed the cell by ~1e-7, which only showed up as value drift once dynamic collapse started detaching mixed seams. Scale per-mineral residue identities to the remaining totals, let the last component take the exact remainder, and clamp each released slice to the mass/value the cell still owns.
+- A continuous formula can silently double-classify one signal: a low-R/low-G/high-B octant was both crystal-bound (55% brine) and free gas rock. Make the bound/free split exclusive before assigning channels, then expose the partition so tests can assert `gas <= freeB`; otherwise a "bound B never vents" rule fails only at intermediate octants.
+
 ## Repository conventions that matter
 
 - `git push` may report "Invalid username or token"; that is expected here and the change is applied manually.
