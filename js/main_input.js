@@ -20,6 +20,9 @@ let rightHeld = false;
 // The sandblaster is a hold: the key or the Blast button keeps the nozzle
 // throwing while it is down, and the module's own rate limits the stream.
 let blastHeld = false;
+// The water gun is the same hold, and its jet aims where the pointer last was:
+// aim is not a travel order, so aiming never moves the platform.
+let sprayHeld = false;
 // An air drag tilts the piston from the angle it had when the drag began.
 let pistonDragActive = false;
 let pistonDragX = 0;
@@ -217,6 +220,12 @@ function blastSand() {
 	SteamSandblaster.fire(world, activePlayerId());
 	refresh();
 }
+// The water gun is the selected platform's own cannon: one droplet per press,
+// and a hold keeps the jet running at the module's own rate.
+function sprayWater() {
+	SteamWater.fire(world, activePlayerId());
+	refresh();
+}
 function togglePause() { paused = !paused; ui.pause.textContent = paused ? 'Resume' : 'Pause'; accumulator = 0; }
 // One force setting per player: the slider and W/S edit the platform being
 // driven, and switching players reads that player's setting back into the
@@ -237,9 +246,13 @@ function syncForceControl(value) {
 	setText(ui['force-value'], percent + '%');
 }
 
+// The chamber's own frame: the pointer handlers need the world point under it.
+function worldXOf(event) { return (event.clientX - canvas.getBoundingClientRect().left - offsetX) / scale; }
+function worldYOf(event) { return (floorY - (event.clientY - canvas.getBoundingClientRect().top)) / scale; }
+
 function isGameKey(code) {
 	return code === 'Space' || code === 'KeyQ' || code === 'KeyA' || code === 'KeyD' || code === 'KeyW' || code === 'KeyS' || code === 'KeyE'
-		|| code === 'KeyR' || code === 'KeyB' || code === 'KeyX' || code === 'KeyZ' || code === 'KeyC' || code === 'KeyM' || code === 'KeyF' || code === 'F4';
+		|| code === 'KeyR' || code === 'KeyB' || code === 'KeyX' || code === 'KeyZ' || code === 'KeyC' || code === 'KeyM' || code === 'KeyF' || code === 'KeyG' || code === 'F4';
 }
 
 function keydown(event) {
@@ -259,6 +272,7 @@ function keydown(event) {
 	if (key === 'KeyA') leftHeld = true;
 	if (key === 'KeyD') rightHeld = true;
 	if (key === 'KeyF') blastHeld = true;
+	if (key === 'KeyG') sprayHeld = true;
 	if (key === 'KeyA' || key === 'KeyD') updateDirection();
 	if (key === 'KeyW') setForce(playerApi.force(playerApi.state.active) + 0.1);
 	if (key === 'KeyS') setForce(playerApi.force(playerApi.state.active) - 0.1);
@@ -282,6 +296,7 @@ function keyup(event) {
 	if (key === 'KeyA') leftHeld = false;
 	if (key === 'KeyD') rightHeld = false;
 	if (key === 'KeyF') blastHeld = false;
+	if (key === 'KeyG') sprayHeld = false;
 	if (key === 'KeyA' || key === 'KeyD') updateDirection();
 }
 
@@ -302,7 +317,7 @@ function frame(now) {
 	const elapsed = previous ? Math.min((now - previous) / 1000, 0.1) : 0;
 	previous = now;
 	if (!paused && !document.hidden) accumulator += elapsed * Number(ui.speed.value);
-	while (accumulator >= config.step) { autopilotApi.update(world, config.step); playerApi.update(world, config.step); physics.step(world, config.step); if (blastHeld) SteamSandblaster.fire(world, activePlayerId()); accumulator -= config.step; sceneDirty = true; }
+	while (accumulator >= config.step) { autopilotApi.update(world, config.step); playerApi.update(world, config.step); physics.step(world, config.step); if (blastHeld) SteamSandblaster.fire(world, activePlayerId()); if (sprayHeld) SteamWater.fire(world, activePlayerId()); accumulator -= config.step; sceneDirty = true; }
 	if (sceneDirty) { draw(); sceneDirty = false; }
 	if (now - lastReadout > 100 || readoutPlayer !== playerApi.state.active) { refresh(); lastReadout = now; }
 	requestAnimationFrame(frame);
@@ -377,6 +392,28 @@ function bindInput() {
 	ui['sandblast-fire'].addEventListener('lostpointercapture', function () { blastHeld = false; });
 	ui['sandblast-auto'].addEventListener('change', function () {
 		SteamSandblaster.setAutoFire(ui['sandblast-auto'].checked, activePlayerId());
+		refresh();
+	});
+	ui['water-fire'].addEventListener('pointerdown', function (event) {
+		ui['water-fire'].setPointerCapture(event.pointerId);
+		sprayHeld = true;
+		sprayWater();
+	});
+	ui['water-fire'].addEventListener('pointerup', function () { sprayHeld = false; });
+	ui['water-fire'].addEventListener('pointercancel', function () { sprayHeld = false; });
+	ui['water-fire'].addEventListener('lostpointercapture', function () { sprayHeld = false; });
+	ui['water-aim'].addEventListener('click', function () {
+		// The nozzle points where the pointer last hovered the chamber. A click
+		// that only aims never sets a travel target.
+		SteamWater.setAim(SteamWater.state.aimX, SteamWater.state.aimY);
+		refresh();
+	});
+	ui['water-auto'].addEventListener('change', function () {
+		SteamWater.setAutoFire(ui['water-auto'].checked, activePlayerId());
+		refresh();
+	});
+	ui['water-pump'].addEventListener('change', function () {
+		SteamWater.setPump(ui['water-pump'].checked);
 		refresh();
 	});
 	ui.pause.addEventListener('click', togglePause);
@@ -459,6 +496,9 @@ function bindInput() {
 			return;
 		}
 		inspectRockAtPointer(event);
+		// The nozzle follows the pointer: a water aim is an order to the gun, not
+		// a travel target, so hovering the chamber never moves the platform.
+		SteamWater.setAim(worldXOf(event), worldYOf(event));
 	});
 	canvas.addEventListener('pointerleave', function () { setHidden(ui['mineral-tooltip'], true); });
 	canvas.addEventListener('pointerup', endPistonDrag);

@@ -21,7 +21,7 @@ const treeOrder = Object.freeze([
 	'materials', 'alloys',
 	'impact', 'electromagnetics', 'thermodynamics',
 	'ballistics', 'traction', 'storage',
-	'ballistics2', 'power'
+	'ballistics2', 'power', 'hydrology'
 ]);
 // Rows 1 and 2 belong to the specification strip and the base-chassis bays.
 const treeLayout = Object.freeze({
@@ -34,7 +34,8 @@ const treeLayout = Object.freeze({
 	traction: Object.freeze({ row: 5, col: 2 }),
 	storage: Object.freeze({ row: 5, col: 3 }),
 	ballistics2: Object.freeze({ row: 6, col: 1 }),
-	power: Object.freeze({ row: 6, col: 2 })
+	power: Object.freeze({ row: 6, col: 2 }),
+	hydrology: Object.freeze({ row: 7, col: 3 })
 });
 const treeEdges = Object.freeze([
 	Object.freeze({ from: 'root', to: 'materials', kind: 'trunk' }),
@@ -48,7 +49,8 @@ const treeEdges = Object.freeze([
 	Object.freeze({ from: 'traction', to: 'power', kind: 'spine' }),
 	Object.freeze({ from: 'thermodynamics', to: 'power', kind: 'gutter' }),
 	Object.freeze({ from: 'ballistics', to: 'ballistics2', kind: 'spine' }),
-	Object.freeze({ from: 'power', to: 'ballistics2', kind: 'side' })
+	Object.freeze({ from: 'power', to: 'ballistics2', kind: 'side' }),
+	Object.freeze({ from: 'thermodynamics', to: 'hydrology', kind: 'gutter' })
 ]);
 
 // --------------------------------------------------------------- preview state

@@ -154,6 +154,21 @@ function drawRigMachinery(context, player) {
 		context.closePath();
 		context.fill();
 	}
+	// The water cannon points where the jet would go, so the nozzle is the aim.
+	if (SteamEquipment.isInstalled('watergun', player.id)) {
+		const nozzle = SteamWater.nozzleOf(world, player.id);
+		context.strokeStyle = '#7fb6d9';
+		context.lineWidth = 0.07;
+		context.beginPath();
+		context.moveTo(nozzle.x - nozzle.dx * 0.05, nozzle.y - nozzle.dy * 0.05);
+		context.lineTo(nozzle.x + nozzle.dx * 0.26, nozzle.y + nozzle.dy * 0.26);
+		context.stroke();
+		context.lineWidth = 1 / scale;
+		context.fillStyle = '#bfe6f7';
+		context.beginPath();
+		context.arc(nozzle.x, nozzle.y, 0.045, 0, Math.PI * 2);
+		context.fill();
+	}
 	// The chassis pitch follows the land; piston tilt stays relative to it.
 	const pistonAngle = machine.pistonAngle;
 	const pistonNx = -Math.sin(pistonAngle);
@@ -224,6 +239,9 @@ function draw() {
 	window.SteamCeiling.drawGraderBot(context);
 	context.fillStyle = '#29383d';
 	context.fillRect(-pocketDepth, 0, pocketDepth, pocketTop);
+	// Water sits over the rubble and under the rock, so a pool rests on the pile
+	// and meets every cave wall flush.
+	if (window.SteamWater) window.SteamWater.draw(context);
 	if (window.SteamCeiling) window.SteamCeiling.draw(context, viewMode);
 	if (window.SteamCeiling) {
 		const ceiling = window.SteamCeiling.state;

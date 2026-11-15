@@ -950,6 +950,7 @@
 		stepBallPolicy(rival, dt);
 		stepRivalRocketTrip(rival, dt);
 		stepRivalSandblaster(rival);
+		stepRivalWaterGun(rival);
 		rival.previousX = rival.x;
 		rival.previousY = rival.y;
 		rival.previousAngle = rival.angle;
@@ -1178,6 +1179,17 @@
 		return physics.reserveNow(owner) / engine.reload >= profile.shotEnergy * profile.rate;
 	}
 
+	// The water gun follows the nozzle's own rule: a rival bot sprays only with a
+	// cannon fitted, a hopper with room, an engine that can carry the stream, and
+	// nothing else to do.
+	function stepRivalWaterGun(rival) {
+		const gun = root.SteamWater;
+		if (!gun) return;
+		if (!rival.bot) { gun.clearBotFire(rival.id); return; }
+		gun.setBotFire(rival.manual <= 0 && !rival.braking && !rival.direction
+			&& !rival.rocketTrip.active && gun.streamReady(rigWorld, rival.id), rival.id);
+	}
+
 	function stepRivalSandblaster(rival) {
 		const sand = root.SteamSandblaster;
 		if (!sand) return;
@@ -1238,6 +1250,17 @@
 		return !rigSandCooling;
 	}
 
+	// The jet is a standing duty beside the nozzle: same trips pause it, and the
+	// pump runs with it so the brine it makes is actually collected.
+	function setRigWaterGun(world, enabled) {
+		const gun = root.SteamWater;
+		if (!gun) return;
+		const ready = enabled && gun.streamReady(world, 'rig')
+			&& world.battery >= root.SteamPhysics.config.battery * rechargeStart + gun.state.shotEnergy * gun.state.dropletsPerSecond;
+		gun.setBotFire(ready, 'rig');
+		gun.setPump(true);
+	}
+
 	function setRigSandblaster(world, enabled) {
 		const sand = root.SteamSandblaster;
 		if (!sand) return;
@@ -1286,10 +1309,11 @@
 			recharging = true;
 		}
 		if (!selling && !recharging && !rigRocketTrip.active) {
-			if (autopilot.suspended('move')) { setRigSandblaster(world, false); return; }
+			if (autopilot.suspended('move')) { setRigSandblaster(world, false); setRigWaterGun(world, false); return; }
 			if (full) selling = true;
 			else if (!rocketReady() || !startRocketTripState(rigRocketTrip)) {
 				setRigSandblaster(world, !autopilot.handHeld('move'));
+				setRigWaterGun(world, !autopilot.handHeld('move'));
 				return;
 			}
 		}
@@ -1298,6 +1322,7 @@
 			world.target = NaN;
 			autopilot.resume('move');
 			setRigSandblaster(world, false);
+			setRigWaterGun(world, false);
 			return;
 		}
 		if (recharging && !full && world.battery >= physics.config.battery * rechargeStop) {
@@ -1305,6 +1330,7 @@
 			world.target = NaN;
 			autopilot.resume('move');
 			setRigSandblaster(world, false);
+			setRigWaterGun(world, false);
 			return;
 		}
 		// A hand on the travel controls stands the rocket trip down; the hold
@@ -1312,9 +1338,11 @@
 		if (rigRocketTrip.active && autopilot.handHeld('move')) {
 			clearRocketTrip();
 			setRigSandblaster(world, false);
+			setRigWaterGun(world, false);
 			return;
 		}
 		setRigSandblaster(world, !selling && !recharging && !rigRocketTrip.active && !autopilot.handHeld('move'));
+		setRigWaterGun(world, !selling && !recharging && !rigRocketTrip.active && !autopilot.handHeld('move'));
 		if (rigRocketTrip.active) { stepRocketTrip(world, dt); return; }
 		autopilot.override('move');
 		world.direction = 0;

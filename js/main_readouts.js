@@ -373,6 +373,7 @@ function readout() {
 	setDisabled(ui.launch, !canLaunch);
 	rocketReadout();
 	sandblastReadout();
+	waterReadout();
 	statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch, driveOn);
 }
 
@@ -425,6 +426,33 @@ function sandblastReadout() {
 	setHidden(ui['sandblast-status'], !reason);
 	if (reason) setText(ui['sandblast-status'], reason);
 }
+
+// The HUD reads the water ledger every readout tick, so the buffer is reused.
+const waterMetrics = SteamWater.createMetrics();
+
+// The water gun: the nozzle's own state, the pump, and one line only while a
+// press would do nothing.
+function waterReadout() {
+	const owner = activePlayerId();
+	const gun = SteamWater.stateFor(owner);
+	const installed = SteamEquipment.isInstalled('watergun', owner);
+	const metrics = SteamWater.measureMetrics(waterMetrics);
+	setDisabled(ui['water-fire'], !installed || !SteamWater.canFire(world, owner));
+	setDisabled(ui['water-aim'], !installed);
+	setChecked(ui['water-auto'], gun.autoFire);
+	setChecked(ui['water-pump'], SteamWater.state.pumpOn);
+	setText(ui['water-fire'].firstChild, installed ? 'Spray · ' + metrics.dissolvedCells + ' ' : 'Spray ');
+	const reason = !installed ? 'No water gun installed · fit one in Science + Shop'
+		: !SteamWater.state.pumpOn ? 'Pump off · brine stays in the chamber'
+		: ceilingCargoFull() ? 'Hopper full · the pump waits for a sale'
+		: owner === 'rig' && world.battery < SteamWater.state.shotEnergy ? 'Reserve too low to pressurize a droplet'
+		: metrics.dissolvedMass > 0 && metrics.brineMass > 0.02 ? 'Brine in the chamber · the pump lifts from under the hull'
+		: '';
+	setHidden(ui['water-status'], !reason);
+	if (reason) setText(ui['water-status'], reason);
+}
+
+function ceilingCargoFull() { return window.SteamCeiling.cargoSpace(world, world) <= 0; }
 
 // The platform rests on the terrain and only leaves it where the ground drops
 // away, so the base height under it says whether it is on the ground now.

@@ -220,6 +220,23 @@
 			]
 		},
 		{
+			id: 'water',
+			label: 'Water gun',
+			title: 'Water gun and the pump',
+			text: [
+				'The water gun is the third optional platform tool, unlocked by Hydrology (900 cr, +9 kg) and installed per player like the rack and the sandblaster. Its tank is unlimited: pressurizing a droplet is what costs, 135 J from the owner’s reserve at up to 46 droplets a second. The jet is aimed at the pointer and inherits the platform’s speed at launch, so a nozzle on the move throws a leaning stream. A press throws one droplet; holding `G` keeps the stream going, and the Auto-fire order does the same without the key.',
+				'Water barely chips hard rock, but it dissolves certain minerals on contact. Each droplet that strikes a face washes it chemically: a soft seam gives way in a few hits while quartz, corundum and ore barely move. A dissolved cell splits three ways — brine into the water, gas into the air, and anything insoluble left as a residue clump that stays standing until the binder under it is gone, then falls as ordinary debris. Gas driven out of a seam is lost for good: it cannot be caught wet, so a fizzy seam pays less under the gun than a dry hammer would. Brine saturates: a stagnant pool stops cutting once its load reaches the chemistry cap, which is why the pump is part of the mining loop rather than an optional extra.',
+				'The under-hull pump reaches from beneath the chassis up to the deck. It lifts water and its dissolved cargo into that player’s hopper as material — the water itself goes back to the tank — and charges 420 J per water unit. A full hopper stalls the pump instead of destroying what it cannot hold, and the wet residue grains are caught by a collector like any other debris while loose grains that miss join the floor rubble. A new chamber starts dry, with fresh water at 60 g per unit of dissolution capacity; the Pump order is a chamber setting like the view rules and survives New game.',
+				'A droplet’s whole throw is booked as heat at the muzzle, the pump’s work as heat in the chamber, and a leached cell’s potential energy as heat when it goes, so the energy readout stays closed with the gun running. Every gram of dissolved rock is in a parcel, in the lost-gas counter, on the floor as a residue grain, or in the hopper, and the wet ledger can account for all of it.'
+			],
+			keys: [
+				['G / Spray', 'Throw one droplet; hold to keep the jet going'],
+				['Pointer over the chamber', 'Aim the nozzle — aiming never moves the platform'],
+				['Auto-fire', 'Keep the jet running at the module’s own rate'],
+				['Pump', 'Lift water and its dissolved cargo from under the hull into the hopper']
+			]
+		},
+		{
 			id: 'charge',
 			label: 'Charge',
 			title: 'Recovery and charge',
