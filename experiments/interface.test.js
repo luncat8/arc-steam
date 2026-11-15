@@ -120,7 +120,13 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	const tree = dom.element('progression-tree');
 	assert.equal(dom.elements.has('research-rows'), false, 'split research list is gone');
 	assert.equal(dom.elements.has('equipment-rows'), false, 'split shop list is gone');
-	assert.equal(dom.element('tree-links').children.length, 13, 'thirteen prerequisite edges connect the tree');
+	const expectedEdges = [];
+	for (const node of research.nodes) {
+		if (!node.requires.length) expectedEdges.push('root->' + node.id);
+		else for (const prerequisite of node.requires) expectedEdges.push(prerequisite + '->' + node.id);
+	}
+	const actualEdges = dom.element('tree-links').children.map(edge => edge.dataset.from + '->' + edge.dataset.to);
+	assert.deepEqual(actualEdges.slice().sort(), expectedEdges.slice().sort(), 'every research prerequisite has one SVG edge');
 	assert.equal(countRows(tree, 'node'), research.nodes.length, 'each technology has one node card');
 	assert.equal(countRows(tree, 'technology'), research.nodes.length, 'no duplicate research rows');
 	assert.equal(countRows(tree, 'item'), equipment.items.length, 'no duplicate equipment rows');
@@ -140,6 +146,12 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	assert.equal(nodeCard('thermodynamics').dataset.linked, 'true');
 	assert.equal(nodeCard('ballistics2').dataset.linked, 'true');
 	nodeCard('power').dispatch('pointerleave');
+	assert.equal(dom.element('tree-links').children.filter(edge => edge.dataset.focus === 'true').length, 0);
+	nodeCard('hydrology').dispatch('pointerenter');
+	assert.equal(dom.element('tree-links').children.filter(edge => edge.dataset.focus === 'true').length, 2);
+	assert.equal(nodeCard('thermodynamics').dataset.linked, 'true');
+	assert.equal(nodeCard('impact').dataset.linked, 'true');
+	nodeCard('hydrology').dispatch('pointerleave');
 	assert.equal(dom.element('tree-links').children.filter(edge => edge.dataset.focus === 'true').length, 0);
 	assert.equal(dom.element('platform-spec').children.length, 10);
 	assert.equal(dom.element('inventory-rows').children.length, ceiling.state.mineralNames.length);
@@ -1608,12 +1620,29 @@ test('a tier family previews the selected tier as a swap, not as a stack', () =>
 	// Changing the tier under an open preview re-reads the strip at once.
 	select.value = 'bank';
 	select.dispatch('change');
-	assert.equal(spec.children[8].children[1].children[1].textContent, '+35.00 W/K', 'the swap carries the whole bank, not a stack of both');
+	assert.equal(spec.children[8].children[1].children[1].textContent, '+50.40 W/K', 'the preview carries the full bank conductance');
 	assert.equal(spec.children[0].children[1].children[1].textContent, '+16.3 kg');
 	buttonOf(bay).dispatch('pointerleave');
 	advance(2);
 	assert.equal(spec.children[8].children[1].children[1].textContent, '');
 	assert.equal(specValue(spec, 8), '1.60 W/K', 'the live cooling comes back');
+	// Installing one tier and previewing another shows only the swap delta, not a stack.
+	select.value = 'vent';
+	select.dispatch('change');
+	fund(equipment.radiators.find(entry => entry.id === 'vent').cost);
+	buttonOf(bay).dispatch('click');
+	advance(2);
+	assert.equal(equipment.installedRadiator('rig'), 'vent');
+	assert.equal(specValue(spec, 8), '12.40 W/K');
+	select.value = 'bank';
+	select.dispatch('change');
+	buttonOf(bay).dispatch('pointerenter');
+	assert.equal(spec.children[8].children[1].children[1].textContent, '+39.60 W/K', 'the swap subtracts the installed vent instead of stacking');
+	assert.equal(spec.children[0].children[1].children[1].textContent, '+12.2 kg');
+	buttonOf(bay).dispatch('pointerleave');
+	advance(2);
+	assert.equal(spec.children[8].children[1].children[1].textContent, '');
+	assert.equal(specValue(spec, 8), '12.40 W/K', 'the installed vent cooling comes back');
 });
 
 test('market drawer renders live quote drift and rate with zero redundant DOM writes when settled', () => {
@@ -2162,6 +2191,7 @@ test('the water gun sprays on G, aims with the pointer, pumps, and reads its own
 	assert.equal(aim.disabled, true);
 	assert.match(status.textContent, /No water gun installed/);
 	assert.ok(help.find('water'), 'the gun has a help topic');
+	assert.ok(help.find('keys').keys.some(row => row[0] === 'G'), 'the key list names G');
 	assert.match(help.find('water').text.join(' '), /46 droplets a second/);
 	assert.match(help.find('water').text.join(' '), /60 g per unit/);
 	study('hydrology');
@@ -2195,7 +2225,8 @@ test('the water gun sprays on G, aims with the pointer, pumps, and reads its own
 	dom.keyUp('KeyG');
 	assert.equal(water.totals.droplets, 1, 'G throws one droplet');
 	harness.near(world.battery, battery - gun.shotEnergy, 1e-9, 'the throw draws the reserve');
-	advance(4);
+	// Wait past both the 1/46 s nozzle reload and the 100 ms readout throttle.
+	advance(8);
 	assert.equal(fire.disabled, false, 'the rate lets the next droplet go');
 	dom.key('KeyG');
 	advance(30);

@@ -357,7 +357,7 @@
 	}
 
 	const api = {
-		engineCosts, ownsEngine, atShop, buyEngine, items, radiators,
+		engineCosts, ownsEngine, atShop, buyEngine, items, radiators, radiatorEntry,
 		ownsRadiator, radiatorUnlocked, installedRadiator, installRadiator,
 		balls, ballEntry, ownsBall, ballUnlocked, installedBall, installBall,
 		state, stateFor, find, isInstalled, isUnlocked, rigOnly, install, uninstall, grant, installAll, reset

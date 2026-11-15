@@ -14,6 +14,7 @@ test('technology states move locked to available to researched with prerequisite
 	assert.equal(research.status('ballistics'), LOCKED);
 	assert.equal(research.status('traction'), LOCKED, 'needs pulse electromagnetics');
 	assert.equal(research.status('power'), LOCKED, 'needs traction motors and heat transfer');
+	assert.equal(research.status('hydrology'), LOCKED, 'needs heat transfer and impact forging');
 	assert.equal(research.state.completed, 0);
 	assert.equal(research.research('electromagnetics', w), false, 'a locked node cannot be bought');
 	assert.equal(research.research('materials', w), false, 'an available node still needs funds');
@@ -37,6 +38,7 @@ test('technology states move locked to available to researched with prerequisite
 	assert.equal(research.status('storage'), LOCKED, 'the deep branch waits for its own chain');
 	unlockResearch(w, 'thermodynamics');
 	assert.equal(research.status('storage'), AVAILABLE);
+	assert.equal(research.status('hydrology'), LOCKED, 'hydrology waits for impact forging as well');
 	assert.equal(research.status('ballistics'), LOCKED, 'the ballistic computer needs pulse electromagnetics');
 	unlockResearch(w, 'electromagnetics');
 	assert.equal(research.status('ballistics'), AVAILABLE);
@@ -48,6 +50,9 @@ test('technology states move locked to available to researched with prerequisite
 	assert.equal(research.status('power'), AVAILABLE, 'both engine prerequisites are in');
 	unlockResearch(w, 'power');
 	unlockResearch(w, 'impact');
+	assert.equal(research.status('hydrology'), AVAILABLE, 'both hydrology prerequisites are in');
+	unlockResearch(w, 'hydrology');
+	assert.equal(equipment.isUnlocked('watergun'), true, 'hydrology unlocks the water gun');
 	unlockResearch(w, 'ballistics2');
 	assert.equal(research.state.predictionBounces, true);
 	assert.equal(research.state.completed, research.nodes.length);

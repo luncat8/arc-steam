@@ -24,6 +24,7 @@
 				['E', 'Release a held ball while the drive is on'],
 				['R', 'Fire from the selected player’s installed rack'],
 				['F', 'Throw a sand grain from the selected player’s nozzle; hold to keep the stream'],
+				['G', 'Spray a water droplet from the selected player’s gun; hold to keep the jet'],
 				['X', 'Autopilot · chase the predicted landing'],
 				['⇧X', 'Autopilot · timed intercept'],
 				['Z', 'Autopilot · drive keeper'],

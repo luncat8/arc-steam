@@ -86,8 +86,20 @@ async function main() {
 		assert.equal(await page.locator('#progression-tree [data-technology]').count(), nodeCount, 'each research node appears once');
 		assert.equal(await page.locator('#progression-tree [data-item]').count(), await page.evaluate(() => SteamEquipment.items.length), 'each equipment item appears once');
 		assert.equal(await page.locator('#progression-tree .tier-slot').count(), 3, 'engines, radiators and strike balls each have one tier slot');
-		assert.equal(await page.locator('#tree-links path').count(), 12, 'twelve SVG prerequisite edges connect the tree');
-		assert.equal(await page.evaluate(() => Array.from(document.querySelectorAll('#tree-links path')).every(path => Boolean(path.getAttribute('d')))), true, 'every SVG edge is laid out');
+		const treeEdges = await page.evaluate(() => {
+			const expected = [];
+			for (const node of SteamResearch.nodes) {
+				if (!node.requires.length) expected.push('root->' + node.id);
+				else for (const req of node.requires) expected.push(req + '->' + node.id);
+			}
+			const actual = Array.from(document.querySelectorAll('#tree-links path'), path => path.dataset.from + '->' + path.dataset.to);
+			return { actual: actual.sort(), expected: expected.sort() };
+		});
+		assert.deepEqual(treeEdges.actual, treeEdges.expected, 'SVG prerequisite edges match every research dependency');
+		assert.equal(await page.evaluate(() => Array.from(document.querySelectorAll('#tree-links path')).every(path => {
+			const d = path.getAttribute('d');
+			return Boolean(d) && !d.includes('NaN');
+		})), true, 'every SVG edge is laid out without NaN');
 		assert.equal(await page.evaluate(() => {
 			const content = document.querySelector('#science-drawer .tool-drawer-content');
 			const root = document.querySelector('.tree-root').getBoundingClientRect();

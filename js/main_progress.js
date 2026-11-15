@@ -35,7 +35,7 @@ const treeLayout = Object.freeze({
 	storage: Object.freeze({ row: 5, col: 3 }),
 	ballistics2: Object.freeze({ row: 6, col: 1 }),
 	power: Object.freeze({ row: 6, col: 2 }),
-	hydrology: Object.freeze({ row: 7, col: 3 })
+	hydrology: Object.freeze({ row: 6, col: 3 })
 });
 const treeEdges = Object.freeze([
 	Object.freeze({ from: 'root', to: 'materials', kind: 'trunk' }),
@@ -50,7 +50,8 @@ const treeEdges = Object.freeze([
 	Object.freeze({ from: 'thermodynamics', to: 'power', kind: 'gutter' }),
 	Object.freeze({ from: 'ballistics', to: 'ballistics2', kind: 'spine' }),
 	Object.freeze({ from: 'power', to: 'ballistics2', kind: 'side' }),
-	Object.freeze({ from: 'thermodynamics', to: 'hydrology', kind: 'gutter' })
+	Object.freeze({ from: 'thermodynamics', to: 'hydrology', kind: 'gutter-right' }),
+	Object.freeze({ from: 'impact', to: 'hydrology', kind: 'cross' })
 ]);
 
 // --------------------------------------------------------------- preview state
@@ -620,26 +621,35 @@ function elbowPath(x1, y1, midY, x2, y2) {
 		+ arrowTipDown(x2, y2);
 }
 
-function gutterPath(from, to, midRowTop) {
-	const x1 = from.left + 28;
-	const y1 = from.bottom;
-	const yA = midRowTop - 8;
-	const gx = (to.right + from.left) * 0.5;
-	const yB = to.top - 8;
-	const x2 = to.right - 34;
-	const y2 = to.top - 1;
-	const r = 5;
-	return 'M' + x1.toFixed(1) + ' ' + y1.toFixed(1)
-		+ 'L' + x1.toFixed(1) + ' ' + (yA - r).toFixed(1)
-		+ 'Q' + x1.toFixed(1) + ' ' + yA.toFixed(1) + ' ' + (x1 - r).toFixed(1) + ' ' + yA.toFixed(1)
-		+ 'L' + (gx + r).toFixed(1) + ' ' + yA.toFixed(1)
-		+ 'Q' + gx.toFixed(1) + ' ' + yA.toFixed(1) + ' ' + gx.toFixed(1) + ' ' + (yA + r).toFixed(1)
-		+ 'L' + gx.toFixed(1) + ' ' + (yB - r).toFixed(1)
-		+ 'Q' + gx.toFixed(1) + ' ' + yB.toFixed(1) + ' ' + (gx - r).toFixed(1) + ' ' + yB.toFixed(1)
-		+ 'L' + (x2 + r).toFixed(1) + ' ' + yB.toFixed(1)
-		+ 'Q' + x2.toFixed(1) + ' ' + yB.toFixed(1) + ' ' + x2.toFixed(1) + ' ' + (yB + r).toFixed(1)
-		+ 'L' + x2.toFixed(1) + ' ' + y2.toFixed(1)
-		+ arrowTipDown(x2, y2);
+// Direction-safe rounded orthogonal connector so gutter and cross-column routes
+// bend monotonically into any target side instead of assuming left-only turns.
+function orthoPath(xs, ys) {
+	const count = xs.length;
+	let d = 'M' + xs[0].toFixed(1) + ' ' + ys[0].toFixed(1);
+	for (let i = 1; i < count - 1; i++) {
+		const dx1 = xs[i] - xs[i - 1];
+		const dy1 = ys[i] - ys[i - 1];
+		const dx2 = xs[i + 1] - xs[i];
+		const dy2 = ys[i + 1] - ys[i];
+		const l1 = Math.abs(dx1) + Math.abs(dy1);
+		const l2 = Math.abs(dx2) + Math.abs(dy2);
+		const r = Math.min(5, l1 * 0.45, l2 * 0.45);
+		const ux1 = Math.sign(dx1);
+		const uy1 = Math.sign(dy1);
+		const ux2 = Math.sign(dx2);
+		const uy2 = Math.sign(dy2);
+		d += 'L' + (xs[i] - ux1 * r).toFixed(1) + ' ' + (ys[i] - uy1 * r).toFixed(1)
+			+ 'Q' + xs[i].toFixed(1) + ' ' + ys[i].toFixed(1) + ' ' + (xs[i] + ux2 * r).toFixed(1) + ' ' + (ys[i] + uy2 * r).toFixed(1);
+	}
+	const last = count - 1;
+	return d + 'L' + xs[last].toFixed(1) + ' ' + ys[last].toFixed(1) + arrowTipDown(xs[last], ys[last]);
+}
+
+function gutterPath(from, to, midRowTop, gx, startOffset, topGap, endX) {
+	const x1 = from.left + startOffset;
+	const yA = midRowTop - topGap;
+	const yB = to.top - 7;
+	return orthoPath([x1, x1, gx, gx, endX, endX], [from.bottom, yA, yA, yB, yB, to.top - 1]);
 }
 
 function layoutTreeLinks() {
@@ -649,6 +659,8 @@ function layoutTreeLinks() {
 	const rootBox = localBox(treeRootEl, treeBox);
 	const boxes = {};
 	for (const id in nodeCards) boxes[id] = localBox(nodeCards[id], treeBox);
+	const gutter12 = (boxes.impact.right + boxes.traction.left) * 0.5;
+	const gutter23 = (boxes.traction.right + boxes.storage.left) * 0.5;
 	for (const edge of linkRecords) {
 		const to = boxes[edge.to];
 		let d = '';
@@ -661,7 +673,14 @@ function layoutTreeLinks() {
 			const from = boxes[edge.from];
 			d = elbowPath(from.left + 34, from.bottom, to.top - 8, to.cx, to.top - 1);
 		} else if (edge.kind === 'gutter') {
-			d = gutterPath(boxes[edge.from], to, boxes.storage.top);
+			d = gutterPath(boxes[edge.from], to, boxes.storage.top, gutter23 - 4, 20, 11, to.right - 34);
+		} else if (edge.kind === 'gutter-right') {
+			d = gutterPath(boxes[edge.from], to, boxes.storage.top, gutter23 + 4, 38, 5, to.left + 32);
+		} else if (edge.kind === 'cross') {
+			const from = boxes[edge.from];
+			const y1 = from.bottom - 16;
+			const yB = to.top - 12;
+			d = orthoPath([from.right, gutter12, gutter12, to.cx, to.cx], [y1, y1, yB, yB, to.top - 1]);
 		} else {
 			const from = boxes[edge.from];
 			const y = Math.min(from.top + 22, to.top + 22);

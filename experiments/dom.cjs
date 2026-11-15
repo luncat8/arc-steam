@@ -14,7 +14,13 @@ let mainScriptsLoaded = false;
 function loadMainScripts() {
 	if (mainScriptsLoaded) return;
 	const sources = Array.from(html.matchAll(/<script\s+src="([^"]+)"/g), match => match[1]);
-	const mainScripts = sources.filter(source => /^js\/main(?:_[\w-]+)?\.js$/.test(source));
+	const mainPattern = /^js\/main(?:_[\w-]+)?\.js$/;
+	// Load every domain script index.html declares in HTML order before main*.js;
+	// Node's module cache keeps any module a test already required or wrapped.
+	for (const source of sources) {
+		if (!mainPattern.test(source)) require(path.join(root, source));
+	}
+	const mainScripts = sources.filter(source => mainPattern.test(source));
 	const ids = new Set(Array.from(html.matchAll(/\bid="([\w-]+)"/g), match => match[1]));
 	const declarations = new Map();
 	for (const source of mainScripts) {
