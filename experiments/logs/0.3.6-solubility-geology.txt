@@ -1,0 +1,16 @@
+0.3.6 solubility geology calibration (8 seeds x 192x120, balanced, specificity 0.6, hostWeight solved)
+passes=30 hostWeight=0.0883
+copper+vitriol=7.83% (baseline copper 7.83%)
+stone share=25.31% target=25.31% r:[0.000, 1.000] g:[0.000, 1.000] b:[0.000, 1.000]
+iron share=16.62% target=16.61% r:[0.287, 0.983] g:[0.006, 0.535] b:[0.007, 0.624]
+copper share=3.92% target=3.91% r:[0.232, 0.667] g:[0.037, 0.363] b:[0.193, 0.447]
+vitriol share=3.92% target=3.91% r:[0.460, 0.760] g:[0.060, 0.360] b:[0.540, 0.740]
+quartz share=16.14% target=16.14% r:[0.001, 0.482] g:[0.230, 0.870] b:[0.002, 0.562]
+corundum share=3.44% target=3.44% r:[0.099, 0.401] g:[0.699, 0.951] b:[0.049, 0.301]
+fluorite share=8.37% target=8.36% r:[0.066, 0.384] g:[0.104, 0.546] b:[0.615, 0.985]
+silver share=3.09% target=3.09% r:[0.673, 0.957] g:[0.263, 0.547] b:[0.043, 0.327]
+gold share=1.23% target=1.23% r:[0.823, 0.977] g:[0.063, 0.257] b:[0.424, 0.656]
+gas share=0.92% target=0.96% r:[0.000, 0.200] g:[0.000, 0.200] b:[0.800, 1.000]
+sand share=4.33% target=4.32% r:[0.022, 0.378] g:[0.283, 0.677] b:[0.324, 0.619]
+halite share=6.57% target=6.56% r:[0.616, 0.924] g:[0.676, 0.964] b:[0.036, 0.344]
+fizzy share=6.15% target=6.15% r:[0.636, 0.944] g:[0.677, 0.963] b:[0.677, 0.963]

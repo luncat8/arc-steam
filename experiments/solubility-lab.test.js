@@ -28,8 +28,8 @@ test('full dissolution of Halite (+G) and Blue Vitriol (+GB) pumps to hopper wit
 	assert.ok(mHal.waterHaliteMass + mHal.pumpedHaliteMass >= 10, `expected Halite solute >= 10, got ${mHal.waterHaliteMass + mHal.pumpedHaliteMass}`);
 	assert.equal(mHal.waterVitriolMass, 0, 'Halite should produce zero Blue Vitriol');
 	assert.equal(mHal.lostGasMass, 0, 'Halite should lose zero gas');
-	assert.ok(mHal.massDrift < 1e-6, `massDrift ${mHal.massDrift}`);
-	assert.ok(mHal.valueDrift < 1e-6, `valueDrift ${mHal.valueDrift}`);
+	assert.ok(mHal.massDrift < 1e-9, `massDrift ${mHal.massDrift}`);
+	assert.ok(mHal.valueDrift < 1e-9, `valueDrift ${mHal.valueDrift}`);
 	assert.ok(mHal.waterDrift < 1e-5, `waterDrift ${mHal.waterDrift}`);
 
 	// Column 1 = Blue Vitriol (~x = 3.33 m)
@@ -72,8 +72,8 @@ test('water gun has weak mechanical force on insoluble Corundum and Quartz', () 
 	assert.ok(m.valueDrift < 1e-6);
 });
 
-test('incongruent decomposition: Fizzy Halite loses expensive gas while Fluorite drops solid debris', () => {
-	// 1. Fizzy Halite (Column 2, ~x = 5.25 m)
+test('incongruent decomposition: Fizzy Halite 33.3% gas stoichiometry, Fluorite skeleton stands', () => {
+	// 1. Fizzy Halite R2G2B2 (Column 2, ~x = 5.25 m): 66.7% brine + 33.3% gas lost
 	const sFizzy = Lab.createSimulation({ scene: 'columns', model: 'table', seed: 37 });
 	sFizzy.rigX = 5.25;
 	sFizzy.rigY = 1.45;
@@ -83,15 +83,21 @@ test('incongruent decomposition: Fizzy Halite loses expensive gas while Fluorite
 	stepFor(sFizzy, 3.0);
 
 	const mF = Lab.measureMetrics(sFizzy);
+	const fizzyBrine = mF.waterFizzyMass + mF.pumpedFizzyMass;
 	assert.ok(mF.cellsDissolved >= 10, `expected Fizzy Halite to dissolve, got ${mF.cellsDissolved}`);
-	assert.ok(mF.waterHaliteMass + mF.pumpedHaliteMass > 4, 'Fizzy Halite must dissolve its Halite salt share');
-	assert.ok(mF.lostGasMass > 2, 'Fizzy Halite must vent its gas share as loss');
-	assert.ok(mF.lostGasValue > (mF.pumpedHaliteValue + mF.waterSoluteValue), 'expensive vented gas value must exceed recovered cheap salt value');
-	assert.ok(mF.massDrift < 1e-6, `fizzy massDrift ${mF.massDrift}`);
-	assert.ok(mF.valueDrift < 1e-6, `fizzy valueDrift ${mF.valueDrift}`);
+	assert.ok(fizzyBrine > 4, 'Fizzy Halite must dissolve its green brine share');
+	const reacted = fizzyBrine + mF.lostGasMass;
+	assert.ok(reacted > 0, 'Fizzy must react');
+	const gasFrac = mF.lostGasMass / reacted;
+	assert.ok(Math.abs(gasFrac - 1 / 3) < 0.03, `Fizzy gas fraction must be 33.3%, got ${gasFrac}`);
+	assert.ok(Math.abs(fizzyBrine / reacted - 2 / 3) < 0.03, `Fizzy brine fraction must be 66.7%, got ${fizzyBrine / reacted}`);
+	assert.ok(mF.massDrift < 1e-9, `fizzy massDrift ${mF.massDrift}`);
+	assert.ok(mF.valueDrift < 1e-9, `fizzy valueDrift ${mF.valueDrift}`);
 
-	// 2. Fluorite-Salt (Column 3, ~x = 7.17 m)
+	// 2. Fluorite-Salt (Column 3, ~x = 7.17 m): 55% brine, 45% skeleton stands (1.35 J > 0.8 J)
 	const sFl = Lab.createSimulation({ scene: 'columns', model: 'table', seed: 37 });
+	assert.ok(Lab.skeletonStrength(sFl, findCell(sFl, Lab.MIN_FLUORITE)) > Lab.DEBRIS_LIMIT, 'pure Fluorite skeleton must exceed debrisLimit');
+	assert.ok(Lab.skeletonStrength(sFl, findCell(sFl, Lab.MIN_HALITE)) < Lab.DEBRIS_LIMIT, 'pure Halite skeleton must be below debrisLimit');
 	sFl.rigX = 7.17;
 	sFl.rigY = 1.45;
 	sFl.aimX = 7.17;
@@ -100,12 +106,96 @@ test('incongruent decomposition: Fizzy Halite loses expensive gas while Fluorite
 	stepFor(sFl, 3.2);
 
 	const mFl = Lab.measureMetrics(sFl);
-	assert.ok(mFl.cellsDissolved >= 5, `expected Fluorite-Salt to leach, got ${mFl.cellsDissolved}`);
-	assert.ok(mFl.waterHaliteMass + mFl.pumpedHaliteMass > 2, 'Fluorite-Salt must release green brine solute');
-	assert.ok(mFl.debrisCount >= 5 && mFl.debrisMass > 1.5, 'Fluorite-Salt must drop solid residue debris');
+	assert.ok(mFl.waterFluoriteMass + mFl.pumpedFluoriteMass > 2, 'Fluorite-Salt must release green brine solute');
+	assert.ok(mFl.exhaustedCells >= 3, `Fluorite skeleton cells must stand exhausted, got ${mFl.exhaustedCells}`);
 	assert.equal(mFl.lostGasMass, 0, 'Fluorite-Salt should vent zero gas');
-	assert.ok(mFl.massDrift < 1e-6, `fluorite massDrift ${mFl.massDrift}`);
-	assert.ok(mFl.valueDrift < 1e-6, `fluorite valueDrift ${mFl.valueDrift}`);
+	assert.ok(mFl.massDrift < 1e-9, `fluorite massDrift ${mFl.massDrift}`);
+	assert.ok(mFl.valueDrift < 1e-9, `fluorite valueDrift ${mFl.valueDrift}`);
+});
+
+function findCell(state, minIdx) {
+	for (let r = 0; r < Lab.ROCK_H; r++) {
+		for (let c = 0; c < Lab.ROCK_W; c++) {
+			const idx = r * Lab.ROCK_W + c;
+			if (state.rockSolid[idx] && state.rockMineral[idx] === minIdx) return idx;
+		}
+	}
+	return -1;
+}
+
+test('saturation cap stalls dissolution until fresh water arrives', () => {
+	const fresh = Lab.createSimulation({ scene: 'columns', model: 'table', seed: 37 });
+	fresh.rigX = 3.2; fresh.rigY = 1.45; fresh.aimX = 1.42; fresh.aimY = 10.0; fresh.firing = true;
+	stepFor(fresh, 3.0);
+	const mFresh = Lab.measureMetrics(fresh);
+
+	const stale = Lab.createSimulation({ scene: 'columns', model: 'table', seed: 37, satCap: 0.5 });
+	stale.rigX = 3.2; stale.rigY = 1.45; stale.aimX = 1.42; stale.aimY = 10.0; stale.firing = true;
+	stepFor(stale, 3.0);
+	const mStale = Lab.measureMetrics(stale);
+
+	assert.ok(mFresh.cellsDissolved >= 30, `fresh flow must cut, got ${mFresh.cellsDissolved}`);
+	assert.ok(mStale.cellsDissolved < mFresh.cellsDissolved * 0.5, `stagnant brine must stall: stale ${mStale.cellsDissolved} vs fresh ${mFresh.cellsDissolved}`);
+	assert.ok(mStale.waterHaliteMass + mStale.pumpedHaliteMass < (mFresh.waterHaliteMass + mFresh.pumpedHaliteMass) * 0.5, 'saturated brine must carry far less solute');
+	// Unit check: a parcel loaded to capacity has zero saturation factor, fresh has one.
+	const idx = Lab.fluidIndexAt(12, 1.0);
+	stale.water[idx] = 1.0;
+	stale.loads[idx * Lab.MINERAL_COUNT + Lab.MIN_HALITE] = stale.satCap;
+	stale.loadTotal[idx] = stale.satCap;
+	assert.ok(Lab.saturationFactor(stale, idx) < 1e-9, 'saturated parcel factor must be 0');
+	const freshIdx = Lab.fluidIndexAt(20, 12.0);
+	assert.equal(Lab.saturationFactor(stale, freshIdx), 1, 'fresh parcel factor must be 1');
+	assert.ok(mStale.massDrift < 1e-9 && mStale.valueDrift < 1e-9);
+});
+
+test('submerged soluble grains dissolve at surface-area rate; Fluorite stops at its 45% floor', () => {
+	function basinWithGrain(minIdx, mass) {
+		const state = Lab.createSimulation({ scene: 'columns', model: 'table', seed: 37 });
+		state.pumpOn = false;
+		state.erosionOn = false;
+		for (let k = 0; k < 30; k++) Lab.applyCursorTool(state, 12, 1.3, 'pour', 1 / 12);
+		Lab.spawnDebrisGrain(state, 12, 1.05, minIdx, mass);
+		return state;
+	}
+
+	const halite = basinWithGrain(Lab.MIN_HALITE, 0.55);
+	stepFor(halite, 4.0);
+	const mHal = Lab.measureMetrics(halite);
+	assert.equal(mHal.debrisMass, 0, 'submerged Halite grain must fully dissolve');
+	assert.ok(Math.abs(mHal.waterHaliteMass - 0.55) < 1e-9, `Halite brine must be 0.55, got ${mHal.waterHaliteMass}`);
+	assert.ok(mHal.massDrift < 1e-11 && mHal.valueDrift < 1e-11, `grain drift ${mHal.massDrift}/${mHal.valueDrift}`);
+
+	const fluorite = basinWithGrain(Lab.MIN_FLUORITE, 1.0);
+	stepFor(fluorite, 8.0);
+	const mFlu = Lab.measureMetrics(fluorite);
+	assert.ok(Math.abs(mFlu.debrisMass - 0.45) < 1e-9, `Fluorite grain must stop at 45% floor, got ${mFlu.debrisMass}`);
+	assert.ok(Math.abs(mFlu.waterFluoriteMass - 0.55) < 1e-9, `Fluorite brine must be 55%, got ${mFlu.waterFluoriteMass}`);
+	assert.equal(mFlu.lostGasMass, 0, 'Fluorite grain must vent zero gas');
+	assert.ok(mFlu.massDrift < 1e-11 && mFlu.valueDrift < 1e-11, `fluorite grain drift ${mFlu.massDrift}/${mFlu.valueDrift}`);
+
+	const quartz = basinWithGrain(Lab.MIN_QUARTZ, 0.55);
+	stepFor(quartz, 4.0);
+	const mQz = Lab.measureMetrics(quartz);
+	assert.ok(Math.abs(mQz.debrisMass - 0.55) < 1e-12, 'insoluble Quartz grain must never dissolve');
+	assert.equal(mQz.waterSoluteMass, 0, 'insoluble grain must produce no brine');
+});
+
+test('debrisLimit collapse: weak skeletons detach, strong skeletons only leach', () => {
+	const state = Lab.createSimulation({ scene: 'columns', model: 'table', seed: 37 });
+	assert.equal(Lab.DEBRIS_LIMIT, 0.8);
+	assert.ok(Lab.skeletonStrength(state, findCell(state, Lab.MIN_HALITE)) < 0.8, 'Halite skeleton collapses');
+	assert.ok(Math.abs(Lab.skeletonStrength(state, findCell(state, Lab.MIN_FLUORITE)) - 1.35) < 1e-6, 'Fluorite skeleton is 45% x 3.0 J = 1.35 J');
+	assert.ok(Lab.skeletonStrength(state, findCell(state, Lab.MIN_QUARTZ)) >= 0.8, 'Quartz skeleton stands');
+	// Reference quotes from js/rock-materials.js calibration in the plan table.
+	const priceOf = id => Lab.MINERALS.find(m => m.id === id).price;
+	assert.equal(priceOf('vitriol'), 22.04);
+	assert.equal(priceOf('halite'), 2.52);
+	assert.equal(priceOf('fizzy'), 3.65);
+	assert.equal(priceOf('fluorite'), 12.23);
+	assert.equal(priceOf('gas'), 150.00);
+	assert.equal(priceOf('gold'), 147.35);
+	assert.equal(priceOf('quartz'), 5.21);
+	assert.equal(priceOf('pure_gold'), 573.80);
 });
 
 test('separate hydro-erosion pans Gold-bearing quartz (Pure Gold stays upstream, Quartz/Sand wash downstream)', () => {
@@ -126,6 +216,9 @@ test('separate hydro-erosion pans Gold-bearing quartz (Pure Gold stays upstream,
 	const m = Lab.measureMetrics(state);
 	assert.ok(m.goldPanEvents >= 5, `expected Gold-quartz placer separation events >= 5, got ${m.goldPanEvents}`);
 	assert.ok(m.pureGoldMass > 0.5 && m.pureGoldValue > 30, `expected concentrated Pure Gold, got mass=${m.pureGoldMass}, val=${m.pureGoldValue}`);
+	// Exact liberation split: 25% mass carrying 97.35% value (573.80/g), 75% Quartz carrying 2.65%.
+	assert.ok(Math.abs(m.pureGoldValue / m.pureGoldMass - 573.80) < 1.0, `Pure Gold unit value must be ~573.80, got ${m.pureGoldValue / m.pureGoldMass}`);
+	assert.ok(Math.abs(m.pureGoldMass - m.goldPanEvents * 0.55 * 0.25) < 1e-6, 'Pure Gold must be 25% of each liberated lump mass');
 	assert.ok(m.erosionHopEvents >= 25, `expected short-hop saltation events >= 25, got ${m.erosionHopEvents}`);
 	assert.ok(m.meanGoldX < m.meanQuartzX, `Pure Gold (${m.meanGoldX.toFixed(2)}m) must stay upstream of washed Quartz (${m.meanQuartzX.toFixed(2)}m)`);
 	assert.ok(m.meanGoldX < m.meanSandX, `Pure Gold (${m.meanGoldX.toFixed(2)}m) must stay upstream of washed Sand (${m.meanSandX.toFixed(2)}m)`);

@@ -23,6 +23,10 @@
 	const FLUID_N = FLUID_W * FLUID_H;
 
 	const GRAVITY = 12.5;
+	const MINERAL_COUNT = 14;
+	const SAT_CAP_DEFAULT = 60;
+	const DEBRIS_LIMIT = 0.8;
+	const GOLD_GOLD_VALUE_FRACTION = 0.9735;
 	const MAX_JETS = 1200;
 	const MAX_BUBBLES = 500;
 	const MAX_DEBRIS = 1500;
@@ -41,8 +45,8 @@
 			id: 'stone', name: 'Stone', symbol: 'St', analog: 'host rock',
 			octant: 'Host (any)', r: [0, 1], g: [0, 1], b: [0, 1],
 			repRgb: [0.35, 0.35, 0.35],
-			color: [114, 124, 132], strength: 4.2, density: 2.8, price: 0.20,
-			solHalite: 0, solVitriol: 0, gasLoss: 0, dissolveSpeed: 0,
+			color: [114, 124, 132], strength: 4.2, density: 2.8, price: 2.90,
+			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
 			residueMineral: 0, erodibility: 0.45, tag: 'solid',
 			reactionLabel: 'Insoluble host', tintLabel: '—',
 			erosionLabel: 'Moderate bedload'
@@ -51,8 +55,8 @@
 			id: 'iron', name: 'Iron ore', symbol: 'Fe', analog: 'Fe₂O₃',
 			octant: 'HLL (R↑ G↓ B↓)', r: [0.28, 0.99], g: [0.00, 0.54], b: [0.00, 0.63],
 			repRgb: [0.76, 0.22, 0.20],
-			color: [184, 91, 64], strength: 5.4, density: 5.2, price: 1.20,
-			solHalite: 0, solVitriol: 0, gasLoss: 0, dissolveSpeed: 0,
+			color: [184, 91, 64], strength: 5.4, density: 5.2, price: 5.01,
+			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
 			residueMineral: 1, erodibility: 0.14, tag: 'solid',
 			reactionLabel: 'Insoluble dense oxide', tintLabel: '—',
 			erosionLabel: 'Heavy — resists current'
@@ -61,28 +65,28 @@
 			id: 'copper', name: 'Chalcopyrite', symbol: 'Cu', analog: 'CuFeS₂ (dry Cu)',
 			octant: 'HLL (R↑ G↓ B↓)', r: [0.31, 0.79], g: [0.02, 0.38], b: [0.18, 0.46],
 			repRgb: [0.60, 0.20, 0.30],
-			color: [198, 130, 64], strength: 4.8, density: 4.8, price: 2.60,
-			solHalite: 0, solVitriol: 0, gasLoss: 0, dissolveSpeed: 0,
+			color: [198, 130, 64], strength: 4.8, density: 4.8, price: 27.23,
+			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
 			residueMineral: 2, erodibility: 0.16, tag: 'solid',
 			reactionLabel: 'Insoluble dry sulfide', tintLabel: '—',
 			erosionLabel: 'Heavy — drops as clasts'
 		},
 		{
 			id: 'vitriol', name: 'Blue Vitriol', symbol: 'Cu·H₂O', analog: 'CuSO₄·5H₂O',
-			octant: 'HLH (R↑ G↓ B↑)', r: [0.42, 0.78], g: [0.06, 0.36], b: [0.54, 0.78],
+			octant: 'HLH (R↑ G↓ B↑)', r: [0.46, 0.76], g: [0.06, 0.36], b: [0.54, 0.74],
 			repRgb: [0.62, 0.22, 0.68],
-			color: [44, 152, 240], strength: 1.8, density: 2.3, price: 3.40,
-			solHalite: 0, solVitriol: 1.0, gasLoss: 0, dissolveSpeed: 1.25,
-			residueMineral: 0, erodibility: 0.35, tag: 'blue',
-			reactionLabel: '100% Full Dissolution', tintLabel: 'Cobalt Blue (+GB)',
+			color: [44, 152, 240], strength: 1.8, density: 2.3, price: 22.04,
+			sol: 'instant', dissolveSpeed: 1.25, brine: 1.0, vent: 0, residue: 0, dye: [38, 102, 248],
+			residueMineral: 3, erodibility: 0.35, tag: 'blue',
+			reactionLabel: '100% brine', tintLabel: 'Cobalt Blue (+GB)',
 			erosionLabel: 'Dissolves → pumped'
 		},
 		{
 			id: 'quartz', name: 'Quartz', symbol: 'Qz', analog: 'SiO₂',
 			octant: 'LHL (R↓ G↑ B↓)', r: [0.00, 0.48], g: [0.23, 0.87], b: [0.00, 0.56],
 			repRgb: [0.18, 0.64, 0.24],
-			color: [212, 210, 224], strength: 6.0, density: 2.6, price: 0.90,
-			solHalite: 0, solVitriol: 0, gasLoss: 0, dissolveSpeed: 0,
+			color: [212, 210, 224], strength: 6.0, density: 2.6, price: 5.21,
+			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
 			residueMineral: 4, erodibility: 0.68, tag: 'erode',
 			reactionLabel: 'Insoluble hard crystal', tintLabel: '—',
 			erosionLabel: 'Light — hops downstream'
@@ -91,8 +95,8 @@
 			id: 'corundum', name: 'Corundum', symbol: 'Al', analog: 'Al₂O₃',
 			octant: 'LHL (R↓ G↑↑ B↓)', r: [0.10, 0.40], g: [0.70, 0.95], b: [0.05, 0.30],
 			repRgb: [0.24, 0.86, 0.16],
-			color: [216, 74, 128], strength: 7.8, density: 4.0, price: 5.20,
-			solHalite: 0, solVitriol: 0, gasLoss: 0, dissolveSpeed: 0,
+			color: [216, 74, 128], strength: 7.8, density: 4.0, price: 38.87,
+			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
 			residueMineral: 5, erodibility: 0.18, tag: 'solid',
 			reactionLabel: 'Insoluble ultra-hard', tintLabel: '—',
 			erosionLabel: 'Dense — resists wash'
@@ -101,18 +105,18 @@
 			id: 'fluorite', name: 'Fluorite-Salt', symbol: 'CaF₂', analog: 'CaF₂·NaCl',
 			octant: 'LLH/LHH (R↓ G· B↑)', r: [0.07, 0.38], g: [0.11, 0.54], b: [0.62, 0.98],
 			repRgb: [0.26, 0.44, 0.78],
-			color: [108, 182, 152], strength: 3.0, density: 3.1, price: 2.20,
-			solHalite: 0.55, solVitriol: 0, gasLoss: 0, dissolveSpeed: 0.88,
-			residueMineral: 4, erodibility: 0.40, tag: 'split',
-			reactionLabel: 'Split: 55% Brine + 45% Qz debris', tintLabel: 'Brine Green (+G)',
-			erosionLabel: 'Drops solid Qz residue'
+			color: [108, 182, 152], strength: 3.0, density: 3.1, price: 12.23,
+			sol: 'slow', dissolveSpeed: 0.88, brine: 0.55, vent: 0, residue: 0.45, dye: [56, 220, 140],
+			residueMineral: 6, erodibility: 0.40, tag: 'split',
+			reactionLabel: '55% brine + 45% concentrate', tintLabel: 'Brine Green (+G)',
+			erosionLabel: 'Residue stays as Fluorite'
 		},
 		{
 			id: 'silver', name: 'Silver', symbol: 'Ag', analog: 'Ag',
 			octant: 'HLL (R↑↑ G· B↓)', r: [0.67, 0.96], g: [0.26, 0.55], b: [0.04, 0.33],
 			repRgb: [0.84, 0.38, 0.16],
-			color: [208, 220, 232], strength: 3.5, density: 10.5, price: 7.50,
-			solHalite: 0, solVitriol: 0, gasLoss: 0, dissolveSpeed: 0,
+			color: [208, 220, 232], strength: 3.5, density: 10.5, price: 44.65,
+			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
 			residueMineral: 7, erodibility: 0.05, tag: 'solid',
 			reactionLabel: 'Insoluble native metal', tintLabel: '—',
 			erosionLabel: 'Ultra-heavy — stays put'
@@ -121,8 +125,8 @@
 			id: 'gold', name: 'Gold-quartz', symbol: 'Au', analog: 'Au in SiO₂',
 			octant: 'HLH edge (R↑↑ G↓ B·)', r: [0.82, 0.98], g: [0.06, 0.26], b: [0.42, 0.66],
 			repRgb: [0.90, 0.16, 0.54],
-			color: [232, 198, 92], strength: 3.4, density: 5.6, price: 18.00,
-			solHalite: 0, solVitriol: 0, gasLoss: 0, dissolveSpeed: 0,
+			color: [232, 198, 92], strength: 3.4, density: 5.6, price: 147.35,
+			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
 			residueMineral: 8, erodibility: 0.22, tag: 'gold',
 			reactionLabel: 'Insoluble ore (pannable)', tintLabel: '—',
 			erosionLabel: 'Pans → Au stays, Qz washes'
@@ -131,18 +135,18 @@
 			id: 'gas', name: 'Gas rock', symbol: 'Gb', analog: 'CH₄ / H₂',
 			octant: 'LLH (R↓ G↓ B↑↑)', r: [0.00, 0.20], g: [0.00, 0.20], b: [0.80, 1.00],
 			repRgb: [0.10, 0.12, 0.92],
-			color: [172, 218, 94], strength: 0.8, density: 1.2, price: 24.00,
-			solHalite: 0, solVitriol: 0, gasLoss: 0.85, dissolveSpeed: 1.45,
+			color: [172, 218, 94], strength: 0.8, density: 1.2, price: 150.00,
+			sol: 'fast', dissolveSpeed: 1.45, brine: 0, vent: 0.85, residue: 0.15, dye: null,
 			residueMineral: 0, erodibility: 0.50, tag: 'gas',
-			reactionLabel: 'Wet Degas: 85% Gas LOST!', tintLabel: 'Rising Bubbles (LOSS)',
+			reactionLabel: '85% Gas LOST + 15% Stone', tintLabel: 'Rising Bubbles (LOSS)',
 			erosionLabel: '15% Stone residue falls'
 		},
 		{
 			id: 'sand', name: 'Sand', symbol: 'Sd', analog: 'SiO₂ loose',
 			octant: 'LLL/LHL (R↓ G· B·)', r: [0.02, 0.38], g: [0.28, 0.68], b: [0.25, 0.55],
 			repRgb: [0.20, 0.48, 0.40],
-			color: [204, 178, 126], strength: 0.5, density: 1.6, price: 0.15,
-			solHalite: 0, solVitriol: 0, gasLoss: 0, dissolveSpeed: 0,
+			color: [204, 178, 126], strength: 0.5, density: 1.6, price: 0.87,
+			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
 			residueMineral: 10, erodibility: 1.00, tag: 'erode',
 			reactionLabel: 'Insoluble loose grains', tintLabel: '—',
 			erosionLabel: 'Fastest washout & hops'
@@ -151,31 +155,31 @@
 			id: 'halite', name: 'Halite', symbol: 'NaCl', analog: 'NaCl (R·G salt)',
 			octant: 'HHL (R↑ G↑ B↓)', r: [0.62, 0.92], g: [0.68, 0.96], b: [0.04, 0.34],
 			repRgb: [0.78, 0.82, 0.18],
-			color: [110, 228, 148], strength: 1.6, density: 2.2, price: 1.80,
-			solHalite: 1.0, solVitriol: 0, gasLoss: 0, dissolveSpeed: 1.65,
-			residueMineral: 0, erodibility: 0.35, tag: 'green',
-			reactionLabel: '100% Full Dissolution', tintLabel: 'Emerald Green (+G)',
+			color: [110, 228, 148], strength: 1.6, density: 2.2, price: 2.52,
+			sol: 'instant', dissolveSpeed: 1.65, brine: 1.0, vent: 0, residue: 0, dye: [38, 228, 128],
+			residueMineral: 11, erodibility: 0.35, tag: 'green',
+			reactionLabel: '100% brine (fastest)', tintLabel: 'Emerald Green (+G)',
 			erosionLabel: 'Dissolves fastest → pumped'
 		},
 		{
-			id: 'fizzy', name: 'Fizzy Halite', symbol: 'R₂G₃B', analog: 'R₂G₃B gas-salt',
+			id: 'fizzy', name: 'Fizzy Halite', symbol: 'R₂G₂B₂', analog: 'R₂G₂B₂ gas-salt',
 			octant: 'HHH (R↑ G↑ B↑)', r: [0.64, 0.94], g: [0.68, 0.96], b: [0.68, 0.96],
 			repRgb: [0.78, 0.82, 0.84],
-			color: [174, 242, 184], strength: 1.3, density: 1.9, price: 9.60,
-			solHalite: 0.65, solVitriol: 0, gasLoss: 0.35, dissolveSpeed: 1.50,
-			residueMineral: 0, erodibility: 0.35, tag: 'gas',
-			reactionLabel: 'Split: 65% Brine + 35% Gas LOST!', tintLabel: 'Mint Green + Bubbles',
-			erosionLabel: 'Salt pumped, Gas lost!'
+			color: [174, 242, 184], strength: 1.3, density: 1.9, price: 3.65,
+			sol: 'fast', dissolveSpeed: 1.50, brine: 2 / 3, vent: 1 / 3, residue: 0, dye: [86, 226, 142],
+			residueMineral: 12, erodibility: 0.35, tag: 'gas',
+			reactionLabel: '66.7% brine + 33.3% Gas LOST', tintLabel: 'Mint Green + Bubbles',
+			erosionLabel: 'Salt pumped, Gas lost'
 		},
 		{
 			id: 'pure_gold', name: 'Pure Gold', symbol: 'Au*', analog: 'Au placer nugget',
 			octant: 'Placer concentrate', r: [0.95, 1.0], g: [0.0, 0.1], b: [0.0, 0.1],
 			repRgb: [0.98, 0.05, 0.05],
-			color: [255, 215, 36], strength: 3.4, density: 19.3, price: 66.24,
-			solHalite: 0, solVitriol: 0, gasLoss: 0, dissolveSpeed: 0,
+			color: [255, 215, 36], strength: 3.4, density: 19.3, price: 573.80,
+			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
 			residueMineral: 13, erodibility: 0.01, tag: 'gold',
 			reactionLabel: 'Liberated from Gold-Qz', tintLabel: '—',
-			erosionLabel: 'Stays put (ρ=19.3!)',
+			erosionLabel: 'Stays put (ρ=19.3)',
 			debrisOnly: true
 		}
 	];
@@ -230,7 +234,7 @@
 	// Writes into preallocated `out` object to avoid hot-path allocations.
 	function evaluateCompositionLaw(r, g, b, out) {
 		const ionic = smoothstep(0.22, 0.56, r * g);
-		const hydrate = smoothstep(0.18, 0.48, r * b * (1.0 - 0.65 * g));
+		const hydrate = smoothstep(0.15, 0.42, r * b * (1.0 - 0.65 * g));
 		const degasRaw = smoothstep(0.56, 0.86, b) * (0.35 + 0.65 * (1.0 - r * (1.0 - g)));
 
 		// Normalize reactive fractions so halite + vitriol + gas <= 1.0
@@ -259,33 +263,93 @@
 		return out;
 	}
 
+	// Per-mineral reaction scratch (module scratch, reused; never allocated per call).
+	const CHEM_BRINE = new Float64Array(MINERAL_COUNT);
+	const CHEM_BRINE_VAL = new Float64Array(MINERAL_COUNT);
+	const CHEM_GAS = new Float64Array(MINERAL_COUNT);
+	const CHEM_GAS_VAL = new Float64Array(MINERAL_COUNT);
+	const CHEM_RES = new Float64Array(MINERAL_COUNT);
+	const CHEM_RES_VAL = new Float64Array(MINERAL_COUNT);
+
+	function totalFluidLoad(state, fIdx) {
+		const off = fIdx * MINERAL_COUNT;
+		let total = 0;
+		for (let m = 0; m < MINERAL_COUNT; m++) total += state.loads[off + m];
+		return total;
+	}
+
+	// Saturation factor of one water parcel: 1 fresh, 0 at satCap capacity.
+	function saturationFactor(state, fIdx) {
+		if (fIdx < 0 || fIdx >= FLUID_N) return 1;
+		const load = totalFluidLoad(state, fIdx);
+		const vol = Math.max(state.water[fIdx], 0.05);
+		const cap = vol * state.satCap;
+		if (cap <= 1e-12) return load <= 1e-12 ? 1 : 0;
+		const f = 1 - load / cap;
+		return f < 0 ? 0 : f > 1 ? 1 : f;
+	}
+
+	function fluidIndexAt(x, y) {
+		const fc = clamp((x / FLUID_CELL) | 0, 0, FLUID_W - 1);
+		const fr = clamp((y / FLUID_CELL) | 0, 0, FLUID_H - 1);
+		return fr * FLUID_W + fc;
+	}
+
+	// Remaining insoluble skeleton strength (J) of one rock cell, strengthInto-style.
+	function skeletonStrength(state, idx) {
+		if (state.model === 'formula') {
+			evaluateCellChemistry(state, idx, state._chem);
+			return state._chem.remStrength;
+		}
+		const off = idx * GEO_MINERAL_COUNT;
+		let rem = 0;
+		for (let m = 0; m < GEO_MINERAL_COUNT; m++) {
+			const w = state.rockMix[off + m];
+			if (w <= 0) continue;
+			rem += w * MINERALS[m].residue * MINERALS[m].strength;
+		}
+		return rem;
+	}
+
 	// Evaluate one rock cell's dissolution & value split under active model ('table' | 'formula').
-	// Guarantees exact mass & value partition: halite + vitriol + gas + solid === 1.0
+	// Fills CHEM_* per-mineral fractions of the original cell and guarantees
+	// brine + gas + residue === 1 in mass and in value.
 	function evaluateCellChemistry(state, idx, out) {
 		const domMin = state.rockMineral[idx];
 		const baseVal = state.rockValue[idx];
+		CHEM_BRINE.fill(0); CHEM_BRINE_VAL.fill(0);
+		CHEM_GAS.fill(0); CHEM_GAS_VAL.fill(0);
+		CHEM_RES.fill(0); CHEM_RES_VAL.fill(0);
 
-		if (state.model === 'formula') {
-			evaluateCompositionLaw(state.rockR[idx], state.rockG[idx], state.rockB[idx], out);
-			// Partition base value proportionally, pricing gas share at higher volatile weight
-			const gasWeight = out.gas * 3.2;
-			const vitWeight = out.vitriol * 1.4;
-			const halWeight = out.halite * 0.9;
-			const solWeight = out.solid * 1.0;
-			const wSum = gasWeight + vitWeight + halWeight + solWeight;
-			const invW = wSum > 0 ? baseVal / wSum : 0;
-			out.valHalite = halWeight * invW;
-			out.valVitriol = vitWeight * invW;
-			out.valGas = gasWeight * invW;
-			out.valSolid = baseVal - out.valHalite - out.valVitriol - out.valGas;
-			if (out.valSolid < 0) out.valSolid = 0;
+		if (state.rockExhausted && state.rockExhausted[idx]) {
+			out.halite = 0; out.vitriol = 0; out.gas = 0; out.solid = 1;
+			out.solubility = 0; out.speed = 0;
+			out.valHalite = 0; out.valVitriol = 0; out.valGas = 0; out.valSolid = baseVal;
 			out.residueMineral = MINERALS[domMin].residueMineral;
+			out.density = MINERALS[domMin].density;
+			out.remStrength = skeletonStrengthFormula(state, idx, out);
 			return out;
 		}
 
-		// Mode A: Mixture-weighted Mineral Table (13)
+		if (state.model === 'formula') {
+			evaluateCompositionLaw(state.rockR[idx], state.rockG[idx], state.rockB[idx], out);
+			const avgPrice = state.rockMass && state.rockMass[idx] > 1e-12 ? baseVal / state.rockMass[idx] : baseVal;
+			CHEM_BRINE[11] = out.halite; CHEM_BRINE_VAL[11] = out.halite * avgPrice;
+			CHEM_BRINE[3] = out.vitriol; CHEM_BRINE_VAL[3] = out.vitriol * avgPrice;
+			CHEM_GAS[9] = out.gas; CHEM_GAS_VAL[9] = out.gas * avgPrice;
+			CHEM_RES[domMin] = out.solid; CHEM_RES_VAL[domMin] = out.solid * avgPrice;
+			out.valHalite = CHEM_BRINE_VAL[11];
+			out.valVitriol = CHEM_BRINE_VAL[3];
+			out.valGas = CHEM_GAS_VAL[9];
+			out.valSolid = Math.max(0, baseVal - out.valHalite - out.valVitriol - out.valGas);
+			out.residueMineral = MINERALS[domMin].residueMineral;
+			out.remStrength = (state.rockMechMax[idx] || MINERALS[domMin].strength) * out.solid;
+			out.speed = out.solubility > 0 ? out.speed : 0;
+			return out;
+		}
+
 		const baseOffset = idx * GEO_MINERAL_COUNT;
-		let fHal = 0, fVit = 0, fGas = 0, speedSum = 0;
+		let fHal = 0, fVit = 0, fGas = 0, fSolid = 0, speedSum = 0, rem = 0, dens = 0;
 		let vHal = 0, vVit = 0, vGas = 0;
 		let bestResWeight = -1;
 		let bestResMin = MIN_STONE;
@@ -294,78 +358,42 @@
 			const w = state.rockMix[baseOffset + m];
 			if (w <= 0.0001) continue;
 			const def = MINERALS[m];
-			const mHal = w * def.solHalite;
-			const mVit = w * def.solVitriol;
-			const mGas = w * def.gasLoss;
-			const mSol = w * (1.0 - def.solHalite - def.solVitriol - def.gasLoss);
-			fHal += mHal;
-			fVit += mVit;
-			fGas += mGas;
+			const bMass = w * def.brine;
+			const gMass = w * def.vent;
+			const rMass = w * def.residue;
+			CHEM_BRINE[m] = bMass; CHEM_BRINE_VAL[m] = bMass * def.price;
+			CHEM_GAS[m] = gMass; CHEM_GAS_VAL[m] = gMass * def.price;
+			CHEM_RES[m] = rMass; CHEM_RES_VAL[m] = rMass * def.price;
+			if (m === 3) fVit += bMass; else fHal += bMass;
+			fGas += gMass;
+			fSolid += rMass;
 			speedSum += w * def.dissolveSpeed;
-
-			const mVal = w * def.price;
-			if (m === MIN_FIZZY) {
-				// Fizzy Halite (9.60 cr): 65% Halite worth 1.17 cr + 35% Gas worth 8.43 cr
-				const hShare = w * 0.65 * MINERALS[MIN_HALITE].price;
-				vHal += hShare;
-				vGas += mVal - hShare;
-			} else if (m === MIN_GAS) {
-				const sShare = w * 0.15 * MINERALS[MIN_STONE].price;
-				vGas += mVal - sShare;
-			} else if (m === MIN_FLUORITE) {
-				const hShare = w * 0.55 * MINERALS[MIN_HALITE].price;
-				vHal += Math.min(mVal, hShare);
-			} else {
-				vHal += mVal * def.solHalite;
-				vVit += mVal * def.solVitriol;
-				vGas += mVal * def.gasLoss;
-			}
-
-			if (mSol > bestResWeight) {
-				bestResWeight = mSol;
-				bestResMin = def.residueMineral;
-			}
+			rem += rMass * def.strength;
+			dens += w * def.density;
+			vHal += CHEM_BRINE_VAL[m] === 0 || m === 3 ? 0 : CHEM_BRINE_VAL[m];
+			if (m === 3) vVit += CHEM_BRINE_VAL[m];
+			vGas += CHEM_GAS_VAL[m];
+			if (rMass > bestResWeight) { bestResWeight = rMass; bestResMin = def.residueMineral; }
 		}
-
-		const react = fHal + fVit + fGas;
-		if (react < 0.22) {
-			out.halite = 0;
-			out.vitriol = 0;
-			out.gas = 0;
-			out.solid = 1.0;
-			out.solubility = 0;
-			out.speed = 0;
-			out.valHalite = 0;
-			out.valVitriol = 0;
-			out.valGas = 0;
-			out.valSolid = baseVal;
-			out.residueMineral = MINERALS[domMin].residueMineral;
-			out.density = MINERALS[domMin].density;
-			return out;
-		}
-
-		const fSolid = Math.max(0, 1.0 - react);
-		// Exact value conservation against rockValue[idx]
-		const vReact = vHal + vVit + vGas;
-		if (vReact > baseVal && vReact > 0) {
-			const s = baseVal / vReact;
-			vHal *= s;
-			vVit *= s;
-			vGas *= s;
-		}
+		// Residue-only value is whatever remains so the partition is exact.
 		out.halite = fHal;
 		out.vitriol = fVit;
 		out.gas = fGas;
 		out.solid = fSolid;
-		out.solubility = react;
-		out.speed = speedSum;
+		out.solubility = fHal + fVit + fGas;
+		out.speed = out.solubility > 0 ? speedSum : 0;
 		out.valHalite = vHal;
 		out.valVitriol = vVit;
 		out.valGas = vGas;
 		out.valSolid = Math.max(0, baseVal - vHal - vVit - vGas);
 		out.residueMineral = bestResMin;
-		out.density = MINERALS[domMin].density;
+		out.density = dens > 0 ? dens : MINERALS[domMin].density;
+		out.remStrength = rem;
 		return out;
+	}
+
+	function skeletonStrengthFormula(state, idx, out) {
+		return (state.rockMechMax[idx] || 0) * (out ? out.solid : 1);
 	}
 
 	function createSimulation(options) {
@@ -386,6 +414,7 @@
 			autoFire: false,
 			erosionOn: true,
 			dissolveRate: 1.2,
+			satCap: (opts && opts.satCap) || SAT_CAP_DEFAULT,
 			mechForce: 0.15,
 			erosionPower: 1.2,
 			pumpRate: 0.9,
@@ -416,6 +445,8 @@
 			rockMechHp: new Float32Array(ROCK_N),
 			rockMechMax: new Float32Array(ROCK_N),
 			rockValue: new Float64Array(ROCK_N),
+			rockMass: new Float64Array(ROCK_N),
+			rockExhausted: new Uint8Array(ROCK_N),
 			rockDirty: true,
 
 			// Hybrid fluid grid (96 x 60) — Float64 for exact machine-precision conservation!
@@ -424,14 +455,12 @@
 			waterNext: new Float64Array(FLUID_N),
 			velU: new Float32Array(FLUID_N),
 			velV: new Float32Array(FLUID_N),
-			solHalite: new Float64Array(FLUID_N),
-			solHaliteNext: new Float64Array(FLUID_N),
-			solVitriol: new Float64Array(FLUID_N),
-			solVitriolNext: new Float64Array(FLUID_N),
-			solValHal: new Float64Array(FLUID_N),
-			solValHalNext: new Float64Array(FLUID_N),
-			solValVit: new Float64Array(FLUID_N),
-			solValVitNext: new Float64Array(FLUID_N),
+			loads: new Float64Array(FLUID_N * MINERAL_COUNT),
+			loadsNext: new Float64Array(FLUID_N * MINERAL_COUNT),
+			loadValues: new Float64Array(FLUID_N * MINERAL_COUNT),
+			loadValuesNext: new Float64Array(FLUID_N * MINERAL_COUNT),
+			loadTotal: new Float64Array(FLUID_N),
+			loadTotalNext: new Float64Array(FLUID_N),
 			fluidAlpha: new Float32Array(FLUID_N),
 
 			// Ballistic jet / cascade droplet pool
@@ -441,10 +470,8 @@
 			jvx: new Float32Array(MAX_JETS),
 			jvy: new Float32Array(MAX_JETS),
 			jMass: new Float64Array(MAX_JETS),
-			jHalite: new Float64Array(MAX_JETS),
-			jVitriol: new Float64Array(MAX_JETS),
-			jValHal: new Float64Array(MAX_JETS),
-			jValVit: new Float64Array(MAX_JETS),
+			jLoads: new Float64Array(MAX_JETS * MINERAL_COUNT),
+			jLoadValues: new Float64Array(MAX_JETS * MINERAL_COUNT),
 			jKind: new Uint8Array(MAX_JETS), // 0 = fresh gun jet, 1 = cascade drip
 
 			// Rising gas bubble pool
@@ -471,6 +498,7 @@
 			dState: new Uint8Array(MAX_DEBRIS),
 			dHopTimer: new Float32Array(MAX_DEBRIS),
 			dPanProg: new Float32Array(MAX_DEBRIS),
+			dLeach: new Float64Array(MAX_DEBRIS),
 			dHops: new Uint16Array(MAX_DEBRIS),
 
 			// Flash effects (dissolution pop / gold liberation glint)
@@ -493,6 +521,8 @@
 			pumpedHaliteValue: 0,
 			pumpedVitriolMass: 0,
 			pumpedVitriolValue: 0,
+			hopperLoads: new Float64Array(MINERAL_COUNT),
+			hopperLoadValues: new Float64Array(MINERAL_COUNT),
 			lostGasMass: 0,
 			lostGasValue: 0,
 			archivedDebrisMass: 0,
@@ -503,10 +533,12 @@
 			// Preallocated scratch objects
 			_chem: {
 				halite: 0, vitriol: 0, gas: 0, solid: 1,
-				solubility: 0, speed: 0, density: 2.8,
+				solubility: 0, speed: 0, density: 2.8, remStrength: 0,
 				valHalite: 0, valVitriol: 0, valGas: 0, valSolid: 0,
 				residueMineral: 0
 			},
+			_loadScratch: new Float64Array(MINERAL_COUNT),
+			_loadValScratch: new Float64Array(MINERAL_COUNT),
 			_mixScratch: new Float64Array(GEO_MINERAL_COUNT),
 			_elemScratch: new Float32Array(3),
 			perfStepMs: 0,
@@ -532,6 +564,8 @@
 		state.rockMechHp[idx] = def.strength;
 		state.rockMechMax[idx] = def.strength;
 		state.rockValue[idx] = def.price;
+		state.rockMass[idx] = 1.0;
+		state.rockExhausted[idx] = 0;
 	}
 
 	function setRockMixCell(state, c, r, mixWeights, rgb) {
@@ -555,6 +589,8 @@
 		state.rockMechHp[idx] = Math.max(0.4, str);
 		state.rockMechMax[idx] = Math.max(0.4, str);
 		state.rockValue[idx] = val;
+		state.rockMass[idx] = 1.0;
+		state.rockExhausted[idx] = 0;
 	}
 
 	function clearRockCell(state, c, r) {
@@ -562,6 +598,9 @@
 		const idx = r * ROCK_W + c;
 		state.rockSolid[idx] = 0;
 		state.rockDissolve[idx] = 0;
+		state.rockMass[idx] = 0;
+		state.rockValue[idx] = 0;
+		state.rockExhausted[idx] = 0;
 	}
 
 	function rebuildSolidMask(state) {
@@ -579,9 +618,15 @@
 		}
 	}
 
-	function spawnDebris(state, x, y, vx, vy, minIdx, mass, value, initialState, trackInitial) {
+	function leachableMassFor(minIdx, mass) {
+		const def = MINERALS[minIdx] || MINERALS[MIN_STONE];
+		return mass * (def.brine + def.vent);
+	}
+
+	function spawnDebris(state, x, y, vx, vy, minIdx, mass, value, initialState, trackInitial, leachOverride) {
 		if (mass <= 1e-9) return -1;
 		const def = MINERALS[minIdx] || MINERALS[MIN_STONE];
+		const leachMass = leachOverride === undefined || leachOverride === null ? leachableMassFor(minIdx, mass) : leachOverride;
 		if (trackInitial) {
 			state.initialDebrisMass += mass;
 			state.initialDebrisValue += value;
@@ -592,6 +637,7 @@
 				if (state.dMin[i] === minIdx && state.dState[i] === DEBRIS_RESTING) {
 					state.dMass[i] += mass;
 					state.dValue[i] += value;
+					state.dLeach[i] += leachMass;
 					return i;
 				}
 			}
@@ -611,8 +657,23 @@
 		state.dState[i] = initialState || DEBRIS_FALLING;
 		state.dHopTimer[i] = initialState === DEBRIS_ENTRAINED ? 0.35 : 0;
 		state.dPanProg[i] = 0;
+		state.dLeach[i] = leachMass;
 		state.dHops[i] = 0;
 		return i;
+	}
+
+	function removeDebrisAt(state, i) {
+		const last = state.debrisCount - 1;
+		if (i !== last) {
+			state.dx[i] = state.dx[last]; state.dy[i] = state.dy[last];
+			state.dvx[i] = state.dvx[last]; state.dvy[i] = state.dvy[last];
+			state.dMin[i] = state.dMin[last]; state.dMass[i] = state.dMass[last];
+			state.dValue[i] = state.dValue[last]; state.dDensity[i] = state.dDensity[last];
+			state.dState[i] = state.dState[last]; state.dHopTimer[i] = state.dHopTimer[last];
+			state.dPanProg[i] = state.dPanProg[last]; state.dLeach[i] = state.dLeach[last];
+			state.dHops[i] = state.dHops[last];
+		}
+		state.debrisCount = last;
 	}
 
 	function spawnBubble(state, x, y) {
@@ -639,10 +700,9 @@
 		state.fxKind[i] = kind;
 	}
 
-	function spawnJetDroplet(state, x, y, vx, vy, mass, hal, vit, vHal, vVit, kind) {
+	function spawnJetDroplet(state, x, y, vx, vy, mass, loadScratch, loadValScratch, kind) {
 		if (state.jetCount >= MAX_JETS) {
-			// Deposit into nearest open fluid cell so solute is never dropped
-			depositToNearestFluid(state, x, y, mass, hal, vit, vHal, vVit);
+			depositToNearestFluid(state, x, y, mass, loadScratch, loadValScratch);
 			return;
 		}
 		const i = state.jetCount++;
@@ -651,14 +711,30 @@
 		state.jvx[i] = vx;
 		state.jvy[i] = vy;
 		state.jMass[i] = mass;
-		state.jHalite[i] = hal;
-		state.jVitriol[i] = vit;
-		state.jValHal[i] = vHal;
-		state.jValVit[i] = vVit;
+		const off = i * MINERAL_COUNT;
+		for (let m = 0; m < MINERAL_COUNT; m++) {
+			state.jLoads[off + m] = loadScratch ? loadScratch[m] : 0;
+			state.jLoadValues[off + m] = loadValScratch ? loadValScratch[m] : 0;
+		}
 		state.jKind[i] = kind;
 	}
 
-	function depositToNearestFluid(state, x, y, mass, hal, vit, vHal, vVit) {
+	function depositToFluidCell(state, fIdx, mass, loadScratch, loadValScratch) {
+		state.water[fIdx] += mass;
+		if (!loadScratch) return;
+		const off = fIdx * MINERAL_COUNT;
+		let added = 0;
+		for (let m = 0; m < MINERAL_COUNT; m++) {
+			const dm = loadScratch[m];
+			if (dm === 0) continue;
+			state.loads[off + m] += dm;
+			state.loadValues[off + m] += loadValScratch ? loadValScratch[m] : 0;
+			added += dm;
+		}
+		state.loadTotal[fIdx] += added;
+	}
+
+	function depositToNearestFluid(state, x, y, mass, loadScratch, loadValScratch) {
 		const fc0 = clamp((x / FLUID_CELL) | 0, 0, FLUID_W - 1);
 		const fr0 = clamp((y / FLUID_CELL) | 0, 0, FLUID_H - 1);
 		let bestIdx = -1;
@@ -677,11 +753,7 @@
 			}
 		}
 		if (bestIdx < 0) bestIdx = Math.min(FLUID_N - 1, Math.max(0, fr0 * FLUID_W + fc0));
-		state.water[bestIdx] += mass;
-		state.solHalite[bestIdx] += hal;
-		state.solVitriol[bestIdx] += vit;
-		state.solValHal[bestIdx] += vHal;
-		state.solValVit[bestIdx] += vVit;
+		depositToFluidCell(state, bestIdx, mass, loadScratch, loadValScratch);
 	}
 
 	function resetFluidsAndLedger(state) {
@@ -689,14 +761,14 @@
 		state.waterNext.fill(0);
 		state.velU.fill(0);
 		state.velV.fill(0);
-		state.solHalite.fill(0);
-		state.solHaliteNext.fill(0);
-		state.solVitriol.fill(0);
-		state.solVitriolNext.fill(0);
-		state.solValHal.fill(0);
-		state.solValHalNext.fill(0);
-		state.solValVit.fill(0);
-		state.solValVitNext.fill(0);
+		state.loads.fill(0);
+		state.loadsNext.fill(0);
+		state.loadValues.fill(0);
+		state.loadValuesNext.fill(0);
+		state.loadTotal.fill(0);
+		state.loadTotalNext.fill(0);
+		state.hopperLoads.fill(0);
+		state.hopperLoadValues.fill(0);
 		state.jetCount = 0;
 		state.bubbleCount = 0;
 		state.debrisCount = 0;
@@ -728,33 +800,28 @@
 	}
 
 	function drainWater(state) {
-		// Transfer any in-water solutes out only if explicitly draining lab basin:
-		// To preserve exact conservation ledger, draining water accounts for drained solute as pumped/cleared
-		let wHal = 0, wVit = 0, wVHal = 0, wVVit = 0;
+		// Draining removes water and its brine from the ledger together.
+		let wMass = 0, wVal = 0;
 		for (let i = 0; i < FLUID_N; i++) {
-			wHal += state.solHalite[i];
-			wVit += state.solVitriol[i];
-			wVHal += state.solValHal[i];
-			wVVit += state.solValVit[i];
+			wMass += state.loadTotal[i];
+			const off = i * MINERAL_COUNT;
+			for (let m = 0; m < MINERAL_COUNT; m++) wVal += state.loadValues[off + m];
 			state.water[i] = 0;
 			state.velU[i] = 0;
 			state.velV[i] = 0;
-			state.solHalite[i] = 0;
-			state.solVitriol[i] = 0;
-			state.solValHal[i] = 0;
-			state.solValVit[i] = 0;
+			state.loadTotal[i] = 0;
 		}
+		state.loads.fill(0);
+		state.loadValues.fill(0);
 		for (let i = 0; i < state.jetCount; i++) {
-			wHal += state.jHalite[i];
-			wVit += state.jVitriol[i];
-			wVHal += state.jValHal[i];
-			wVVit += state.jValVit[i];
+			const off = i * MINERAL_COUNT;
+			for (let m = 0; m < MINERAL_COUNT; m++) { wMass += state.jLoads[off + m]; wVal += state.jLoadValues[off + m]; }
 		}
 		state.jetCount = 0;
-		state.totalReactedMass -= (wHal + wVit);
-		state.totalReactedValue -= (wVHal + wVVit);
-		if (state.totalReactedMass < 0) state.totalReactedMass = 0;
-		if (state.totalReactedValue < 0) state.totalReactedValue = 0;
+		state.totalReactedMass -= wMass;
+		state.totalReactedValue -= wVal;
+		if (state.totalReactedMass < 0 && state.totalReactedMass > -1e-9) state.totalReactedMass = 0;
+		if (state.totalReactedValue < 0 && state.totalReactedValue > -1e-9) state.totalReactedValue = 0;
 	}
 
 	function rockFloorYAt(state, x) {
@@ -962,71 +1029,43 @@
 		return false;
 	}
 
-	// Execute full-cell chemical dissolution/decomposition with EXACT mass & value conservation
-	function detachRockCellChemical(state, c, r, depositFluidIdx) {
-		const idx = r * ROCK_W + c;
-		if (!state.rockSolid[idx]) return;
-		const chem = evaluateCellChemistry(state, idx, state._chem);
-		const cellMass = 1.0;
-		const cellVal = state.rockValue[idx];
-
-		state.rockSolid[idx] = 0;
-		state.rockDissolve[idx] = 0;
-		state.rockDirty = true;
-		state.cellsDissolved++;
-		state.totalReactedMass += cellMass;
-		state.totalReactedValue += cellVal;
-
-		const wx = (c + 0.5) * ROCK_CELL;
-		const wy = (r + 0.5) * ROCK_CELL;
-
-		// 1. Soluble Halite (+G) & Blue Vitriol (+GB) enter the fluid cell
-		const mHal = cellMass * chem.halite;
-		const mVit = cellMass * chem.vitriol;
-		if (mHal > 1e-6 || mVit > 1e-6) {
-			const fIdx = depositFluidIdx >= 0 ? depositFluidIdx : findNearestOpenFluid(state, wx, wy);
-			// Ensure a tiny water carrier exists if dissolving via splash on dry boundary
-			if (state.water[fIdx] < 0.04) {
-				state.water[fIdx] += 0.04;
-				state.waterFlooded += 0.04;
-			}
-			state.solHalite[fIdx] += mHal;
-			state.solVitriol[fIdx] += mVit;
-			state.solValHal[fIdx] += chem.valHalite;
-			state.solValVit[fIdx] += chem.valVitriol;
-			if (mVit > mHal) spawnFx(state, wx, wy, 1);
-			else spawnFx(state, wx, wy, 0);
+	// Release a dProg slice (0..1 of the original cell) of soluble phase into a parcel.
+	// CHEM_* must hold evaluateCellChemistry output for this cell on entry.
+	function releaseDissolvedSlice(state, idx, dProg, depositFluidIdx, wx, wy) {
+		if (dProg <= 0) return;
+		let brineMass = 0, brineVal = 0, gasMass = 0, gasVal = 0;
+		const scratch = state._loadScratch;
+		const scratchVal = state._loadValScratch;
+		scratch.fill(0); scratchVal.fill(0);
+		for (let m = 0; m < GEO_MINERAL_COUNT; m++) {
+			const bm = CHEM_BRINE[m] * dProg;
+			const gm = CHEM_GAS[m] * dProg;
+			if (bm !== 0) { scratch[m] = bm; scratchVal[m] = CHEM_BRINE_VAL[m] * dProg; brineMass += bm; brineVal += scratchVal[m]; }
+			if (gm !== 0) { gasMass += gm; gasVal += CHEM_GAS_VAL[m] * dProg; }
 		}
-
-		// 2. Escaping Gas (B) -> permanently LOST! Spawn visible rising bubbles
-		const mGas = cellMass * chem.gas;
-		if (mGas > 1e-6) {
-			state.lostGasMass += mGas;
-			state.lostGasValue += chem.valGas;
-			const nb = mGas > 0.5 ? 4 : 2;
-			for (let k = 0; k < nb; k++) spawnBubble(state, wx, wy);
+		if (brineMass > 1e-12 || gasMass > 1e-12) {
+			state.totalReactedMass += brineMass + gasMass;
+			state.totalReactedValue += brineVal + gasVal;
+			state.rockMass[idx] -= brineMass + gasMass;
+			state.rockValue[idx] -= brineVal + gasVal;
+			if (state.rockMass[idx] < 0 && state.rockMass[idx] > -1e-9) state.rockMass[idx] = 0;
+			if (state.rockValue[idx] < 0 && state.rockValue[idx] > -1e-9) state.rockValue[idx] = 0;
+		}
+		if (brineMass > 1e-12) {
+			const fIdx = depositFluidIdx >= 0 ? depositFluidIdx : findNearestOpenFluid(state, wx, wy);
+			if (state.water[fIdx] < 0.04) { state.water[fIdx] += 0.04; state.waterFlooded += 0.04; }
+			depositToFluidCell(state, fIdx, 0, scratch, scratchVal);
+			spawnFx(state, wx, wy, scratch[3] > brineMass * 0.5 ? 1 : 0);
+		}
+		if (gasMass > 1e-12) {
+			state.lostGasMass += gasMass;
+			state.lostGasValue += gasVal;
+			if (gasMass > 0.01) spawnBubble(state, wx, wy);
 			spawnFx(state, wx, wy, 2);
 		}
+	}
 
-		// 3. Insoluble Solid Residue -> falls straight down as solid debris!
-		const mSol = cellMass - mHal - mVit - mGas;
-		if (mSol > 1e-5) {
-			const rng = state.rng;
-			spawnDebris(
-				state,
-				wx + (rng() - 0.5) * 0.08,
-				wy - 0.06,
-				(rng() - 0.5) * 0.9,
-				-0.4 - rng() * 0.6,
-				chem.residueMineral,
-				mSol,
-				chem.valSolid,
-				DEBRIS_FALLING,
-				false
-			);
-		}
-
-		// Refresh containing 2x2 fluid cell solidMask
+	function refreshFluidSolidAt(state, c, r) {
 		const fc = c >> 1, fr = r >> 1;
 		const rc0 = fc << 1, rr0 = fr << 1;
 		const solidCount =
@@ -1037,38 +1076,90 @@
 		state.solidMask[fr * FLUID_W + fc] = solidCount >= 3 ? 1 : 0;
 	}
 
-	// Execute mechanical chip break (very weak on hard rock; fast on loose Sand/Gas)
+	// Full-cell detachment: remaining soluble slice + insoluble residue debris.
+	function detachRockCellChemical(state, c, r, depositFluidIdx) {
+		const idx = r * ROCK_W + c;
+		if (!state.rockSolid[idx]) return;
+		const chem = evaluateCellChemistry(state, idx, state._chem);
+		const wx = (c + 0.5) * ROCK_CELL;
+		const wy = (r + 0.5) * ROCK_CELL;
+		const prog = clamp(state.rockDissolve[idx], 0, 1);
+		releaseDissolvedSlice(state, idx, 1 - prog, depositFluidIdx, wx, wy);
+		// Residue debris, per mineral so Fluorite concentrate keeps its identity.
+		const residueMassTotal = state.rockMass[idx];
+		const residueValueTotal = state.rockValue[idx];
+		if (residueMassTotal > 1e-9) {
+			state.totalReactedMass += residueMassTotal;
+			state.totalReactedValue += residueValueTotal;
+			const rng = state.rng;
+			if (state.model === 'formula') {
+				spawnDebris(state, wx + (rng() - 0.5) * 0.08, wy - 0.06, (rng() - 0.5) * 0.9, -0.4 - rng() * 0.6,
+					chem.residueMineral, residueMassTotal, residueValueTotal, DEBRIS_FALLING, false, 0);
+			} else {
+				let spawnedMass = 0, spawnedVal = 0;
+				for (let m = 0; m < GEO_MINERAL_COUNT; m++) {
+					const rm = CHEM_RES[m];
+					if (rm <= 1e-9) continue;
+					// Last component takes the exact remainder.
+					spawnedMass += rm;
+					const rv = CHEM_RES_VAL[m];
+					spawnedVal += rv;
+					spawnDebris(state, wx + (rng() - 0.5) * 0.08, wy - 0.06, (rng() - 0.5) * 0.9, -0.4 - rng() * 0.6,
+						MINERALS[m].residueMineral, rm, rv, DEBRIS_FALLING, false, 0);
+				}
+				// Mix weights below the loop threshold: fold the remainder into the dominant residue.
+				const remM = residueMassTotal - spawnedMass;
+				if (remM > 1e-9) {
+					spawnDebris(state, wx, wy - 0.06, 0, -0.4, chem.residueMineral, remM,
+						Math.max(0, residueValueTotal - spawnedVal), DEBRIS_FALLING, false, 0);
+				}
+			}
+		}
+		state.rockSolid[idx] = 0;
+		state.rockDissolve[idx] = 0;
+		state.rockMass[idx] = 0;
+		state.rockValue[idx] = 0;
+		state.rockDirty = true;
+		state.cellsDissolved++;
+		refreshFluidSolidAt(state, c, r);
+	}
+
+	// Skeleton survives leaching: soluble phase is gone, residue cell stands.
+	function exhaustRockCell(state, c, r, depositFluidIdx) {
+		const idx = r * ROCK_W + c;
+		const chem = evaluateCellChemistry(state, idx, state._chem);
+		const wx = (c + 0.5) * ROCK_CELL;
+		const wy = (r + 0.5) * ROCK_CELL;
+		const prog = clamp(state.rockDissolve[idx], 0, 1);
+		releaseDissolvedSlice(state, idx, 1 - prog, depositFluidIdx, wx, wy);
+		state.rockExhausted[idx] = 1;
+		state.rockDissolve[idx] = 1;
+		state.rockMechHp[idx] = Math.max(0.1, chem.remStrength);
+		state.rockMechMax[idx] = Math.max(0.1, chem.remStrength);
+		state.rockDirty = true;
+	}
+
+	// Mechanical chip break: remaining (possibly leached) mass falls as one grain.
 	function detachRockCellMechanical(state, c, r) {
 		const idx = r * ROCK_W + c;
 		if (!state.rockSolid[idx]) return;
 		const dom = state.rockMineral[idx];
-		// If it's fragile Gas rock broken by water jet, gas still vents!
-		if (dom === MIN_GAS) {
-			detachRockCellChemical(state, c, r, -1);
-			return;
-		}
-		const cellMass = 1.0;
+		const cellMass = state.rockMass[idx] > 0 ? state.rockMass[idx] : 1.0;
 		const cellVal = state.rockValue[idx];
+		const leach = state.rockExhausted[idx] ? 0 : null;
 		state.rockSolid[idx] = 0;
 		state.rockDissolve[idx] = 0;
+		state.rockMass[idx] = 0;
+		state.rockValue[idx] = 0;
 		state.rockDirty = true;
 		state.cellsMechBroken++;
 		state.totalReactedMass += cellMass;
 		state.totalReactedValue += cellVal;
-
 		const wx = (c + 0.5) * ROCK_CELL;
 		const wy = (r + 0.5) * ROCK_CELL;
 		const rng = state.rng;
-		spawnDebris(state, wx, wy - 0.05, (rng() - 0.5) * 1.4, -0.5, dom, cellMass, cellVal, DEBRIS_FALLING, false);
-
-		const fc = c >> 1, fr = r >> 1;
-		const rc0 = fc << 1, rr0 = fr << 1;
-		const solidCount =
-			state.rockSolid[rr0 * ROCK_W + rc0] +
-			state.rockSolid[rr0 * ROCK_W + rc0 + 1] +
-			state.rockSolid[(rr0 + 1) * ROCK_W + rc0] +
-			state.rockSolid[(rr0 + 1) * ROCK_W + rc0 + 1];
-		state.solidMask[fr * FLUID_W + fc] = solidCount >= 3 ? 1 : 0;
+		spawnDebris(state, wx, wy - 0.05, (rng() - 0.5) * 1.4, -0.5, dom, cellMass, cellVal, DEBRIS_FALLING, false, leach);
+		refreshFluidSolidAt(state, c, r);
 	}
 
 	function findNearestOpenFluid(state, x, y) {
@@ -1090,7 +1181,8 @@
 		return fr0 * FLUID_W + fc0;
 	}
 
-	// Apply chemical exposure + weak mechanical impulse to one boundary rock cell
+	// Apply chemical exposure + weak mechanical impulse to one boundary rock cell.
+	// Dissolution is saturation-limited; detachment requires skeleton < DEBRIS_LIMIT.
 	function exposeRockCell(state, c, r, chemIntensity, mechImpulse, depositFluidIdx, dt) {
 		if (c <= 2 || c >= ROCK_W - 3 || r <= 2 || r >= ROCK_H - 2) return;
 		const idx = r * ROCK_W + c;
@@ -1098,18 +1190,32 @@
 
 		const chem = evaluateCellChemistry(state, idx, state._chem);
 
-		// 1. Chemical dissolution (fast on soluble salts/hydrates/gas-salt, ZERO on insoluble rock!)
-		if (chem.speed > 0 && chemIntensity > 0) {
-			state.rockDissolve[idx] += chem.speed * state.dissolveRate * chemIntensity * dt;
-			state.rockDirty = true;
-			const prog = state.rockDissolve[idx];
-			if (prog >= 1.0 || (prog >= 0.52 && state.rng() < (prog - 0.48) * 6.5 * dt)) {
-				detachRockCellChemical(state, c, r, depositFluidIdx);
-				return;
+		if (chem.speed > 0 && chemIntensity > 0 && !state.rockExhausted[idx]) {
+			const sat = saturationFactor(state, depositFluidIdx);
+			if (sat > 0) {
+				const wx = (c + 0.5) * ROCK_CELL;
+				const wy = (r + 0.5) * ROCK_CELL;
+				const progBefore = state.rockDissolve[idx];
+				let dProg = chem.speed * state.dissolveRate * chemIntensity * sat * dt;
+				if (dProg > 1 - progBefore) dProg = 1 - progBefore;
+				if (dProg > 0) {
+					state.rockDissolve[idx] = progBefore + dProg;
+					state.rockDirty = true;
+					releaseDissolvedSlice(state, idx, dProg, depositFluidIdx, wx, wy);
+					const prog = state.rockDissolve[idx];
+					if (prog >= 1.0) {
+						if (chem.remStrength < DEBRIS_LIMIT) detachRockCellChemical(state, c, r, depositFluidIdx);
+						else exhaustRockCell(state, c, r, depositFluidIdx);
+						return;
+					}
+					if (chem.remStrength < DEBRIS_LIMIT && prog > 0.55 && state.rng() < (prog - 0.50) * 6 * dt) {
+						detachRockCellChemical(state, c, r, depositFluidIdx);
+						return;
+					}
+				}
 			}
 		}
 
-		// 2. Mechanical fracture (deliberately VERY weak on solid rock; erodes loose Sand!)
 		if (mechImpulse > 0) {
 			const dom = state.rockMineral[idx];
 			const effectiveDamage = dom === MIN_SAND ? mechImpulse * 2.4 : mechImpulse * state.mechForce * 0.22;
@@ -1181,43 +1287,39 @@
 				nozX + dirX * 0.45,
 				nozY + dirY * 0.45,
 				vx, vy, mass,
-				0, 0, 0, 0, 0
+				null, null, 0
 			);
 		}
 	}
 
 	function stepJetDroplets(state, dt) {
 		let write = 0;
+		const scratch = state._loadScratch;
+		const scratchVal = state._loadValScratch;
 		for (let i = 0; i < state.jetCount; i++) {
 			let x = state.jx[i];
 			let y = state.jy[i];
 			let vx = state.jvx[i];
 			let vy = state.jvy[i];
 			const mass = state.jMass[i];
-			const hal = state.jHalite[i];
-			const vit = state.jVitriol[i];
-			const vHal = state.jValHal[i];
-			const vVit = state.jValVit[i];
 			const kind = state.jKind[i];
+			const iOff = i * MINERAL_COUNT;
 
 			vy -= GRAVITY * dt;
 			const nx = x + vx * dt;
 			const ny = y + vy * dt;
 
-			// Out-of-bounds clamp & deposit
 			if (nx < 0.25 || nx >= WORLD_W - 0.25 || ny < 0.25 || ny >= WORLD_H - 0.25) {
-				depositToNearestFluid(state, clamp(x, 0.4, WORLD_W - 0.4), clamp(y, 0.4, WORLD_H - 0.4), mass, hal, vit, vHal, vVit);
+				for (let m = 0; m < MINERAL_COUNT; m++) { scratch[m] = state.jLoads[iOff + m]; scratchVal[m] = state.jLoadValues[iOff + m]; }
+				depositToNearestFluid(state, clamp(x, 0.4, WORLD_W - 0.4), clamp(y, 0.4, WORLD_H - 0.4), mass, scratch, scratchVal);
 				continue;
 			}
 
-			// Check rock collision at target cell
 			const rc = clamp((nx / ROCK_CELL) | 0, 0, ROCK_W - 1);
 			const rr = clamp((ny / ROCK_CELL) | 0, 0, ROCK_H - 1);
 			if (state.rockSolid[rr * ROCK_W + rc]) {
 				const speed = Math.hypot(vx, vy);
 				const fIdx = findNearestOpenFluid(state, x, y);
-
-				// Impact splashes across a small 3x3 rock patch for smooth karst carving
 				if (kind === 0 && speed > 4.2) {
 					for (let dr = -1; dr <= 1; dr++) {
 						for (let dc = -1; dc <= 1; dc++) {
@@ -1225,47 +1327,37 @@
 							exposeRockCell(state, rc + dc, rr + dr, 1.85 * falloff, 0.16 * falloff, fIdx, 0.045);
 						}
 					}
-					// Also transfer jet momentum to nearby resting floor debris (hydro-erosion spray!)
-					if (state.erosionOn) {
-						impartJetWashToDebris(state, x, y, vx, vy);
-					}
+					if (state.erosionOn) impartJetWashToDebris(state, x, y, vx, vy);
 				}
-
-				// Deposit water & solutes into nearest open fluid cell with splash momentum
-				state.water[fIdx] += mass;
-				state.solHalite[fIdx] += hal;
-				state.solVitriol[fIdx] += vit;
-				state.solValHal[fIdx] += vHal;
-				state.solValVit[fIdx] += vVit;
+				for (let m = 0; m < MINERAL_COUNT; m++) { scratch[m] = state.jLoads[iOff + m]; scratchVal[m] = state.jLoadValues[iOff + m]; }
+				depositToFluidCell(state, fIdx, mass, scratch, scratchVal);
 				state.velU[fIdx] = clamp(state.velU[fIdx] + vx * 0.22, -9.0, 9.0);
 				state.velV[fIdx] = clamp(state.velV[fIdx] + vy * 0.14, -9.0, 9.0);
 				continue;
 			}
 
-			// Check merging into an already-occupied water pool (when descending or slow)
 			const fc = clamp((nx / FLUID_CELL) | 0, 0, FLUID_W - 1);
 			const fr = clamp((ny / FLUID_CELL) | 0, 0, FLUID_H - 1);
 			const fIdx = fr * FLUID_W + fc;
 			if (!state.solidMask[fIdx] && state.water[fIdx] > 0.30 && (vy < 1.5 || kind === 1)) {
-				state.water[fIdx] += mass;
-				state.solHalite[fIdx] += hal;
-				state.solVitriol[fIdx] += vit;
-				state.solValHal[fIdx] += vHal;
-				state.solValVit[fIdx] += vVit;
+				for (let m = 0; m < MINERAL_COUNT; m++) { scratch[m] = state.jLoads[iOff + m]; scratchVal[m] = state.jLoadValues[iOff + m]; }
+				depositToFluidCell(state, fIdx, mass, scratch, scratchVal);
 				state.velU[fIdx] = clamp(state.velU[fIdx] + vx * 0.18, -9.0, 9.0);
 				continue;
 			}
 
-			// Keep droplet flying
 			state.jx[write] = nx;
 			state.jy[write] = ny;
 			state.jvx[write] = vx;
 			state.jvy[write] = vy;
 			state.jMass[write] = mass;
-			state.jHalite[write] = hal;
-			state.jVitriol[write] = vit;
-			state.jValHal[write] = vHal;
-			state.jValVit[write] = vVit;
+			if (write !== i) {
+				const wOff = write * MINERAL_COUNT;
+				for (let m = 0; m < MINERAL_COUNT; m++) {
+					state.jLoads[wOff + m] = state.jLoads[iOff + m];
+					state.jLoadValues[wOff + m] = state.jLoadValues[iOff + m];
+				}
+			}
 			state.jKind[write] = kind;
 			write++;
 		}
@@ -1301,54 +1393,52 @@
 		const W = FLUID_W, H = FLUID_H, N = FLUID_N;
 		const water = state.water;
 		const waterNext = state.waterNext;
-		const solH = state.solHalite;
-		const solHN = state.solHaliteNext;
-		const solV = state.solVitriol;
-		const solVN = state.solVitriolNext;
-		const valH = state.solValHal;
-		const valHN = state.solValHalNext;
-		const valV = state.solValVit;
-		const valVN = state.solValVitNext;
+		const loads = state.loads;
+		const loadsNext = state.loadsNext;
+		const loadVals = state.loadValues;
+		const loadValsNext = state.loadValuesNext;
+		const loadTot = state.loadTotal;
+		const loadTotNext = state.loadTotalNext;
 		const solid = state.solidMask;
 		const velU = state.velU;
 		const velV = state.velV;
+		const scratch = state._loadScratch;
+		const scratchVal = state._loadValScratch;
 
 		waterNext.set(water);
-		solHN.set(solH);
-		solVN.set(solV);
-		valHN.set(valH);
-		valVN.set(valV);
+		loadsNext.set(loads);
+		loadValsNext.set(loadVals);
+		loadTotNext.set(loadTot);
 
-		// Helper to transfer an exact volume `flow` from cell a -> cell b with exact proportional solutes
 		function transfer(a, b, flow, vxImpulse, vyImpulse) {
 			const wa = waterNext[a];
 			if (flow <= 1e-7 || wa <= 1e-7) return;
 			const actual = flow > wa ? wa : flow;
 			const frac = actual / wa;
-			const dH = solHN[a] * frac;
-			const dV = solVN[a] * frac;
-			const dVH = valHN[a] * frac;
-			const dVV = valVN[a] * frac;
-
 			waterNext[a] -= actual;
-			solHN[a] -= dH;
-			solVN[a] -= dV;
-			valHN[a] -= dVH;
-			valVN[a] -= dVV;
-
 			waterNext[b] += actual;
-			solHN[b] += dH;
-			solVN[b] += dV;
-			valHN[b] += dVH;
-			valVN[b] += dVV;
-
+			if (loadTotNext[a] > 1e-12) {
+				const aOff = a * MINERAL_COUNT;
+				const bOff = b * MINERAL_COUNT;
+				let moved = 0;
+				for (let m = 0; m < MINERAL_COUNT; m++) {
+					const dm = loadsNext[aOff + m] * frac;
+					if (dm === 0) continue;
+					const dv = loadValsNext[aOff + m] * frac;
+					loadsNext[aOff + m] -= dm;
+					loadValsNext[aOff + m] -= dv;
+					loadsNext[bOff + m] += dm;
+					loadValsNext[bOff + m] += dv;
+					moved += dm;
+				}
+				loadTotNext[a] -= moved;
+				loadTotNext[b] += moved;
+			}
 			if (vxImpulse !== 0) velU[b] = clamp(velU[b] * 0.85 + vxImpulse, -8.5, 8.5);
 			if (vyImpulse !== 0) velV[b] = clamp(velV[b] * 0.85 + vyImpulse, -8.5, 8.5);
 		}
 
-		// 2 sub-iterations of vertical gravity + lateral equalization per step for lively fast flow!
 		for (let iter = 0; iter < 2; iter++) {
-			// Pass 1: Vertical fall (bottom-up so lower space fills cleanly)
 			for (let r = 1; r < H; r++) {
 				for (let c = 0; c < W; c++) {
 					const idx = r * W + c;
@@ -1360,27 +1450,27 @@
 						const maxCap = 1.05;
 						const room = maxCap - waterNext[down];
 						if (room > 0.001) {
-							// Overhang cascade: if 2+ empty cells beneath, turn cleanly into falling cascade droplet!
 							if (r >= 2 && !solid[(r - 2) * W + c] && waterNext[down] < 0.08 && w > 0.012 && state.jetCount < MAX_JETS - 20) {
 								const drop = Math.min(w, 0.30);
 								const frac = drop / w;
-								const dH = solHN[idx] * frac;
-								const dV = solVN[idx] * frac;
-								const dVH = valHN[idx] * frac;
-								const dVV = valVN[idx] * frac;
+								scratch.fill(0); scratchVal.fill(0);
+								if (loadTotNext[idx] > 1e-12) {
+									const off = idx * MINERAL_COUNT;
+									let moved = 0;
+									for (let m = 0; m < MINERAL_COUNT; m++) {
+										const dm = loadsNext[off + m] * frac;
+										if (dm === 0) continue;
+										scratch[m] = dm;
+										scratchVal[m] = loadValsNext[off + m] * frac;
+										loadsNext[off + m] -= dm;
+										loadValsNext[off + m] -= scratchVal[m];
+										moved += dm;
+									}
+									loadTotNext[idx] -= moved;
+								}
 								waterNext[idx] -= drop;
-								solHN[idx] -= dH;
-								solVN[idx] -= dV;
-								valHN[idx] -= dVH;
-								valVN[idx] -= dVV;
-								spawnJetDroplet(
-									state,
-									(c + 0.5) * FLUID_CELL,
-									(r + 0.15) * FLUID_CELL,
-									clamp(velU[idx] * 0.45, -2.5, 2.5),
-									-2.0,
-									drop, dH, dV, dVH, dVV, 1
-								);
+								spawnJetDroplet(state, (c + 0.5) * FLUID_CELL, (r + 0.15) * FLUID_CELL,
+									clamp(velU[idx] * 0.45, -2.5, 2.5), -2.0, drop, scratch, scratchVal, 1);
 								continue;
 							}
 							const fall = Math.min(w, room, 0.95);
@@ -1390,7 +1480,6 @@
 				}
 			}
 
-			// Pass 2: Lateral pressure & slope equalization (bottom-supported only to avoid floating bars!)
 			const sweepRight = ((state.stepCount + iter) & 1) === 0;
 			for (let r = 0; r < H; r++) {
 				for (let k = 0; k < W; k++) {
@@ -1399,28 +1488,22 @@
 					if (solid[idx]) continue;
 					const w = waterNext[idx];
 					if (w <= 0.002) continue;
-
-					// Only spread horizontally if supported below by solid or nearly full water
 					const supported = (r === 0) || solid[(r - 1) * W + c] || waterNext[(r - 1) * W + c] > 0.55;
 					if (!supported) continue;
-
 					const hasL = c > 0 && !solid[idx - 1];
 					const hasR = c + 1 < W && !solid[idx + 1];
 					const wL = hasL ? waterNext[idx - 1] : 99;
 					const wR = hasR ? waterNext[idx + 1] : 99;
-
-					// Bias along existing horizontal momentum for realistic sluice currents!
 					const mom = velU[idx] * 0.04;
 					let flowL = hasL && w > wL ? (w - wL) * 0.34 - Math.max(0, mom) * 0.08 : 0;
 					let flowR = hasR && w > wR ? (w - wR) * 0.34 + Math.max(0, mom) * 0.08 : 0;
 					if (flowL < 0) flowL = 0;
 					if (flowR < 0) flowR = 0;
-
 					const sumOut = flowL + flowR;
 					if (sumOut > w * 0.72) {
-						const s = (w * 0.72) / sumOut;
-						flowL *= s;
-						flowR *= s;
+						const sc = (w * 0.72) / sumOut;
+						flowL *= sc;
+						flowR *= sc;
 					}
 					if (flowL > 0.0005) {
 						transfer(idx, idx - 1, flowL, -(1.2 + flowL * 6.5), 0);
@@ -1433,7 +1516,6 @@
 				}
 			}
 
-			// Pass 3: Upward pressure relief for overfilled cells (> 1.05)
 			for (let r = 0; r < H - 1; r++) {
 				for (let c = 0; c < W; c++) {
 					const idx = r * W + c;
@@ -1447,18 +1529,15 @@
 			}
 		}
 
-		// Commit buffers & apply gentle viscous drag to velocity
 		for (let i = 0; i < N; i++) {
 			if (waterNext[i] < 1e-6) {
-				// Prevent stranded micro-droplet solute loss by keeping tiny water if solute remains
-				if (solHN[i] + solVN[i] > 1e-7) {
+				if (loadTotNext[i] > 1e-7) {
 					waterNext[i] = 1e-5;
 				} else {
 					waterNext[i] = 0;
-					solHN[i] = 0;
-					solVN[i] = 0;
-					valHN[i] = 0;
-					valVN[i] = 0;
+					loadTotNext[i] = 0;
+					const off = i * MINERAL_COUNT;
+					for (let m = 0; m < MINERAL_COUNT; m++) { loadsNext[off + m] = 0; loadValsNext[off + m] = 0; }
 				}
 				velU[i] *= 0.6;
 				velV[i] *= 0.6;
@@ -1467,13 +1546,12 @@
 				velV[i] *= 0.90;
 			}
 			water[i] = waterNext[i];
-			solH[i] = solHN[i];
-			solV[i] = solVN[i];
-			valH[i] = valHN[i];
-			valV[i] = valVN[i];
+			loadTot[i] = loadTotNext[i];
 		}
+		loads.set(loadsNext);
+		loadVals.set(loadValsNext);
 
-		// Passive standing/flowing water contact dissolution on adjacent rock cells!
+		// Passive standing/flowing water contact dissolution on adjacent rock cells.
 		for (let fr = 0; fr < H; fr++) {
 			for (let fc = 0; fc < W; fc++) {
 				const fIdx = fr * W + fc;
@@ -1481,7 +1559,6 @@
 				if (w < 0.06) continue;
 				const flowSpeed = Math.hypot(velU[fIdx], velV[fIdx]);
 				const intensity = (0.32 + 0.68 * Math.min(1.0, flowSpeed / 2.2)) * Math.min(1.0, w * 2.2);
-				// Expose rock cells bordering this fluid cell (2x2 interior + 1-cell ring)
 				const rc0 = fc * 2, rr0 = fr * 2;
 				for (let dr = -1; dr <= 2; dr++) {
 					const rr = rr0 + dr;
@@ -1515,26 +1592,88 @@
 				if (w <= 1e-6) continue;
 				const pull = Math.min(w, budget);
 				const frac = pull / w;
-
-				const pH = state.solHalite[idx] * frac;
-				const pV = state.solVitriol[idx] * frac;
-				const pVH = state.solValHal[idx] * frac;
-				const pVV = state.solValVit[idx] * frac;
-
+				const off = idx * MINERAL_COUNT;
+				let moved = 0;
+				for (let m = 0; m < MINERAL_COUNT; m++) {
+					const dm = state.loads[off + m] * frac;
+					if (dm === 0) continue;
+					const dv = state.loadValues[off + m] * frac;
+					state.loads[off + m] -= dm;
+					state.loadValues[off + m] -= dv;
+					state.hopperLoads[m] += dm;
+					state.hopperLoadValues[m] += dv;
+					moved += dm;
+				}
+				state.loadTotal[idx] -= moved;
 				state.water[idx] -= pull;
-				state.solHalite[idx] -= pH;
-				state.solVitriol[idx] -= pV;
-				state.solValHal[idx] -= pVH;
-				state.solValVit[idx] -= pVV;
-
 				state.waterPumped += pull;
-				state.pumpedHaliteMass += pH;
-				state.pumpedHaliteValue += pVH;
-				state.pumpedVitriolMass += pV;
-				state.pumpedVitriolValue += pVV;
 				budget -= pull;
 			}
 		}
+		state.pumpedHaliteMass = state.hopperLoads[11];
+		state.pumpedHaliteValue = state.hopperLoadValues[11];
+		state.pumpedVitriolMass = state.hopperLoads[3];
+		state.pumpedVitriolValue = state.hopperLoadValues[3];
+	}
+
+	// Submerged soluble-grain dissolution at 3x surface-area rate, saturation-limited.
+	// Returns true when the grain was consumed or transformed this step.
+	function dissolveSubmergedGrain(state, i, wHere, fIdx, dt) {
+		const minIdx = state.dMin[i];
+		const def = MINERALS[minIdx];
+		if (!def || def.brine + def.vent <= 0) return false;
+		if (wHere <= 0.05) return false;
+		if (state.dLeach[i] <= 1e-12) return false;
+		const sat = saturationFactor(state, fIdx);
+		if (sat <= 0) return false;
+		let dm = state.dMass[i] * 0.55 * def.dissolveSpeed * state.dissolveRate * 3.0 * sat * dt;
+		if (dm > state.dLeach[i]) dm = state.dLeach[i];
+		// Fully soluble grains below the tiny-remainder threshold finish cleanly as brine.
+		if (def.residue <= 0 && state.dMass[i] - dm < 0.005) dm = state.dMass[i];
+		if (dm <= 1e-12) return false;
+		const leachTotal = def.brine + def.vent;
+		const brineFracOfLeach = leachTotal > 0 ? def.brine / leachTotal : 0;
+		let brineDm = dm * brineFracOfLeach;
+		let gasDm = dm - brineDm;
+		if (def.residue <= 0 && dm >= state.dMass[i] - 1e-12 && gasDm > 0) {
+			// Tiny fully-soluble remainder: no stranded gas loss on the last crumbs.
+			brineDm = dm;
+			gasDm = 0;
+		}
+		const unitValue = state.dMass[i] > 0 ? state.dValue[i] / state.dMass[i] : def.price;
+		const brineVal = brineDm * unitValue;
+		const gasVal = gasDm * unitValue;
+		if (brineDm > 1e-12) {
+			const scratch = state._loadScratch;
+			const scratchVal = state._loadValScratch;
+			scratch.fill(0); scratchVal.fill(0);
+			scratch[minIdx] = brineDm;
+			scratchVal[minIdx] = brineVal;
+			depositToFluidCell(state, fIdx, 0, scratch, scratchVal);
+		}
+		if (gasDm > 1e-12) {
+			state.lostGasMass += gasDm;
+			state.lostGasValue += gasVal;
+			if (gasDm > 0.01) spawnBubble(state, state.dx[i], state.dy[i]);
+		}
+		state.dMass[i] -= dm;
+		state.dValue[i] -= brineVal + gasVal;
+		state.dLeach[i] -= dm;
+		if (state.dLeach[i] < 0 && state.dLeach[i] > -1e-9) state.dLeach[i] = 0;
+		if (state.dMass[i] <= 1e-9) {
+			removeDebrisAt(state, i);
+			return true;
+		}
+		if (state.dLeach[i] <= 1e-12) {
+			// Leach floor reached: Fluorite stays Fluorite concentrate; Gas leaves Stone.
+			const residueMin = def.residueMineral;
+			if (residueMin !== minIdx) {
+				state.dMin[i] = residueMin;
+				state.dDensity[i] = MINERALS[residueMin].density;
+			}
+			state.dLeach[i] = 0;
+		}
+		return false;
 	}
 
 	// Separate Hydro-Erosion (Short-hop Bedload Saltation) & Gold Placer Panning!
@@ -1564,6 +1703,9 @@
 			const uHere = Math.abs(uFlow) >= Math.abs(state.velU[fUp]) ? uFlow : state.velU[fUp];
 			const speedHere = Math.abs(uHere);
 
+			// 0. Submerged soluble grains dissolve chemically (insoluble grains never do).
+			if (dissolveSubmergedGrain(state, i, wHere, fIdx, dt)) { i--; continue; }
+
 			// 1. Placer Separation: Gold-bearing quartz washed by flowing water -> Pure Gold (stays!) + Quartz (washes!)
 			if (state.erosionOn && minIdx === MIN_GOLD && wHere > 0.04 && speedHere > 0.55) {
 				state.dPanProg[i] += speedHere * state.erosionPower * 0.42 * dt;
@@ -1571,7 +1713,7 @@
 					const origMass = state.dMass[i];
 					const origVal = state.dValue[i];
 					const goldMass = origMass * 0.25;
-					const goldVal = origVal * 0.92;
+					const goldVal = origVal * GOLD_GOLD_VALUE_FRACTION;
 					const qzMass = origMass - goldMass;
 					const qzVal = origVal - goldVal;
 
@@ -1783,21 +1925,34 @@
 	}
 
 	function measureMetrics(state) {
-		let waterMass = 0, waterHal = 0, waterVit = 0, waterVHal = 0, waterVVit = 0;
+		let waterMass = 0;
+		const waterByMineral = new Float64Array(MINERAL_COUNT);
+		const waterValByMineral = new Float64Array(MINERAL_COUNT);
+		let waterSoluteMass = 0, waterSoluteValue = 0;
+		let maxSaturation = 0;
 		for (let i = 0; i < FLUID_N; i++) {
 			waterMass += state.water[i];
-			waterHal += state.solHalite[i];
-			waterVit += state.solVitriol[i];
-			waterVHal += state.solValHal[i];
-			waterVVit += state.solValVit[i];
+			const off = i * MINERAL_COUNT;
+			for (let m = 0; m < MINERAL_COUNT; m++) {
+				waterByMineral[m] += state.loads[off + m];
+				waterValByMineral[m] += state.loadValues[off + m];
+			}
+			if (state.water[i] > 0.02 && state.loadTotal[i] > 0) {
+				const sat = state.loadTotal[i] / (state.water[i] * state.satCap);
+				if (sat > maxSaturation) maxSaturation = sat;
+			}
 		}
 		for (let i = 0; i < state.jetCount; i++) {
 			waterMass += state.jMass[i];
-			waterHal += state.jHalite[i];
-			waterVit += state.jVitriol[i];
-			waterVHal += state.jValHal[i];
-			waterVVit += state.jValVit[i];
+			const off = i * MINERAL_COUNT;
+			for (let m = 0; m < MINERAL_COUNT; m++) {
+				waterByMineral[m] += state.jLoads[off + m];
+				waterValByMineral[m] += state.jLoadValues[off + m];
+			}
 		}
+		for (let m = 0; m < MINERAL_COUNT; m++) { waterSoluteMass += waterByMineral[m]; waterSoluteValue += waterValByMineral[m]; }
+		let pumpedMass = 0, pumpedValue = 0;
+		for (let m = 0; m < MINERAL_COUNT; m++) { pumpedMass += state.hopperLoads[m]; pumpedValue += state.hopperLoadValues[m]; }
 
 		let debMass = 0, debVal = 0;
 		let pureGoldMass = 0, pureGoldVal = 0, pureGoldXSum = 0;
@@ -1822,35 +1977,34 @@
 				sandXSum += state.dx[i] * m;
 			}
 		}
+		let exhaustedCells = 0;
+		for (let i = 0; i < ROCK_N; i++) if (state.rockExhausted[i]) exhaustedCells++;
 
 		const expectedMass = state.totalReactedMass + state.initialDebrisMass;
-		const accountedMass =
-			waterHal + waterVit +
-			state.pumpedHaliteMass + state.pumpedVitriolMass +
-			state.lostGasMass +
-			debMass + state.archivedDebrisMass;
+		const accountedMass = waterSoluteMass + pumpedMass + state.lostGasMass + debMass + state.archivedDebrisMass;
 		const massDrift = Math.abs(expectedMass - accountedMass);
-
 		const expectedValue = state.totalReactedValue + state.initialDebrisValue;
-		const accountedValue =
-			waterVHal + waterVVit +
-			state.pumpedHaliteValue + state.pumpedVitriolValue +
-			state.lostGasValue +
-			debVal + state.archivedDebrisValue;
+		const accountedValue = waterSoluteValue + pumpedValue + state.lostGasValue + debVal + state.archivedDebrisValue;
 		const valueDrift = Math.abs(expectedValue - accountedValue);
-
 		const waterDrift = Math.abs(state.waterFlooded - (waterMass + state.waterPumped));
 
 		return {
 			waterMass,
-			waterSoluteMass: waterHal + waterVit,
-			waterSoluteValue: waterVHal + waterVVit,
-			waterHaliteMass: waterHal,
-			waterVitriolMass: waterVit,
-			pumpedHaliteMass: state.pumpedHaliteMass,
-			pumpedHaliteValue: state.pumpedHaliteValue,
-			pumpedVitriolMass: state.pumpedVitriolMass,
-			pumpedVitriolValue: state.pumpedVitriolValue,
+			waterSoluteMass,
+			waterSoluteValue,
+			waterHaliteMass: waterByMineral[MIN_HALITE],
+			waterVitriolMass: waterByMineral[MIN_VITRIOL],
+			waterFizzyMass: waterByMineral[MIN_FIZZY],
+			waterFluoriteMass: waterByMineral[MIN_FLUORITE],
+			waterByMineral,
+			pumpedHaliteMass: state.hopperLoads[MIN_HALITE],
+			pumpedHaliteValue: state.hopperLoadValues[MIN_HALITE],
+			pumpedVitriolMass: state.hopperLoads[MIN_VITRIOL],
+			pumpedVitriolValue: state.hopperLoadValues[MIN_VITRIOL],
+			pumpedFizzyMass: state.hopperLoads[MIN_FIZZY],
+			pumpedFluoriteMass: state.hopperLoads[MIN_FLUORITE],
+			pumpedSoluteMass: pumpedMass,
+			pumpedSoluteValue: pumpedValue,
 			lostGasMass: state.lostGasMass,
 			lostGasValue: state.lostGasValue,
 			debrisCount: state.debrisCount,
@@ -1866,10 +2020,18 @@
 			goldPanEvents: state.goldPanEvents,
 			cellsDissolved: state.cellsDissolved,
 			cellsMechBroken: state.cellsMechBroken,
+			exhaustedCells,
+			maxSaturation,
+			satCap: state.satCap,
 			massDrift,
 			valueDrift,
 			waterDrift
 		};
+	}
+
+	function spawnDebrisGrain(state, x, y, minIdx, mass) {
+		const def = MINERALS[minIdx] || MINERALS[MIN_STONE];
+		return spawnDebris(state, x, y, 0, 0, minIdx, mass, mass * def.price, DEBRIS_RESTING, true, null);
 	}
 
 	// Cursor tools (pour water, drop gold-quartz rubble, drop mixed rubble, carve rock)
@@ -1880,7 +2042,7 @@
 			for (let i = 0; i < count; i++) {
 				const m = 0.14;
 				state.waterFlooded += m;
-				depositToNearestFluid(state, wx + (rng() - 0.5) * 0.6, wy + (rng() - 0.5) * 0.4, m, 0, 0, 0, 0);
+				depositToNearestFluid(state, wx + (rng() - 0.5) * 0.6, wy + (rng() - 0.5) * 0.4, m, null, null);
 			}
 		} else if (tool === 'gold-rubble') {
 			const count = Math.max(1, Math.round(14 * dt));
@@ -2070,11 +2232,11 @@
 		function renderWater() {
 			const W = FLUID_W, H = FLUID_H;
 			const water = state.water;
-			const solH = state.solHalite;
-			const solV = state.solVitriol;
+			const loads = state.loads;
 			const tData = tintImg.data;
 
-			// 1. Build smooth per-cell solute color texture (fresh cyan -> emerald Halite -> cobalt Blue Vitriol!)
+			// Per-cell dye-weighted brine colour: fresh aqua blended toward the
+			// load-weighted dye of every dissolved mineral in the parcel.
 			let anyWater = false;
 			for (let fr = 0; fr < H; fr++) {
 				const ty = H - 1 - fr;
@@ -2084,27 +2246,35 @@
 					const p = (ty * W + fc) * 4;
 					if (w > 0.015) anyWater = true;
 
-					// Neighborhood average for silky seamless solute gradients
-					let wSum = w, hSum = solH[idx], vSum = solV[idx];
-					if (fc > 0 && water[idx - 1] > 0.01) { wSum += water[idx - 1] * 0.5; hSum += solH[idx - 1] * 0.5; vSum += solV[idx - 1] * 0.5; }
-					if (fc + 1 < W && water[idx + 1] > 0.01) { wSum += water[idx + 1] * 0.5; hSum += solH[idx + 1] * 0.5; vSum += solV[idx + 1] * 0.5; }
-					if (fr > 0 && water[idx - W] > 0.01) { wSum += water[idx - W] * 0.5; hSum += solH[idx - W] * 0.5; vSum += solV[idx - W] * 0.5; }
-					if (fr + 1 < H && water[idx + W] > 0.01) { wSum += water[idx + W] * 0.5; hSum += solH[idx + W] * 0.5; vSum += solV[idx + W] * 0.5; }
+					let wSum = w;
+					let loadSum = 0, dyeR = 0, dyeG = 0, dyeB = 0;
+					// centre + 4 neighbours, weighted
+					for (let k = 0; k < 5; k++) {
+						let nIdx = idx, wt = 1.0;
+						if (k === 1) { if (fc <= 0) continue; nIdx = idx - 1; wt = 0.5; }
+						if (k === 2) { if (fc + 1 >= W) continue; nIdx = idx + 1; wt = 0.5; }
+						if (k === 3) { if (fr <= 0) continue; nIdx = idx - W; wt = 0.5; }
+						if (k === 4) { if (fr + 1 >= H) continue; nIdx = idx + W; wt = 0.5; }
+						if (water[nIdx] <= 0.01 && k > 0) continue;
+						if (k > 0) wSum += water[nIdx] * wt;
+						const off = nIdx * MINERAL_COUNT;
+						for (let m = 0; m < MINERAL_COUNT; m++) {
+							const dm = loads[off + m] * wt;
+							if (dm === 0) continue;
+							loadSum += dm;
+							const dye = MINERALS[m].dye;
+							if (dye) { dyeR += dm * dye[0]; dyeG += dm * dye[1]; dyeB += dm * dye[2]; }
+						}
+					}
 
 					const denom = Math.max(0.18, wSum);
-					const cHal = clamp((hSum / denom) * 1.45, 0, 1); // +G emerald green
-					const cVit = clamp((vSum / denom) * 1.55, 0, 1); // +GB cobalt blue
-
-					// Fresh water base: (44, 162, 214)
+					const conc = clamp((loadSum / denom) * 1.5, 0, 1);
 					let r = 44, g = 162, b = 214;
-					// Halite shifts strongly toward vivid luminous emerald green (34, 232, 128)
-					r += (34 - r) * cHal;
-					g += (232 - g) * cHal;
-					b += (124 - b) * cHal;
-					// Blue Vitriol shifts strongly toward rich royal cobalt blue (30, 88, 250)
-					r += (30 - r) * cVit;
-					g += (92 - g) * cVit;
-					b += (252 - b) * cVit;
+					if (loadSum > 1e-9 && (dyeR + dyeG + dyeB) > 0) {
+						r += (clamp(dyeR / loadSum, 0, 255) - r) * conc;
+						g += (clamp(dyeG / loadSum, 0, 255) - g) * conc;
+						b += (clamp(dyeB / loadSum, 0, 255) - b) * conc;
+					}
 
 					// Slight depth darkening for rich fluid volume
 					const depthShade = 1.0 - Math.min(0.24, w * 0.18);
@@ -2235,13 +2405,20 @@
 				const py = wyToPy(state.jy[i]);
 				const vx = state.jvx[i];
 				const vy = state.jvy[i];
-				const m = Math.max(0.05, state.jMass[i]);
-				const cHal = clamp((state.jHalite[i] / m) * 1.6, 0, 1);
-				const cVit = clamp((state.jVitriol[i] / m) * 1.6, 0, 1);
-
+				const off = i * MINERAL_COUNT;
+				let dyeR = 0, dyeG = 0, dyeB = 0, dyeLoad = 0;
+				for (let mIdx = 0; mIdx < MINERAL_COUNT; mIdx++) {
+					const dm = state.jLoads[off + mIdx];
+					if (dm === 0 || !MINERALS[mIdx].dye) continue;
+					dyeLoad += dm;
+					dyeR += dm * MINERALS[mIdx].dye[0];
+					dyeG += dm * MINERALS[mIdx].dye[1];
+					dyeB += dm * MINERALS[mIdx].dye[2];
+				}
 				let r = 110, g = 212, b = 248;
-				if (cHal > 0.05) { r = 74; g = 240; b = 152; }
-				if (cVit > 0.05) { r = 68; g = 148; b = 255; }
+				if (dyeLoad > 1e-9) {
+					r = Math.round(dyeR / dyeLoad); g = Math.round(dyeG / dyeLoad); b = Math.round(dyeB / dyeLoad);
+				}
 				ctx.strokeStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.88)';
 				ctx.lineWidth = state.jKind[i] === 0 ? 3.2 : 2.6;
 				ctx.lineCap = 'round';
@@ -2424,7 +2601,7 @@
 					ctx.fillText(def.symbol, cx, 22);
 					ctx.fillStyle = '#9bb0b4';
 					ctx.font = '9px ui-monospace, monospace';
-					const shortTag = def.solVitriol > 0 ? '+GB' : (def.gasLoss > 0 ? 'GAS!' : (def.solHalite > 0 ? '+G' : (minIdx === MIN_GOLD ? 'PAN' : (minIdx === MIN_SAND ? 'WASH' : 'HARD'))));
+					const shortTag = minIdx === MIN_VITRIOL ? '+GB' : (def.vent > 0 ? 'GAS!' : (def.brine > 0 ? '+G' : (minIdx === MIN_GOLD ? 'PAN' : (minIdx === MIN_SAND ? 'WASH' : 'HARD'))));
 					ctx.fillText(shortTag, cx, 33);
 					ctx.font = '600 10px ui-monospace, monospace';
 				}
@@ -2561,6 +2738,8 @@
 						'<span>Gas Lost: <b style="color:#f07b6e">' + Math.round(chem.gas * 100) + '%</b></span>' +
 						'<span>Solid Residue: <b>' + Math.round(chem.solid * 100) + '%</b></span>' +
 						'<span>Strength: <b>' + state.rockMechHp[rIdx].toFixed(1) + ' J</b></span>' +
+						'<span>Skeleton: <b>' + chem.remStrength.toFixed(2) + ' J</b> vs debrisLimit ' + DEBRIS_LIMIT.toFixed(1) + ' J ' + (chem.remStrength < DEBRIS_LIMIT ? '(collapses)' : '(stands)') + '</span>' +
+						'<span>Brine saturation: <b>' + Math.round((1 - saturationFactor(state, fIdx)) * 100) + '%</b> of satCap</span>' +
 						'<span>Density ρ: <b>' + chem.density.toFixed(1) + '</b> · ' + state.rockValue[rIdx].toFixed(2) + ' cr</span>' +
 					'</div>';
 				return;
@@ -2585,13 +2764,21 @@
 
 			const w = state.water[fIdx];
 			if (w > 0.02) {
+				const off = fIdx * MINERAL_COUNT;
+				let loadList = '';
+				for (let m = 0; m < MINERAL_COUNT; m++) {
+					if (state.loads[off + m] > 1e-6) {
+						loadList += '<span>' + MINERALS[m].name + ': <b>' + state.loads[off + m].toFixed(2) + '</b></span>';
+					}
+				}
+				if (!loadList) loadList = '<span>No dissolved brine yet</span>';
+				const satPct = state.water[fIdx] > 0 ? Math.round(100 * state.loadTotal[fIdx] / (state.water[fIdx] * state.satCap)) : 0;
 				inspEl.innerHTML =
 					'<div class="insp-head"><span>Fluid Pool Cell</span><span class="tag tag-blue">Depth ' + w.toFixed(2) + '</span></div>' +
 					'<div class="insp-kv">' +
 						'<span>Flow |u|: <b>' + Math.hypot(state.velU[fIdx], state.velV[fIdx]).toFixed(2) + ' m/s</b></span>' +
-						'<span>Solute Value: <b>' + (state.solValHal[fIdx] + state.solValVit[fIdx]).toFixed(2) + ' cr</b></span>' +
-						'<span>Halite (+G): <b style="color:#5ee293">' + state.solHalite[fIdx].toFixed(2) + '</b></span>' +
-						'<span>Vitriol (+GB): <b style="color:#4aa3ff">' + state.solVitriol[fIdx].toFixed(2) + '</b></span>' +
+						'<span>Brine saturation: <b>' + satPct + '%</b> of ' + state.satCap + ' g/wu</span>' +
+						loadList +
 					'</div>';
 				return;
 			}
@@ -2672,6 +2859,7 @@
 			});
 		}
 		bindSlider('dissolve-rate', 'dissolve-rate-out', 'dissolveRate', function (v) { return v.toFixed(1) + '×'; });
+		bindSlider('sat-cap', 'sat-cap-out', 'satCap', function (v) { return String(Math.round(v)) + ' g/wu'; });
 		bindSlider('mech-force', 'mech-force-out', 'mechForce', function (v) { return v.toFixed(2) + '×'; });
 		bindSlider('erosion-power', 'erosion-power-out', 'erosionPower', function (v) { return v.toFixed(1) + '×'; });
 		bindSlider('pump-rate', 'pump-rate-out', 'pumpRate', function (v) { return v.toFixed(1) + '×'; });
@@ -2822,11 +3010,17 @@
 
 	const api = {
 		WORLD_W, WORLD_H, ROCK_W, ROCK_H, FLUID_W, FLUID_H,
+		MINERAL_COUNT, SAT_CAP_DEFAULT, DEBRIS_LIMIT, GOLD_GOLD_VALUE_FRACTION,
 		MINERALS, TEST_COLUMNS,
 		MIN_STONE, MIN_IRON, MIN_COPPER, MIN_VITRIOL, MIN_QUARTZ, MIN_CORUNDUM,
 		MIN_FLUORITE, MIN_SILVER, MIN_GOLD, MIN_GAS, MIN_SAND, MIN_HALITE, MIN_FIZZY, MIN_PURE_GOLD,
 		evaluateCompositionLaw,
 		evaluateCellChemistry,
+		saturationFactor,
+		totalFluidLoad,
+		fluidIndexAt,
+		skeletonStrength,
+		spawnDebrisGrain,
 		createSimulation,
 		loadScene,
 		stepSimulation,
