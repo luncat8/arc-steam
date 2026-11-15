@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>0.3.6 — Water &amp; Cave Fluid Lab</title>
+	<link rel="stylesheet" href="water-lab.css">
+</head>
+<body>
+	<main>
+		<header class="lab-bar panel">
+			<span class="lab-title">WATER LAB<em>visible surface · smooth flow · caves &amp; under-platform pump</em></span>
+			<div class="seg-group" id="solver-buttons" role="group" aria-label="Fluid solver">
+				<span class="seg-label">SOLVER</span>
+				<button type="button" data-solver="hybrid" class="is-active">Hybrid (Jet + 2D Cells)</button>
+				<button type="button" data-solver="sph">Particles (2D SPH)</button>
+				<button type="button" data-solver="flip">Grid+Particle (2D FLIP)</button>
+			</div>
+			<div class="seg-group" id="scene-buttons" role="group" aria-label="Chamber or cave scene">
+				<span class="seg-label">SCENE</span>
+				<button type="button" data-scene="classic" class="is-active">Classic Chamber</button>
+				<button type="button" data-scene="caves">Caves &amp; Ledges</button>
+				<button type="button" data-scene="wild">Wild Mine U-Tube</button>
+				<button type="button" data-scene="waterfall">Dam Breach</button>
+			</div>
+			<div class="seg-group" id="tool-buttons" role="group" aria-label="Cursor action">
+				<span class="seg-label">CLICK</span>
+				<button type="button" data-tool="gun" class="is-active">Aim Gun</button>
+				<button type="button" data-tool="pour">Pour Water</button>
+				<button type="button" data-tool="carve">Carve Rock</button>
+				<button type="button" data-tool="build">Add Rock</button>
+			</div>
+		</header>
+
+		<section class="lab-stage panel" aria-label="Fluid simulation canvas">
+			<div class="panel-title">
+				<span id="stage-heading">CHAMBER · 24 × 15 m · HYBRID (JET + 2D CELLS)</span>
+				<span id="stage-status">UNLIMITED TANK · PUMP UNDER PLATFORM</span>
+			</div>
+			<div class="canvas-wrap">
+				<canvas id="stage" width="960" height="600" tabindex="0" aria-label="Water simulation stage"></canvas>
+			</div>
+			<div class="stage-footer">
+				<div class="stage-keys">
+					<span><kbd>LMB</kbd> Fire / Tool</span>
+					<span><kbd>RMB</kbd> Carve Rock</span>
+					<span><kbd>A</kbd><kbd>D</kbd> Drive Platform</span>
+					<span><kbd>P</kbd> Toggle Pump</span>
+					<span><kbd>Space</kbd> Hold Fire</span>
+				</div>
+				<div class="render-modes" id="render-modes" role="radiogroup" aria-label="Water surface display">
+					<span class="seg-label">VIEW</span>
+					<label><input type="radio" name="render-mode" value="smooth" checked>Smooth surface</label>
+					<label><input type="radio" name="render-mode" value="debug">Surface + tracers</label>
+					<label><input type="radio" name="render-mode" value="raw">Raw sim</label>
+				</div>
+			</div>
+		</section>
+
+		<aside class="lab-side">
+			<section class="panel" aria-label="Controls">
+				<div class="panel-title"><span>GUN &amp; UNDER-PLATFORM PUMP</span><span id="tank-badge">TANK ∞</span></div>
+				<div class="panel-body">
+					<div class="toggle-row">
+						<label><input type="checkbox" id="pump-on" checked>Suction pump under platform</label>
+						<label><input type="checkbox" id="auto-fire">Auto-fire jet</label>
+						<label><input type="checkbox" id="dissolve-on" checked>Dissolve rock → slurry</label>
+					</div>
+					<div class="control-grid">
+						<label for="jet-speed">JET SPEED <output id="jet-speed-out">17.0 m/s</output></label>
+						<input id="jet-speed" type="range" min="8" max="26" step="0.5" value="17">
+						<label for="jet-flow">FLOW RATE <output id="jet-flow-out">1.0×</output></label>
+						<input id="jet-flow" type="range" min="0.3" max="2.5" step="0.1" value="1.0">
+						<label for="pump-rate">PUMP SUCTION <output id="pump-rate-out">1.2×</output></label>
+						<input id="pump-rate" type="range" min="0.2" max="3.0" step="0.1" value="1.2">
+						<label for="dissolve-rate">DISSOLVE POWER <output id="dissolve-rate-out">1.0×</output></label>
+						<input id="dissolve-rate" type="range" min="0.2" max="3.0" step="0.1" value="1.0">
+					</div>
+					<div class="button-row">
+						<button type="button" id="flood-pulse" class="accent-btn">Flood burst</button>
+						<button type="button" id="drain-all" class="quiet">Drain water</button>
+						<button type="button" id="reset-scene" class="quiet">Reset scene</button>
+						<button type="button" id="pause-btn" class="quiet">Pause</button>
+						<button type="button" id="step-btn" class="quiet">Step</button>
+					</div>
+					<p id="mode-notes" class="mode-notes"></p>
+				</div>
+			</section>
+
+			<section class="panel" aria-label="Simulation telemetry">
+				<div class="panel-title"><span>LIVE TELEMETRY</span><span id="perf-badge">—</span></div>
+				<div class="panel-body">
+					<div class="metrics">
+						<div class="metric"><span>WATER IN WORLD</span><strong id="m-water" class="is-water">0.00 m²</strong></div>
+						<div class="metric"><span>ACTIVE UNITS</span><strong id="m-units">0</strong></div>
+						<div class="metric"><span>FLOODED (∞ TANK)</span><strong id="m-flooded">0.00 m²</strong></div>
+						<div class="metric"><span>PUMPED UNDER RIG</span><strong id="m-pumped" class="is-good">0.00 m²</strong></div>
+						<div class="metric"><span>ROCK DISSOLVED</span><strong id="m-dissolved" class="is-amber">0 cells</strong></div>
+						<div class="metric"><span>SLURRY SUSPENDED</span><strong id="m-slurry" class="is-amber">0.00 cells</strong></div>
+						<div class="metric"><span>HOPPER RECOVERED</span><strong id="m-hopper" class="is-good">0.00 cells</strong></div>
+						<div class="metric"><span>SLURRY DRIFT</span><strong id="m-drift">0.0000</strong></div>
+					</div>
+				</div>
+			</section>
+		</aside>
+
+		<section class="panel compare-panel" aria-label="Architecture comparison">
+			<div class="panel-title"><span>SOLVER COMPARISON · CLASSIC CHAMBER vs. 2D CAVES / WILD MINE</span><span>24 × 15 m · 192 × 120 rock · 96 × 60 fluid</span></div>
+			<div class="panel-body">
+				<table class="compare-table">
+					<thead>
+						<tr>
+							<th>Approach</th>
+							<th>Visible surface &amp; smooth flow</th>
+							<th>Unlimited tank &amp; caves</th>
+							<th>Slurry conservation &amp; streaming</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr data-row="hybrid" class="is-current">
+							<td>Hybrid (Jet + 2D Cells)</td>
+							<td>Crisp aimed ballistic jet + Marching Squares sub-cell surface with horizontal wave momentum and smooth waterfall streams.</td>
+							<td>Unlimited flooded volume at fixed memory; handles overhangs, ledges, and U-tube siphons natively with no particle cap.</td>
+							<td>Exact per-flux conservation; row streaming shifts typed arrays directly; trivial save/load.</td>
+						</tr>
+						<tr data-row="sph">
+							<td>Particles (2D SPH / DDR)</td>
+							<td>Unified jet, splash, slosh and pool; organic droplets &amp; surface tension via density-field Marching Squares.</td>
+							<td>Capped by fixed particle pool (~1,800) so unlimited flooding hits a ceiling; very deep pools stay slightly compressible.</td>
+							<td>Exact per-particle slurry; wide caves spread particles thin unless sleeping/pooling layer is added.</td>
+						</tr>
+						<tr data-row="flip">
+							<td>Grid+Particle (2D FLIP)</td>
+							<td>Incompressible real waves, splashes and bow wake; flat calm pools with zero spongy bounce.</td>
+							<td>Great cave boundary handling via MAC solid mask, but still capped by particle count (~2,400) under unlimited flooding.</td>
+							<td>Exact per-particle slurry; MAC grid + particles are heavier to stream across 512-row Wild Mine caves.</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</section>
+	</main>
+	<script src="water-lab.js"></script>
+</body>
+</html>

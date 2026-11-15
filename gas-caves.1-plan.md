@@ -67,7 +67,11 @@ keep caves deferred instead of shipping an invulnerable roof workaround.
   Measure abundance over solid cells; report void fraction separately.
 - Collision and reflection must handle cave interiors, ceilings, side walls and
   entrances, not only a single exposed lower heightmap. Audit renderer, selection,
-  scan visibility, fragment paths and prediction before claiming playable caves.
+  scan visibility, fragment paths, fluid occupancy (`0.3.6-Water-draft.md`) and
+  prediction before claiming playable caves.
+- Water entering a generated void must treat never-solid cavity cells as open
+  space without booking mined mass or dissolved slurry unless solid boundary
+  rock is actually dissolved.
 - Gas pressure, explosions, ventilation and gas sales are out of scope. These
   cavities contain non-simulated gas unless a separate mechanics plan is approved.
 
