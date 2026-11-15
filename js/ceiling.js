@@ -1402,6 +1402,7 @@
 		// the face in and spreads its pile over the columns it spans.
 		for (let i = 0; i < size; i++) {
 			const index = clusterCells[i];
+			clearWet(index);
 			spawnFragment(index);
 			fallCells[dominantMineral(index)]++;
 			strength[index] = 0;
@@ -1544,13 +1545,20 @@
 		extractedCells++;
 	}
 
-	// A single cell let go on its own (a hit that finishes a free-face cell).
-	// It leaves as an ordinary fragment of full cell mass, so the wet ledger must
-	// forget it here: a cell that falls dry is no longer water's to give.
-	function spawn(index) {
+	// A cell that leaves the rock takes its wet bookkeeping with it: the mass
+	// and value the chemistry left on a cell are this module's own ledger on a
+	// cell that no longer exists, and a stale entry there is a gram the wet
+	// ledger keeps claiming after the rock has forgotten it.
+	function clearWet(index) {
 		cellMassLeft[index] = 0;
 		cellValueLeft[index] = 0;
 		leached[index] = 0;
+	}
+
+	// A single cell let go on its own (a hit that finishes a free-face cell).
+	// It leaves as an ordinary fragment of full cell mass.
+	function spawn(index) {
+		clearWet(index);
 		spawnFragment(index);
 		fallCells[dominantMineral(index)]++;
 		recordFall(index);

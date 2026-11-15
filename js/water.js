@@ -46,8 +46,19 @@
 	// One droplet's wash: a share of a cell per hit, not a tiny trickle. Rock is a
 	// ceiling over open ground, so water strikes the face and drips away at once;
 	// the pooled-water path below can never do the mining on its own.
+	//
+	// `jetWashSeconds` is the residence of the film the strike leaves: the water
+	// sheets over the rough underside and runs down it for a good fraction of a
+	// second before it reaches the floor, and it works the whole time. At the
+	// measured 0.06 s a cell needed every droplet the reserve could throw to
+	// finish, which made the gun look inert.
 	const jetDissolvePower = 1.9;
-	const jetWashSeconds = 0.06;
+	const jetWashSeconds = 0.12;
+	// A strike wets a patch, not a point: the droplet splashes, and the underside
+	// is rough, so one hit works the cells around the impact as well as the cell
+	// it touched. The wash thins by this share for every cell it spreads.
+	const jetSplashShare = 0.6;
+	const jetSplashCells = 2;
 	const passiveDissolvePower = 0.55;
 	const submergedGrainRate = 3;
 	const undermineStart = 0.55;
@@ -137,6 +148,10 @@
 		lostGasMass: 0, lostGasValue: 0,
 		dissolvedMass: 0, cellDissolvedMass: 0, dissolvedCells: 0,
 		residueMass: 0, residueValue: 0, settledMass: 0, settledValue: 0,
+		// A grain the chemistry left over can reach a hopper dry. It is cargo
+		// from then on and outside this ledger, so the handover is booked here:
+		// without it the ledger cannot say where that gram went.
+		caughtMass: 0, caughtValue: 0,
 		pumpJoules: 0, shotJoules: 0, droplets: 0, hops: 0
 	};
 
@@ -428,7 +443,7 @@
 
 	// ---- Chemistry ----
 	// One droplet's impact: a small mechanical bite through the shared weakening
-	// rule, then the chemical wash on the cell it struck.
+	// rule, then the chemical wash over the face patch it wet.
 	//
 	// The bite is almost nothing, and it books nothing when it lands: the
 	// droplet's whole throw already became chamber heat at the muzzle, and `chip`
@@ -439,8 +454,48 @@
 		const rock = root.SteamCeiling;
 		const view = rock.rockView();
 		const wash = jetDissolvePower * Math.min(1.6, speed / jetSpeed);
+		if (rockIndex < 0 || view.strength[rockIndex] <= 0) return;
+		// The momentum bites one cell at the impact point: a splash carries
+		// water, not force, so the patch is washed and only the hit is chipped.
 		rock.chip(wetX(view, rockIndex), wetY(view, rockIndex), dropletChipPower, 1);
-		if (rockIndex >= 0 && view.strength[rockIndex] > 0) exposeCell(rockIndex, parcelIndex, wash, jetWashSeconds);
+		washFace(rockIndex, parcelIndex, wash, jetWashSeconds);
+	}
+
+	// The wash one strike leaves on the face: the cell it hit at full power, then
+	// the ring of exposed cells the splash spread over, weaker the further out it
+	// reaches. Water that misses the reactive cell by one still works the seam
+	// beside it, which is what turns a jet aimed at an arbitrary column from a
+	// trickle into a cut: most of the bed is inert, so a point wash mines
+	// nothing, and the droplet is spent either way.
+	//
+	// The patch is measured from the struck cell, not from the parcel the water
+	// landed in: a rising jet is stopped by a face it is still a parcel short of,
+	// so the two are not the same square.
+	function washFace(rockIndex, parcelIndex, power, dt) {
+		exposeCell(rockIndex, parcelIndex, power, dt);
+		if (!(jetSplashShare > 0)) return;
+		const view = root.SteamCeiling.rockView();
+		const rockColumns = view.columns;
+		const rockRows = view.rows;
+		const column = rockIndex % rockColumns;
+		const row = (rockIndex / rockColumns) | 0;
+		const firstRow = Math.max(0, row - jetSplashCells);
+		const lastRow = Math.min(rockRows - 1, row + jetSplashCells);
+		const firstColumn = Math.max(0, column - jetSplashCells);
+		const lastColumn = Math.min(rockColumns - 1, column + jetSplashCells);
+		for (let rr = firstRow; rr <= lastRow; rr++) {
+			const away = Math.abs(rr - row);
+			for (let rc = firstColumn; rc <= lastColumn; rc++) {
+				const index = rr * rockColumns + rc;
+				if (index === rockIndex) continue;
+				if (view.strength[index] <= 0) continue;
+				if (!isExposed(view, index)) continue;
+				// The sheet thins as it spreads: the further the cell, the
+				// smaller the share of the impact's wash it gets.
+				const spread = Math.max(away, Math.abs(rc - column));
+				exposeCell(index, parcelIndex, power * Math.pow(jetSplashShare, spread), dt);
+			}
+		}
 	}
 
 	// Nearest rock cell with anything left in it, within one parcel of the point.
@@ -928,13 +983,17 @@
 			body.vx = (mass * body.vx + grainMass[i] * grainVx[i]) / (mass + grainMass[i]);
 			if (machine === world) {
 				world.heat += before - 0.5 * (mass + grainMass[i]) * body.vx * body.vx;
-				world.importedEnergy += grainMass[i] * gravity * root.SteamCeiling.state.cargoHeight;
-			}
-			grainActive[i] = 0;
-			return true;
+			world.importedEnergy += grainMass[i] * gravity * root.SteamCeiling.state.cargoHeight;
 		}
-		return false;
+		// The grain is cargo now, outside this ledger, so the handover is booked
+		// or the ledger cannot say where the gram the chemistry took went.
+		totals.caughtMass += grainMass[i];
+		totals.caughtValue += grainValue[i];
+		grainActive[i] = 0;
+		return true;
 	}
+	return false;
+}
 
 	function groundAt(x) {
 		const physics = root.SteamPhysics;
@@ -1091,7 +1150,8 @@
 		return {
 			waterByMineral: new Float64Array(count), valueByMineral: new Float64Array(count),
 			waterMass: 0, airborneWater: 0, brineMass: 0, brineValue: 0, maxSaturation: 0,
-			grainCount: 0, grainMass: 0, grainValue: 0, waterDrift: 0
+			grainCount: 0, grainMass: 0, grainValue: 0, waterDrift: 0,
+			caughtMass: 0, caughtValue: 0
 		};
 	}
 
@@ -1154,6 +1214,8 @@
 		result.residueValue = totals.residueValue;
 		result.settledMass = totals.settledMass;
 		result.settledValue = totals.settledValue;
+		result.caughtMass = totals.caughtMass;
+		result.caughtValue = totals.caughtValue;
 		result.pumpJoules = totals.pumpJoules;
 		result.shotJoules = totals.shotJoules;
 		result.droplets = totals.droplets;

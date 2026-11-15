@@ -9,3 +9,18 @@ all        n  42 | cells p25 0 median 0 p75 4 mean 3.2 | caught cr p25 0.0 media
 no spray   n  42 | cells p25 0 median 0 p75 0 mean 0.0 | caught cr p25 0.0 median 0.0 p75 0.0 | profit cr p25 0.0 median 0.0 p75 0.0 mean 0.0 | dissolved mean 0.00 g vented mean 0.00 g | residue mean 0.00 g | energy mean 0.0 cr | saturation max 0.000
 cells are whole cells that left the rock; caughtValue is hopper value the pump lifted.
 profit = caught value - gas lost - energy at the paid import rate (free pad energy is the cheap case).
+
+# after the yield tune: one strike washes the face patch it splashes over
+# (jetSplashShare 0.6, jetSplashCells 2, jetWashSeconds 0.12). The block above
+# is the same probe before the tune, kept for the comparison.
+a held water jet on a fresh bed, pump running, platform parked, 30 s, 135 J/droplet at 46/s, pump 420 J/unit, satCap 60 g/unit, import 25 cr/kJ
+seed 1     n   7 | cells p25 0 median 5 p75 24 mean 10.0 | caught cr p25 0.0 median 41.1 p75 52.4 | profit cr p25 -1338.8 median -497.5 p75 -450.5 mean -1054.8 | dissolved mean 3.14 g vented mean 1.01 g | residue mean 2.59 g | energy mean 954.1 cr | saturation max 0.000
+seed 7     n   7 | cells p25 0 median 0 p75 24 mean 9.4 | caught cr p25 0.0 median 0.0 p75 22.1 | profit cr p25 -497.8 median -497.5 p75 -475.9 mean -941.5 | dissolved mean 3.43 g vented mean 0.56 g | residue mean 1.73 g | energy mean 954.1 cr | saturation max 0.000
+seed 10    n   7 | cells p25 0 median 9 p75 23 mean 12.0 | caught cr p25 0.8 median 15.9 p75 47.1 | profit cr p25 -586.2 median -497.7 p75 -490.0 mean -950.8 | dissolved mean 3.99 g vented mean 0.99 g | residue mean 3.68 g | energy mean 954.1 cr | saturation max 0.000
+seed 21    n   7 | cells p25 0 median 3 p75 6 mean 3.1 | caught cr p25 0.0 median 2.2 p75 18.0 | profit cr p25 -537.6 median -497.8 p75 -489.7 mean -950.7 | dissolved mean 0.88 g vented mean 0.06 g | residue mean 0.67 g | energy mean 953.8 cr | saturation max 0.000
+seed 31    n   7 | cells p25 0 median 4 p75 8 mean 5.6 | caught cr p25 0.0 median 4.2 p75 17.4 | profit cr p25 -497.8 median -497.7 p75 -492.7 mean -936.1 | dissolved mean 1.94 g vented mean 0.00 g | residue mean 1.21 g | energy mean 953.7 cr | saturation max 0.000
+seed 47    n   7 | cells p25 0 median 3 p75 21 mean 10.7 | caught cr p25 0.1 median 7.2 p75 23.4 | profit cr p25 -936.0 median -497.7 p75 -494.2 mean -1012.5 | dissolved mean 3.42 g vented mean 1.18 g | residue mean 3.11 g | energy mean 954.0 cr | saturation max 0.000
+all        n  42 | cells p25 0 median 4 p75 14 mean 8.5 | caught cr p25 0.0 median 5.0 p75 28.0 | profit cr p25 -499.0 median -497.7 p75 -492.7 mean -974.4 | dissolved mean 2.80 g vented mean 0.63 g | residue mean 2.17 g | energy mean 954.0 cr | saturation max 0.000
+no spray   n  42 | cells p25 0 median 0 p75 0 mean 0.0 | caught cr p25 0.0 median 0.0 p75 0.0 | profit cr p25 0.0 median 0.0 p75 0.0 mean 0.0 | dissolved mean 0.00 g vented mean 0.00 g | residue mean 0.00 g | energy mean 0.0 cr | saturation max 0.000
+cells are whole cells that left the rock; caughtValue is hopper value the pump lifted.
+profit = caught value - gas lost - energy at the paid import rate (free pad energy is the cheap case).

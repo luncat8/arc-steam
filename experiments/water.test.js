@@ -98,21 +98,30 @@ test('no tool, no stream, and a full hopper never eats what it cannot hold', () 
 	harness.sync(fitted);
 });
 
-test('the jet mines real rock, and the hopper holds exactly what the pump lifted', () => {
+test('the jet mines real rock, and the hopper holds what the pump and the grains gave it', () => {
 	const world = fresh();
 	assert.ok(faceAbove() >= 0, 'the chamber has a face to work');
 	soak(world, 12);
 	const metrics = water.measureMetrics();
 	assert.ok(metrics.dissolvedMass > 0, 'water mined the rock');
 	assert.ok(metrics.dissolvedCells > 0, 'cells came down');
-	// Every gram the chemistry took is in a parcel, in the lost-gas counter, on the
-	// floor as a grain, or in the hopper. A cell the jet chipped down instead is
-	// dry rock and leaves this ledger, which is why the check is the chemistry's
-	// own total, not the rock's.
+	// Every gram the chemistry took is in a parcel, in the lost-gas counter, on
+	// the floor as a grain, or in a hopper. A cell the jet chipped down instead
+	// is dry rock and leaves this ledger, which is why the check is the
+	// chemistry's own total, not the rock's.
+	//
+	// Two roads into the hopper, and both must be counted or the ledger leaks:
+	// the pump lifts brine, and a residue grain that falls on the deck is caught
+	// dry. The second road was invisible while one wash in twelve seconds never
+	// finished a grain above the rig - it shows the moment the jet mines harder.
 	const taken = metrics.cellDissolvedMass + metrics.residueMass;
-	const held = metrics.brineMass + metrics.lostGasMass + metrics.grainMass + metrics.settledMass + metrics.pumpedSolute;
+	const held = metrics.brineMass + metrics.lostGasMass + metrics.grainMass
+		+ metrics.settledMass + metrics.pumpedSolute + metrics.caughtMass;
 	near(held, taken, 1e-6, 'the wet ledger holds every gram the chemistry took');
-	near(metrics.pumpedSolute, rock.cargoCells * rock.cellMass, 1e-9, 'cargo is pumped solute');
+	near(metrics.pumpedSolute + metrics.caughtMass, rock.cargoCells * rock.cellMass, 1e-9, 'cargo is pumped brine plus caught grains');
+	// The dry road into the hopper must be walked in this very soak, or the two
+	// lines above stop covering it and the leak comes back unnoticed.
+	assert.ok(metrics.caughtMass > 0, 'a leached residue grain fell on the deck and was caught dry');
 	// A cell that fell dry is no longer water's to give: no stale entry survives it.
 	for (let i = 0; i < rock.rows * rock.columns; i++) {
 		if (rock.strength[i] > 0) continue;
