@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>0.3.6 — Solubility &amp; Hydro-Erosion Lab</title>
+	<link rel="stylesheet" href="solubility-lab.css">
+</head>
+<body>
+	<main>
+		<header class="lab-bar panel">
+			<span class="lab-title">SOLUBILITY LAB<em>3-element (R·G·B) dissolution · decomposition · gas loss · hydro-erosion panning</em></span>
+			<div class="seg-group" id="scene-buttons" role="group" aria-label="Test scene">
+				<span class="seg-label">SCENE</span>
+				<button type="button" data-scene="columns" class="is-active">Mineral Columns</button>
+				<button type="button" data-scene="geology">Real RGB Geology</button>
+				<button type="button" data-scene="placer">Gold Placer Sluice</button>
+				<button type="button" data-scene="karst">Karst Cave</button>
+			</div>
+			<div class="seg-group" id="model-buttons" role="group" aria-label="Solubility chemistry model">
+				<span class="seg-label">MODEL</span>
+				<button type="button" data-model="table" class="is-active">Mineral Table (13)</button>
+				<button type="button" data-model="formula">Composition Law f(R,G,B)</button>
+			</div>
+			<div class="seg-group" id="tool-buttons" role="group" aria-label="Cursor action">
+				<span class="seg-label">CLICK</span>
+				<button type="button" data-tool="gun" class="is-active">Water Gun</button>
+				<button type="button" data-tool="gold-rubble">Drop Gold-Qz</button>
+				<button type="button" data-tool="mixed-rubble">Drop Mixed</button>
+				<button type="button" data-tool="pour">Pour Water</button>
+				<button type="button" data-tool="carve">Carve Rock</button>
+			</div>
+		</header>
+
+		<section class="lab-stage panel" aria-label="Solubility and erosion stage">
+			<div class="panel-title">
+				<span id="stage-heading">MINERAL COLUMNS · 24 × 15 m · MINERAL TABLE (13)</span>
+				<span id="stage-status">WEAK MECH JET · FAST DISSOLUTION · PUMP UNDER PLATFORM</span>
+			</div>
+			<div class="canvas-wrap">
+				<canvas id="stage" width="960" height="600" tabindex="0" aria-label="Solubility simulation canvas"></canvas>
+			</div>
+			<div class="stage-footer">
+				<div class="stage-keys">
+					<span><kbd>LMB</kbd> Fire / Tool</span>
+					<span><kbd>RMB</kbd> Carve</span>
+					<span><kbd>A</kbd><kbd>D</kbd> Drive Rig</span>
+					<span><kbd>P</kbd> Toggle Pump</span>
+					<span><kbd>Space</kbd> Hold Fire</span>
+				</div>
+				<div class="render-modes" id="view-modes" role="radiogroup" aria-label="Rock view mode">
+					<span class="seg-label">ROCK VIEW</span>
+					<label><input type="radio" name="view-mode" value="natural" checked>Natural</label>
+					<label><input type="radio" name="view-mode" value="solubility">Solubility Map</label>
+					<label><input type="radio" name="view-mode" value="elements">Elements (RGB)</label>
+				</div>
+			</div>
+			<div class="legend-strip">
+				<span class="legend-item"><span class="legend-dot" style="background:#38a5d8"></span>Fresh water</span>
+				<span class="legend-item"><span class="legend-dot" style="background:#39e086"></span>Halite brine (+G green)</span>
+				<span class="legend-item"><span class="legend-dot" style="background:#337aff"></span>Blue Vitriol (+GB blue)</span>
+				<span class="legend-item"><span class="legend-dot" style="background:#eef8f4;border:1px solid #9be0b5"></span>Escaping Gas (LOST)</span>
+				<span class="legend-item"><span class="legend-dot" style="background:#ffd724"></span>Panned Pure Gold (ρ=19.3)</span>
+				<span class="legend-item"><span class="legend-dot" style="background:#d6d4e0"></span>Eroded Quartz/Sand (short hops)</span>
+			</div>
+		</section>
+
+		<aside class="lab-side">
+			<section class="panel" aria-label="Controls">
+				<div class="panel-title"><span>WATER GUN, CHEMISTRY &amp; PUMP</span><span id="tank-badge">TANK ∞</span></div>
+				<div class="panel-body">
+					<div class="toggle-row">
+						<label><input type="checkbox" id="pump-on" checked>Under-platform suction (pumps dissolved solutes)</label>
+						<label><input type="checkbox" id="auto-fire">Auto-fire water jet</label>
+						<label><input type="checkbox" id="erosion-on" checked>Hydro-erosion &amp; Gold placer panning</label>
+					</div>
+					<div class="control-grid">
+						<label for="dissolve-rate">DISSOLUTION RATE <output id="dissolve-rate-out">1.2×</output></label>
+						<input id="dissolve-rate" type="range" min="0.2" max="3.0" step="0.1" value="1.2">
+						<label for="mech-force">JET MECH FORCE <output id="mech-force-out">0.15×</output></label>
+						<input id="mech-force" type="range" min="0.00" max="1.00" step="0.05" value="0.15">
+						<label for="erosion-power">EROSION CURRENT <output id="erosion-power-out">1.2×</output></label>
+						<input id="erosion-power" type="range" min="0.2" max="2.5" step="0.1" value="1.2">
+						<label for="pump-rate">PUMP SUCTION <output id="pump-rate-out">0.9×</output></label>
+						<input id="pump-rate" type="range" min="0.2" max="3.0" step="0.1" value="0.9">
+						<label for="geo-seed">GEOLOGY SEED <output id="geo-seed-out">37</output></label>
+						<div class="seed-row">
+							<input id="geo-seed" type="range" min="1" max="99" step="1" value="37">
+							<button type="button" id="rand-seed" class="quiet">Rand</button>
+						</div>
+					</div>
+					<div class="button-row">
+						<button type="button" id="sweep-demo" class="accent-btn">Run Demo Sweep</button>
+						<button type="button" id="drain-all" class="quiet">Drain</button>
+						<button type="button" id="reset-scene" class="quiet">Reset</button>
+						<button type="button" id="pause-btn" class="quiet">Pause</button>
+						<button type="button" id="step-btn" class="quiet">Step</button>
+					</div>
+					<p id="mode-notes" class="mode-notes"></p>
+				</div>
+			</section>
+
+			<section class="panel" aria-label="Chemistry and conservation ledger">
+				<div class="panel-title"><span>CONSERVATION LEDGER</span><span id="perf-badge">—</span></div>
+				<div class="panel-body">
+					<div class="metrics">
+						<div class="metric"><span>PUMPED HALITE (+G)</span><strong id="m-pump-halite" class="is-halite">0.00 (0 cr)</strong></div>
+						<div class="metric"><span>PUMPED VITRIOL (+GB)</span><strong id="m-pump-vitriol" class="is-vitriol">0.00 (0 cr)</strong></div>
+						<div class="metric"><span>IN WATER (PENDING)</span><strong id="m-water-sol" class="is-water">0.00 (0 cr)</strong></div>
+						<div class="metric"><span>GAS VENTED (LOST!)</span><strong id="m-gas-lost" class="is-bad">0.00 (0 cr)</strong></div>
+						<div class="metric"><span>SOLID DEBRIS FREED</span><strong id="m-debris" class="is-amber">0 grains</strong></div>
+						<div class="metric"><span>PANNED PURE GOLD</span><strong id="m-gold" class="is-gold">0.00 (0 cr)</strong></div>
+						<div class="metric"><span>SALTATING / WASHED</span><strong id="m-eroded">0 active</strong></div>
+						<div class="metric"><span>MASS / VALUE DRIFT</span><strong id="m-drift" class="is-good">0.0000</strong></div>
+					</div>
+				</div>
+			</section>
+
+			<section class="panel" aria-label="Cell chemistry inspector">
+				<div class="panel-title"><span>CELL INSPECTOR (HOVER CANVAS)</span><span id="insp-coord">—</span></div>
+				<div class="panel-body inspector-body" id="inspector">
+					Hover over any rock seam, dissolved pool, or debris grain to inspect its (R, G, B) elements, solubility channels, density, and reaction outcome.
+				</div>
+			</section>
+		</aside>
+
+		<section class="panel chem-panel" aria-label="Mineral chemistry reference">
+			<div class="panel-title">
+				<span>3-ELEMENT (R METAL · G CRYSTAL · B GAS) SOLUBILITY &amp; EROSION TABLE</span>
+				<span>Water = external polar G+B solvent · Click a mineral row to aim / highlight</span>
+			</div>
+			<div class="panel-body chem-table-wrap">
+				<table class="chem-table">
+					<thead>
+						<tr>
+							<th>Mineral</th>
+							<th>Octant / (R, G, B)</th>
+							<th>Strength</th>
+							<th>Density ρ</th>
+							<th>Water Reaction</th>
+							<th>Water Tint</th>
+							<th>Hydro-Erosion / Separation</th>
+							<th>Base Value</th>
+						</tr>
+					</thead>
+					<tbody id="chem-tbody"></tbody>
+				</table>
+			</div>
+		</section>
+	</main>
+
+	<script src="../js/element-cdf.js"></script>
+	<script src="../js/minerals.js"></script>
+	<script src="../js/geology-config.js"></script>
+	<script src="../js/geology.js"></script>
+	<script src="solubility-lab.js"></script>
+</body>
+</html>
