@@ -15,6 +15,8 @@ const research = require('../js/research.js');
 const physics = require('../js/physics.js');
 const rockets = require('../js/rockets.js');
 const sandblaster = require('../js/sandblaster.js');
+require('../js/water-chemistry.js');
+const water = require('../js/water.js');
 const harness = require('./harness.cjs');
 require('../js/prediction.js');
 const help = require('../js/help.js');
@@ -118,7 +120,7 @@ test('the page boots, builds every panel, and reports live telemetry', () => {
 	const tree = dom.element('progression-tree');
 	assert.equal(dom.elements.has('research-rows'), false, 'split research list is gone');
 	assert.equal(dom.elements.has('equipment-rows'), false, 'split shop list is gone');
-	assert.equal(dom.element('tree-links').children.length, 12, 'twelve prerequisite edges connect the tree');
+	assert.equal(dom.element('tree-links').children.length, 13, 'thirteen prerequisite edges connect the tree');
 	assert.equal(countRows(tree, 'node'), research.nodes.length, 'each technology has one node card');
 	assert.equal(countRows(tree, 'technology'), research.nodes.length, 'no duplicate research rows');
 	assert.equal(countRows(tree, 'item'), equipment.items.length, 'no duplicate equipment rows');
@@ -2143,6 +2145,96 @@ test('the sandblaster feeds on the hopper, blasts on F, auto-fires, and reads it
 	assert.equal(sand.autoFire, true);
 	auto.checked = false;
 	auto.dispatch('change');
+});
+
+test('the water gun sprays on G, aims with the pointer, pumps, and reads its own state', () => {
+	for (const channel of ['move', 'smart', 'drive', 'angle']) autopilot.set(channel, false);
+	dom.element('reset').dispatch('click');
+	advance(2);
+	const gun = water.state;
+	const fire = dom.element('water-fire');
+	const aim = dom.element('water-aim');
+	const auto = dom.element('water-auto');
+	const pump = dom.element('water-pump');
+	const status = dom.element('water-status');
+	assert.equal(fire.getAttribute('aria-keyshortcuts'), 'G');
+	assert.equal(fire.disabled, true, 'no water gun is installed by default');
+	assert.equal(aim.disabled, true);
+	assert.match(status.textContent, /No water gun installed/);
+	assert.ok(help.find('water'), 'the gun has a help topic');
+	assert.match(help.find('water').text.join(' '), /46 droplets a second/);
+	assert.match(help.find('water').text.join(' '), /60 g per unit/);
+	study('hydrology');
+	fund(equipment.find('watergun').cost);
+	buttonOf(gearRow('watergun')).dispatch('click');
+	advance(2);
+	assert.equal(equipment.isInstalled('watergun', 'rig'), true, 'Hydrology unlocks the cannon');
+	assert.equal(fire.disabled, false, 'the tank is unlimited: only the reserve can stop it');
+	assert.equal(aim.disabled, false);
+
+	// Park off the centre pad so the reserve only moves by the throw.
+	world.platform.x = 8;
+	world.platform.previousX = 8;
+	world.platform.vx = 0;
+	world.direction = 0;
+	world.target = NaN;
+	harness.sync(world);
+	advance(8);
+
+	// The pointer aims the nozzle and never becomes a travel order.
+	const target = world.target;
+	water.setAim(12, 14);
+	assert.equal(world.target, target, 'aiming is not a move order');
+	aim.dispatch('click');
+	harness.near(water.state.aimX, 12, 1e-9);
+
+	// G throws one droplet per press; holding keeps the jet going.
+	const battery = world.battery;
+	dom.key('KeyG');
+	advance(1);
+	dom.keyUp('KeyG');
+	assert.equal(water.totals.droplets, 1, 'G throws one droplet');
+	harness.near(world.battery, battery - gun.shotEnergy, 1e-9, 'the throw draws the reserve');
+	advance(4);
+	assert.equal(fire.disabled, false, 'the rate lets the next droplet go');
+	dom.key('KeyG');
+	advance(30);
+	dom.keyUp('KeyG');
+	assert.ok(water.totals.droplets >= 4, water.totals.droplets + ' droplets thrown while held');
+
+	// The standing order keeps the jet running with no key held.
+	const held = water.totals.droplets;
+	advance(30);
+	assert.equal(water.totals.droplets, held, 'nothing fires once the key is up');
+	auto.checked = true;
+	auto.dispatch('change');
+	assert.equal(water.stateFor('rig').autoFire, true);
+	advance(60);
+	assert.ok(water.totals.droplets > held, 'the standing order fires');
+
+	// The pump toggle is the run's own switch and the readout follows it.
+	pump.checked = false;
+	pump.dispatch('change');
+	assert.equal(gun.pumpOn, false);
+	assert.match(status.textContent, /Pump off/);
+	pump.checked = true;
+	pump.dispatch('change');
+	assert.equal(gun.pumpOn, true);
+
+	// The chamber draws water and the energy ledger stays closed.
+	advance(300);
+	assert.ok(water.measureMetrics().waterMass > 0, 'water is in the chamber');
+	assert.ok(Math.abs(parseFloat(dom.element('error').textContent)) < 1e-4, dom.element('error').textContent);
+
+	// A new run starts dry at the default chemistry; the orders are the player's.
+	auto.checked = false;
+	auto.dispatch('change');
+	dom.element('reset').dispatch('click');
+	advance(2);
+	assert.equal(water.measureMetrics().waterMass, 0, 'a new chamber starts dry');
+	assert.equal(water.state.dropletWater > 0, true);
+	assert.equal(fire.disabled, true, 'a new run has no cannon fitted');
+	assert.equal(fire.firstChild.textContent, 'Spray ', 'the readout drops back to the bare label');
 });
 
 test('BOT engages the fitted sandblaster and the Auto-fire checkbox can pause it', () => {

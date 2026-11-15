@@ -1545,7 +1545,12 @@
 	}
 
 	// A single cell let go on its own (a hit that finishes a free-face cell).
+	// It leaves as an ordinary fragment of full cell mass, so the wet ledger must
+	// forget it here: a cell that falls dry is no longer water's to give.
 	function spawn(index) {
+		cellMassLeft[index] = 0;
+		cellValueLeft[index] = 0;
+		leached[index] = 0;
 		spawnFragment(index);
 		fallCells[dominantMineral(index)]++;
 		recordFall(index);
@@ -2596,7 +2601,7 @@
 		state, setShape, setFloorCompression, setDepthScale, setMineralClusterGrowth, generateTestRock, rockDrawnY, rockWorldY, rockScale, collapse, advanceMarket,
 		applyGeology, exportGeology, applyGeologyExport, sampleCell, perspectiveScale,
 		queueGrowth, watchBoundary, grow,
-		cellAt, rockView, wetOf, wetLeach, wetSpend, wetDetach, residueShare,
+		cellAt, rockView, wetOf, wetLeach, wetSpend, wetDetach, residueShare, resetWetCell,
 		depositLoose, loadWetCargo, cargoSpace, createWetOf, createWetDetach,
 		get collapseChunkMax() { return collapseChunkMaxNow(); }
 	};

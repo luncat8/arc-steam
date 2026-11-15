@@ -92,10 +92,9 @@
 	const dropLoadValue = new Float64Array(maxDroplets * count);
 	let dropCursor = 0;
 
-	// ---- Loose grains: wet residue and placer concentrate ----
+	// ---- Loose grains: the residue a leached cell leaves behind ----
 	const maxGrains = 900;
 	const grainActive = new Uint8Array(maxGrains);
-	const grainState = new Uint8Array(maxGrains);
 	const grainX = new Float64Array(maxGrains);
 	const grainY = new Float64Array(maxGrains);
 	const grainVx = new Float64Array(maxGrains);
@@ -123,8 +122,6 @@
 	const split = chemistry.createSplit();
 	const cellWet = { mass: 0, value: 0, leached: 0, residueMass: 0 };
 	const detachOut = createDetachOut();
-	const grainSpawn = { x: 0, y: 0 };
-	const lawScratch = { halite: 0, vitriol: 0, gas: 0, crystal: 0, solid: 0, speed: 0, solubility: 0, density: 0, boundB: 0, freeB: 0 };
 
 	const settings = {
 		model: 'table', satCap: satCapDefault, dissolveRate: dissolveRateDefault,
@@ -138,8 +135,8 @@
 	const totals = {
 		flooded: 0, pumped: 0, pumpedSolute: 0, pumpedValue: 0,
 		lostGasMass: 0, lostGasValue: 0,
-		dissolvedMass: 0, dissolvedCells: 0, exhaustedCells: 0,
-		residueMass: 0, residueValue: 0, placerMass: 0, placerValue: 0,
+		dissolvedMass: 0, cellDissolvedMass: 0, dissolvedCells: 0,
+		residueMass: 0, residueValue: 0, settledMass: 0, settledValue: 0,
 		pumpJoules: 0, shotJoules: 0, droplets: 0, hops: 0
 	};
 
@@ -191,10 +188,12 @@
 		grainActive.fill(0);
 		dropCursor = 0;
 		grainCursor = 0;
+		// The pump order is a chamber setting like the view and the shape rules: a
+		// player who turned the pump off does not find it on again next shift. The
+		// chemistry settings have no control yet, so they go back to their defaults.
 		settings.model = 'table';
 		settings.satCap = satCapDefault;
 		settings.dissolveRate = dissolveRateDefault;
-		settings.pumpOn = true;
 		settings.erosion = true;
 		world = null;
 		for (const key in totals) totals[key] = 0;
@@ -311,11 +310,13 @@
 	}
 
 	// ---- Gun ----
+	// The cannon sits in the collector, the same launch point the sandblaster and
+	// the rocket tube use, so the nozzle is where the collector really is.
 	function nozzleOf(target, owner) {
 		const physics = root.SteamPhysics;
-		const body = physics.machineBody(physics.machineById(target, ownerIdOf(owner)));
-		const half = physics.config.platformWidth * 0.5;
-		nozzle.x = body.x + half * (physics.config.collectorFraction - 1);
+		const id = ownerIdOf(owner);
+		const body = physics.machineBody(physics.machineById(target, id));
+		nozzle.x = physics.collectorX(target, id);
 		nozzle.y = body.y + physics.config.deck + 0.14;
 		let dx = aim.x - nozzle.x;
 		let dy = aim.y - nozzle.y;
@@ -344,7 +345,8 @@
 		if (!canFire(target, id)) return false;
 		const machine = root.SteamPhysics.machineById(target, id);
 		const body = root.SteamPhysics.machineBody(machine);
-		const muzzle = nozzleOf(machine);
+		// The gun points where the jet must go, not where the bound machine body is.
+		const muzzle = nozzleOf(machine, id);
 		const slot = freeDroplet();
 		if (slot < 0) return false;
 		const angle = (random() - 0.5) * jetSpread;
@@ -430,6 +432,12 @@
 	// ---- Chemistry ----
 	// One droplet's impact: a small mechanical bite through the shared weakening
 	// rule, then the chemical wash on the cell it struck.
+	//
+	// The bite is almost nothing, and it books nothing when it lands: the
+	// droplet's whole throw already became chamber heat at the muzzle, and `chip`
+	// returns what it *absorbed*, which is only ever spent again (a loosened cell
+	// falls through the collapse scheduler, and that fall's heat is the next
+	// booking). Adding it here would count the same joule twice.
 	function strikeCell(rockIndex, parcelIndex, speed) {
 		const rock = root.SteamCeiling;
 		const view = rock.rockView();
@@ -439,31 +447,80 @@
 	}
 
 	// Nearest rock cell with anything left in it, within one parcel of the point.
-	function faceNear(x, y) {
+	// The search runs outwards from the point, not from the cell grid's own index:
+	// a rising jet stops its step below the layer, where the row is negative, and
+	// clamping before the search would walk it away from the face it is touching.
+	// The rock cell this flight step meets. A rising jet that stops in the open
+	// parcel under a face has still met it: the step is tested along its whole
+	// length against the cells it passes through, and the nearest solid cell to
+	// the arc decides the strike. Without the along-the-step test a droplet could
+	// stop a few cells short, be recorded as splashed water, and never work the
+	// face it was aimed at.
+	// `verticalSpeed` is the droplet's own climb rate: while it is still rising the
+	// step is tested forward along the jet, and once it is falling the apex it just
+	// passed is what it struck. A jet aimed at a face from below reaches the face
+	// row a step *after* its apex, which is why the test is not a single endpoint.
+	function faceNear(x0, y0, x1, y1, verticalSpeed) {
 		const view = root.SteamCeiling.rockView();
 		const rockCell = view.cell;
 		const rockColumns = view.columns;
-		const middle = root.SteamCeiling.cellAt(x, y);
-		if (middle >= 0 && view.strength[middle] > 0) return middle;
-		const centreColumn = Math.floor(x / rockCell);
-		const centreRow = Math.floor((y - view.bottom) / rockCell);
+		const reach = Math.ceil(cellSize / rockCell);
+		const dxStep = x1 - x0;
+		const dyStep = y1 - y0;
+		// Sample at one rock cell: the finest spacing that cannot skip a cell.
+		const samples = Math.max(2, Math.ceil(Math.hypot(dxStep, dyStep) / rockCell) + 1);
 		let best = -1;
 		let bestDistance = Infinity;
-		for (let dr = -2; dr <= 2; dr++) {
-			const row = centreRow + dr;
-			if (row < 0 || row >= view.rows) continue;
-			for (let dc = -2; dc <= 2; dc++) {
-				const column = centreColumn + dc;
-				if (column < 0 || column >= rockColumns) continue;
-				const index = row * rockColumns + column;
-				if (view.strength[index] <= 0) continue;
-				const dx = (column + 0.5) * rockCell - x;
-				const dy = view.bottom + (row + 0.5) * rockCell - y;
-				const distance = dx * dx + dy * dy;
-				if (distance < bestDistance) { bestDistance = distance; best = index; }
+		for (let sample = 0; sample < samples; sample++) {
+			const x = x0 + dxStep * (sample / (samples - 1));
+			const y = y0 + dyStep * (sample / (samples - 1));
+			const hit = root.SteamCeiling.cellAt(x, y);
+			if (hit >= 0) {
+				const column = hit % rockColumns;
+				const row = (hit / rockColumns) | 0;
+				const offsetX = (column + 0.5) * rockCell - x;
+				const offsetY = view.bottom + (row + 0.5) * rockCell - y;
+				const total = offsetX * offsetX + offsetY * offsetY;
+				if (total < bestDistance) { bestDistance = total; best = hit; }
+				continue;
+			}
+			// An open sample: a face one parcel away is the face the jet is passing.
+			const centreColumn = Math.floor(x / rockCell);
+			const centreRow = Math.floor((y - view.bottom) / rockCell);
+			for (let dr = -reach; dr <= reach; dr++) {
+				const row = centreRow + dr;
+				if (row < 0 || row >= view.rows) continue;
+				for (let dc = -reach; dc <= reach; dc++) {
+					const column = centreColumn + dc;
+					if (column < 0 || column >= rockColumns) continue;
+					const index = row * rockColumns + column;
+					if (view.strength[index] <= 0) continue;
+					if (!isExposed(view, index)) continue;
+					const offsetX = (column + 0.5) * rockCell - x;
+					const offsetY = view.bottom + (row + 0.5) * rockCell - y;
+					const total = offsetX * offsetX + offsetY * offsetY;
+					if (total < bestDistance) { bestDistance = total; best = index; }
+				}
 			}
 		}
-		return best;
+		// A rising jet that stopped even a full unit short of the face has still
+		// spent its climb on that face: take the exposed cell straight ahead.
+		if (best >= 0) return best;
+		if (verticalSpeed > 0) return -1;
+		return aheadFace(x1, y1);
+	}
+
+	// The first face straight up from a point, within one parcel: the same contact
+	// distance the standing-water pass uses, so a jet whose steps stop a parcel
+	// short of the face it was aimed at has still reached it.
+	function aheadFace(x, y) {
+		const view = root.SteamCeiling.rockView();
+		const probes = Math.ceil(cellSize / view.cell) + 1;
+		for (let probe = 0; probe <= probes; probe++) {
+			const hit = root.SteamCeiling.cellAt(x, y + probe * view.cell);
+			if (hit >= 0) return hit;
+		}
+		return -1;
 	}
 
 	function wetX(view, index) {
@@ -535,33 +592,45 @@
 		}
 		root.SteamCeiling.wetSpend(rockIndex, brineMass, ventMass, brineValue, ventValue);
 		totals.dissolvedMass += brineMass + ventMass;
+		totals.cellDissolvedMass += brineMass + ventMass;
 	}
 
 	// The cell is finished. Whatever it still holds becomes one falling grain of
 	// its residue mineral, and the grain carries the cell's exact remaining mass
 	// and value, so the wet ledger and the mine's debits agree to the gram.
+	//
+	// The energy boundary. The ceiling books a standing cell at `cellMass * g * y`
+	// and drops that whole term the moment the cell goes, whatever its remaining
+	// mass; the grain, the brine and the lost gas are this module's fluid and live
+	// outside the dry ledger. So the boundary is one number - the cell's full
+	// potential energy - and it is booked as imported work: the wet system took
+	// that mass-energy out of the rock. Everything downstream (a grain falling,
+	// brine flowing, the gas lost) then stays outside the ledger exactly like the
+	// ambient pool flow, and nothing has to be booked twice.
 	function detachCell(rockIndex, parcelIndex, leach) {
 		const rock = root.SteamCeiling;
 		const view = rock.rockView();
+		const wet = rock.wetOf(rockIndex, cellWet);
 		if (leach.leached < 1) {
 			// An early collapse still owes its reactive share to the water that
 			// undermined it; the split is re-evaluated on the cell as it now is.
-			const wet = rock.wetOf(rockIndex, cellWet);
 			const cellSplit = splitOf(view, rockIndex, wet);
 			if (cellSplit.solubility > 0) releaseSlice(rockIndex, parcelIndex, 1 - leach.leached);
 		}
-		const mass = wet.mass;
-		const value = wet.value;
+		// The ceiling bills every standing cell at the full `cellMass`, so this is
+		// exactly what its energy total loses when the cell goes - whether the
+		// remainder became one grain, brine, or lost gas. Booking it as heat makes
+		// the fluid the new owner of that mass-energy; the fluid's own movement is
+		// outside the dry ledger from here on, and the place it re-enters (a
+		// hopper) books its own entry.
+		const height = view.bottom + (Math.floor(rockIndex / view.columns) + 0.5) * view.cell;
 		if (!rock.wetDetach(rockIndex, detachOut)) return false;
+		world.heat += rock.state.cellMass * gravity * height;
 		totals.dissolvedCells++;
-		// The cell leaves the rock's own potential-energy total the moment it goes,
-		// so its height has to be booked here: as the grain's fall energy, and as
-		// heat for the part that dissolved away.
-		const height = detachOut.y;
-		if (mass > 1e-9) {
-			world.heat += mass * gravity * height - (detachOut.mass * gravity * height);
-			spawnGrain(detachOut.x, detachOut.y, (random() - 0.5) * 0.4, -0.2, detachOut.mineral, detachOut.mass, detachOut.value);
-			totals.residueMass += detachOut.mass;
+		const gained = detachOut.mass;
+		if (gained > 1e-9) {
+			spawnGrain(detachOut.x, detachOut.y, (random() - 0.5) * 0.4, -0.2, detachOut.mineral, gained, detachOut.value);
+			totals.residueMass += gained;
 			totals.residueValue += detachOut.value;
 		}
 		return true;
@@ -645,12 +714,16 @@
 			const nextY = dropY[i] + (dropVy[i] + nextVy) * 0.5 * dt;
 			const parcel = cellIndexAt(nextX, nextY);
 			const out = nextX <= 0.06 || nextX >= 23.94 || nextY >= 14.94 || nextY <= 0.02;
-			if (out || solidMask[parcel]) {
-				const speed = Math.hypot(dropVx[i], dropVy[i]);
-				// Parcels are coarser than rock cells, so a droplet can stop half a
-				// cell short of the face it hit: take the nearest solid cell around
-				// the impact point instead of a single point sample.
-				const face = speed > 4.2 ? faceNear(nextX, nextY) : -1;
+			// The flight hits rock on the step that *reaches* it, so the whole step is
+			// tested, not just its end: a jet aimed at a face stops its step a few
+			// cells short of the face, and a test of the endpoint alone would let it
+			// fall away as splashed water without ever touching the rock.
+			const speed = Math.hypot(dropVx[i], dropVy[i]);
+			// Test the step from the droplet's height to where it would go, and the
+			// whole height it climbs toward: the arc turns over inside a step, so the
+			// apex of the flight is what the jet is aimed at.
+			const face = out ? -1 : faceNear(dropX[i], dropY[i], nextX, Math.max(nextY, dropY[i]), nextVy);
+			if (out || solidMask[parcel] || face >= 0) {
 				const landed = landDroplet(i, parcel);
 				if (face >= 0) strikeCell(face, landed, speed);
 				continue;
@@ -735,7 +808,6 @@
 			if (grainActive[slot]) continue;
 			grainCursor = (slot + 1) % maxGrains;
 			grainActive[slot] = 1;
-			grainState[slot] = FREE;
 			grainX[slot] = x;
 			grainY[slot] = y;
 			grainVx[slot] = vx;
@@ -751,7 +823,6 @@
 		// The pool is full, so the material joins the floor pile where it was
 		// instead of vanishing.
 		root.SteamCeiling.depositLoose(x, mass / root.SteamCeiling.state.cellMass, value);
-		grainSpawn.x = x;
 		return -1;
 	}
 
@@ -835,6 +906,14 @@
 		}
 	}
 
+	// The grain reaches a collector: it becomes cargo at the deck, and the deck
+	// pays for it in the ceiling's books, where a hopper cell is worth
+	// `cellMass * g * cargoHeight`. A grain that joins the rig's own hopper then
+	// stops being fluid: it is dry rock again, in the ledger at that height, so
+	// that addition is booked as imported mass-energy. The grain's own kinetic
+	// energy was never in the dry ledger, and the only other thing that moves is
+	// the rig's, whose inelastic merge loss is heat. A rival's pack is outside
+	// this ledger, so its grain simply leaves it.
 	function catchGrain(i) {
 		const physics = root.SteamPhysics;
 		const machines = physics.machinesOf(world);
@@ -850,8 +929,10 @@
 			const mass = physics.machineMass(world, machine);
 			const before = 0.5 * mass * body.vx * body.vx;
 			body.vx = (mass * body.vx + grainMass[i] * grainVx[i]) / (mass + grainMass[i]);
-			world.heat += 0.5 * grainMass[i] * grainVx[i] * grainVx[i] + grainMass[i] * gravity * grainY[i];
-			if (machine === world) world.heat += before - 0.5 * (mass + grainMass[i]) * body.vx * body.vx - grainMass[i] * gravity * root.SteamCeiling.state.cargoHeight;
+			if (machine === world) {
+				world.heat += before - 0.5 * (mass + grainMass[i]) * body.vx * body.vx;
+				world.importedEnergy += grainMass[i] * gravity * root.SteamCeiling.state.cargoHeight;
+			}
 			grainActive[i] = 0;
 			return true;
 		}
@@ -872,22 +953,28 @@
 		return ground;
 	}
 
+	// A grain reaches the rubble and becomes floor material again. The floor pile
+	// is outside the mechanical ledger (the ceiling bills standing rock only), so
+	// nothing moves and nothing is booked: the fluid simply stops carrying it. The
+	// settled totals keep the mass and value the wet ledger handed to the floor.
 	function landGrain(i) {
-		world.heat += 0.5 * grainMass[i] * grainVx[i] * grainVx[i];
+		totals.settledMass += grainMass[i];
+		totals.settledValue += grainValue[i];
 		root.SteamCeiling.depositLoose(grainX[i], grainMass[i] / root.SteamCeiling.state.cellMass, grainValue[i]);
 		grainActive[i] = 0;
 	}
 
 	function loseGrain(i) {
-		world.heat += 0.5 * grainMass[i] * (grainVx[i] * grainVx[i] + grainVy[i] * grainVy[i]) + grainMass[i] * gravity * grainY[i];
+		totals.settledMass += grainMass[i];
+		totals.settledValue += grainValue[i];
 		root.SteamCeiling.depositLoose(clamp(grainX[i], 0, 23.99), grainMass[i] / root.SteamCeiling.state.cellMass, grainValue[i]);
 		grainActive[i] = 0;
 	}
 
 	// ---- Pump ----
 	// The pump lifts water and its dissolved load from under the hull into the
-	// hopper. Solid grains are never drawn: dry collection and placer panning
-	// stay separate mechanics. A full hopper stalls the pump instead of destroying
+	// hopper. Solid grains are never pumped: dry collection stays a separate
+	// mechanic. A full hopper stalls the pump instead of destroying
 	// what it cannot hold.
 	function stepPump(dt) {
 		if (!settings.pumpOn) return 0;
@@ -939,14 +1026,16 @@
 			}
 		}
 		if (lifted <= 0) return 0;
-		// The pump's work leaves the reserve and arrives as chamber heat, less the
-		// potential energy the lifted solute now holds in the hopper.
+		// The pump's work leaves the reserve and arrives as chamber heat: the lift
+		// is real work, but the solute it lifted was already imported by the
+		// chemistry, and the hopper books that solute at `g * cargoHeight`. The
+		// brine leaves this module's fluid at the same moment, so that hopper
+		// entry is imported mass-energy, not new energy.
 		const joules = lifted * pumpJoulesPerUnit;
 		const spent = Math.min(world.battery, joules);
 		world.battery -= spent;
-		const liftEnergy = soluteMass * gravity * root.SteamCeiling.state.cargoHeight;
-		world.heat += Math.max(0, joules - liftEnergy);
-		world.importedEnergy += joules - spent;
+		world.heat += joules;
+		world.importedEnergy += joules - spent + soluteMass * gravity * root.SteamCeiling.state.cargoHeight;
 		totals.pumpJoules += joules;
 		return lifted;
 	}
@@ -986,6 +1075,18 @@
 
 	function autoFireAllowed(owner) {
 		return owner !== world.platform.id || world.battery >= root.SteamPhysics.config.battery * autoFireReserve;
+	}
+
+	// A bot only orders a jet its installed engine can replenish at the pad, and
+	// only while its hopper has room for what the pump would lift. A hand press
+	// is always allowed: the stream is the module's own rate limit, not a duty.
+	function streamReady(target, owner) {
+		const id = ownerIdOf(owner);
+		if (!hasTool(id)) return false;
+		const machine = root.SteamPhysics.machineById(target, id);
+		if (!root.SteamCeiling.cargoSpace(target, machine)) return false;
+		const engine = root.SteamPhysics.engineNow(id);
+		return root.SteamPhysics.reserveNow(id) / engine.reload >= shotEnergy * dropletsPerSecond;
 	}
 
 	// ---- Metrics ----
@@ -1050,9 +1151,12 @@
 		result.lostGasMass = totals.lostGasMass;
 		result.lostGasValue = totals.lostGasValue;
 		result.dissolvedMass = totals.dissolvedMass;
+		result.cellDissolvedMass = totals.cellDissolvedMass;
 		result.dissolvedCells = totals.dissolvedCells;
 		result.residueMass = totals.residueMass;
 		result.residueValue = totals.residueValue;
+		result.settledMass = totals.settledMass;
+		result.settledValue = totals.settledValue;
 		result.pumpJoules = totals.pumpJoules;
 		result.shotJoules = totals.shotJoules;
 		result.droplets = totals.droplets;
@@ -1075,8 +1179,7 @@
 		return settings.dissolveRate;
 	}
 
-	// The chemistry setting persists across runs, so a player who prefers the
-	// composition law does not re-select it every shift.
+	// The table law is the default; the formula law is the lab's own rule.
 	function setModel(value) {
 		settings.model = value === 'formula' ? 'formula' : 'table';
 		return settings.model;
@@ -1107,6 +1210,97 @@
 	function clearBotFire(owner) {
 		profileFor(owner).botFire = false;
 		return true;
+	}
+
+	// ---- Draw ----
+	// One pass, no allocations in the frame: parcels are drawn as a single path
+	// of filled squares tinted by the brine they carry, airborne droplets and
+	// grains as dots, and the jet is never drawn as a line back to a nozzle that
+	// has since moved. Everything is warped by the chamber's own perspective, so
+	// water in the rock layer sits on the cells it touches.
+	const tintScratch = { r: 0, g: 0, b: 0 };
+	function draw(context) {
+		const rock = root.SteamCeiling;
+		if (!rock) return;
+		context.save();
+		// Pools: one translucent fill per parcel, so a pond reads as water and a
+		// brine-rich parcel reads darker and greener without a second layer.
+		for (let row = 0; row < rows; row++) {
+			const y0 = rock.rockDrawnY(row * cellSize);
+			const y1 = rock.rockDrawnY((row + 1) * cellSize);
+			if (!(y1 > y0)) continue;
+			for (let column = 0; column < columns; column++) {
+				const parcel = row * columns + column;
+				const held = water[parcel];
+				if (held < 0.02) continue;
+				const fill = Math.min(1, held / parcelCapacity);
+				tintFor(parcel, fill);
+				context.fillStyle = 'rgba(' + tintScratch.r + ',' + tintScratch.g + ',' + tintScratch.b + ',' + (0.18 + 0.42 * fill).toFixed(3) + ')';
+				context.fillRect(column * cellSize, y0, cellSize + 0.002, y1 - y0 + 0.002);
+			}
+		}
+		// The bright meniscus: the top water line of each column of parcels.
+		context.fillStyle = 'rgba(198,238,255,0.55)';
+		for (let column = 0; column < columns; column++) {
+			let topRow = -1;
+			for (let row = rows - 1; row >= 0; row--) if (water[row * columns + column] >= 0.1) { topRow = row; break; }
+			if (topRow < 0) continue;
+			const held = Math.min(1, water[topRow * columns + column]);
+			const y = rock.rockDrawnY((topRow + 1) * cellSize);
+			context.fillRect(column * cellSize, y, cellSize + 0.002, 0.03 + 0.02 * held);
+		}
+		// Droplets and grains keep the chamber's local scale, so a jet in the
+		// layer is drawn at the size the cells there are drawn at.
+		for (let i = 0; i < maxDroplets; i++) {
+			if (dropState[i] !== FLYING) continue;
+			const y = rock.rockDrawnY(dropY[i]);
+			const scale = rock.perspectiveScale(dropY[i]);
+			context.fillStyle = 'rgba(206,242,255,0.8)';
+			context.beginPath();
+			context.arc(dropX[i], y, 0.028 * scale, 0, Math.PI * 2);
+			context.fill();
+		}
+		for (let i = 0; i < maxGrains; i++) {
+			if (!grainActive[i]) continue;
+			const y = rock.rockDrawnY(grainY[i]);
+			const scale = rock.perspectiveScale(grainY[i]);
+			context.fillStyle = '#c9b48a';
+			context.beginPath();
+			context.arc(grainX[i], y, 0.035 * scale, 0, Math.PI * 2);
+			context.fill();
+		}
+		context.restore();
+	}
+
+	// Water colour: pale blue for fresh water, greener and darker as the brine
+	// loads up, weighted by the dye each dissolved mineral carries.
+	function tintFor(parcel, fill) {
+		const offset = parcel * count;
+		let mass = 0;
+		let r = 0;
+		let g = 0;
+		let b = 0;
+		for (let m = 0; m < count; m++) {
+			const loaded = load[offset + m];
+			if (loaded <= 0) continue;
+			const dye = minerals.mineralTable[m].dye;
+			if (!dye) continue;
+			mass += loaded;
+			r += dye[0] * loaded;
+			g += dye[1] * loaded;
+			b += dye[2] * loaded;
+		}
+		const fresh = 1 - fill * 0.35;
+		if (mass <= 0) {
+			tintScratch.r = Math.round(88 * fresh + 40);
+			tintScratch.g = Math.round(150 * fresh + 60);
+			tintScratch.b = Math.round(196 * fresh + 50);
+			return;
+		}
+		const weight = Math.min(1, mass * 12);
+		tintScratch.r = Math.round(88 * (1 - weight) + r / mass * weight);
+		tintScratch.g = Math.round(150 * (1 - weight) + g / mass * weight);
+		tintScratch.b = Math.round(196 * (1 - weight) + b / mass * weight);
 	}
 
 	function stateFor(owner) { return profileFor(owner).view; }
@@ -1164,7 +1358,7 @@
 		state, stateFor, reset, step, measureMetrics, createMetrics, depthAt, fill,
 		fire, canFire, setAim, setAutoFire, setBotFire, clearBotFire,
 		setSaturationCap, setDissolveRate, setModel, setPump, setErosion,
-		nozzleOf, cellIndexAt, settings, totals,
+		nozzleOf, cellIndexAt, settings, totals, draw, streamReady,
 		water, load, loadValue, loadTotal, solidMask,
 		dropState, dropX, dropY, dropWater, grainActive, grainX, grainY, grainMass, grainValue, grainMineral, maxGrains
 	};
