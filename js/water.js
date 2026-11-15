@@ -117,7 +117,7 @@
 		stamp = 0;
 	}
 
-	const nozzle = { x: 0, y: 0, dx: 0, dy: 1 };
+	const nozzle = { x: 0, y: 0, angle: 0, dx: 0, dy: 1 };
 	const aim = { x: 12, y: 11 };
 	const split = chemistry.createSplit();
 	const cellWet = { mass: 0, value: 0, leached: 0, residueMass: 0 };
@@ -310,17 +310,11 @@
 	}
 
 	// ---- Gun ----
-	// The cannon sits in the collector, the same launch point the sandblaster and
-	// the rocket tube use, so the nozzle is where the collector really is.
-	// `world` is the chamber, not a machine: a rival body has no `platform` field,
-	// so nozzleOf must resolve the owner's machine itself.
+	// `world` is the chamber, not a machine: resolve the owner's collector with
+	// its full chassis pose before measuring the world-space aim.
 	function nozzleOf(world, owner) {
 		const physics = root.SteamPhysics;
-		const id = ownerIdOf(owner);
-		const body = physics.machineBody(physics.machineById(world, id));
-		nozzle.x = physics.waterNozzleX(world, id);
-		nozzle.y = body.y + physics.config.deck;
-
+		physics.collectorPointAt(world, ownerIdOf(owner), physics.config.waterNozzleFraction, 0, nozzle);
 		let dx = aim.x - nozzle.x;
 		let dy = aim.y - nozzle.y;
 		// A nozzle cannot fire into its own deck.

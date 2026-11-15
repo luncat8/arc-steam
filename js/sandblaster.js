@@ -16,7 +16,7 @@
 	// into the throw, not an unbooked motor loss: the hit and the ledger see it.
 	const shotEnergy = 135;
 	const grainMass = 0.02;
-	const nozzleHeight = 0.14;
+	const nozzle = { x: 0, y: 0, angle: 0 };
 	// Repeated 20 g draws leave rounding dust; it must not hide the last grain.
 	const grainDust = 1e-9;
 	const autoFireReserve = 0.2;
@@ -64,7 +64,8 @@
 
 	function viewOf(profile) {
 		return Object.freeze({
-			shotEnergy, grainMass, nozzleHeight, rate, autoFireReserve,
+			shotEnergy, grainMass, rate, autoFireReserve,
+			get nozzleHeight() { return root.SteamPhysics.config.sandblasterNozzleHeight; },
 			maxGrains, maxGrainsPerOwner, FREE, FLYING, FALLING,
 			grainState, grainOwner, grainX, grainY, grainVx, grainVy, grainAge, grainTint, grainMineral, grainValue,
 			get autoFire() { return profile.autoFire || profile.botFire; },
@@ -237,8 +238,9 @@
 		grainState[slot] = FLYING;
 		grainOwner[slot] = ownerIndex(id);
 		grainMineral[slot] = mineral;
-		grainX[slot] = physics.sandblasterNozzleX(world, id);
-		grainY[slot] = body.y + physics.config.deck + nozzleHeight;
+		physics.collectorPointAt(world, id, physics.config.sandblasterNozzleFraction, physics.config.sandblasterNozzleHeight, nozzle);
+		grainX[slot] = nozzle.x;
+		grainY[slot] = nozzle.y;
 		grainVx[slot] = body.vx;
 		const relativeVy = Math.sqrt(Math.max(0, 2 * (lift - grainMass * gravity * grainY[slot]) / grainMass));
 		grainVy[slot] = body.vy + relativeVy;

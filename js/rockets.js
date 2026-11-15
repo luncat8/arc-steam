@@ -25,6 +25,7 @@
 	const spentKeep = 0.25;
 	const flashLife = 0.22;
 	const drawnSize = 1.6;
+	const launchPoint = { x: 0, y: 0, angle: 0 };
 	const maxPlayers = 5;
 	const maxRocketsPerRack = 8;
 	const maxRockets = maxPlayers * maxRocketsPerRack;
@@ -274,12 +275,11 @@
 		if (!world || !canFire(id)) return false;
 		const index = ownerIndex(id);
 		const physics = root.SteamPhysics;
-		const machine = physics.machineById(world, id);
-		const body = physics.machineBody(machine);
 		let slot = 0;
 		while (rocketState[slot] !== FREE) slot++;
-		const x = launcherX(world, id);
-		const y = body.y + physics.config.deck;
+		physics.collectorPointAt(world, id, 0.5, 0, launchPoint);
+		const x = launchPoint.x;
+		const y = launchPoint.y;
 		const gap = Math.max(0, root.SteamCeiling.surfaceAt(x) - noseReach - y);
 		rocketState[slot] = BURNING;
 		rocketOwner[slot] = index;

@@ -149,8 +149,8 @@ function drawRigMachinery(context, player) {
 		context.beginPath();
 		context.moveTo(nozzleX - 0.05, config.deck);
 		context.lineTo(nozzleX + 0.05, config.deck);
-		context.lineTo(nozzleX + 0.02, config.deck + SteamSandblaster.state.nozzleHeight);
-		context.lineTo(nozzleX - 0.02, config.deck + SteamSandblaster.state.nozzleHeight);
+		context.lineTo(nozzleX + 0.02, config.deck + config.sandblasterNozzleHeight);
+		context.lineTo(nozzleX - 0.02, config.deck + config.sandblasterNozzleHeight);
 		context.closePath();
 		context.fill();
 	}
@@ -159,11 +159,16 @@ function drawRigMachinery(context, player) {
 		const nozzle = SteamWater.nozzleOf(world, player.id);
 		const nozzleX = left + collectorWidth * config.waterNozzleFraction;
 		const nozzleY = config.deck;
+		// The chassis transform already rotates the barrel; undo it in the aim.
+		const cosine = Math.cos(nozzle.angle);
+		const sine = Math.sin(nozzle.angle);
+		const dx = cosine * nozzle.dx + sine * nozzle.dy;
+		const dy = cosine * nozzle.dy - sine * nozzle.dx;
 		context.strokeStyle = '#7fb6d9';
 		context.lineWidth = 0.07;
 		context.beginPath();
-		context.moveTo(nozzleX - nozzle.dx * 0.05, nozzleY - nozzle.dy * 0.05);
-		context.lineTo(nozzleX + nozzle.dx * 0.26, nozzleY + nozzle.dy * 0.26);
+		context.moveTo(nozzleX - dx * 0.05, nozzleY - dy * 0.05);
+		context.lineTo(nozzleX + dx * 0.26, nozzleY + dy * 0.26);
 		context.stroke();
 		context.lineWidth = 1 / scale;
 		context.fillStyle = '#bfe6f7';
