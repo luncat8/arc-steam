@@ -192,16 +192,10 @@ test('debrisLimit collapse: weak skeletons detach, strong skeletons only leach',
 	assert.ok(Lab.skeletonStrength(state, findCell(state, Lab.MIN_HALITE)) < 0.8, 'Halite skeleton collapses');
 	assert.ok(Math.abs(Lab.skeletonStrength(state, findCell(state, Lab.MIN_FLUORITE)) - 1.35) < 1e-6, 'Fluorite skeleton is 45% x 3.0 J = 1.35 J');
 	assert.ok(Lab.skeletonStrength(state, findCell(state, Lab.MIN_QUARTZ)) >= 0.8, 'Quartz skeleton stands');
-	// Reference quotes from js/rock-materials.js calibration in the plan table.
-	const priceOf = id => Lab.MINERALS.find(m => m.id === id).price;
-	assert.equal(priceOf('vitriol'), 22.04);
-	assert.equal(priceOf('halite'), 2.52);
-	assert.equal(priceOf('fizzy'), 3.65);
-	assert.equal(priceOf('fluorite'), 12.23);
-	assert.equal(priceOf('gas'), 150.00);
-	assert.equal(priceOf('gold'), 147.35);
-	assert.equal(priceOf('quartz'), 5.21);
-	assert.equal(priceOf('pure_gold'), 573.80);
+	const minerals = require('../js/minerals.js');
+	const materials = require('../js/rock-materials.js');
+	const prices = materials.basePricesInto(new Float64Array(minerals.mineralCount), minerals.rarityTargets);
+	for (let m = 0; m < prices.length; m++) assert.equal(Lab.MINERALS[m].price, prices[m]);
 });
 
 test('separate hydro-erosion pans Gold-bearing quartz (Pure Gold stays upstream, Quartz/Sand wash downstream)', () => {
@@ -222,8 +216,8 @@ test('separate hydro-erosion pans Gold-bearing quartz (Pure Gold stays upstream,
 	const m = Lab.measureMetrics(state);
 	assert.ok(m.goldPanEvents >= 5, `expected Gold-quartz placer separation events >= 5, got ${m.goldPanEvents}`);
 	assert.ok(m.pureGoldMass > 0.5 && m.pureGoldValue > 30, `expected concentrated Pure Gold, got mass=${m.pureGoldMass}, val=${m.pureGoldValue}`);
-	// Exact liberation split: 25% mass carrying 97.35% value (573.80/g), 75% Quartz carrying 2.65%.
-	assert.ok(Math.abs(m.pureGoldValue / m.pureGoldMass - 573.80) < 1.0, `Pure Gold unit value must be ~573.80, got ${m.pureGoldValue / m.pureGoldMass}`);
+	// Quartz is priced at the same market; the nugget takes exactly the remainder.
+	assert.ok(Math.abs(m.pureGoldValue / m.pureGoldMass - state.prices[Lab.MIN_PURE_GOLD]) < 1e-9);
 	assert.ok(Math.abs(m.pureGoldMass - m.goldPanEvents * 0.55 * 0.25) < 1e-6, 'Pure Gold must be 25% of each liberated lump mass');
 	assert.ok(m.erosionHopEvents >= 25, `expected short-hop saltation events >= 25, got ${m.erosionHopEvents}`);
 	assert.ok(m.meanGoldX < m.meanQuartzX, `Pure Gold (${m.meanGoldX.toFixed(2)}m) must stay upstream of washed Quartz (${m.meanQuartzX.toFixed(2)}m)`);

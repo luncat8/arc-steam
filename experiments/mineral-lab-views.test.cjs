@@ -16,7 +16,10 @@ for (let m = 0; m < minerals.mineralCount; m++) {
 	context.mapMix[m] = 1;
 	assert.equal(vm.runInContext('mixedValue(0, false)', context), minerals.mineralTable[m].strength);
 	const price = vm.runInContext('mixedValue(0, true)', context);
-	assert.ok(price >= 0.4 && price <= 150);
+	if (minerals.mineralTable[m].gen === false) {
+		const quotes = vm.runInContext('referencePrices', context);
+		assert.equal(price, materials.liberatedGoldQuote(quotes[minerals.mineralIds.indexOf('gold')], quotes[minerals.mineralIds.indexOf('quartz')]));
+	} else assert.ok(price >= 0.4 && price <= 150);
 }
 context.mapMix.fill(0);
 context.mapMix[0] = context.mapMix[1] = 0.5;

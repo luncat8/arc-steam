@@ -1,0 +1,37 @@
+Solubility geology: 8 seeds x 192x120; 13 forming minerals + liberated Pure Gold
+hostWeight=0.0883 achievedMean=11.9550 targetMean=12.5
+stone      share=25.306% target=25.307% quote=2.8017
+iron       share=16.620% target=16.606% quote=4.8393
+copper     share=3.911% target=3.915% quote=31.7453
+vitriol    share=3.892% target=3.915% quote=31.9396
+quartz     share=16.147% target=16.137% quote=5.0245
+corundum   share=3.453% target=3.438% quote=37.3142
+fluorite   share=8.393% target=8.364% quote=11.7627
+silver     share=3.100% target=3.091% quote=42.9299
+gold       share=1.239% target=1.234% quote=141.4921
+gas        share=0.916% target=0.959% quote=150.0000
+sand       share=4.310% target=4.325% quote=0.8394
+halite     share=6.562% target=6.559% quote=2.4297
+fizzy      share=6.151% target=6.151% quote=3.5234
+pure_gold  share=0.000% target=0.000% quote=550.8949
+copper+vitriol=7.803% (target 7.830%)
+
+Diagnostic re-calibration of the rounded shipped input (does not modify defaults):
+autoAdjust passes=30 hostWeight=0.0838
+Solubility geology: 8 seeds x 192x120; 13 forming minerals + liberated Pure Gold
+hostWeight=0.0838 achievedMean=11.9687 targetMean=12.5
+stone      share=25.307% target=25.307% quote=2.8019
+iron       share=16.616% target=16.606% quote=4.8416
+copper     share=3.916% target=3.915% quote=31.6923
+vitriol    share=3.917% target=3.915% quote=31.6855
+quartz     share=16.144% target=16.137% quote=5.0262
+corundum   share=3.439% target=3.438% quote=37.5209
+fluorite   share=8.367% target=8.364% quote=11.8110
+silver     share=3.092% target=3.091% quote=43.0873
+gold       share=1.235% target=1.234% quote=142.1109
+gas        share=0.922% target=0.959% quote=150.0000
+sand       share=4.326% target=4.325% quote=0.8353
+halite     share=6.564% target=6.559% quote=2.4290
+fizzy      share=6.154% target=6.151% quote=3.5217
+pure_gold  share=0.000% target=0.000% quote=553.3650
+copper+vitriol=7.833% (target 7.830%)

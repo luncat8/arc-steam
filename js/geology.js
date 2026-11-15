@@ -164,7 +164,7 @@
 		// `mixInto` with the constant host weight.
 		function affinityInto(values, out, offset) {
 			for (let m = 0; m < ranges.length; m++) {
-				if (m === hostIndex) { out[offset + m] = 0; continue; }
+				if (m === hostIndex || mineralTable[m].gen === false) { out[offset + m] = 0; continue; }
 				let product = 1;
 				let conditions = 0;
 				let failed = false;
@@ -403,9 +403,9 @@
 	function separate(ranges, escape) {
 		const moved = [];
 		for (let inner = 0; inner < ranges.length; inner++) {
-			if (inner === hostIndex || mineralTable[inner].id === 'gas') continue;
+			if (inner === hostIndex || mineralTable[inner].gen === false || mineralTable[inner].id === 'gas') continue;
 			for (let outer = 0; outer < ranges.length; outer++) {
-				if (outer === hostIndex || outer === inner) continue;
+				if (outer === hostIndex || outer === inner || mineralTable[outer].gen === false) continue;
 				if (!contains(ranges[outer], ranges[inner])) continue;
 				let best = Infinity;
 				let bestChannel = -1;
@@ -460,14 +460,14 @@
 			statsAt(cache, hostWeight, stats);
 			let worst = 0;
 			for (let m = 0; m < mineralCount; m++) {
-				if (m === hostIndex) continue;
+				if (m === hostIndex || mineralTable[m].gen === false) continue;
 				const error = Math.abs(stats.shares[m] - targets[m]) / targets[m];
 				if (error > worst) worst = error;
 			}
 			history.push({ pass, hostWeight, worst, shares: Float64Array.from(stats.shares) });
 			if (worst <= tolerance) break;
 			for (let m = 0; m < mineralCount; m++) {
-				if (m === hostIndex || mineralTable[m].id === 'gas') continue;
+				if (m === hostIndex || mineralTable[m].gen === false || mineralTable[m].id === 'gas') continue;
 				const ratio = targets[m] / Math.max(stats.shares[m], 1e-6);
 				const factor = Math.min(1.25, Math.max(0.8, Math.pow(ratio, gain)));
 				for (let c = 0; c < channelCount; c++) {

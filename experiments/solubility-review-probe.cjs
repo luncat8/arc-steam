@@ -3,6 +3,7 @@
 // Runs the shipped lab API and prints measured values next to the values the
 // findings / 0.3.6-Solubility-plan.md claim. After the P0 fixes it also reports
 // the corrected bound-B channels, stone-quoted residue and dynamic collapse.
+// The P1/P2 foundation derives quotes from the shared calibrated mineral table.
 // No files are modified, no browser is needed, every scene uses a fixed seed.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -94,8 +95,8 @@ head('F3  stoichiometry, both chemistry modes');
 	}
 	const gas = basinGrain(Lab.MIN_GAS, 1.0, 8.0);
 	row('Gas grain stone residue value (0.15 mass)', f(gas.m.debrisValue),
-		'0.435 (=0.15 x stone 2.90), not 22.50 (=0.15 x gas 150)');
-	row('gas residue re-priced at stone quote (line ' + lineOf('const resQuote = MINERALS[def.residueMineral].price;') + ')',
+		f(0.15 * Lab.MINERALS[Lab.MIN_STONE].price) + ' (=0.15 x current stone quote)');
+	row('gas residue re-priced at stone quote (line ' + lineOf('const resQuote = Math.min(state.prices[m], state.prices[def.residueMineral]);') + ')',
 		'stone quote', 'stone quote');
 }
 
@@ -133,43 +134,22 @@ head('F5  live-economy pricing and gold liberation');
 	const goldQ = Lab.MINERALS[Lab.MIN_GOLD].price;
 	const qzQ = Lab.MINERALS[Lab.MIN_QUARTZ].price;
 	const auQ = Lab.MINERALS[Lab.MIN_PURE_GOLD].price;
-	row('Pure Gold unit quote / gold-quartz quote', f(auQ, 2) + ' / ' + f(goldQ, 2), '573.80 / 147.35');
-	row('25% mass value share', f(0.25 * auQ / goldQ, 4), '0.9735');
-	row('75% gangue value share at plain quartz', f(0.75 * qzQ / goldQ, 4), '0.0265');
-	row('lab quotes are hardcoded constants (line ' + lineOf("price: 150.00") + ')', 'yes',
-		'derived from js/rock-materials.js basePricesInto');
-	row('js/minerals.js rows / sol,rho,dye fields', minerals.mineralCount + ' / ' +
-		minerals.mineralTable.filter(m => 'sol' in m).length, '13 / 13');
-	row('js/water.js exists', fs.existsSync(path.join(ROOT, 'js', 'water.js')) ? 'yes' : 'no', 'yes for live integration');
-	// Measured abundance of the calibrated boxes the lab geology scene compiles,
-	// with the scene's hostWeight (0.0883). js/geology.js buildCache is sized by
-	// the live 10-row table, so build a 13-row cache the same way
-	// live 10-row table, so build a 13-row cache the same way
-	// experiments/solubility-geology-probe.cjs does.
+	row('Pure Gold unit quote / gold-quartz quote', f(auQ, 2) + ' / ' + f(goldQ, 2), '(gold - 0.75 x quartz) / 0.25');
+	row('25% mass value share', f(0.25 * auQ / goldQ, 4), '1 - 0.75 x quartz / gold (not a fixed percentage)');
+	row('75% gangue value share at plain quartz', f(0.75 * qzQ / goldQ, 4), '0.75 x quartz / gold');
+	row('lab quotes derived by basePricesInto (line ' + lineOf('SteamRockMaterials.basePricesInto') + ')',
+		'yes', 'yes');
+	row('js/minerals.js forming / total / sol,rho fields', minerals.formationCount + ' / ' + minerals.mineralCount + ' / ' +
+		minerals.mineralTable.filter(m => 'sol' in m && 'rho' in m).length, '13 / 14 / 14');
+	row('js/water.js exists', fs.existsSync(path.join(ROOT, 'js', 'water.js')) ? 'yes' : 'no', 'deferred: live fluid integration');
 	const Geo = require('../js/geology.js');
-	const M = 13;
-	const ranges = Lab.MINERALS.slice(0, M).map(m => [m.r.slice(), m.g.slice(), m.b.slice()]);
-	const sample = Geo.buildSample({ seeds: [1, 2, 3, 4, 5, 6, 7, 8], columns: 192, rows: 120, frequency: 0.075, yCompression: 3 });
-	const formation = Geo.compile(ranges, 'balanced', 0.6);
-	const affinity = new Float64Array(sample.cells * M);
-	const totals = new Float64Array(sample.cells);
-	const rowMix = new Float64Array(M);
-	for (let i = 0; i < sample.cells; i++) {
-		formation.affinityInto([sample.elements[i * 3], sample.elements[i * 3 + 1], sample.elements[i * 3 + 2]], rowMix, 0);
-		let total = 0;
-		for (let m = 0; m < M; m++) { affinity[i * M + m] = rowMix[m]; if (m !== 0) total += rowMix[m]; }
-		totals[i] = total;
-	}
-	const hw = 0.0883;
-	const shares = new Float64Array(M);
-	for (let i = 0; i < sample.cells; i++) {
-		const scale = 1 / (totals[i] + hw);
-		shares[0] += hw * scale;
-		for (let m = 1; m < M; m++) shares[m] += affinity[i * M + m] * scale;
-	}
-	for (let m = 0; m < M; m++) shares[m] /= sample.cells;
-	row('lab geology boxes copper + vitriol share', f(100 * (shares[2] + shares[3]), 2) + '%',
-		'~7.8% rounded boxes; autoAdjust log pins 7.83% (plan 4.2)');
+	const config = require('../js/geology-config.js').create(1);
+	const sample = Geo.buildSample({ seeds: [1, 2, 3, 4, 5, 6, 7, 8], columns: 192, rows: 120,
+		frequency: config.frequency, yCompression: config.yCompression });
+	const formation = Geo.compile(config.ranges, config.mode, config.specificity);
+	const stats = Geo.statsAt(Geo.buildCache(sample, formation), config.hostWeight, Geo.emptyStats());
+	row('shared geology copper + vitriol share', f(100 * (stats.shares[Lab.MIN_COPPER] + stats.shares[Lab.MIN_VITRIOL]), 2) + '%',
+		'~7.83% rounded boxes (plan 4.2)');
 }
 
 head('F6  per-mineral brine bookkeeping');

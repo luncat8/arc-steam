@@ -201,16 +201,18 @@ test('every ore can lead a cell somewhere in the element cube', () => {
 		}
 	}
 	for (let m = 0; m < count; m++) {
+		if (table[m].gen === false) { assert.equal(leads[m], 0); continue; }
 		assert.ok(leads[m] / cells > 0.005, table[m].id + ' leads ' + (leads[m] / cells * 100).toFixed(2) + '% of the cube');
 	}
 	// A full match is mostly that mineral, with the host matrix still present.
 	const centre = [];
-	for (let c = 0; c < 3; c++) centre.push((ranges[4][c][0] + ranges[4][c][1]) * 0.5);
+	const corundum = minerals.mineralIds.indexOf('corundum');
+	for (let c = 0; c < 3; c++) centre.push((ranges[corundum][c][0] + ranges[corundum][c][1]) * 0.5);
 	formation.mixInto(centre, 0.08, mix, 0);
 	let largest = 0;
 	for (let m = 1; m < count; m++) if (mix[m] > mix[largest]) largest = m;
-	assert.equal(largest, 4, 'corundum leads at the centre of its own signature');
-	assert.ok(mix[4] > 0.5, 'and takes most of the cell: ' + mix[4].toFixed(3));
+	assert.equal(largest, corundum, 'corundum leads at the centre of its own signature');
+	assert.ok(mix[corundum] > 0.5, 'and takes most of the cell: ' + mix[corundum].toFixed(3));
 	assert.ok(mix[hostIndex] > 0, 'a full match keeps some host matrix');
 });
 
@@ -263,10 +265,11 @@ test('calibration preserves the low-metal, low-crystal gas signature', () => {
 test('the shipped table puts some of every mineral on a fresh sample', () => {
 	const stats = statsFor(geology.rangesOf(table), 'balanced', 0.6, 0.08, sample());
 	for (let m = 0; m < count; m++) {
+		if (table[m].gen === false) { assert.equal(stats.shares[m], 0); continue; }
 		assert.ok(stats.visible[m] > 0.01, table[m].id + ' is visible in ' + (stats.visible[m] * 100).toFixed(2) + '% of cells');
 		assert.ok(stats.dominant[m] > 0.005, table[m].id + ' dominates ' + (stats.dominant[m] * 100).toFixed(2) + '% of cells');
 	}
-	assert.ok(stats.shares[hostIndex] > 0.3 && stats.shares[hostIndex] < 0.5, 'host share remains substantial');
+	assert.ok(Math.abs(stats.shares[hostIndex] - minerals.targetHostShare) < 0.03, 'host share remains substantial');
 	const common = stats.shares[minerals.mineralIds.indexOf('iron')];
 	const rare = stats.shares[minerals.mineralIds.indexOf('corundum')];
 	const veryRare = stats.shares[minerals.mineralIds.indexOf('gold')];

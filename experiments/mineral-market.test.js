@@ -77,7 +77,10 @@ test('narrow ranges are rarer: one broad mineral covers more rock than a rare on
 	const gold = state.mineralIds.indexOf('gold');
 	assert.ok(counts[iron] > counts[gold] * 3, 'Iron ore dominates far more cells than Gold-bearing quartz');
 	assert.ok(state.mineralAbundance[gold] < state.mineralAbundance[iron] / 3);
-	for (let m = 0; m < counts.length; m++) assert.ok(state.mineralAbundance[m] > 0, 'every table entry forms somewhere');
+	for (let m = 0; m < counts.length; m++) {
+		if (state.mineralTable[m].gen === false) assert.equal(state.mineralAbundance[m], 0);
+		else assert.ok(state.mineralAbundance[m] > 0, 'every formation entry forms somewhere');
+	}
 });
 
 test('base prices follow measured abundance on a rarity curve and keep the cell economy calibrated', () => {
@@ -123,7 +126,10 @@ test('the shared base-price curve gives the lab and the game the same quote for 
 	// shares as its input instead of measured abundance.
 	const reference = new Float64Array(count);
 	materials.basePricesInto(reference, minerals.rarityTargets, materials.economy);
-	for (let m = 0; m < count; m++) assert.ok(reference[m] >= materials.economy.floor && reference[m] <= materials.economy.cap);
+	for (let m = 0; m < count; m++) {
+		if (minerals.mineralTable[m].gen === false) continue;
+		assert.ok(reference[m] >= materials.economy.floor && reference[m] <= materials.economy.cap);
+	}
 	const mean = Float64Array.from(minerals.rarityTargets).reduce((sum, share, m) => sum + share * reference[m], 0);
 	assert.ok(mean <= materials.economy.targetCellValue + 1e-9 && mean > materials.economy.targetCellValue * 0.6,
 		'the reference table stays near the nominal cell value');
@@ -159,7 +165,7 @@ test('a filler\'s low demand is normalised into the base table instead of thinni
 	const minerals = require('../js/minerals.js');
 	const count = minerals.mineralCount;
 	// Shares the floor and the cap leave alone, so the mean is exact.
-	const shares = new Float64Array(count).fill(0.5 / (count - 1));
+	const shares = Float64Array.from(minerals.mineralTable, m => m.gen === false ? 0 : 0.5 / (minerals.formationCount - 1));
 	shares[minerals.hostIndex] = 0.5;
 	const base = new Float64Array(count);
 	const report = { target: 0, mean: 0, clamped: 0 };

@@ -1506,7 +1506,7 @@ test('mineral fall sliders and test-rock button wire the controlled setup', () =
 	assert.equal(ceiling.state.testRock, true);
 	assert.equal(ceiling.state.extractedCells, 0, 'the generator starts from a clean run');
 	assert.equal(ceiling.state.mineralClusterGrowth[ironIndex], 125, 'the live setting carries into the new run');
-	assert.match(dom.element('fall-test-status').textContent, /Corundum → Quartz stone → Iron ore/);
+	assert.match(dom.element('fall-test-status').textContent, /Corundum → Quartz → Iron ore/);
 	assert.equal(dom.element('rock-damage-view').getAttribute('value'), 'damage');
 	advance(3);
 	assert.ok(Math.abs(physics.totalEnergy(world) - world.initialEnergy) < 1e-5);

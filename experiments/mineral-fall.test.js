@@ -164,7 +164,7 @@ test('mineral growth is bounded to the 10%..500% slider range and survives New g
 	assert.equal(ceiling.state.mineralClusterGrowth.length, ceiling.state.mineralCount);
 	assert.equal(ceiling.setMineralClusterGrowth(entry('stone'), 0), 10, 'the floor is the plain clump, not zero growth');
 	assert.equal(ceiling.setMineralClusterGrowth(entry('quartz'), 25), 25);
-	assert.equal(ceiling.setMineralClusterGrowth('Copper ore', 900), 500);
+	assert.equal(ceiling.setMineralClusterGrowth(entry('copper'), 900), 500);
 	assert.equal(ceiling.setMineralClusterGrowth(entry('gas'), 20), 20);
 	const live = Array.from(ceiling.state.mineralClusterGrowth);
 	ceiling.reset(2);

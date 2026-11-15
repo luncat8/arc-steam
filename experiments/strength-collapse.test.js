@@ -54,6 +54,10 @@ test('the same indirect energy produces steadily more looseness as strength decr
 	const samples = ceiling.state.mineralIds.map(id => pureIndirect(id, 0.1));
 	samples.sort((a, b) => a.before - b.before);
 	for (let i = 1; i < samples.length; i++) {
+		if (samples[i - 1].before === samples[i].before) {
+			assert.equal(samples[i - 1].looseness, samples[i].looseness, 'equal-strength phases respond equally');
+			continue;
+		}
 		assert.ok(samples[i - 1].looseness > samples[i].looseness,
 			'weaker pure minerals must gain more looseness from the same impact');
 	}

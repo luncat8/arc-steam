@@ -489,7 +489,12 @@
 		return demandBias[m] * (1 + demandDepth[m] * (slow * 0.85 + quick * 0.35));
 	}
 
+	const goldMineral = rockTable.mineralIds.indexOf('gold');
+	const quartzMineral = rockTable.mineralIds.indexOf('quartz');
 	function quoteAt(m, time) {
+		if (mineralTable[m].gen === false) return materials.liberatedGoldQuote(
+			quoteAt(goldMineral, time),
+			quoteAt(quartzMineral, time));
 		return Math.max(mineralPriceFloor, mineralBasePrices[m] * demandFactorAt(m, time));
 	}
 
@@ -497,6 +502,7 @@
 		let minPrice = Infinity;
 		let maxPrice = -Infinity;
 		for (let m = 0; m < mineralCount; m++) {
+			if (mineralTable[m].gen === false) continue;
 			if (mineralPrices[m] < minPrice) minPrice = mineralPrices[m];
 			if (mineralPrices[m] > maxPrice) maxPrice = mineralPrices[m];
 		}

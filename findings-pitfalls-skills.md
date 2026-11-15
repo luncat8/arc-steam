@@ -128,6 +128,9 @@ cd /home/user/arc-steam && LD_LIBRARY_PATH=/tmp/al/lib PLAYWRIGHT_PATH=/tmp/pw/n
 - Exact conservation ledgers must detach a partially leached cell using its *remaining* `rockMass` / `rockValue`, not the original chemistry fractions. Cumulative slice float error made a residue spawn exceed the cell by ~1e-7, which only showed up as value drift once dynamic collapse started detaching mixed seams. Scale per-mineral residue identities to the remaining totals, let the last component take the exact remainder, and clamp each released slice to the mass/value the cell still owns.
 - A continuous formula can silently double-classify one signal: a low-R/low-G/high-B octant was both crystal-bound (55% brine) and free gas rock. Make the bound/free split exclusive before assigning channels, then expose the partition so tests can assert `gas <= freeB`; otherwise a "bound B never vents" rule fails only at intermediate octants.
 
+- A liberated, non-forming phase must be excluded from *every* abundance path (formation, calibration error/width passes, range separation, and base-price normalisation), not merely given a zero target. Otherwise the minimum-share price floor makes it an ultra-rare commodity that dilutes every real ore. Derive its quote from the parent minus the gangue, and price gangue at the actual market rather than preserving a reference percentage.
+- After a mineral-table extension, distinguish stale fixtures from mechanics regressions: use stable IDs rather than array indices/names, permit equal-strength phases to have equal responses, and do not assert an intercept hint is still playable after a physics step has caught that ball. Reproduce unrelated failures against a `git archive` of the base commit without changing the working branch.
+
 ## Repository conventions that matter
 
 - `git push` may report "Invalid username or token"; that is expected here and the change is applied manually.

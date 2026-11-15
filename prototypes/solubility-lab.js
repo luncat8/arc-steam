@@ -6,7 +6,9 @@
 (function (root) {
 	'use strict';
 
+	const SteamGeologyConfig = root.SteamGeologyConfig || (typeof require === 'function' ? require('../js/geology-config.js') : null);
 	const SteamGeology = root.SteamGeology || (typeof require === 'function' ? require('../js/geology.js') : null);
+	const SteamRockMaterials = root.SteamRockMaterials || (typeof require === 'function' ? require('../js/rock-materials.js') : null);
 	const SteamMinerals = root.SteamMinerals || (typeof require === 'function' ? require('../js/minerals.js') : null);
 
 	// World & grid dimensions (matches arc-steam cell scale: 0.125 m rock, 0.25 m fluid)
@@ -23,10 +25,9 @@
 	const FLUID_N = FLUID_W * FLUID_H;
 
 	const GRAVITY = 12.5;
-	const MINERAL_COUNT = 14;
+	const MINERAL_COUNT = SteamMinerals.mineralCount;
 	const SAT_CAP_DEFAULT = 60;
-	const DEBRIS_LIMIT = 0.8;
-	const GOLD_GOLD_VALUE_FRACTION = 0.9735;
+	const DEBRIS_LIMIT = SteamRockMaterials.debrisLimit;
 	const MAX_JETS = 1200;
 	const MAX_BUBBLES = 500;
 	const MAX_DEBRIS = 1500;
@@ -37,154 +38,133 @@
 	const DEBRIS_RESTING = 2;
 	const DEBRIS_ENTRAINED = 3;
 
-	// 13-mineral geological table (10 baseline with Copper split into dry Chalcopyrite +
-	// hydrated Blue Vitriol, plus Halite & Fizzy Halite in empty HHL / HHH octants) +
-	// index 13 for liberated Pure Gold concentrate (debris-only phase).
-	const MINERALS = [
+	// Presentation-only metadata; all physical properties come from the live table.
+	const MINERAL_DISPLAY = [
 		{
-			id: 'stone', name: 'Stone', symbol: 'St', analog: 'host rock',
-			octant: 'Host (any)', r: [0, 1], g: [0, 1], b: [0, 1],
-			repRgb: [0.35, 0.35, 0.35],
-			color: [114, 124, 132], strength: 4.2, density: 2.8, price: 2.90,
-			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
-			residueMineral: 0, erodibility: 0.45, tag: 'solid',
-			reactionLabel: 'Insoluble host', tintLabel: '—',
-			erosionLabel: 'Moderate bedload'
+			"octant": "Host (any)",
+			"repRgb": [0.35, 0.35, 0.35],
+			"tag": "solid",
+			"reactionLabel": "Insoluble host",
+			"tintLabel": "—",
+			"erosionLabel": "Moderate bedload"
 		},
 		{
-			id: 'iron', name: 'Iron ore', symbol: 'Fe', analog: 'Fe₂O₃',
-			octant: 'HLL (R↑ G↓ B↓)', r: [0.287, 0.983], g: [0.006, 0.535], b: [0.007, 0.624],
-			repRgb: [0.76, 0.22, 0.20],
-			color: [184, 91, 64], strength: 5.4, density: 5.2, price: 5.01,
-			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
-			residueMineral: 1, erodibility: 0.14, tag: 'solid',
-			reactionLabel: 'Insoluble dense oxide', tintLabel: '—',
-			erosionLabel: 'Heavy — resists current'
+			"octant": "HLL (R↑ G↓ B↓)",
+			"repRgb": [0.76, 0.22, 0.2],
+			"tag": "solid",
+			"reactionLabel": "Insoluble dense oxide",
+			"tintLabel": "—",
+			"erosionLabel": "Heavy — resists current"
 		},
 		{
-			id: 'copper', name: 'Chalcopyrite', symbol: 'Cu', analog: 'CuFeS₂ (dry Cu)',
-			octant: 'HLL (R↑ G↓ B↓)', r: [0.232, 0.667], g: [0.037, 0.363], b: [0.193, 0.447],
-			repRgb: [0.60, 0.20, 0.30],
-			color: [198, 130, 64], strength: 4.8, density: 4.8, price: 27.23,
-			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
-			residueMineral: 2, erodibility: 0.16, tag: 'solid',
-			reactionLabel: 'Insoluble dry sulfide', tintLabel: '—',
-			erosionLabel: 'Heavy — drops as clasts'
+			"octant": "HLL (R↑ G↓ B↓)",
+			"repRgb": [0.6, 0.2, 0.3],
+			"tag": "solid",
+			"reactionLabel": "Insoluble dry sulfide",
+			"tintLabel": "—",
+			"erosionLabel": "Heavy — drops as clasts"
 		},
 		{
-			id: 'vitriol', name: 'Blue Vitriol', symbol: 'Cu·H₂O', analog: 'CuSO₄·5H₂O',
-			octant: 'HLH (R↑ G↓ B↑)', r: [0.46, 0.76], g: [0.06, 0.36], b: [0.54, 0.74],
-			repRgb: [0.62, 0.22, 0.68],
-			color: [44, 152, 240], strength: 1.8, density: 2.3, price: 22.04,
-			sol: 'instant', dissolveSpeed: 1.25, brine: 1.0, vent: 0, residue: 0, dye: [38, 102, 248],
-			residueMineral: 3, erodibility: 0.35, tag: 'blue',
-			reactionLabel: '100% brine', tintLabel: 'Cobalt Blue (+GB)',
-			erosionLabel: 'Dissolves → pumped'
+			"octant": "HLH (R↑ G↓ B↑)",
+			"repRgb": [0.62, 0.22, 0.68],
+			"tag": "blue",
+			"reactionLabel": "100% brine",
+			"tintLabel": "Cobalt Blue (+GB)",
+			"erosionLabel": "Dissolves → pumped"
 		},
 		{
-			id: 'quartz', name: 'Quartz', symbol: 'Qz', analog: 'SiO₂',
-			octant: 'LHL (R↓ G↑ B↓)', r: [0.001, 0.482], g: [0.230, 0.870], b: [0.002, 0.562],
-			repRgb: [0.18, 0.64, 0.24],
-			color: [212, 210, 224], strength: 6.0, density: 2.6, price: 5.21,
-			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
-			residueMineral: 4, erodibility: 0.68, tag: 'erode',
-			reactionLabel: 'Insoluble hard crystal', tintLabel: '—',
-			erosionLabel: 'Light — hops downstream'
+			"octant": "LHL (R↓ G↑ B↓)",
+			"repRgb": [0.18, 0.64, 0.24],
+			"tag": "erode",
+			"reactionLabel": "Insoluble hard crystal",
+			"tintLabel": "—",
+			"erosionLabel": "Light — hops downstream"
 		},
 		{
-			id: 'corundum', name: 'Corundum', symbol: 'Al', analog: 'Al₂O₃',
-			octant: 'LHL (R↓ G↑↑ B↓)', r: [0.099, 0.401], g: [0.699, 0.951], b: [0.049, 0.301],
-			repRgb: [0.24, 0.86, 0.16],
-			color: [216, 74, 128], strength: 7.8, density: 4.0, price: 38.87,
-			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
-			residueMineral: 5, erodibility: 0.18, tag: 'solid',
-			reactionLabel: 'Insoluble ultra-hard', tintLabel: '—',
-			erosionLabel: 'Dense — resists wash'
+			"octant": "LHL (R↓ G↑↑ B↓)",
+			"repRgb": [0.24, 0.86, 0.16],
+			"tag": "solid",
+			"reactionLabel": "Insoluble ultra-hard",
+			"tintLabel": "—",
+			"erosionLabel": "Dense — resists wash"
 		},
 		{
-			id: 'fluorite', name: 'Fluorite-Salt', symbol: 'CaF₂', analog: 'CaF₂·NaCl',
-			octant: 'LLH/LHH (R↓ G· B↑)', r: [0.066, 0.384], g: [0.104, 0.546], b: [0.615, 0.985],
-			repRgb: [0.26, 0.44, 0.78],
-			color: [108, 182, 152], strength: 3.0, density: 3.1, price: 12.23,
-			sol: 'slow', dissolveSpeed: 0.88, brine: 0.55, vent: 0, residue: 0.45, dye: [56, 220, 140],
-			residueMineral: 6, erodibility: 0.40, tag: 'split',
-			reactionLabel: '55% brine + 45% concentrate', tintLabel: 'Brine Green (+G)',
-			erosionLabel: 'Residue stays as Fluorite'
+			"octant": "LLH/LHH (R↓ G· B↑)",
+			"repRgb": [0.26, 0.44, 0.78],
+			"tag": "split",
+			"reactionLabel": "55% brine + 45% concentrate",
+			"tintLabel": "Brine Green (+G)",
+			"erosionLabel": "Residue stays as Fluorite"
 		},
 		{
-			id: 'silver', name: 'Silver', symbol: 'Ag', analog: 'Ag',
-			octant: 'HLL (R↑↑ G· B↓)', r: [0.673, 0.957], g: [0.263, 0.547], b: [0.043, 0.327],
-			repRgb: [0.84, 0.38, 0.16],
-			color: [208, 220, 232], strength: 3.5, density: 10.5, price: 44.65,
-			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
-			residueMineral: 7, erodibility: 0.05, tag: 'solid',
-			reactionLabel: 'Insoluble native metal', tintLabel: '—',
-			erosionLabel: 'Ultra-heavy — stays put'
+			"octant": "HLL (R↑↑ G· B↓)",
+			"repRgb": [0.84, 0.38, 0.16],
+			"tag": "solid",
+			"reactionLabel": "Insoluble native metal",
+			"tintLabel": "—",
+			"erosionLabel": "Ultra-heavy — stays put"
 		},
 		{
-			id: 'gold', name: 'Gold-quartz', symbol: 'Au', analog: 'Au in SiO₂',
-			octant: 'HLH edge (R↑↑ G↓ B·)', r: [0.823, 0.977], g: [0.063, 0.257], b: [0.424, 0.656],
-			repRgb: [0.90, 0.16, 0.54],
-			color: [232, 198, 92], strength: 3.4, density: 5.6, price: 147.35,
-			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
-			residueMineral: 8, erodibility: 0.22, tag: 'gold',
-			reactionLabel: 'Insoluble ore (pannable)', tintLabel: '—',
-			erosionLabel: 'Pans → Au stays, Qz washes'
+			"octant": "HLH edge (R↑↑ G↓ B·)",
+			"repRgb": [0.9, 0.16, 0.54],
+			"tag": "gold",
+			"reactionLabel": "Insoluble ore (pannable)",
+			"tintLabel": "—",
+			"erosionLabel": "Pans → Au stays, Qz washes"
 		},
 		{
-			id: 'gas', name: 'Gas rock', symbol: 'Gb', analog: 'CH₄ / H₂',
-			octant: 'LLH (R↓ G↓ B↑↑)', r: [0.00, 0.20], g: [0.00, 0.20], b: [0.80, 1.00],
-			repRgb: [0.10, 0.12, 0.92],
-			color: [172, 218, 94], strength: 0.8, density: 1.2, price: 150.00,
-			sol: 'fast', dissolveSpeed: 1.45, brine: 0, vent: 0.85, residue: 0.15, dye: null,
-			residueMineral: 0, erodibility: 0.50, tag: 'gas',
-			reactionLabel: '85% Gas LOST + 15% Stone', tintLabel: 'Rising Bubbles (LOSS)',
-			erosionLabel: '15% Stone residue falls'
+			"octant": "LLH (R↓ G↓ B↑↑)",
+			"repRgb": [0.1, 0.12, 0.92],
+			"tag": "gas",
+			"reactionLabel": "85% Gas LOST + 15% Stone",
+			"tintLabel": "Rising Bubbles (LOSS)",
+			"erosionLabel": "15% Stone residue falls"
 		},
 		{
-			id: 'sand', name: 'Sand', symbol: 'Sd', analog: 'SiO₂ loose',
-			octant: 'LLL/LHL (R↓ G· B·)', r: [0.022, 0.378], g: [0.283, 0.677], b: [0.324, 0.619],
-			repRgb: [0.20, 0.48, 0.40],
-			color: [204, 178, 126], strength: 0.5, density: 1.6, price: 0.87,
-			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
-			residueMineral: 10, erodibility: 1.00, tag: 'erode',
-			reactionLabel: 'Insoluble loose grains', tintLabel: '—',
-			erosionLabel: 'Fastest washout & hops'
+			"octant": "LLL/LHL (R↓ G· B·)",
+			"repRgb": [0.2, 0.48, 0.4],
+			"tag": "erode",
+			"reactionLabel": "Insoluble loose grains",
+			"tintLabel": "—",
+			"erosionLabel": "Fastest washout & hops"
 		},
 		{
-			id: 'halite', name: 'Halite', symbol: 'NaCl', analog: 'NaCl (R·G salt)',
-			octant: 'HHL (R↑ G↑ B↓)', r: [0.616, 0.924], g: [0.676, 0.964], b: [0.036, 0.344],
-			repRgb: [0.78, 0.82, 0.18],
-			color: [110, 228, 148], strength: 1.6, density: 2.2, price: 2.52,
-			sol: 'instant', dissolveSpeed: 1.65, brine: 1.0, vent: 0, residue: 0, dye: [38, 228, 128],
-			residueMineral: 11, erodibility: 0.35, tag: 'green',
-			reactionLabel: '100% brine (fastest)', tintLabel: 'Emerald Green (+G)',
-			erosionLabel: 'Dissolves fastest → pumped'
+			"octant": "HHL (R↑ G↑ B↓)",
+			"repRgb": [0.78, 0.82, 0.18],
+			"tag": "green",
+			"reactionLabel": "100% brine (fastest)",
+			"tintLabel": "Emerald Green (+G)",
+			"erosionLabel": "Dissolves fastest → pumped"
 		},
 		{
-			id: 'fizzy', name: 'Fizzy Halite', symbol: 'R₂G₂B₂', analog: 'R₂G₂B₂ gas-salt',
-			octant: 'HHH (R↑ G↑ B↑)', r: [0.636, 0.944], g: [0.677, 0.963], b: [0.677, 0.963],
-			repRgb: [0.78, 0.82, 0.84],
-			color: [174, 242, 184], strength: 1.3, density: 1.9, price: 3.65,
-			sol: 'fast', dissolveSpeed: 1.50, brine: 2 / 3, vent: 1 / 3, residue: 0, dye: [86, 226, 142],
-			residueMineral: 12, erodibility: 0.35, tag: 'gas',
-			reactionLabel: '66.7% brine + 33.3% Gas LOST', tintLabel: 'Mint Green + Bubbles',
-			erosionLabel: 'Salt pumped, Gas lost'
+			"octant": "HHH (R↑ G↑ B↑)",
+			"repRgb": [0.78, 0.82, 0.84],
+			"tag": "gas",
+			"reactionLabel": "66.7% brine + 33.3% Gas LOST",
+			"tintLabel": "Mint Green + Bubbles",
+			"erosionLabel": "Salt pumped, Gas lost"
 		},
 		{
-			id: 'pure_gold', name: 'Pure Gold', symbol: 'Au*', analog: 'Au placer nugget',
-			octant: 'Placer concentrate', r: [0.95, 1.0], g: [0.0, 0.1], b: [0.0, 0.1],
-			repRgb: [0.98, 0.05, 0.05],
-			color: [255, 215, 36], strength: 3.4, density: 19.3, price: 573.80,
-			sol: 'none', dissolveSpeed: 0, brine: 0, vent: 0, residue: 1, dye: null,
-			residueMineral: 13, erodibility: 0.01, tag: 'gold',
-			reactionLabel: 'Liberated from Gold-Qz', tintLabel: '—',
-			erosionLabel: 'Stays put (ρ=19.3)',
-			debrisOnly: true
+			"octant": "Placer concentrate",
+			"repRgb": [0.98, 0.05, 0.05],
+			"tag": "gold",
+			"reactionLabel": "Liberated from Gold-Qz",
+			"tintLabel": "—",
+			"erosionLabel": "Stays put (ρ=19.3)"
 		}
 	];
+	const REFERENCE_PRICES = new Float64Array(MINERAL_COUNT);
+	SteamRockMaterials.basePricesInto(REFERENCE_PRICES, SteamMinerals.rarityTargets);
+	const MINERALS = SteamMinerals.mineralTable.map(function (mineral, m) {
+		return Object.freeze(Object.assign({}, mineral, MINERAL_DISPLAY[m], {
+			price: REFERENCE_PRICES[m], density: mineral.rho, brine: mineral.brineF,
+			vent: mineral.ventF, residue: mineral.residueF,
+			residueMineral: SteamMinerals.mineralIds.indexOf(mineral.residueId),
+			debrisOnly: mineral.gen === false
+		}));
+	});
 
-	const GEO_MINERAL_COUNT = 13; // indices 0..12 participate in geology generation
+	const GEO_MINERAL_COUNT = SteamMinerals.formationCount; // indices 0..12 participate in geology generation
 	const MIN_STONE = 0;
 	const MIN_IRON = 1;
 	const MIN_COPPER = 2;
@@ -203,9 +183,16 @@
 	const GEO_RANGES = MINERALS.slice(0, GEO_MINERAL_COUNT).map(function (m) {
 		return [m.r, m.g, m.b];
 	});
-	const COMPILED_GEO = SteamGeology ? SteamGeology.compile(GEO_RANGES, 'balanced', 0.6) : null;
+	const GEO_DEFAULTS = SteamGeologyConfig.defaults;
+	const COMPILED_GEO = SteamGeology.compile(GEO_RANGES, GEO_DEFAULTS.mode, GEO_DEFAULTS.specificity);
 
 	// Column layout for Scene 1 (12 distinct mineral test seams across 24 m)
+	const MIXED_RUBBLE = [MIN_GOLD, MIN_QUARTZ, MIN_SAND, MIN_COPPER, MIN_IRON, MIN_STONE];
+	const KARST_LABELS = [
+		[5.2, 13.7, 'BLUE VITRIOL (+GB)', '#7bc0ff'],
+		[11.4, 13.7, 'FIZZY HALITE (+G / GAS LOST!)', '#ff9d8f'],
+		[17.6, 13.7, 'HALITE + COPPER (SPLIT)', '#7ef0a9']
+	];
 	const TEST_COLUMNS = [
 		MIN_HALITE, MIN_VITRIOL, MIN_FIZZY, MIN_FLUORITE,
 		MIN_GAS, MIN_COPPER, MIN_QUARTZ, MIN_IRON,
@@ -375,7 +362,7 @@
 				const rm = w * def.residue;
 				if (rm <= 0) continue;
 				CHEM_RES[m] = rm;
-				CHEM_RES_VAL[m] = rm * MINERALS[def.residueMineral].price;
+				CHEM_RES_VAL[m] = rm * state.prices[def.residueMineral];
 				if (rm > bestW) { bestW = rm; bestRes = def.residueMineral; }
 			}
 			out.residueMineral = bestRes >= 0 ? bestRes : MINERALS[domMin].residueMineral;
@@ -391,7 +378,7 @@
 			const unit = state.rockUnitPrice[idx] > 0 ? state.rockUnitPrice[idx] :
 				(state.rockMass && state.rockMass[idx] > 1e-12 ? baseVal / state.rockMass[idx] : baseVal);
 			const resMin = out.crystal > 0.25 ? MIN_FLUORITE : MINERALS[domMin].residueMineral;
-			const resQuote = MINERALS[resMin].price;
+			const resQuote = state.prices[resMin];
 			const ionicBrine = Math.max(0, out.halite - out.crystal);
 			CHEM_BRINE[11] = ionicBrine; CHEM_BRINE_VAL[11] = ionicBrine * unit;
 			CHEM_BRINE[6] = out.crystal; CHEM_BRINE_VAL[6] = out.crystal * unit;
@@ -399,7 +386,7 @@
 			CHEM_GAS[9] = out.gas;
 			CHEM_RES[domMin] = out.solid;
 			const brineVal = (out.halite + out.vitriol) * unit;
-			const resVal = out.solid * resQuote;
+			const resVal = out.solid * Math.min(unit, resQuote);
 			// Gas loss carries the value destroyed when gas rock re-materialises
 			// as cheap stone, so the exact value ledger still closes.
 			CHEM_GAS_VAL[9] = Math.max(0, unit - brineVal - resVal);
@@ -427,9 +414,9 @@
 			const bMass = w * def.brine;
 			const gMass = w * def.vent;
 			const rMass = w * def.residue;
-			const resQuote = MINERALS[def.residueMineral].price;
-			CHEM_BRINE[m] = bMass; CHEM_BRINE_VAL[m] = bMass * def.price;
-			CHEM_GAS[m] = gMass; CHEM_GAS_VAL[m] = gMass * def.price + rMass * (def.price - resQuote);
+			const resQuote = Math.min(state.prices[m], state.prices[def.residueMineral]);
+			CHEM_BRINE[m] = bMass; CHEM_BRINE_VAL[m] = bMass * state.prices[m];
+			CHEM_GAS[m] = gMass; CHEM_GAS_VAL[m] = gMass * state.prices[m] + rMass * (state.prices[m] - resQuote);
 			CHEM_RES[m] = rMass; CHEM_RES_VAL[m] = rMass * resQuote;
 			if (m === 3) fVit += bMass; else fHal += bMass;
 			fGas += gMass;
@@ -469,6 +456,7 @@
 		const opts = options || {};
 		const state = {
 			scene: opts.scene || 'columns',
+			prices: new Float64Array(opts.prices || REFERENCE_PRICES),
 			model: opts.model || 'table', // 'table' | 'formula'
 			viewMode: opts.viewMode || 'natural', // 'natural' | 'solubility' | 'elements'
 			tool: 'gun',
@@ -604,8 +592,8 @@
 			_chem: {
 				halite: 0, vitriol: 0, gas: 0, solid: 1,
 				solubility: 0, speed: 0, density: 2.8, remStrength: 0,
-					valHalite: 0, valVitriol: 0, valGas: 0, valSolid: 0,
-					residueMineral: 0, crystal: 0, undermined: false
+				valHalite: 0, valVitriol: 0, valGas: 0, valSolid: 0,
+				residueMineral: 0, crystal: 0, undermined: false
 			},
 			_loadScratch: new Float64Array(MINERAL_COUNT),
 			_loadValScratch: new Float64Array(MINERAL_COUNT),
@@ -615,6 +603,11 @@
 			perfDrawMs: 0
 		};
 
+		if (state.prices.length !== MINERAL_COUNT) throw new RangeError('Expected one quote per mineral');
+		for (let m = 0; m < MINERAL_COUNT; m++) {
+			if (!Number.isFinite(state.prices[m]) || state.prices[m] < 0) throw new RangeError('Quotes must be finite and non-negative');
+		}
+		SteamRockMaterials.liberatedPricesInto(state.prices);
 		loadScene(state, state.scene);
 		return state;
 	}
@@ -633,9 +626,9 @@
 		state.rockDissolve[idx] = 0;
 		state.rockMechHp[idx] = def.strength;
 		state.rockMechMax[idx] = def.strength;
-		state.rockValue[idx] = def.price;
+		state.rockValue[idx] = state.prices[minIdx];
 		state.rockMass[idx] = 1.0;
-		state.rockUnitPrice[idx] = def.price;
+		state.rockUnitPrice[idx] = state.prices[minIdx];
 		state.rockExhausted[idx] = 0;
 	}
 
@@ -649,7 +642,7 @@
 			state.rockMix[off + m] = w;
 			if (w > bestW) { bestW = w; dom = m; }
 			str += w * MINERALS[m].strength;
-			val += w * MINERALS[m].price;
+			val += w * state.prices[m];
 		}
 		state.rockSolid[idx] = 1;
 		state.rockMineral[idx] = dom;
@@ -948,7 +941,7 @@
 			state.aimY = 10.0;
 		} else if (sceneName === 'geology') {
 			// Real 3-channel (R, G, B) geology via SteamGeology
-			const field = SteamGeology ? SteamGeology.createField({ seed: state.seed, frequency: 0.075, yCompression: 3 }) : null;
+			const field = SteamGeology.createField({ seed: state.seed, frequency: GEO_DEFAULTS.frequency, yCompression: GEO_DEFAULTS.yCompression });
 			const mix = state._mixScratch;
 			const vals = state._elemScratch;
 			for (let c = 0; c < ROCK_W; c++) {
@@ -963,13 +956,9 @@
 				const arch = Math.sin((x / WORLD_W) * Math.PI) * 1.4;
 				const ceilStart = Math.round((5.6 + arch + Math.sin(x * 0.75) * 0.45) / ROCK_CELL);
 				for (let r = ceilStart; r < ROCK_H; r++) {
-					if (field && COMPILED_GEO) {
-						field.elements(c, ROCK_H - 1 - r, vals);
-						COMPILED_GEO.mixInto(vals, 0.0883, mix, 0);
-						setRockMixCell(state, c, r, mix, vals);
-					} else {
-						setRockPureCell(state, c, r, MIN_STONE);
-					}
+					field.elements(c, ROCK_H - 1 - r, vals);
+					COMPILED_GEO.mixInto(vals, GEO_DEFAULTS.hostWeight, mix, 0);
+					setRockMixCell(state, c, r, mix, vals);
 				}
 			}
 			state.rigX = 12.0;
@@ -1019,7 +1008,7 @@
 				else if (roll < 0.92) minIdx = MIN_STONE;
 				else minIdx = MIN_IRON;
 				const mass = 0.55;
-				spawnDebris(state, rx, floorY + 0.14 + rng() * 0.35, 0, 0, minIdx, mass, mass * MINERALS[minIdx].price, DEBRIS_RESTING, true);
+				spawnDebris(state, rx, floorY + 0.14 + rng() * 0.35, 0, 0, minIdx, mass, mass * state.prices[minIdx], DEBRIS_RESTING, true);
 			}
 			state.rigX = 3.2;
 			state.rigY = rockFloorYAt(state, state.rigX) + 0.45;
@@ -1081,7 +1070,7 @@
 				const roll = rng();
 				const minIdx = roll < 0.35 ? MIN_GOLD : (roll < 0.72 ? MIN_SAND : MIN_QUARTZ);
 				const mass = 0.5;
-				spawnDebris(state, rx, fy + 0.16, 0, 0, minIdx, mass, mass * MINERALS[minIdx].price, DEBRIS_RESTING, true);
+				spawnDebris(state, rx, fy + 0.16, 0, 0, minIdx, mass, mass * state.prices[minIdx], DEBRIS_RESTING, true);
 			}
 			state.rigX = 12.8;
 			state.rigY = rockFloorYAt(state, state.rigX) + 0.45;
@@ -1504,6 +1493,40 @@
 		}
 	}
 
+	function transferFluid(state, a, b, flow, vxImpulse, vyImpulse) {
+		const waterNext = state.waterNext;
+		const loadsNext = state.loadsNext;
+		const loadValsNext = state.loadValuesNext;
+		const loadTotNext = state.loadTotalNext;
+		const velU = state.velU;
+		const velV = state.velV;
+		const wa = waterNext[a];
+		if (flow <= 1e-7 || wa <= 1e-7) return;
+		const actual = flow > wa ? wa : flow;
+		const frac = actual / wa;
+		waterNext[a] -= actual;
+		waterNext[b] += actual;
+		if (loadTotNext[a] > 1e-12) {
+			const aOff = a * MINERAL_COUNT;
+			const bOff = b * MINERAL_COUNT;
+			let moved = 0;
+			for (let m = 0; m < MINERAL_COUNT; m++) {
+				const dm = loadsNext[aOff + m] * frac;
+				if (dm === 0) continue;
+				const dv = loadValsNext[aOff + m] * frac;
+				loadsNext[aOff + m] -= dm;
+				loadValsNext[aOff + m] -= dv;
+				loadsNext[bOff + m] += dm;
+				loadValsNext[bOff + m] += dv;
+				moved += dm;
+			}
+			loadTotNext[a] -= moved;
+			loadTotNext[b] += moved;
+		}
+		if (vxImpulse !== 0) velU[b] = clamp(velU[b] * 0.85 + vxImpulse, -8.5, 8.5);
+		if (vyImpulse !== 0) velV[b] = clamp(velV[b] * 0.85 + vyImpulse, -8.5, 8.5);
+	}
+
 	// Conservative 2D cell-based fluid step (gravity cascade + pressure equalization + overhang drip + exact solute transport)
 	function stepFluidGrid(state, dt) {
 		const W = FLUID_W, H = FLUID_H, N = FLUID_N;
@@ -1526,33 +1549,6 @@
 		loadValsNext.set(loadVals);
 		loadTotNext.set(loadTot);
 
-		function transfer(a, b, flow, vxImpulse, vyImpulse) {
-			const wa = waterNext[a];
-			if (flow <= 1e-7 || wa <= 1e-7) return;
-			const actual = flow > wa ? wa : flow;
-			const frac = actual / wa;
-			waterNext[a] -= actual;
-			waterNext[b] += actual;
-			if (loadTotNext[a] > 1e-12) {
-				const aOff = a * MINERAL_COUNT;
-				const bOff = b * MINERAL_COUNT;
-				let moved = 0;
-				for (let m = 0; m < MINERAL_COUNT; m++) {
-					const dm = loadsNext[aOff + m] * frac;
-					if (dm === 0) continue;
-					const dv = loadValsNext[aOff + m] * frac;
-					loadsNext[aOff + m] -= dm;
-					loadValsNext[aOff + m] -= dv;
-					loadsNext[bOff + m] += dm;
-					loadValsNext[bOff + m] += dv;
-					moved += dm;
-				}
-				loadTotNext[a] -= moved;
-				loadTotNext[b] += moved;
-			}
-			if (vxImpulse !== 0) velU[b] = clamp(velU[b] * 0.85 + vxImpulse, -8.5, 8.5);
-			if (vyImpulse !== 0) velV[b] = clamp(velV[b] * 0.85 + vyImpulse, -8.5, 8.5);
-		}
 
 		for (let iter = 0; iter < 2; iter++) {
 			for (let r = 1; r < H; r++) {
@@ -1590,7 +1586,7 @@
 								continue;
 							}
 							const fall = Math.min(w, room, 0.95);
-							transfer(idx, down, fall, velU[idx] * 0.15, -2.4);
+							transferFluid(state, idx, down, fall, velU[idx] * 0.15, -2.4);
 						}
 					}
 				}
@@ -1622,11 +1618,11 @@
 						flowR *= sc;
 					}
 					if (flowL > 0.0005) {
-						transfer(idx, idx - 1, flowL, -(1.2 + flowL * 6.5), 0);
+						transferFluid(state, idx, idx - 1, flowL, -(1.2 + flowL * 6.5), 0);
 						velU[idx] = clamp(velU[idx] * 0.9 - flowL * 2.5, -8.0, 8.0);
 					}
 					if (flowR > 0.0005) {
-						transfer(idx, idx + 1, flowR, (1.2 + flowR * 6.5), 0);
+						transferFluid(state, idx, idx + 1, flowR, (1.2 + flowR * 6.5), 0);
 						velU[idx] = clamp(velU[idx] * 0.9 + flowR * 2.5, -8.0, 8.0);
 					}
 				}
@@ -1639,7 +1635,7 @@
 					const excess = waterNext[idx] - 1.02;
 					if (excess > 0.005) {
 						const up = (r + 1) * W + c;
-						if (!solid[up]) transfer(idx, up, excess * 0.65, 0, 1.2);
+						if (!solid[up]) transferFluid(state, idx, up, excess * 0.65, 0, 1.2);
 					}
 				}
 			}
@@ -1756,7 +1752,7 @@
 			brineDm = dm;
 			gasDm = 0;
 		}
-		const unitValue = state.dMass[i] > 0 ? state.dValue[i] / state.dMass[i] : def.price;
+		const unitValue = state.dMass[i] > 0 ? state.dValue[i] / state.dMass[i] : state.prices[minIdx];
 		const brineVal = brineDm * unitValue;
 		const gasVal = gasDm * unitValue;
 		if (brineDm > 1e-12) {
@@ -1785,7 +1781,7 @@
 			const residueMin = def.residueMineral;
 			if (residueMin !== minIdx) {
 				// Re-materialised stone must carry the stone quote, not the gas quote.
-				const targetValue = state.dMass[i] * MINERALS[residueMin].price;
+				const targetValue = state.dMass[i] * state.prices[residueMin];
 				if (state.dValue[i] > targetValue) {
 					state.lostGasValue += state.dValue[i] - targetValue;
 					state.dValue[i] = targetValue;
@@ -1831,13 +1827,13 @@
 			// 1. Placer Separation: Gold-bearing quartz washed by flowing water -> Pure Gold (stays!) + Quartz (washes!)
 			if (state.erosionOn && minIdx === MIN_GOLD && wHere > 0.04 && speedHere > 0.55) {
 				state.dPanProg[i] += speedHere * state.erosionPower * 0.42 * dt;
-				if (state.dPanProg[i] >= 1.0) {
+				if (state.dPanProg[i] >= 1.0 && state.dMass[i] * (1 - SteamRockMaterials.goldMassFraction) * state.prices[MIN_QUARTZ] <= state.dValue[i]) {
 					const origMass = state.dMass[i];
 					const origVal = state.dValue[i];
-					const goldMass = origMass * 0.25;
-					const goldVal = origVal * GOLD_GOLD_VALUE_FRACTION;
+					const goldMass = origMass * SteamRockMaterials.goldMassFraction;
 					const qzMass = origMass - goldMass;
-					const qzVal = origVal - goldVal;
+					const qzVal = qzMass * state.prices[MIN_QUARTZ];
+					const goldVal = origVal - qzVal;
 
 					// Transform current grain in-place into heavy Pure Gold nugget (stays put!)
 					state.dMin[i] = MIN_PURE_GOLD;
@@ -2046,10 +2042,18 @@
 		}
 	}
 
-	function measureMetrics(state) {
+	function createMetrics() {
+		return { waterByMineral: new Float64Array(MINERAL_COUNT), waterValByMineral: new Float64Array(MINERAL_COUNT) };
+	}
+
+	// Pass caller-owned metrics in the HUD; omit it for an independent snapshot.
+	function measureMetrics(state, out) {
+		const metrics = out || createMetrics();
 		let waterMass = 0;
-		const waterByMineral = new Float64Array(MINERAL_COUNT);
-		const waterValByMineral = new Float64Array(MINERAL_COUNT);
+		const waterByMineral = metrics.waterByMineral;
+		const waterValByMineral = metrics.waterValByMineral;
+		waterByMineral.fill(0);
+		waterValByMineral.fill(0);
 		let waterSoluteMass = 0, waterSoluteValue = 0;
 		let maxSaturation = 0;
 		for (let i = 0; i < FLUID_N; i++) {
@@ -2110,50 +2114,48 @@
 		const valueDrift = Math.abs(expectedValue - accountedValue);
 		const waterDrift = Math.abs(state.waterFlooded - (waterMass + state.waterPumped));
 
-		return {
-			waterMass,
-			waterSoluteMass,
-			waterSoluteValue,
-			waterHaliteMass: waterByMineral[MIN_HALITE],
-			waterVitriolMass: waterByMineral[MIN_VITRIOL],
-			waterFizzyMass: waterByMineral[MIN_FIZZY],
-			waterFluoriteMass: waterByMineral[MIN_FLUORITE],
-			waterByMineral,
-			pumpedHaliteMass: state.hopperLoads[MIN_HALITE],
-			pumpedHaliteValue: state.hopperLoadValues[MIN_HALITE],
-			pumpedVitriolMass: state.hopperLoads[MIN_VITRIOL],
-			pumpedVitriolValue: state.hopperLoadValues[MIN_VITRIOL],
-			pumpedFizzyMass: state.hopperLoads[MIN_FIZZY],
-			pumpedFluoriteMass: state.hopperLoads[MIN_FLUORITE],
-			pumpedSoluteMass: pumpedMass,
-			pumpedSoluteValue: pumpedValue,
-			lostGasMass: state.lostGasMass,
-			lostGasValue: state.lostGasValue,
-			debrisCount: state.debrisCount,
-			debrisMass: debMass,
-			debrisValue: debVal,
-			pureGoldMass,
-			pureGoldValue: pureGoldVal,
-			meanGoldX: pureGoldMass > 0 ? pureGoldXSum / pureGoldMass : 0,
-			meanQuartzX: qzMass > 0 ? qzXSum / qzMass : 0,
-			meanSandX: sandMass > 0 ? sandXSum / sandMass : 0,
-			entrainedCount,
-			erosionHopEvents: state.erosionHopEvents,
-			goldPanEvents: state.goldPanEvents,
-			cellsDissolved: state.cellsDissolved,
-			cellsMechBroken: state.cellsMechBroken,
-			exhaustedCells,
-			maxSaturation,
-			satCap: state.satCap,
-			massDrift,
-			valueDrift,
-			waterDrift
-		};
+		metrics.waterMass = waterMass;
+		metrics.waterSoluteMass = waterSoluteMass;
+		metrics.waterSoluteValue = waterSoluteValue;
+		metrics.waterHaliteMass = waterByMineral[MIN_HALITE];
+		metrics.waterVitriolMass = waterByMineral[MIN_VITRIOL];
+		metrics.waterFizzyMass = waterByMineral[MIN_FIZZY];
+		metrics.waterFluoriteMass = waterByMineral[MIN_FLUORITE];
+		metrics.waterByMineral = waterByMineral;
+		metrics.pumpedHaliteMass = state.hopperLoads[MIN_HALITE];
+		metrics.pumpedHaliteValue = state.hopperLoadValues[MIN_HALITE];
+		metrics.pumpedVitriolMass = state.hopperLoads[MIN_VITRIOL];
+		metrics.pumpedVitriolValue = state.hopperLoadValues[MIN_VITRIOL];
+		metrics.pumpedFizzyMass = state.hopperLoads[MIN_FIZZY];
+		metrics.pumpedFluoriteMass = state.hopperLoads[MIN_FLUORITE];
+		metrics.pumpedSoluteMass = pumpedMass;
+		metrics.pumpedSoluteValue = pumpedValue;
+		metrics.lostGasMass = state.lostGasMass;
+		metrics.lostGasValue = state.lostGasValue;
+		metrics.debrisCount = state.debrisCount;
+		metrics.debrisMass = debMass;
+		metrics.debrisValue = debVal;
+		metrics.pureGoldMass = pureGoldMass;
+		metrics.pureGoldValue = pureGoldVal;
+		metrics.meanGoldX = pureGoldMass > 0 ? pureGoldXSum / pureGoldMass : 0;
+		metrics.meanQuartzX = qzMass > 0 ? qzXSum / qzMass : 0;
+		metrics.meanSandX = sandMass > 0 ? sandXSum / sandMass : 0;
+		metrics.entrainedCount = entrainedCount;
+		metrics.erosionHopEvents = state.erosionHopEvents;
+		metrics.goldPanEvents = state.goldPanEvents;
+		metrics.cellsDissolved = state.cellsDissolved;
+		metrics.cellsMechBroken = state.cellsMechBroken;
+		metrics.exhaustedCells = exhaustedCells;
+		metrics.maxSaturation = maxSaturation;
+		metrics.satCap = state.satCap;
+		metrics.massDrift = massDrift;
+		metrics.valueDrift = valueDrift;
+		metrics.waterDrift = waterDrift;
+		return metrics;
 	}
 
 	function spawnDebrisGrain(state, x, y, minIdx, mass) {
-		const def = MINERALS[minIdx] || MINERALS[MIN_STONE];
-		return spawnDebris(state, x, y, 0, 0, minIdx, mass, mass * def.price, DEBRIS_RESTING, true, null);
+		return spawnDebris(state, x, y, 0, 0, minIdx, mass, mass * state.prices[minIdx], DEBRIS_RESTING, true, null);
 	}
 
 	// Cursor tools (pour water, drop gold-quartz rubble, drop mixed rubble, carve rock)
@@ -2178,14 +2180,14 @@
 					-0.4,
 					MIN_GOLD,
 					mass,
-					mass * MINERALS[MIN_GOLD].price,
+					mass * state.prices[MIN_GOLD],
 					DEBRIS_FALLING,
 					true
 				);
 			}
 		} else if (tool === 'mixed-rubble') {
 			const count = Math.max(1, Math.round(18 * dt));
-			const picks = [MIN_GOLD, MIN_QUARTZ, MIN_SAND, MIN_COPPER, MIN_IRON, MIN_STONE];
+			const picks = MIXED_RUBBLE;
 			for (let i = 0; i < count; i++) {
 				const minIdx = picks[(rng() * picks.length) | 0];
 				const mass = 0.55;
@@ -2197,7 +2199,7 @@
 					-0.5,
 					minIdx,
 					mass,
-					mass * MINERALS[minIdx].price,
+					mass * state.prices[minIdx],
 					DEBRIS_FALLING,
 					true
 				);
@@ -2738,11 +2740,7 @@
 				ctx.fillStyle = '#d6d4e0';
 				ctx.fillText('TAILINGS: LIGHT QZ + SAND WASH HERE', 787, 434);
 			} else if (state.scene === 'karst') {
-				const labels = [
-					[5.2, 13.7, 'BLUE VITRIOL (+GB)', '#7bc0ff'],
-					[11.4, 13.7, 'FIZZY HALITE (+G / GAS LOST!)', '#ff9d8f'],
-					[17.6, 13.7, 'HALITE + COPPER (SPLIT)', '#7ef0a9']
-				];
+				const labels = KARST_LABELS;
 				for (let i = 0; i < labels.length; i++) {
 					const px = wxToPx(labels[i][0]);
 					const py = wyToPy(labels[i][1]);
@@ -3094,8 +3092,9 @@
 			perf: document.getElementById('perf-badge')
 		};
 
+		const hudMetrics = createMetrics();
 		function updateHud() {
-			const m = measureMetrics(state);
+			const m = measureMetrics(state, hudMetrics);
 			if (mEls.pumpHal) mEls.pumpHal.textContent = m.pumpedHaliteMass.toFixed(1) + ' (' + m.pumpedHaliteValue.toFixed(0) + ' cr)';
 			if (mEls.pumpVit) mEls.pumpVit.textContent = m.pumpedVitriolMass.toFixed(1) + ' (' + m.pumpedVitriolValue.toFixed(0) + ' cr)';
 			if (mEls.waterSol) mEls.waterSol.textContent = m.waterSoluteMass.toFixed(1) + ' (' + m.waterSoluteValue.toFixed(0) + ' cr)';
@@ -3132,7 +3131,7 @@
 
 	const api = {
 		WORLD_W, WORLD_H, ROCK_W, ROCK_H, FLUID_W, FLUID_H,
-		MINERAL_COUNT, SAT_CAP_DEFAULT, DEBRIS_LIMIT, GOLD_GOLD_VALUE_FRACTION,
+		MINERAL_COUNT, SAT_CAP_DEFAULT, DEBRIS_LIMIT,
 		MINERALS, TEST_COLUMNS,
 		MIN_STONE, MIN_IRON, MIN_COPPER, MIN_VITRIOL, MIN_QUARTZ, MIN_CORUNDUM,
 		MIN_FLUORITE, MIN_SILVER, MIN_GOLD, MIN_GAS, MIN_SAND, MIN_HALITE, MIN_FIZZY, MIN_PURE_GOLD,
@@ -3146,6 +3145,7 @@
 		createSimulation,
 		loadScene,
 		stepSimulation,
+		createMetrics,
 		measureMetrics,
 		drainWater,
 		applyCursorTool

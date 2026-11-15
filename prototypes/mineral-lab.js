@@ -423,13 +423,13 @@ function paintShares() {
 	paintErrorSummary();
 	const missing = [];
 	for (let m = 0; m < count; m++) {
-		if (m === hostIndex) continue;
+		if (m === hostIndex || table[m].gen === false) continue;
 		if (stats.visible[m] < 0.01) missing.push(table[m].name);
 	}
 	ui['stats-note'].textContent = (sample.cells / 1000).toFixed(0) + 'k cells · ' + state.seeds + ' seeds';
 	ui['stats-hint'].textContent = (missing.length
 		? 'Nearly absent: ' + missing.join(', ') + '. A mineral that shows in under 1% of cells will not be found by play.'
-		: 'Every mineral is visible in at least 1% of cells. Host rock takes ' + (stats.shares[hostIndex] * 100).toFixed(1) + '% of the field.') +
+		: 'Every forming mineral is visible in at least 1% of cells. Host rock takes ' + (stats.shares[hostIndex] * 100).toFixed(1) + '% of the field.') +
 		' Share is the mean fraction over the sample; patch is the mean size of one connected run on the visible map. Drag the red line on a bar, or type in Desired, to change the desired share; Stone is the residual and cannot be dragged; Error is achieved minus desired in percentage points.';
 }
 
@@ -454,8 +454,8 @@ function buildShareRows() {
 		desired.step = '0.1';
 		desired.value = percentText(state.targets[m]);
 		desired.setAttribute('aria-label', entry.name + ' desired share, percent');
-		desired.disabled = Boolean(entry.host);
-		desired.title = entry.host
+		desired.disabled = Boolean(entry.host || entry.gen === false);
+		desired.title = entry.gen === false ? 'Liberated debris only: this phase never forms in rock' : entry.host
 			? 'Stone is the residual: 100% minus the ore shares, so it is not edited directly'
 			: 'Desired mean share of the rock, percent';
 		desired.addEventListener('input', () => readDesired(m, desired.value));
@@ -467,11 +467,11 @@ function buildShareRows() {
 		const share = document.createElement('td');
 		share.className = 'bar-cell';
 		const bar = document.createElement('div');
-		bar.className = entry.host ? 'bar is-static' : 'bar';
+		bar.className = entry.host || entry.gen === false ? 'bar is-static' : 'bar';
 		const fill = document.createElement('i');
 		const mark = document.createElement('b');
 		bar.append(fill, mark);
-		if (!entry.host) {
+		if (!entry.host && entry.gen !== false) {
 			bar.tabIndex = 0;
 			bar.setAttribute('role', 'slider');
 			bar.setAttribute('aria-label', entry.name + ' desired share — drag or use arrow keys');
@@ -573,6 +573,7 @@ function readDesired(mineral, text) {
 // `skip` is the input being typed in, so rewriting it would move the caret;
 // a drag or key press passes -1 and every input is rewritten.
 function setDesired(mineral, percent, skip) {
+	if (table[mineral].gen === false) return;
 	state.targets[mineral] = Math.min(1, Math.max(0, percent / 100));
 	state.edited = true;
 	settleHostTarget();
@@ -622,6 +623,10 @@ function buildEditor() {
 		row.append(controls);
 		ui['range-sliders'].append(row);
 		sliders[m] = [];
+		if (entry.gen === false) {
+			controls.textContent = 'Liberated debris only; this phase has no formation signature.';
+			continue;
+		}
 		if (entry.host) {
 			controls.textContent = 'Host weight is constant; Stone has no signature ranges.';
 			continue;
@@ -643,7 +648,7 @@ function buildEditor() {
 
 function paintEditor() {
 	for (let m = 0; m < count; m++) {
-		if (table[m].host) continue;
+		if (table[m].host || table[m].gen === false) continue;
 		const color = table[m].color;
 		const accent = 'rgba(' + color[0] + ', ' + color[1] + ', ' + color[2] + ', 0.7)';
 		for (let c = 0; c < 3; c++) {
@@ -800,7 +805,7 @@ function reportText() {
 	}
 	lines.push('', 'js/minerals.js ranges');
 	for (let m = 0; m < count; m++) {
-		if (table[m].host) continue;
+		if (table[m].host || table[m].gen === false) continue;
 		const parts = channelKeys.map((key, c) => {
 			const range = state.ranges[m][c];
 			return key + ': ' + (geology.isUnconstrained(range) ? 'ANY' : 'Object.freeze([' + range[0].toFixed(2) + ', ' + range[1].toFixed(2) + '])');

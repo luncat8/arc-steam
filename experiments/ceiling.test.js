@@ -316,7 +316,8 @@ test('lost fragments pile up on the floor heightmap under their landing point', 
 	ceiling.reset(17);
 	const state = ceiling.state;
 	const world = { platform: { x: -5, vx: 0 }, heat: 0 };
-	ceiling.damage(6.25, state.bottom + 0.5, 12);
+	// This is a deposition test: break the exposed face independently of its mineral mix.
+	for (let hit = 0; hit < 8; hit++) ceiling.damage(6.25, state.bottom + state.cell * 0.5, 12);
 	ceiling.collapse(30);
 	const extracted = state.extractedCells;
 	assert.ok(extracted > 0);

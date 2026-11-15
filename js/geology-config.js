@@ -24,7 +24,7 @@
 		yCompression: 3,
 		mode: 'balanced',
 		specificity: 0.6,
-		hostWeight: 0.08
+		hostWeight: 0.0883
 	});
 
 	// The editors' bounds. One table feeds the HTML ranges and validates an

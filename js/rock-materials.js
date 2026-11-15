@@ -88,11 +88,15 @@
 	function basePricesInto(out, shares, settings, report) {
 		const tuning = settings || economy;
 		let weightSum = 0;
-		for (let m = 0; m < count; m++) weightSum += table[m].demandMean * Math.pow(Math.max(shares[m], minimumShare), 1 - tuning.elasticity);
+		for (let m = 0; m < count; m++) {
+			if (table[m].gen === false) continue;
+			weightSum += table[m].demandMean * Math.pow(Math.max(shares[m], minimumShare), 1 - tuning.elasticity);
+		}
 		const scale = tuning.targetCellValue / weightSum;
 		let mean = 0;
 		let clamped = 0;
 		for (let m = 0; m < count; m++) {
+			if (table[m].gen === false) continue;
 			const share = Math.max(shares[m], minimumShare);
 			const raw = scale * table[m].demandMean * Math.pow(share, -tuning.elasticity);
 			const value = Math.max(tuning.floor, Math.min(tuning.cap, raw));
@@ -100,12 +104,29 @@
 			out[m] = value;
 			mean += value * shares[m];
 		}
+		liberatedPricesInto(out);
 		if (report) {
 			report.target = tuning.targetCellValue;
 			report.mean = mean;
 			report.clamped = clamped;
 		}
 		return out;
+	}
+
+	const goldIndex = minerals.mineralIds.indexOf('gold');
+	const quartzIndex = minerals.mineralIds.indexOf('quartz');
+	const pureGoldIndex = minerals.mineralIds.indexOf('pure_gold');
+	const goldMassFraction = 0.25;
+
+	// A liberated phase is not a scarce ore in the abundance curve. Its quote
+	// is the value left after pricing the 75% quartz gangue at the same market.
+	function liberatedGoldQuote(goldQuote, quartzQuote) {
+		return Math.max(0, (goldQuote - (1 - goldMassFraction) * quartzQuote) / goldMassFraction);
+	}
+
+	function liberatedPricesInto(prices) {
+		prices[pureGoldIndex] = liberatedGoldQuote(prices[goldIndex], prices[quartzIndex]);
+		return prices;
 	}
 
 	// Price and strength display ramps, writing RGB into caller-owned storage.
@@ -142,6 +163,7 @@
 
 	const api = {
 		economy, minimumShare, maxStrength, debrisLimit,
+		goldMassFraction, liberatedGoldQuote, liberatedPricesInto,
 		strengthInto, colorInto, valueInto, basePricesInto, clamp01,
 		priceColorInto, strengthColorInto, desaturateInto
 	};
