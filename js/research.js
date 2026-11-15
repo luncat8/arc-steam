@@ -50,6 +50,10 @@
 		Object.freeze({
 			id: 'ballistics2', name: 'Trajectory computer II', cost: 700, requires: Object.freeze(['ballistics', 'power']),
 			effect: '3-bounce forecast through rock and piston contacts; early economy intercepts.'
+		}),
+		Object.freeze({
+			id: 'hydrology', name: 'Hydrology', cost: 580, requires: Object.freeze(['thermodynamics', 'impact']),
+			effect: 'Dissolution chemistry, brine recovery and the pressure pump: unlocks the water gun and its under-hull suction.'
 		})
 	]);
 	const LOCKED = 'locked';

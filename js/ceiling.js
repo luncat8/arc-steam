@@ -221,6 +221,12 @@
 	const strength = new Float32Array(maxCount);
 	// Accumulated impact-induced looseness, from 0 (sound) to 1 (most unstable).
 	const damageField = new Float32Array(maxCount);
+	// Share of the *soluble* phase a wet cell has already given up, and the mass
+	// and value it still carries for the wet ledger. Impact damage never touches
+	// them: a leached cell keeps its insoluble clasts until something moves them.
+	const leached = new Float32Array(maxCount);
+	const cellMassLeft = new Float32Array(maxCount);
+	const cellValueLeft = new Float32Array(maxCount);
 	const elements = new Float32Array(maxCount * 3);
 	const minerals = new Float32Array(maxCount * mineralCount);
 	const prices = new Float32Array(maxCount);
@@ -466,6 +472,29 @@
 		const mixOffset = index * mineralCount;
 		geology.fillElements(runField, column, geologicalRow, elements, elementOffset);
 		geology.fillMix(formation, elements, elementOffset, runHostWeight, minerals, mixOffset);
+		resetWetCell(index);
+	}
+
+	// The wet ledger of one cell opens at the shared cell mass; its value waits
+	// for the market, which is priced after the rows are built. Cell mass and
+	// value never change on impact: only the wet chemistry spends them, so the
+	// two ledgers cannot disagree about what a cell holds.
+	function resetWetCell(index) {
+		leached[index] = 0;
+		cellMassLeft[index] = cellMass;
+		cellValueLeft[index] = 0;
+	}
+
+	// Book every standing cell at the quote the market just set. Only called when
+	// the rock itself is built or extended, never by a market tick, so a leached
+	// cell keeps the value it has left.
+	function seedWetLedger(startIndex, endIndex) {
+		for (let index = startIndex; index < endIndex; index++) {
+			if (strength[index] <= 0) continue;
+			cellMassLeft[index] = cellMass;
+			cellValueLeft[index] = prices[index];
+			leached[index] = 0;
+		}
 	}
 	function smooth(t) { return t * t * (3 - 2 * t); }
 	function noise(x, y, channel) {
@@ -633,6 +662,18 @@
 	// The mixture and element values of one absolute geological cell: the parity
 	// probe compares this against the lab at the same coordinates.
 	const sampleScratch = { elements: new Float64Array(3), mix: new Float64Array(mineralCount) };
+	// Caller-owned wet results: the water module reuses its own, so these are
+	// only the defaults a probe or a bare caller gets.
+	const rockViewOf = Object.freeze({
+		columns, get rows() { return rows; }, cell, get bottom() { return bottom; }, top, width,
+		get leached() { return leached; }, get massLeft() { return cellMassLeft; }, get valueLeft() { return cellValueLeft; },
+		strength, initialStrength, minerals, elements, prices, mineralPrices, mineralTable, mineralCount, damageField,
+		get firstRow() { return firstRow; }, get heightmap() { return heightmap; }, get floorHeight() { return floorHeight; },
+		get cellMass() { return cellMass; }, get storageLimit() { return storageLimit; }, debrisLimit: materials.debrisLimit,
+		residueId: index => mineralTable[index].residueId === mineralTable[index].id
+			? index : mineralIds.indexOf(mineralTable[index].residueId),
+		dominantAt: index => dominantMineral(index)
+	});
 	function sampleCell(column, geologicalRow) {
 		geology.fillElements(runField, column, geologicalRow, sampleScratch.elements, 0);
 		geology.fillMix(formation, sampleScratch.elements, 0, runHostWeight, sampleScratch.mix, 0);
@@ -755,6 +796,9 @@
 		initialStrength.copyWithin(0, shiftCells, shiftCells + remainingCells);
 		strength.copyWithin(0, shiftCells, shiftCells + remainingCells);
 		damageField.copyWithin(0, shiftCells, shiftCells + remainingCells);
+		leached.copyWithin(0, shiftCells, shiftCells + remainingCells);
+		cellMassLeft.copyWithin(0, shiftCells, shiftCells + remainingCells);
+		cellValueLeft.copyWithin(0, shiftCells, shiftCells + remainingCells);
 		prices.copyWithin(0, shiftCells, shiftCells + remainingCells);
 		elements.copyWithin(0, shiftCells * 3, (shiftCells + remainingCells) * 3);
 		minerals.copyWithin(0, shiftCells * mineralCount, (shiftCells + remainingCells) * mineralCount);
@@ -767,6 +811,9 @@
 		initialStrength.fill(0, remainingCells, oldCells);
 		strength.fill(0, remainingCells, oldCells);
 		damageField.fill(0, remainingCells, oldCells);
+		leached.fill(0, remainingCells, oldCells);
+		cellMassLeft.fill(0, remainingCells, oldCells);
+		cellValueLeft.fill(0, remainingCells, oldCells);
 		prices.fill(0, remainingCells, oldCells);
 		for (let c = 0; c < columns; c++) firstRow[c] -= drop;
 		for (let i = 0; i < maxDebris; i++) if (active[i]) debrisCell[i] -= shiftCells;
@@ -784,6 +831,7 @@
 		rows++;
 		generatedRows++;
 		revalueRange(row * columns, rows * columns);
+		seedWetLedger(row * columns, rows * columns);
 		// Incoming strata bring potential energy from above the chamber; booking
 		// the import keeps the chamber's energy balance invariant.
 		exportedEnergy -= columns * cellMass * gravity * (bottom + (row + 0.5) * cell);
@@ -953,9 +1001,13 @@
 		initialStrength.fill(0);
 		strength.fill(0);
 		damageField.fill(0);
+		leached.fill(0);
+		cellMassLeft.fill(0);
+		cellValueLeft.fill(0);
 		prices.fill(0);
 		for (let row = 0; row < rows; row++) populateRow(row, row, (rows - 1 - row) / (rows - 1));
 		revalueCells();
+		seedWetLedger(0, columns * rows);
 		updateHeightmap();
 		updatePerspective();
 		scanRegions();
@@ -1026,6 +1078,9 @@
 		initialStrength.fill(0);
 		strength.fill(0);
 		damageField.fill(0);
+		leached.fill(0);
+		cellMassLeft.fill(0);
+		cellValueLeft.fill(0);
 		prices.fill(0);
 		regionDamage.fill(0);
 		regionEligible.fill(0);
@@ -1035,6 +1090,7 @@
 		for (let row = 0; row < rows; row++) populateRow(row, row, 0);
 		measureAbundance();
 		initMarket();
+		seedWetLedger(0, columns * rows);
 		updateHeightmap();
 		updatePerspective();
 		scanRegions();
@@ -1493,6 +1549,121 @@
 		spawnFragment(index);
 		fallCells[dominantMineral(index)]++;
 		recordFall(index);
+	}
+
+	// ---- Wet-cell primitives (used by js/water.js) ----
+	// Water reads and writes rock through this narrow boundary: the ceiling owns
+	// the grid, the mixture, the masses and the energy ledger; the water module
+	// owns the parcels, the split and the pump. Nothing here runs until a wet
+	// tool is fitted, so the dry game keeps its exact cost.
+
+	// The intact cell under a world point, or -1 when the point is open.
+	function cellAt(x, y) {
+		if (!(y >= bottom && y < top) || !(x >= 0 && x < width)) return -1;
+		const column = Math.floor(x / cell);
+		const row = Math.floor((y - bottom) / cell);
+		if (row < 0 || row >= rows) return -1;
+		const index = row * columns + column;
+		return strength[index] > 0 ? index : -1;
+	}
+
+	// The run's live cell-scale view: geometry plus the arrays the solvers share.
+	function rockView() {
+		return rockViewOf;
+	}
+
+	// A cell's remaining mass, value and leached share, into caller-owned storage.
+	function wetOf(index, out) {
+		out.mass = cellMassLeft[index];
+		out.value = cellValueLeft[index];
+		out.leached = leached[index];
+		out.residueMass = cellMassLeft[index] * residueShare(index);
+		return out;
+	}
+
+	function createWetOf() { return { mass: 0, value: 0, leached: 0, residueMass: 0 }; }
+	function createWetDetach() { return { x: 0, y: 0, mass: 0, value: 0, mineral: 0, dominant: 0, index: -1 }; }
+
+	// The standing (insoluble) share of a cell: what a leached cell keeps.
+	function residueShare(index) {
+		const offset = index * mineralCount;
+		let share = 0;
+		for (let m = 0; m < mineralCount; m++) share += minerals[offset + m] * mineralTable[m].residueF;
+		return share > 0 ? share : 1;
+	}
+
+	// Spend a slice of a cell on the wet chemistry: the caller has already added
+	// the brine to a parcel and booked the gas loss, so this only debits the
+	// rock. The residue stays in the cell until it either collapses or is
+	// detached, which is why the removed mass is the reactive part alone.
+	function wetSpend(index, brineMass, ventMass, brineValue, ventValue) {
+		cellMassLeft[index] -= brineMass + ventMass;
+		cellValueLeft[index] -= brineValue + ventValue;
+		if (cellMassLeft[index] < 0) cellMassLeft[index] = 0;
+		if (cellValueLeft[index] < 0) cellValueLeft[index] = 0;
+	}
+
+	// Advance a cell's leached share and report the strength its residue stands
+	// at. A coherent residue keeps its full strength; an inclusion seam loses
+	// support as the binder leaves, which is what makes a karst front crumble.
+	const wetRef = { leached: 0, residueStrength: 0, undermined: false };
+	function wetLeach(index, amount, undermined) {
+		const before = leached[index];
+		const next = Math.min(1, before + amount);
+		leached[index] = next;
+		const share = residueShare(index);
+		const initial = initialStrength[index];
+		// The residue of a leached cell is the insoluble part of what stood there.
+		const standing = initial * share;
+		wetRef.leached = next;
+		wetRef.undermined = Boolean(undermined);
+		wetRef.residueStrength = undermined ? Math.max(0, standing * (1 - next) - (initial - strength[index])) : standing;
+		return wetRef;
+	}
+
+	// Remove one cell because the wet chemistry finished it: its remaining mass
+	// and value go into the caller's debris pool. Unlike spawn(), nothing is
+	// counted as extracted or fallen, because water did the mining.
+	function wetDetach(index, out) {
+		if (!(index >= 0) || strength[index] <= 0) return false;
+		const offset = index * mineralCount;
+		out.x = (index % columns + 0.5) * cell;
+		out.y = bottom + (Math.floor(index / columns) + 0.5) * cell;
+		out.mass = cellMassLeft[index];
+		out.value = cellValueLeft[index];
+		out.dominant = dominantMineral(index);
+		out.index = index;
+		strength[index] = 0;
+		damageField[index] = 0;
+		prices[index] = 0;
+		leached[index] = 0;
+		cellMassLeft[index] = 0;
+		cellValueLeft[index] = 0;
+		const residueMineral = mineralTable[out.dominant].residueId === mineralTable[out.dominant].id
+			? out.dominant : mineralIds.indexOf(mineralTable[out.dominant].residueId);
+		out.mineral = residueMineral >= 0 ? residueMineral : out.dominant;
+		updateHeightmap();
+		scanRegions();
+		return true;
+	}
+
+	// One fallen grain lands in the floor pile from outside the fall system:
+	// the wet residue and the placer nugget use this, so their mass and value
+	// reach the pile without pretending to be a mined fragment.
+	function depositLoose(x, cells, value) { spill(x, cells, value); }
+
+	// Credit a wet parcel's solute to a machine's hopper. The rig keeps its
+	// hopper in the chamber's books; a competitor keeps its own on its body.
+	function loadWetCargo(world, machine, mineral, mass, value) {
+		return machine === world
+			? loadCargo(mineral, mass, value)
+			: root.SteamPlayers.loadCargo(machine, mineral, mass, value);
+	}
+
+	function cargoSpace(world, machine) {
+		const limit = storageLimit;
+		const used = machine === world ? cargoCells : machine.cargoCells;
+		return Math.max(0, limit - used);
 	}
 
 	function traceSmooth(x, y, vx, vy, duration, radius, traceGravity) {
@@ -2425,6 +2596,8 @@
 		state, setShape, setFloorCompression, setDepthScale, setMineralClusterGrowth, generateTestRock, rockDrawnY, rockWorldY, rockScale, collapse, advanceMarket,
 		applyGeology, exportGeology, applyGeologyExport, sampleCell, perspectiveScale,
 		queueGrowth, watchBoundary, grow,
+		cellAt, rockView, wetOf, wetLeach, wetSpend, wetDetach, residueShare,
+		depositLoose, loadWetCargo, cargoSpace, createWetOf, createWetDetach,
 		get collapseChunkMax() { return collapseChunkMaxNow(); }
 	};
 	root.SteamCeiling = api;

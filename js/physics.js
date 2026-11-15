@@ -961,6 +961,7 @@
 		if (root.SteamResearch) root.SteamResearch.reset();
 		if (root.SteamRockets) root.SteamRockets.reset();
 		if (root.SteamSandblaster) root.SteamSandblaster.reset();
+		if (root.SteamWater) root.SteamWater.reset();
 		const world = {
 			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, chargedEnergy: 0, crankEnergy: 0, terrainWork: 0, platformWork: 0,
 			initialEnergy: 0,
@@ -1783,6 +1784,7 @@
 		// After the sale, so a wall visit can spend what it just earned.
 		if (root.SteamRockets) root.SteamRockets.step(world, dt);
 		if (root.SteamSandblaster) root.SteamSandblaster.step(world, dt);
+		if (root.SteamWater) root.SteamWater.step(world, dt);
 		cool(world, dt);
 		world.time += dt;
 	}
