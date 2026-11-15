@@ -237,7 +237,7 @@
 		grainState[slot] = FLYING;
 		grainOwner[slot] = ownerIndex(id);
 		grainMineral[slot] = mineral;
-		grainX[slot] = physics.collectorX(world, id);
+		grainX[slot] = physics.sandblasterNozzleX(world, id);
 		grainY[slot] = body.y + physics.config.deck + nozzleHeight;
 		grainVx[slot] = body.vx;
 		const relativeVy = Math.sqrt(Math.max(0, 2 * (lift - grainMass * gravity * grainY[slot]) / grainMass));

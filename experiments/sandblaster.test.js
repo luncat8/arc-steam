@@ -197,7 +197,7 @@ test('a stream of grains loosens a seam through the shared weakening rule', () =
 	const world = fresh();
 	park(world, 12);
 	stock(world, stoneIndex, 60);
-	const x = physics.collectorX(world, 'rig');
+	const x = physics.sandblasterNozzleX(world, 'rig');
 	const column = Math.floor(x / rock.cell);
 	const cellIndex = rock.firstRow[column] * rock.columns + column;
 	// Fire grain after grain at the same seam and watch the face cell weaken.
@@ -259,7 +259,7 @@ test('grains that miss the collector are spilled onto the floor, not recovered',
 	world.platform.vx = 0;
 	stock(world, stoneIndex, 60, 1.2);
 	const cells = rock.cargoCells;
-	const x = physics.collectorX(world, 'rig');
+	const x = physics.sandblasterNozzleX(world, 'rig');
 	const floor = ceiling.floorAt(x);
 	let fired = 0;
 	for (let n = 0; n < 12; n++) {

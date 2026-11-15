@@ -16,7 +16,7 @@
 	const config = Object.freeze({
 		width: 24, ceiling: 15, gravity, ballGravity: gravity * ballSpeedScale * ballSpeedScale,
 		ballMass: 1 / (ballSpeedScale * ballSpeedScale), ballSpeedScale, radius: 0.18,
-		platformWidth: 3.6, deck: 0.7, collectorFraction: 0.35,
+		platformWidth: 3.6, deck: 0.7, collectorFraction: 0.35, sandblasterNozzleFraction: 0.8, waterNozzleFraction: 0.2,
 		// The wheels sit at the hull's ends, not 0.5 m inboard of them: a wheel
 		// leads the 45° plate up the ramp, so the machine climbs on its wheels. A
 		// wheel set in from the nose put the flat belly's corner on the ramp first
@@ -823,11 +823,28 @@
 
 	// The collector's centre in world coordinates: where a tube or nozzle
 	// fitted in the collector stands. Shared by the rocket rack and the
-	// sandblaster so both launch from the same geometry.
-	function collectorX(world, owner) {
+	// sandblaster so both launch from the same geometry. An optional fraction
+	// (0..1) places the point along the collector; 0.5 is the collector centre.
+	function collectorX(world, owner, fraction) {
 		const body = machineBody(machineById(world, ownerId(owner)));
-		const offset = config.platformWidth * (config.collectorFraction - 1) * 0.5;
-		return Math.max(0, Math.min(config.width, body.x + offset));
+const f = (fraction === undefined || fraction === null) ? 0.5 : fraction;
+const x = body.x - config.platformWidth * 0.5 + config.platformWidth * config.collectorFraction * f;
+return Math.max(0, Math.min(config.width, x));
+
+	}
+	function sandblasterNozzleX(world, owner) {
+		return collectorX(world, owner, config.sandblasterNozzleFraction);
+	}
+	function waterNozzleX(world, owner) {
+		return collectorX(world, owner, config.waterNozzleFraction);
+	}
+	function nozzleX(world, owner, fractionOrKind) {
+		if (typeof fractionOrKind === 'string') {
+			if (fractionOrKind === 'sandblaster' || fractionOrKind === 'sand') return sandblasterNozzleX(world, owner);
+			if (fractionOrKind === 'watergun' || fractionOrKind === 'water') return waterNozzleX(world, owner);
+			return collectorX(world, owner, 0.5);
+		}
+		return collectorX(world, owner, fractionOrKind);
 	}
 
 	// Every platform of the chamber, rig first. Preallocated: the ball solve
@@ -1800,7 +1817,7 @@
 		settlePose, setPistonAngle, pistonContactTime, solvePiston, solveFace, reflectOnDeck, contactResult, deckBounce,
 		ballRadiusAt, placementRadius, setBallPerspective,
 		setBallMode, mayPush, isRigBall, ballLandingTime, focusBall, heldBall, heldBallMass,
-		machineBody, machineById, collectorX, machinesOf, machineDrive, machinePistonAngle, heldBallOf, focusBallOf
+		machineBody, machineById, collectorX, sandblasterNozzleX, waterNozzleX, nozzleX, machinesOf, machineDrive, machinePistonAngle, heldBallOf, focusBallOf
 	};
 	root.SteamPhysics = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;

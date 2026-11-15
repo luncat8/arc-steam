@@ -195,7 +195,7 @@ test('a rival fires from its own collector, not the rig\'s', () => {
 	equipment.grant('watergun', world, rival.id);
 	// The nozzle is the rival's own collector, a metre and a bit left of its centre.
 	const nozzle = water.nozzleOf(world, rival.id);
-	near(nozzle.x, physics.collectorX(world, rival.id), 1e-9, 'the rival nozzle is its own collector');
+	near(nozzle.x, physics.waterNozzleX(world, rival.id), 1e-9, 'the rival nozzle is its own collector');
 	assert.ok(Math.abs(nozzle.x - physics.collectorX(world, 'rig')) > 1, 'and not the rig collector');
 	// Firing a rival shot must not throw and must cost the rival, not the rig.
 	water.setAim(rival.x, 14.5);

@@ -318,8 +318,9 @@
 		const physics = root.SteamPhysics;
 		const id = ownerIdOf(owner);
 		const body = physics.machineBody(physics.machineById(world, id));
-		nozzle.x = physics.collectorX(world, id);
-		nozzle.y = body.y + physics.config.deck + 0.14;
+		nozzle.x = physics.waterNozzleX(world, id);
+		nozzle.y = body.y + physics.config.deck;
+
 		let dx = aim.x - nozzle.x;
 		let dy = aim.y - nozzle.y;
 		// A nozzle cannot fire into its own deck.

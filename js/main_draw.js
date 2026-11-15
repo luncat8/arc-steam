@@ -144,7 +144,7 @@ function drawRigMachinery(context, player) {
 	}
 	// The nozzle's centre is the collector launch point used by the flight.
 	if (SteamEquipment.isInstalled('sandblaster', player.id)) {
-		const nozzleX = left + collectorWidth * 0.5;
+		const nozzleX = left + collectorWidth * config.sandblasterNozzleFraction;
 		context.fillStyle = '#7a6a4f';
 		context.beginPath();
 		context.moveTo(nozzleX - 0.05, config.deck);
@@ -157,8 +157,8 @@ function drawRigMachinery(context, player) {
 	// The water cannon points where the jet would go, so the nozzle is the aim.
 	if (SteamEquipment.isInstalled('watergun', player.id)) {
 		const nozzle = SteamWater.nozzleOf(world, player.id);
-		const nozzleX = left + collectorWidth * 0.5;
-		const nozzleY = config.deck + 0.14;
+		const nozzleX = left + collectorWidth * config.waterNozzleFraction;
+		const nozzleY = config.deck;
 		context.strokeStyle = '#7fb6d9';
 		context.lineWidth = 0.07;
 		context.beginPath();
