@@ -447,6 +447,8 @@ function waterReadout() {
 	setDisabled(ui['water-aim'], !installed);
 	setChecked(ui['water-auto'], gun.autoFire);
 	setChecked(ui['water-pump'], SteamWater.state.pumpOn);
+	setChecked(ui['water-pump-solute'], SteamWater.state.pumpMode === 'solute');
+	setDisabled(ui['water-pump-solute'], !SteamWater.state.pumpOn);
 	setText(ui['water-fire'].firstChild, installed ? 'Spray · ' + metrics.dissolvedCells + ' ' : 'Spray ');
 	const reason = !installed ? 'No water gun installed · fit one in Science + Shop'
 		: !SteamWater.state.pumpOn ? 'Pump off · brine stays in the chamber'

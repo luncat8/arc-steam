@@ -416,6 +416,10 @@ function bindInput() {
 		SteamWater.setPump(ui['water-pump'].checked);
 		refresh();
 	});
+	ui['water-pump-solute'].addEventListener('change', function () {
+		SteamWater.setPumpMode(ui['water-pump-solute'].checked ? 'solute' : 'always');
+		refresh();
+	});
 	ui.pause.addEventListener('click', togglePause);
 	ui.shape.addEventListener('change', function () { window.SteamCeiling.setShape(ui.shape.value); sceneDirty = true; });
 	// The ball arrangement re-seats the balls, so the autopilot plan is dropped

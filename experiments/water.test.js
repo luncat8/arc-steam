@@ -377,3 +377,49 @@ test('rig BOT manages water as a temporary thermal- and reserve-aware duty witho
 	harness.balanced(world);
 });
 
+test('solute-aware pump mode idles on shallow fresh puddles while lifting brine and deep floods', () => {
+	const world = fresh(1);
+	world.platform.x = world.platform.previousX = 12;
+	water.setPump(true);
+	water.setPumpMode('solute');
+	harness.sync(world);
+
+	// Shallow fresh puddle under the hull spreads thin and stays unpumped (zero energy/heat spent).
+	water.setPump(false);
+	const shallow = water.fill(11.6, 0.02, 12.4, 0.24);
+	assert.ok(shallow > 0.5);
+	for (let i = 0; i < 120; i++) physics.step(world, c.step);
+	water.setPump(true);
+	const pumpJBefore = water.measureMetrics().pumpJoules;
+	for (let i = 0; i < 60; i++) physics.step(world, c.step);
+	assert.equal(water.measureMetrics().pumped, 0, 'shallow fresh water stays unpumped');
+	assert.equal(water.measureMetrics().pumpJoules, pumpJBefore, 'idling pump spends no battery');
+
+	// Adding dissolved brine wakes the pump even in shallow water.
+	const parcel = water.cellIndexAt(12, 0.1);
+	const beforeWater = water.water[parcel];
+	assert.ok(beforeWater > 0.05);
+	const offset = parcel * minerals.mineralIds.length + halite;
+	water.load[offset] += 0.2;
+	water.loadValue[offset] += 2.0;
+	water.loadTotal[parcel] += 0.2;
+	for (let i = 0; i < 120; i++) physics.step(world, c.step);
+	const afterBrine = water.measureMetrics();
+	assert.ok(afterBrine.pumped > 0.05, 'solute-bearing parcel triggers pump');
+	assert.ok(afterBrine.pumpedValue > 0.1, 'brine value enters hopper');
+
+	// Deep fresh flood still pumps excess depth above the shallow floor layer.
+	const w2 = fresh(2);
+	w2.platform.x = w2.platform.previousX = 12;
+	water.setPump(true);
+	water.setPumpMode('solute');
+	harness.sync(w2);
+	water.fill(10.8, 0.02, 13.2, 0.72);
+	for (let i = 0; i < 120; i++) physics.step(w2, c.step);
+	assert.ok(water.measureMetrics().pumped > 1.0, 'deep fresh flood pumps excess depth');
+
+	water.setPumpMode('always');
+	harness.balanced(w2);
+});
+
+

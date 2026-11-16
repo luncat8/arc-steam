@@ -74,6 +74,8 @@
 	const pumpUnitsPerSecond = 2.6;
 	const pumpHalfWidth = 1.58;
 	const pumpDepth = 0.85;
+	const pumpFreshConcentration = 0.002;
+	const pumpShallowUnits = 0.45;
 	const autoFireReserve = 0.2;
 
 	const satCapDefault = 60;
@@ -94,6 +96,13 @@
 	const loadTotalNext = new Float64Array(cellCount);
 	const flowU = new Float32Array(cellCount);
 	const solidMask = new Uint8Array(cellCount);
+	const colPile = new Float64Array(columns);
+	const colDepth = new Float32Array(columns);
+	const rowWet = new Uint8Array(rows);
+	const rowSweep = new Uint8Array(rows);
+	let wetRowMin = rows;
+	let wetRowMax = -1;
+	let hasParcels = false;
 
 	// ---- Droplets ----
 	const dropState = new Uint8Array(maxDroplets);
@@ -140,7 +149,7 @@
 
 	const settings = {
 		model: 'table', satCap: satCapDefault, dissolveRate: dissolveRateDefault,
-		pumpOn: true, erosion: true
+		pumpOn: true, pumpMode: 'always', erosion: true
 	};
 	const profiles = new Map();
 	let randomState = 1;
@@ -205,6 +214,10 @@
 		loadValue.fill(0); loadValueNext.fill(0);
 		loadTotal.fill(0); loadTotalNext.fill(0);
 		flowU.fill(0); solidMask.fill(0);
+		rowWet.fill(0); rowSweep.fill(0);
+		wetRowMin = rows;
+		wetRowMax = -1;
+		hasParcels = false;
 		dropState.fill(FREE);
 		grainActive.fill(0);
 		dropCursor = 0;
@@ -234,6 +247,44 @@
 		return row * columns + column;
 	}
 
+	function markParcelWet(parcel) {
+		const row = (parcel / columns) | 0;
+		rowWet[row] = 1;
+		if (row < wetRowMin) wetRowMin = row;
+		if (row > wetRowMax) wetRowMax = row;
+		hasParcels = true;
+	}
+
+	function scanWetRows() {
+		let firstWet = -1;
+		for (let i = 0; i < cellCount; i++) {
+			if (water[i] > 0 || loadTotal[i] > 0) { firstWet = i; break; }
+		}
+		if (firstWet < 0) {
+			wetRowMin = rows;
+			wetRowMax = -1;
+			hasParcels = false;
+			return false;
+		}
+		const firstRow = (firstWet / columns) | 0;
+		for (let r = 0; r < firstRow; r++) rowWet[r] = 0;
+		wetRowMin = firstRow;
+		wetRowMax = firstRow;
+		rowWet[firstRow] = 1;
+		hasParcels = true;
+		for (let row = firstRow + 1; row < rows; row++) {
+			let found = 0;
+			const start = row * columns;
+			const end = start + columns;
+			for (let i = start; i < end; i++) {
+				if (water[i] > 0 || loadTotal[i] > 0) { found = 1; break; }
+			}
+			rowWet[row] = found;
+			if (found) wetRowMax = row;
+		}
+		return true;
+	}
+
 	// Which parcels hold rock. A parcel is solid when any part of it is rock: a
 	// pond must sit on the surface a cell thick, not sink half a cell into it.
 	// Rubble piles are solid to water too, so a pond rests on the pile.
@@ -246,10 +297,22 @@
 		const rockColumns = view.columns;
 		const rockRows = view.rows;
 		const floorHeight = view.floorHeight;
+		let maxPile = 0;
+		for (let column = 0; column < columns; column++) {
+			const p = pileAt(floorHeight, rockCell, (column + 0.5) * cellSize);
+			colPile[column] = p;
+			if (p > maxPile) maxPile = p;
+		}
+		const pileEndRow = Math.min(rows, Math.ceil(maxPile / cellSize));
+		const rockStartRow = Math.max(0, Math.floor(bottom / cellSize));
+		if (pileEndRow < rockStartRow) {
+			solidMask.fill(0, pileEndRow * columns, rockStartRow * columns);
+		}
 		for (let row = 0; row < rows; row++) {
+			if (row >= pileEndRow && row < rockStartRow) continue;
 			for (let column = 0; column < columns; column++) {
 				const x = (column + 0.5) * cellSize;
-				const pile = pileAt(floorHeight, rockCell, x);
+				const pile = colPile[column];
 				let filled = 0;
 				for (let sy = 0; sy < 2; sy++) {
 					const wy = (row + 0.5) * cellSize + (sy - 0.5) * cellSize * 0.5;
@@ -276,8 +339,10 @@
 	function displaceParcel(parcel) {
 		const target = openParcelNear(parcel);
 		if (target === parcel) return;
-		water[target] += water[parcel];
-		loadTotal[target] += loadTotal[parcel];
+		const movedWater = water[parcel];
+		const movedLoad = loadTotal[parcel];
+		water[target] += movedWater;
+		loadTotal[target] += movedLoad;
 		const from = parcel * count;
 		const to = target * count;
 		for (let m = 0; m < count; m++) {
@@ -288,6 +353,7 @@
 		}
 		water[parcel] = 0;
 		loadTotal[parcel] = 0;
+		if (movedWater > 0 || movedLoad > 0) markParcelWet(target);
 	}
 
 	function pileAt(floorHeight, rockCell, x) {
@@ -449,6 +515,7 @@
 		}
 		loadTotal[parcel] += added;
 		flowU[parcel] = clamp(flowU[parcel] + dropVx[slot] * 0.22, -9, 9);
+		markParcelWet(parcel);
 		dropState[slot] = FREE;
 		return parcel;
 	}
@@ -709,6 +776,7 @@
 	// wet parcel that reaches it in this pass, so a cell bordered by two pools is
 	// not worked twice as fast.
 	function dissolveContacts(dt) {
+		if (!hasParcels) return;
 		const rock = root.SteamCeiling;
 		const view = rock.rockView();
 		const rockCell = view.cell;
@@ -720,35 +788,39 @@
 		const margin = cellSize;
 		const span = margin * 2;
 		stamp++;
-		for (let parcel = 0; parcel < cellCount; parcel++) {
-			const held = water[parcel];
-			if (held < 0.06) continue;
-			if (parcelSaturation(parcel) <= 0) continue;
-			const intensity = (0.32 + 0.68 * Math.min(1, Math.abs(flowU[parcel]) / 2.2)) * Math.min(1, held * 2.2);
-			if (intensity <= 0) continue;
-			const power = passiveDissolvePower * intensity * dt;
-			const column = parcel % columns;
-			const row = (parcel / columns) | 0;
-			const x0 = column * cellSize;
+		for (let row = wetRowMin; row <= wetRowMax; row++) {
+			if (!rowWet[row]) continue;
 			const y0 = row * cellSize;
 			const firstRow = Math.max(0, Math.floor((y0 - span - bottom) / rockCell));
 			const lastRow = Math.min(rockRows - 1, Math.floor((y0 + cellSize + span - 1e-9 - bottom) / rockCell));
-			const firstColumn = Math.max(0, Math.floor((x0 - span) / rockCell));
-			const lastColumn = Math.min(rockColumns - 1, Math.floor((x0 + cellSize + span - 1e-9) / rockCell));
-			for (let rr = firstRow; rr <= lastRow; rr++) {
-				const cellY0 = bottom + rr * rockCell;
-				const gapY = cellY0 > y0 + cellSize ? cellY0 - (y0 + cellSize) : (y0 > cellY0 + rockCell ? y0 - (cellY0 + rockCell) : 0);
-				if (gapY > margin) continue;
-				for (let rc = firstColumn; rc <= lastColumn; rc++) {
-					const index = rr * rockColumns + rc;
-					if (claimStamp[index] === stamp) continue;
-					if (view.strength[index] <= 0) continue;
-					const cellX0 = rc * rockCell;
-					const gapX = cellX0 > x0 + cellSize ? cellX0 - (x0 + cellSize) : (x0 > cellX0 + rockCell ? x0 - (cellX0 + rockCell) : 0);
-					if (gapX > margin) continue;
-					if (!isExposed(view, index)) continue;
-					claimStamp[index] = stamp;
-					exposeCell(index, parcel, power, dt);
+			if (lastRow < firstRow) continue;
+			const rowStart = row * columns;
+			for (let column = 0; column < columns; column++) {
+				const parcel = rowStart + column;
+				const held = water[parcel];
+				if (held < 0.06) continue;
+				if (parcelSaturation(parcel) <= 0) continue;
+				const intensity = (0.32 + 0.68 * Math.min(1, Math.abs(flowU[parcel]) / 2.2)) * Math.min(1, held * 2.2);
+				if (intensity <= 0) continue;
+				const power = passiveDissolvePower * intensity * dt;
+				const x0 = column * cellSize;
+				const firstColumn = Math.max(0, Math.floor((x0 - span) / rockCell));
+				const lastColumn = Math.min(rockColumns - 1, Math.floor((x0 + cellSize + span - 1e-9) / rockCell));
+				for (let rr = firstRow; rr <= lastRow; rr++) {
+					const cellY0 = bottom + rr * rockCell;
+					const gapY = cellY0 > y0 + cellSize ? cellY0 - (y0 + cellSize) : (y0 > cellY0 + rockCell ? y0 - (cellY0 + rockCell) : 0);
+					if (gapY > margin) continue;
+					for (let rc = firstColumn; rc <= lastColumn; rc++) {
+						const index = rr * rockColumns + rc;
+						if (claimStamp[index] === stamp) continue;
+						if (view.strength[index] <= 0) continue;
+						const cellX0 = rc * rockCell;
+						const gapX = cellX0 > x0 + cellSize ? cellX0 - (x0 + cellSize) : (x0 > cellX0 + rockCell ? x0 - (cellX0 + rockCell) : 0);
+						if (gapX > margin) continue;
+						if (!isExposed(view, index)) continue;
+						claimStamp[index] = stamp;
+						exposeCell(index, parcel, power, dt);
+					}
 				}
 			}
 		}
@@ -803,14 +875,41 @@
 	// Gravity, then horizontal levelling between supported parcels, then upward
 	// relief, twice per step. Solute moves only with its water.
 	function stepFluid() {
-		waterNext.set(water);
-		loadNext.set(load);
-		loadValueNext.set(loadValue);
-		loadTotalNext.set(loadTotal);
+		if (!hasParcels) return;
+		rowSweep.fill(0);
+		let sweepMin = rows;
+		let sweepMax = -1;
+		for (let row = wetRowMin; row <= wetRowMax; row++) {
+			if (!rowWet[row]) continue;
+			const lo = row > 1 ? row - 2 : 0;
+			const hi = row < rows - 2 ? row + 2 : rows - 1;
+			if (lo < sweepMin) sweepMin = lo;
+			if (hi > sweepMax) sweepMax = hi;
+			for (let r = lo; r <= hi; r++) rowSweep[r] = 1;
+		}
+		if (sweepMax < sweepMin) return;
+		for (let row = sweepMin; row <= sweepMax; row++) {
+			if (!rowSweep[row]) continue;
+			const pStart = row * columns;
+			const pEnd = pStart + columns;
+			for (let index = pStart; index < pEnd; index++) {
+				waterNext[index] = water[index];
+				loadTotalNext[index] = loadTotal[index];
+			}
+			const lStart = pStart * count;
+			const lEnd = pEnd * count;
+			for (let k = lStart; k < lEnd; k++) {
+				loadNext[k] = load[k];
+				loadValueNext[k] = loadValue[k];
+			}
+		}
 		for (let sweep = 0; sweep < 2; sweep++) {
-			for (let row = 1; row < rows; row++) {
+			const gStart = sweepMin < 1 ? 1 : sweepMin;
+			for (let row = gStart; row <= sweepMax; row++) {
+				if (!rowSweep[row]) continue;
+				const rowBase = row * columns;
 				for (let column = 0; column < columns; column++) {
-					const index = row * columns + column;
+					const index = rowBase + column;
 					if (solidMask[index]) continue;
 					const held = waterNext[index];
 					if (held <= 5e-4) continue;
@@ -822,10 +921,12 @@
 				}
 			}
 			const rightFirst = (sweep & 1) === 0;
-			for (let row = 0; row < rows; row++) {
+			for (let row = sweepMin; row <= sweepMax; row++) {
+				if (!rowSweep[row]) continue;
+				const rowBase = row * columns;
 				for (let step = 0; step < columns - 1; step++) {
 					const column = rightFirst ? step : columns - 2 - step;
-					const index = row * columns + column;
+					const index = rowBase + column;
 					if (solidMask[index] || solidMask[index + 1]) continue;
 					const held = waterNext[index];
 					const other = waterNext[index + 1];
@@ -839,9 +940,12 @@
 					else if (flow < 0) transferParcel(index + 1, index, Math.min(-flow, other * 0.48));
 				}
 			}
-			for (let row = 0; row < rows - 1; row++) {
+			const rEnd = sweepMax >= rows - 1 ? rows - 2 : sweepMax;
+			for (let row = sweepMin; row <= rEnd; row++) {
+				if (!rowSweep[row]) continue;
+				const rowBase = row * columns;
 				for (let column = 0; column < columns; column++) {
-					const index = row * columns + column;
+					const index = rowBase + column;
 					if (solidMask[index]) continue;
 					const excess = waterNext[index] - parcelCapacity;
 					if (excess <= 0.005) continue;
@@ -850,19 +954,41 @@
 				}
 			}
 		}
-		for (let index = 0; index < cellCount; index++) {
-			if (waterNext[index] < 1e-6) {
-				// A parcel carrying brine without water is a rounding ghost: its
-				// solute cannot be destroyed, so the film stays until it is pumped.
-				if (loadTotalNext[index] > 1e-7) waterNext[index] = 1e-5;
-				else { waterNext[index] = 0; loadTotalNext[index] = 0; }
+		wetRowMin = rows;
+		wetRowMax = -1;
+		hasParcels = false;
+		for (let row = sweepMin; row <= sweepMax; row++) {
+			if (!rowSweep[row]) continue;
+			const pStart = row * columns;
+			const pEnd = pStart + columns;
+			let wet = 0;
+			for (let index = pStart; index < pEnd; index++) {
+				if (waterNext[index] < 1e-6) {
+					// A parcel carrying brine without water is a rounding ghost: its
+					// solute cannot be destroyed, so the film stays until it is pumped.
+					if (loadTotalNext[index] > 1e-7) waterNext[index] = 1e-5;
+					else { waterNext[index] = 0; loadTotalNext[index] = 0; }
+				}
+				const w = waterNext[index];
+				const l = loadTotalNext[index];
+				water[index] = w;
+				loadTotal[index] = l;
+				flowU[index] = w > 0 ? flowU[index] * 0.94 : 0;
+				if (w > 0 || l > 0) wet = 1;
 			}
-			water[index] = waterNext[index];
-			loadTotal[index] = loadTotalNext[index];
-			flowU[index] *= 0.94;
+			const lStart = pStart * count;
+			const lEnd = pEnd * count;
+			for (let k = lStart; k < lEnd; k++) {
+				load[k] = loadNext[k];
+				loadValue[k] = loadValueNext[k];
+			}
+			rowWet[row] = wet;
+			if (wet) {
+				hasParcels = true;
+				if (row < wetRowMin) wetRowMin = row;
+				wetRowMax = row;
+			}
 		}
-		load.set(loadNext);
-		loadValue.set(loadValueNext);
 	}
 
 	// ---- Loose grains ----
@@ -1067,12 +1193,29 @@
 		let budget = Math.min(pumpUnitsPerSecond * dt, affordable);
 		let lifted = 0;
 		let soluteMass = 0;
+		const soluteOnly = settings.pumpMode === 'solute';
+		if (soluteOnly) {
+			for (let column = firstColumn; column <= lastColumn; column++) {
+				let total = 0;
+				for (let row = firstRow; row <= lastRow; row++) total += water[row * columns + column];
+				colDepth[column] = total;
+			}
+		}
 		for (let row = lastRow; row >= firstRow && budget > 1e-6 && capacity > 1e-9; row--) {
 			for (let column = firstColumn; column <= lastColumn && budget > 1e-6 && capacity > 1e-9; column++) {
 				const parcel = row * columns + column;
 				const held = water[parcel];
 				if (held <= 1e-6) continue;
-				const take = Math.min(held, budget);
+				let take = Math.min(held, budget);
+				if (soluteOnly) {
+					const hasBrine = loadTotal[parcel] > 1e-4 && loadTotal[parcel] / Math.max(held, 0.05) >= pumpFreshConcentration;
+					if (!hasBrine) {
+						const excess = colDepth[column] - pumpShallowUnits;
+						if (excess <= 1e-6) continue;
+						if (excess < take) take = excess;
+					}
+					colDepth[column] -= take;
+				}
 				const fraction = take / held;
 				const offset = parcel * count;
 				for (let m = 0; m < count && capacity > 1e-9; m++) {
@@ -1120,10 +1263,10 @@
 	}
 
 	function chamberWet() {
+		let wet = scanWetRows();
 		for (let i = 0; i < maxDroplets; i++) if (dropState[i] !== FREE) return true;
 		for (let i = 0; i < maxGrains; i++) if (grainActive[i]) return true;
-		for (let i = 0; i < cellCount; i++) if (water[i] > 0 || loadTotal[i] > 0) return true;
-		return false;
+		return wet;
 	}
 
 	// ---- Step ----
@@ -1209,16 +1352,23 @@
 		// neither in a parcel nor pumped, so the conservation check must see it.
 		let airborne = 0;
 		for (let i = 0; i < maxDroplets; i++) if (dropState[i] === FLYING) airborne += dropWater[i];
-		for (let parcel = 0; parcel < cellCount; parcel++) {
-			waterMass += water[parcel];
-			const offset = parcel * count;
-			for (let m = 0; m < count; m++) {
-				byMineral[m] += load[offset + m];
-				valueByMineral[m] += loadValue[offset + m];
-			}
-			if (water[parcel] > 0.02 && loadTotal[parcel] > 0) {
-				const saturation = loadTotal[parcel] / (water[parcel] * settings.satCap);
-				if (saturation > maxSaturation) maxSaturation = saturation;
+		if (scanWetRows()) {
+			for (let row = wetRowMin; row <= wetRowMax; row++) {
+				if (!rowWet[row]) continue;
+				const start = row * columns;
+				const end = start + columns;
+				for (let parcel = start; parcel < end; parcel++) {
+					waterMass += water[parcel];
+					const offset = parcel * count;
+					for (let m = 0; m < count; m++) {
+						byMineral[m] += load[offset + m];
+						valueByMineral[m] += loadValue[offset + m];
+					}
+					if (water[parcel] > 0.02 && loadTotal[parcel] > 0) {
+						const saturation = loadTotal[parcel] / (water[parcel] * settings.satCap);
+						if (saturation > maxSaturation) maxSaturation = saturation;
+					}
+				}
 			}
 		}
 		let brineMass = 0;
@@ -1285,6 +1435,10 @@
 	}
 
 	function setPump(on) { settings.pumpOn = Boolean(on); return settings.pumpOn; }
+	function setPumpMode(value) {
+		settings.pumpMode = value === 'solute' ? 'solute' : 'always';
+		return settings.pumpMode;
+	}
 	function setErosion(on) { settings.erosion = Boolean(on); return settings.erosion; }
 
 	// AIM is not a travel order: a click that sets the aim must never move the
@@ -1333,31 +1487,34 @@
 		const rock = root.SteamCeiling;
 		if (!rock) return;
 		context.save();
-		// Pools: one translucent fill per parcel, so a pond reads as water and a
-		// brine-rich parcel reads darker and greener without a second layer.
-		for (let row = 0; row < rows; row++) {
-			const y0 = rock.rockDrawnY(row * cellSize);
-			const y1 = rock.rockDrawnY((row + 1) * cellSize);
-			if (!(y1 > y0)) continue;
-			for (let column = 0; column < columns; column++) {
-				const parcel = row * columns + column;
-				const held = water[parcel];
-				if (held < 0.02) continue;
-				const fill = Math.min(1, held / parcelCapacity);
-				tintFor(parcel, fill);
-				context.fillStyle = 'rgba(' + tintScratch.r + ',' + tintScratch.g + ',' + tintScratch.b + ',' + (0.18 + 0.42 * fill).toFixed(3) + ')';
-				context.fillRect(column * cellSize, y0, cellSize + 0.002, y1 - y0 + 0.002);
+		if (scanWetRows()) {
+			// Pools: one translucent fill per parcel, so a pond reads as water and a
+			// brine-rich parcel reads darker and greener without a second layer.
+			for (let row = wetRowMin; row <= wetRowMax; row++) {
+				if (!rowWet[row]) continue;
+				const y0 = rock.rockDrawnY(row * cellSize);
+				const y1 = rock.rockDrawnY((row + 1) * cellSize);
+				if (!(y1 > y0)) continue;
+				for (let column = 0; column < columns; column++) {
+					const parcel = row * columns + column;
+					const held = water[parcel];
+					if (held < 0.02) continue;
+					const fill = Math.min(1, held / parcelCapacity);
+					tintFor(parcel, fill);
+					context.fillStyle = 'rgba(' + tintScratch.r + ',' + tintScratch.g + ',' + tintScratch.b + ',' + (0.18 + 0.42 * fill).toFixed(3) + ')';
+					context.fillRect(column * cellSize, y0, cellSize + 0.002, y1 - y0 + 0.002);
+				}
 			}
-		}
-		// The bright meniscus: the top water line of each column of parcels.
-		context.fillStyle = 'rgba(198,238,255,0.55)';
-		for (let column = 0; column < columns; column++) {
-			let topRow = -1;
-			for (let row = rows - 1; row >= 0; row--) if (water[row * columns + column] >= 0.1) { topRow = row; break; }
-			if (topRow < 0) continue;
-			const held = Math.min(1, water[topRow * columns + column]);
-			const y = rock.rockDrawnY((topRow + 1) * cellSize);
-			context.fillRect(column * cellSize, y, cellSize + 0.002, 0.03 + 0.02 * held);
+			// The bright meniscus: the top water line of each column of parcels.
+			context.fillStyle = 'rgba(198,238,255,0.55)';
+			for (let column = 0; column < columns; column++) {
+				let topRow = -1;
+				for (let row = wetRowMax; row >= wetRowMin; row--) if (water[row * columns + column] >= 0.1) { topRow = row; break; }
+				if (topRow < 0) continue;
+				const held = Math.min(1, water[topRow * columns + column]);
+				const y = rock.rockDrawnY((topRow + 1) * cellSize);
+				context.fillRect(column * cellSize, y, cellSize + 0.002, 0.03 + 0.02 * held);
+			}
 		}
 		// Droplets and grains keep the chamber's local scale, so a jet in the
 		// layer is drawn at the size the cells there are drawn at.
@@ -1435,6 +1592,7 @@
 			water[parcel] += amount;
 			totals.flooded += amount;
 			added += amount;
+			markParcelWet(parcel);
 		}
 		return added;
 	}
@@ -1448,6 +1606,7 @@
 		get satCap() { return settings.satCap; },
 		get dissolveRate() { return settings.dissolveRate; },
 		get pumpOn() { return settings.pumpOn; },
+		get pumpMode() { return settings.pumpMode; },
 		get erosion() { return settings.erosion; },
 		get aimX() { return aim.x; },
 		get aimY() { return aim.y; },
@@ -1467,7 +1626,7 @@
 	const api = {
 		state, stateFor, reset, step, measureMetrics, createMetrics, depthAt, fill,
 		fire, canFire, setAim, setAutoFire, setBotFire, clearBotFire,
-		setSaturationCap, setDissolveRate, setModel, setPump, setErosion,
+		setSaturationCap, setDissolveRate, setModel, setPump, setPumpMode, setErosion,
 		nozzleOf, cellIndexAt, settings, totals, draw, streamPower, streamReady,
 		water, load, loadValue, loadTotal, solidMask,
 		dropState, dropX, dropY, dropWater, grainActive, grainX, grainY, grainMass, grainValue, grainMineral, maxGrains
