@@ -309,7 +309,11 @@ need improve autopilot and increase movement penalty when distance is big and an
 
 ## game balance.
 heat and heat sink radiators balance and install engines
-dropwn to install radiators that has different mass and efficiency
+dropwn to install radiators that has different mass and efficiency and heavy should not be useful on starter weak engines because of sped influence
+
+note that water sand guns are not start game tools and should not work long on weak engine's energy storages, but on powerful upgraded it should not be problem to run more tools continuously. I suggest search for useful tools:
+movement, piston, grader, sand, water,...
+and think as start game - we can continuously use 1 long enough and  without overheat. and then after upgrades we increase capabilities.  for more diversity at different game stages limits are engine storage overheating and need to think when what is more suitable (we already has some thoughts on engines heat)
 
 ## balistic computer
 limit calculated and drawn trajectory to 2nd ground or platform bounce end position or to 1st if ball loose 100% speed according to bounce settings.
