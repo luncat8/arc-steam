@@ -422,4 +422,48 @@ test('solute-aware pump mode idles on shallow fresh puddles while lifting brine 
 	harness.balanced(w2);
 });
 
+test('stepFluid does not spread sideways over an unswept dry row', () => {
+	const world = fresh(1);
+	water.setPump(false);
+	water.fill(10.8, 0.25, 11.4, 0.72);
+	physics.step(world, c.step);
+	const row1Start = water.state.columns;
+	const row1End = row1Start + water.state.columns;
+	for (let p = row1Start; p < row1End; p++) water.water[p] = 0;
+	const row2Left = 2 * water.state.columns + Math.floor(11.1 / 0.25);
+	const row2Right = row2Left + 1;
+	water.water[row2Left] = 0.6;
+	water.water[row2Right] = 0;
+	physics.step(world, c.step);
+	assert.equal(water.water[row2Right], 0, 'water above a dry row falls without horizontal spread');
+	harness.balanced(world);
+});
+
+test('stepPump keeps remaining water proportional when cargo space ends mid-parcel', () => {
+	const world = fresh(1);
+	const maxMass = ceiling.state.storageLimit * ceiling.state.cellMass;
+	const keepSpaceKg = 0.02;
+	ceiling.loadCargo(halite, maxMass - keepSpaceKg, 0);
+	harness.sync(world);
+	world.platform.x = world.platform.previousX = 12;
+	water.setPump(true);
+	water.setPumpMode('always');
+	const parcel = water.cellIndexAt(12, 0.12);
+	water.water[parcel] = 0.4;
+	const offset = parcel * minerals.mineralIds.length + halite;
+	water.load[offset] = 2.0;
+	water.loadValue[offset] = 20.0;
+	water.loadTotal[parcel] = 2.0;
+	physics.step(world, c.step);
+	let remainingWater = 0;
+	let remainingLoad = 0;
+	for (let p = 0; p < water.state.cellCount; p++) {
+		remainingWater += water.water[p];
+		remainingLoad += water.loadTotal[p];
+	}
+	near(remainingLoad, 2.0 - keepSpaceKg, 1e-4, 'pump stopped cleanly at cargo capacity');
+	near(remainingWater, 0.4 * (remainingLoad / 2.0), 1e-4, 'remaining water stayed proportional to leftover solute');
+	harness.balanced(world);
+});
+
 

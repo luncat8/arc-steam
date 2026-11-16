@@ -16,6 +16,10 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 13px 0; 
 .eyebrow, .panel-title, .system-bar, .mine-footer { font: 10px ui-monospace, monospace; letter-spacing: 1.3px; }
 .eyebrow { color: var(--accent); }
 .hint { font-size: 11px; line-height: 1.6; }
+.tool-yield { margin: 4px 0 0; font: 10px ui-monospace, monospace; color: var(--muted); }
+.tool-yield[hidden] { display: none; }
+.tool-yield[data-tone="gain"] { color: var(--accent); }
+.tool-yield[data-tone="warn"] { color: var(--amber); }
 
 /* System, telemetry, chamber workspace and market; science and view controls live in drawers. */
 main { padding: 8px; display: grid; gap: 8px; }

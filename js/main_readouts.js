@@ -374,6 +374,7 @@ function readout() {
 	rocketReadout();
 	sandblastReadout();
 	waterReadout();
+	toolYieldReadout(driveOn);
 	statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch, driveOn);
 }
 
@@ -462,6 +463,87 @@ function waterReadout() {
 		: '';
 	setHidden(ui['water-status'], !reason);
 	if (reason) setText(ui['water-status'], reason);
+}
+
+// Expected-value-per-energy telemetry reuses one buffer per readout tick.
+const toolMetrics = SteamToolTelemetry.createSummary();
+const toolLabels = { ball: 'Ball', sandblaster: 'Sandblaster', watergun: 'Water gun', grader: 'Road grader' };
+
+function formatYieldRate(value) {
+	return (value >= 100 ? value.toFixed(0) : value.toFixed(1)) + ' cr/kJ';
+}
+
+function yieldTone(entry) {
+	if (!entry.active || entry.valuePerKJ <= 0) return '';
+	return entry.viableFuel ? 'gain' : 'warn';
+}
+
+function toolYieldReadout(driveOn) {
+	const summary = SteamToolTelemetry.measure(world, activePlayerId(), toolMetrics);
+	const fuelPrice = summary.fuelPrice;
+	const ball = summary.ball;
+	if (ball.energyPerUseKJ <= 0) {
+		setMessage(ui['drive-yield'], 'No ball · 0.0 cr/kJ', '');
+	} else if (!driveOn) {
+		setMessage(ui['drive-yield'], 'Drive off · est. ' + formatYieldRate(ball.valuePerKJ), '');
+	} else if (summary.commune) {
+		setMessage(ui['drive-yield'], 'Est. ' + formatYieldRate(ball.valuePerKJ) + ' · fuel free', ball.valuePerKJ > 0 ? 'gain' : '');
+	} else if (ball.valuePerKJ <= 0) {
+		setMessage(ui['drive-yield'], 'Est. 0.0 cr/kJ · bare roof', '');
+	} else {
+		setMessage(ui['drive-yield'], 'Est. ' + formatYieldRate(ball.valuePerKJ) + (ball.viableFuel ? ' · > ' + fuelPrice + ' fuel' : ' · pad only (< ' + fuelPrice + ')'), yieldTone(ball));
+	}
+
+	const sand = summary.sandblaster;
+	if (!sand.installed) {
+		setMessage(ui['sandblast-yield'], '', '');
+	} else {
+		const dryNote = sand.dry ? ' · dry' : '';
+		if (sand.valuePerKJ <= 0) {
+			setMessage(ui['sandblast-yield'], 'Est. 0.0 cr/kJ · bare roof' + dryNote, '');
+		} else if (summary.commune) {
+			setMessage(ui['sandblast-yield'], 'Est. ' + formatYieldRate(sand.valuePerKJ) + ' · fuel free' + dryNote, 'gain');
+		} else {
+			setMessage(ui['sandblast-yield'], 'Est. ' + formatYieldRate(sand.valuePerKJ) + (sand.viableFuel ? ' · > ' + fuelPrice + ' fuel' : ' · pad only (< ' + fuelPrice + ')') + dryNote, yieldTone(sand));
+		}
+	}
+
+	const water = summary.watergun;
+	if (!water.installed) {
+		setMessage(ui['water-yield'], '', '');
+	} else {
+		const pumpOn = SteamWater.state.pumpOn;
+		const gasNote = water.gasLossPerKJ >= 0.5 ? ' · −' + (water.gasLossPerKJ >= 10 ? water.gasLossPerKJ.toFixed(0) : water.gasLossPerKJ.toFixed(1)) + ' gas' : '';
+		const pumpNote = !pumpOn ? ' · pump off' : water.pumpIdle && summary.owner === 'rig' ? ' · pump idle' : '';
+		const tail = pumpNote + gasNote;
+		if (water.valuePerKJ <= 0) {
+			setMessage(ui['water-yield'], 'Est. 0.0 cr/kJ · inert face' + tail, '');
+		} else if (summary.commune) {
+			setMessage(ui['water-yield'], 'Est. ' + formatYieldRate(water.valuePerKJ) + ' · fuel free' + tail, 'gain');
+		} else {
+			setMessage(ui['water-yield'], 'Est. ' + formatYieldRate(water.valuePerKJ) + (water.viableFuel ? ' · > ' + fuelPrice + ' fuel' : ' · pad only (< ' + fuelPrice + ')') + tail, yieldTone(water));
+		}
+	}
+
+	const grader = summary.grader;
+	if (!grader.installed) {
+		setMessage(ui['grader-yield'], '', '');
+	} else if (summary.commune) {
+		setMessage(ui['grader-yield'], 'Road grader · free (commons)', '');
+	} else if (grader.valuePerKJ <= 0) {
+		setMessage(ui['grader-yield'], 'Road grader · 0.0 cr/kJ · bare floor', '');
+	} else {
+		setMessage(ui['grader-yield'], 'Road grader · est. ' + formatYieldRate(grader.valuePerKJ) + (grader.viableFuel ? ' · > ' + fuelPrice + ' fuel' : ' · pad only'), grader.viableFuel ? 'gain' : 'warn');
+	}
+
+	if (summary.commune) {
+		setMessage(ui['market-tool-yield'], summary.bestTool ? 'Tool return · ' + toolLabels[summary.bestTool] + ' ' + formatYieldRate(summary.bestValuePerKJ) + ' (free energy)' : 'Active tool return · free energy', summary.bestValuePerKJ > 0 ? 'gain' : '');
+	} else if (summary.bestTool) {
+		const viable = summary.bestValuePerKJ >= fuelPrice;
+		setMessage(ui['market-tool-yield'], 'Best active return: ' + toolLabels[summary.bestTool] + ' ' + formatYieldRate(summary.bestValuePerKJ) + (viable ? ' (beats ' + fuelPrice + ' cr/kJ fuel)' : ' (below ' + fuelPrice + ' cr/kJ fuel · use pad)'), viable ? 'gain' : 'warn');
+	} else {
+		setMessage(ui['market-tool-yield'], 'Active return: 0.0 cr/kJ at current aim (below ' + fuelPrice + ' cr/kJ fuel)', '');
+	}
 }
 
 function ceilingCargoFull() { return window.SteamCeiling.cargoSpace(world, world) <= 0; }

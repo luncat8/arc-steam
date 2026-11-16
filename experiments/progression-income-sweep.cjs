@@ -1,7 +1,8 @@
 'use strict';
-// Multi-seed 240 s progression-income sweep (0.3.8-plan.md) with all ten
-// minerals, live market cycles, top-row growth, rockets, sandblaster and water
-// gun active. Parallelized across worker threads; logs init vs step timing.
+// Multi-seed 240 s progression-income sweep (0.3.8-plan.md) with all thirteen
+// rock-forming minerals, live market cycles, top-row growth, rockets,
+// sandblaster and water gun active. Parallelized across worker threads; logs
+// init vs step timing.
 const os = require('os');
 const path = require('path');
 const { performance } = require('perf_hooks');
@@ -105,11 +106,12 @@ if (!isMainThread) {
 
 	function snapshot(seed, seconds, world, spec, initMs, stepMs, rocketsFired, maxTemp, cutSteps, padSteps, steps, boughtLog) {
 		let spent = 0;
+		let graderCr = 0;
 		for (const entry of ceiling.state.ledger) {
-			if (entry.type === 'buy' || entry.type === 'research') spent += entry.credits;
+			if (entry.type === 'buy' || entry.type === 'research' || entry.type === 'fuel') spent += entry.credits;
+			else if (entry.type === 'grader' || entry.type === 'blade') graderCr += entry.credits;
 		}
 		const gross = ceiling.state.soldValue + ceiling.state.cargoValue - (spec.seedMoney || 0);
-		const graderCr = ceiling.state.funds + spent - (spec.seedMoney || 0) - ceiling.state.soldValue;
 		const totalEarned = gross + graderCr;
 		const metrics = water.measureMetrics();
 		return {

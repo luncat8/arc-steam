@@ -55,6 +55,7 @@
 						<button id="drive" class="drive" aria-pressed="true">Drive on <span>SPACE / Q</span></button>
 						<button id="launch" disabled>Release held ball <span>E</span></button>
 						<p id="prediction-status" class="hint" hidden></p>
+						<p id="drive-yield" class="hint tool-yield" hidden></p>
 						<div class="eyebrow-row"><p class="eyebrow">PISTON TILT</p><button id="help-tilt" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: reflector tilt">?</button></div>
 						<label for="piston-angle">Reflector angle <output id="piston-value">0.0°</output></label>
 						<input id="piston-angle" type="range" min="-10" max="10" step="0.5" value="0">
@@ -69,10 +70,12 @@
 						<div class="rocket-row"><button id="sandblast-fire" type="button" aria-keyshortcuts="F" disabled>Blast 0 <span>F</span></button></div>
 						<div class="autopilot" id="sandblast-orders"><label><input type="checkbox" id="sandblast-auto" autocomplete="off"><span>Auto-fire while the hopper holds sand or stone</span></label></div>
 						<p id="sandblast-status" class="hint" role="status" hidden></p>
+						<p id="sandblast-yield" class="hint tool-yield" hidden></p>
 						<div class="eyebrow-row"><p class="eyebrow">WATER GUN</p><button id="help-water" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: water gun and the pump">?</button></div>
 						<div class="rocket-row"><button id="water-fire" type="button" aria-keyshortcuts="G" disabled>Spray <span>G</span></button><button id="water-aim" type="button" disabled>Aim at cursor</button></div>
 						<div class="autopilot" id="water-orders"><label><input type="checkbox" id="water-auto" autocomplete="off"><span>Auto-fire the jet</span></label><label><input type="checkbox" id="water-pump" autocomplete="off"><span>Pump the brine back under the hull</span></label><label><input type="checkbox" id="water-pump-solute" autocomplete="off"><span>Idle pump on shallow fresh water</span></label></div>
 						<p id="water-status" class="hint" role="status" hidden></p>
+						<p id="water-yield" class="hint tool-yield" hidden></p>
 					</div>
 				</div>
 			</aside>
@@ -85,6 +88,7 @@
 					<div class="panel-title"><span>CARGO / STORAGE</span><button id="help-cargo" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: cargo and storage">?</button></div>
 					<div class="panel-body">
 						<div class="summary"><div><span>Cargo</span><strong id="cargo-mass">—</strong><small id="cargo-value">—</small></div></div>
+						<p id="grader-yield" class="hint tool-yield" hidden></p>
 						<dl class="mass-readouts"><div><dt>Extracted</dt><dd id="extracted">—</dd></div><div><dt>Falling</dt><dd id="falling">—</dd></div><div><dt>Caught · lifetime</dt><dd id="caught">—</dd></div><div><dt>Lost</dt><dd id="lost">—</dd></div></dl>
 						<div class="table-wrap"><table><caption>Material quantities in kg; prices in credits per cell (0.6 kg)</caption><thead><tr><th>Material</th><th>cr/cell</th><th>Cargo</th><th>Sold</th></tr></thead><tbody id="inventory-rows"></tbody></table></div>
 					</div>
@@ -133,6 +137,7 @@
 					<div class="summary"><div><span>Sold · lifetime</span><strong id="sold-mass">—</strong><small id="sold-value">—</small></div><div><span>Ledger</span><strong id="sale-count">—</strong><small>Sales, purchases, research, fuel</small></div></div>
 					<div class="table-wrap market-quotes"><table><caption>Live mineral quotes · drift vs base and 1-minute rate</caption><thead><tr><th scope="col">Mineral</th><th scope="col">cr/cell</th><th scope="col">vs Base</th><th scope="col">Trend</th><th scope="col">Cargo</th><th scope="col">Sold</th></tr></thead><tbody id="market-rows"></tbody></table></div>
 					<div class="refuel"><div><span>Emergency resupply</span><strong id="refuel-cost">—</strong><small>Instant import at <span id="fuel-price">—</span> cr/kJ · the centre pad is free</small></div><button id="refuel" disabled>Recharge</button></div>
+					<p id="market-tool-yield" class="hint tool-yield" hidden></p>
 					<p id="transaction-status" role="status">Catch fragments in the amber collector, then touch a SELL wall.</p>
 					<details open><summary>Transaction ledger <span id="transaction-count">(0)</span></summary><ol id="ledger" reversed aria-label="Latest eight transactions"></ol></details>
 				</div>
@@ -177,6 +182,7 @@
 	<script src="js/prediction.js"></script>
 	<script src="js/autopilot.js"></script>
 	<script src="js/players.js"></script>
+	<script src="js/tool-telemetry.js"></script>
 	<script src="js/main.js"></script>
 	<script src="js/main_progress.js"></script>
 	<script src="js/main_players.js"></script>

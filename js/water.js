@@ -143,6 +143,8 @@
 
 	const nozzle = { x: 0, y: 0, angle: 0, dx: 0, dy: 1 };
 	const aim = { x: 12, y: 11 };
+	const estimateNozzle = { x: 0, y: 0, angle: 0, dx: 0, dy: 1 };
+	const estimateWet = { mass: 0, value: 0, leached: 0, residueMass: 0 };
 	const split = chemistry.createSplit();
 	const cellWet = { mass: 0, value: 0, leached: 0, residueMass: 0 };
 	const detachOut = createDetachOut();
@@ -933,8 +935,10 @@
 					if (held <= 0.002 && other <= 0.002) continue;
 					// A parcel spreads sideways only on rock or a full parcel below it.
 					// The bottom of the grid is a wall, not a support: row 0 is open air
-					// under the roof of a chamber that starts higher up.
-					if (row > 0 && !solidMask[index - columns] && waterNext[index - columns] <= 0.55) continue;
+					// under the roof of a chamber that starts higher up. A row omitted
+					// from `rowSweep` (for example after the pump drained it) leaves
+					// stale data in `waterNext`, so require `rowSweep[row - 1]` too.
+					if (row > 0 && !solidMask[index - columns] && (!rowSweep[row - 1] || waterNext[index - columns] <= 0.55)) continue;
 					const flow = (held - other) * 0.30 + flowU[index] * 0.04;
 					if (flow > 0) transferParcel(index, index + 1, Math.min(flow, held * 0.48));
 					else if (flow < 0) transferParcel(index + 1, index, Math.min(-flow, other * 0.48));
@@ -1207,15 +1211,20 @@
 				const held = water[parcel];
 				if (held <= 1e-6) continue;
 				let take = Math.min(held, budget);
+				const parcelLoad = loadTotal[parcel];
 				if (soluteOnly) {
-					const hasBrine = loadTotal[parcel] > 1e-4 && loadTotal[parcel] / Math.max(held, 0.05) >= pumpFreshConcentration;
+					const hasBrine = parcelLoad > 1e-4 && parcelLoad / Math.max(held, 0.05) >= pumpFreshConcentration;
 					if (!hasBrine) {
 						const excess = colDepth[column] - pumpShallowUnits;
 						if (excess <= 1e-6) continue;
 						if (excess < take) take = excess;
 					}
-					colDepth[column] -= take;
 				}
+				if (parcelLoad > 1e-12 && parcelLoad * (take / held) > capacity) {
+					take = Math.min(take, held * (capacity / parcelLoad));
+				}
+				if (take <= 1e-9) continue;
+				if (soluteOnly) colDepth[column] -= take;
 				const fraction = take / held;
 				const offset = parcel * count;
 				for (let m = 0; m < count && capacity > 1e-9; m++) {
@@ -1570,6 +1579,165 @@
 		tintScratch.b = Math.round(196 * (1 - weight) + b / mass * weight);
 	}
 
+	function hullNeedsPump(target, body) {
+		if (!settings.pumpOn || !hasParcels || !hasTool('rig')) return false;
+		const physics = root.SteamPhysics;
+		const machine = physics.machineById(target, 'rig');
+		if (!machine || root.SteamCeiling.cargoSpace(target, machine) <= 1e-6) return false;
+		const deck = body.y + physics.config.deck;
+		const firstColumn = clamp(Math.floor((body.x - pumpHalfWidth) / cellSize), 0, columns - 1);
+		const lastColumn = clamp(Math.floor((body.x + pumpHalfWidth) / cellSize), 0, columns - 1);
+		const firstRow = clamp(Math.floor((body.y - pumpDepth) / cellSize), 0, rows - 1);
+		const lastRow = clamp(Math.floor((deck + pumpDepth) / cellSize), 0, rows - 1);
+		const soluteOnly = settings.pumpMode === 'solute';
+		for (let column = firstColumn; column <= lastColumn; column++) {
+			let colWater = 0;
+			for (let row = firstRow; row <= lastRow; row++) {
+				const parcel = row * columns + column;
+				const held = water[parcel];
+				if (held <= 1e-6) continue;
+				if (!soluteOnly) return true;
+				if (loadTotal[parcel] > 1e-4 && loadTotal[parcel] / Math.max(held, 0.05) >= pumpFreshConcentration) return true;
+				colWater += held;
+			}
+			if (soluteOnly && colWater > pumpShallowUnits + 1e-6) return true;
+		}
+		return false;
+	}
+
+	// Expected recovered value and reserve cost per water-gun shot along the
+	// current nozzle trajectory, sharing the solver's chemistry and pump rules
+	// without mutating chamber or nozzle state.
+	function estimateYield(target, owner, out) {
+		const id = ownerIdOf(owner);
+		const targetOut = out || {};
+		targetOut.installed = Boolean(target && hasTool(id));
+		targetOut.ready = false;
+		targetOut.active = false;
+		targetOut.valuePerUse = 0;
+		targetOut.energyPerUseKJ = 0;
+		targetOut.valuePerKJ = 0;
+		targetOut.brinePerKJ = 0;
+		targetOut.gasLossPerKJ = 0;
+		targetOut.pumpIdle = !settings.pumpOn;
+		targetOut.targetX = aim.x;
+		if (!targetOut.installed || !root.SteamCeiling) return targetOut;
+		const physics = root.SteamPhysics;
+		const rock = root.SteamCeiling;
+		const view = rock.rockView();
+		const machine = physics.machineById(target, id);
+		const body = physics.machineBody(machine);
+		const isRig = machine === target;
+		const profile = profileFor(id);
+		const space = rock.cargoSpace(target, machine);
+		const ready = space > 1e-6 && (!isRig || (physics.thermalFactor(target) > 0 && target.battery >= physics.reserveCost(shotEnergy, id)));
+		targetOut.ready = ready;
+		targetOut.active = Boolean(profile.autoFire || profile.botFire || ready);
+
+		physics.collectorPointAt(target, id, physics.config.waterNozzleFraction, 0, estimateNozzle);
+		let dx = aim.x - estimateNozzle.x;
+		let dy = aim.y - estimateNozzle.y;
+		if (dy < -0.35) dy = -0.35;
+		const len = Math.hypot(dx, dy);
+		if (len > 1e-5) { estimateNozzle.dx = dx / len; estimateNozzle.dy = dy / len; }
+		else { estimateNozzle.dx = 0; estimateNozzle.dy = 1; }
+
+		let x = estimateNozzle.x;
+		let y = estimateNozzle.y;
+		let vx = body.vx + estimateNozzle.dx * jetSpeed;
+		let vy = body.vy + estimateNozzle.dy * jetSpeed;
+		const stepDt = 1 / 60;
+		let struck = -1;
+		let landParcel = -1;
+		let arrivalSpeed = jetSpeed;
+		for (let i = 0; i < 120; i++) {
+			const nextVy = vy - gravity * stepDt;
+			const nextX = x + vx * stepDt;
+			const nextY = y + (vy + nextVy) * 0.5 * stepDt;
+			const atWall = nextX <= 0.06 || nextX >= 23.94 || nextY >= 14.94 || nextY <= 0.02;
+			const speed = Math.hypot(vx, vy);
+			const face = atWall ? -1 : faceNear(x, y, nextX, Math.max(nextY, y), nextVy);
+			const hitCell = atWall ? -1 : rock.cellAt(nextX, nextY);
+			if (atWall || hitCell >= 0 || face >= 0) {
+				struck = face >= 0 ? face : hitCell;
+				arrivalSpeed = speed;
+				landParcel = cellIndexAt(nextX, nextY);
+				targetOut.targetX = struck >= 0 ? wetX(view, struck) : clamp(nextX, 0, 24);
+				break;
+			}
+			x = nextX;
+			y = nextY;
+			vy = nextVy;
+		}
+
+		let brineValue = 0;
+		let residueValue = 0;
+		let gasLossValue = 0;
+		let anyBrine = false;
+		if (struck >= 0 && view.strength[struck] > 0) {
+			const parcel = landParcel >= 0 ? openParcelNear(landParcel) : -1;
+			const saturation = parcel >= 0
+				? chemistry.saturationFactor(loadTotal[parcel], water[parcel] + dropletWater, settings.satCap)
+				: 1;
+			if (saturation > 0) {
+				const baseWash = jetDissolvePower * Math.min(1.6, arrivalSpeed / jetSpeed);
+				const rockColumns = view.columns;
+				const rockRows = view.rows;
+				const hitColumn = struck % rockColumns;
+				const hitRow = (struck / rockColumns) | 0;
+				const firstRow = Math.max(0, hitRow - jetSplashCells);
+				const lastRow = Math.min(rockRows - 1, hitRow + jetSplashCells);
+				const firstColumn = Math.max(0, hitColumn - jetSplashCells);
+				const lastColumn = Math.min(rockColumns - 1, hitColumn + jetSplashCells);
+				for (let rr = firstRow; rr <= lastRow; rr++) {
+					const away = Math.abs(rr - hitRow);
+					for (let rc = firstColumn; rc <= lastColumn; rc++) {
+						const index = rr * rockColumns + rc;
+						if (view.strength[index] <= 0) continue;
+						if (index !== struck && !isExposed(view, index)) continue;
+						const spread = index === struck ? 0 : Math.max(away, Math.abs(rc - hitColumn));
+						if (spread > 0 && !(jetSplashShare > 0)) continue;
+						const power = baseWash * Math.pow(jetSplashShare, spread);
+						const wet = rock.wetOf(index, estimateWet);
+						const cellSplit = splitOf(view, index, wet);
+						if (!(cellSplit.speed > 0) || !(cellSplit.solubility > 0)) continue;
+						let slice = cellSplit.speed * settings.dissolveRate * power * saturation * jetWashSeconds;
+						if (slice > 1 - wet.leached) slice = 1 - wet.leached;
+						if (!(slice > 0)) continue;
+						if (cellSplit.brineMass > 0) anyBrine = true;
+						brineValue += slice * cellSplit.brineValueTotal;
+						gasLossValue += slice * cellSplit.ventValueTotal;
+						const next = Math.min(1, wet.leached + slice);
+						const resShare = wet.mass > 0 ? wet.residueMass / wet.mass : 1;
+						const standing = view.initialStrength[index] * resShare;
+						const resStrength = cellSplit.undermined
+							? Math.max(0, standing * (1 - next) - (view.initialStrength[index] - view.strength[index]))
+							: standing;
+						if (next >= 1 || cellSplit.undermined || resStrength < view.debrisLimit) {
+							residueValue += slice * cellSplit.residueValueTotal;
+						}
+					}
+				}
+			}
+		}
+
+		const rigMachine = physics.machineById(target, 'rig');
+		const rigBody = physics.machineBody(rigMachine);
+		const pumpActive = isRig && settings.pumpOn && space > 1e-6 &&
+			(settings.pumpMode !== 'solute' || anyBrine || hullNeedsPump(target, rigBody));
+		targetOut.pumpIdle = !pumpActive;
+		const recoveredBrine = settings.pumpOn ? brineValue : 0;
+		const jetReserveJ = physics.reserveCost(shotEnergy, id);
+		const pumpReserveJ = pumpActive ? dropletWater * physics.reserveCost(pumpJoulesPerUnit, id) : 0;
+		const energyKJ = (jetReserveJ + pumpReserveJ) / 1000;
+		targetOut.energyPerUseKJ = energyKJ;
+		targetOut.valuePerUse = recoveredBrine + residueValue;
+		targetOut.valuePerKJ = energyKJ > 0 ? targetOut.valuePerUse / energyKJ : 0;
+		targetOut.brinePerKJ = energyKJ > 0 ? recoveredBrine / energyKJ : 0;
+		targetOut.gasLossPerKJ = energyKJ > 0 ? gasLossValue / energyKJ : 0;
+		return targetOut;
+	}
+
 	function stateFor(owner) { return profileFor(owner).view; }
 
 	function depthAt(x, y) { return water[cellIndexAt(x, y)]; }
@@ -1624,7 +1792,7 @@
 	});
 
 	const api = {
-		state, stateFor, reset, step, measureMetrics, createMetrics, depthAt, fill,
+		state, stateFor, reset, step, measureMetrics, createMetrics, estimateYield, depthAt, fill,
 		fire, canFire, setAim, setAutoFire, setBotFire, clearBotFire,
 		setSaturationCap, setDissolveRate, setModel, setPump, setPumpMode, setErosion,
 		nozzleOf, cellIndexAt, settings, totals, draw, streamPower, streamReady,

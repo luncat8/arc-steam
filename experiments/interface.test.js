@@ -2415,3 +2415,144 @@ test('the rocket help names the rules the rack actually runs', () => {
 	assert.match(topic.keys[0][1], /half a second/);
 	assert.ok(help.find('keys').keys.some(row => row[0] === 'R'), 'the key list names R');
 });
+
+test('water pump solute mode toggles, disables when pump is off, survives reset, and is documented', () => {
+	dom.element('reset').dispatch('click');
+	advance(2);
+	const pump = dom.element('water-pump');
+	const solute = dom.element('water-pump-solute');
+	assert.equal(pump.checked, true);
+	assert.equal(solute.disabled, false);
+	assert.equal(solute.checked, false);
+	assert.equal(water.state.pumpMode, 'always');
+
+	solute.checked = true;
+	solute.dispatch('change');
+	assert.equal(water.state.pumpMode, 'solute');
+
+	pump.checked = false;
+	pump.dispatch('change');
+	advance(2);
+	assert.equal(solute.disabled, true, 'solute mode control disables while pump is off');
+
+	pump.checked = true;
+	pump.dispatch('change');
+	advance(2);
+	assert.equal(solute.disabled, false);
+	assert.equal(solute.checked, true);
+
+	dom.element('reset').dispatch('click');
+	advance(2);
+	assert.equal(water.state.pumpMode, 'solute', 'pumpMode persists across New game');
+
+	solute.checked = false;
+	solute.dispatch('change');
+	assert.equal(water.state.pumpMode, 'always');
+
+	const topic = help.find('water');
+	assert.match(topic.text.join(' '), /Idle pump on shallow fresh water/);
+	assert.ok(topic.keys.some(row => row[0] === 'Idle pump on shallow fresh water'), 'water help lists solute checkbox');
+});
+
+test('expected-value-per-energy telemetry updates live per tool, aim, rubble and player without churn when paused', () => {
+	for (const channel of ['move', 'smart', 'drive', 'angle']) autopilot.set(channel, false);
+	dom.element('reset').dispatch('click');
+	advance(2);
+
+	const driveYield = dom.element('drive-yield');
+	const sandYield = dom.element('sandblast-yield');
+	const waterYield = dom.element('water-yield');
+	const graderYield = dom.element('grader-yield');
+	const marketYield = dom.element('market-tool-yield');
+
+	assert.equal(driveYield.hidden, false, 'bounce drive yield is visible from start');
+	assert.match(driveYield.textContent, /cr\/kJ/);
+	assert.equal(sandYield.hidden, true, 'sandblaster yield hides until installed');
+	assert.equal(waterYield.hidden, true, 'water yield hides until installed');
+	assert.equal(graderYield.hidden, true, 'grader yield hides until installed');
+	assert.equal(marketYield.hidden, false, 'market comparison note is shown');
+
+	// On a fresh chamber, road grader shows bare floor until loose rubble lands.
+	fund(equipment.find('grader').cost);
+	buttonOf(gearRow('grader')).dispatch('click');
+	advance(4);
+	assert.equal(graderYield.hidden, false);
+	assert.match(graderYield.textContent, /bare floor/);
+
+	ceiling.depositLoose(world.platform.x, 0.5, 40);
+	advance(10);
+	assert.match(graderYield.textContent, /Road grader · est\. [\d.]+ cr\/kJ/);
+
+	// Start a deterministic banded test rock, then fit all three tools.
+	dom.element('generate-test-rock').dispatch('click');
+	advance(2);
+	study('impact');
+	study('hydrology');
+	fund(equipment.find('sandblaster').cost + equipment.find('watergun').cost + equipment.find('grader').cost);
+	buttonOf(gearRow('sandblaster')).dispatch('click');
+	buttonOf(gearRow('watergun')).dispatch('click');
+	buttonOf(gearRow('grader')).dispatch('click');
+	advance(10);
+
+	assert.equal(sandYield.hidden, false);
+	assert.match(sandYield.textContent, /cr\/kJ.*dry/);
+	assert.equal(waterYield.hidden, false);
+	assert.equal(graderYield.hidden, false);
+
+	// Aiming water gun between inert quartz and soluble halite updates water yield.
+	const order = ceiling.state.testMineralOrder;
+	const quartzBand = order.indexOf(ceiling.state.mineralIds.indexOf('quartz'));
+	const haliteBand = order.indexOf(ceiling.state.mineralIds.indexOf('halite'));
+	const quartzX = (quartzBand + 0.5) * (physics.config.width / order.length);
+	const haliteX = (haliteBand + 0.5) * (physics.config.width / order.length);
+
+	world.platform.x = world.platform.previousX = quartzX;
+	water.setAim(quartzX, 13.5);
+	dom.element('water-pump-solute').checked = true;
+	dom.element('water-pump-solute').dispatch('change');
+	advance(10);
+	assert.equal(waterYield.hidden, false);
+	assert.match(waterYield.textContent, /0\.0 cr\/kJ · inert face · pump idle/);
+
+	world.platform.x = world.platform.previousX = haliteX;
+	water.setAim(haliteX, 13.5);
+	advance(10);
+	assert.equal(waterYield.hidden, false);
+	assert.match(waterYield.textContent, /^Est\. [1-9][\d.]* cr\/kJ/);
+	assert.doesNotMatch(waterYield.textContent, /pump idle/);
+
+	// Selecting Rival 1 hides rig-only grader readout and tracks rival state.
+	const list = dom.element('player-list');
+	list.children[1].children[0].dispatch('click');
+	advance(4);
+	assert.equal(graderYield.hidden, true, 'grader readout hides for rivals');
+	list.children[0].children[0].dispatch('click');
+	advance(4);
+	assert.equal(graderYield.hidden, false);
+
+	// Settled pause frame must not rewrite any of the yield nodes.
+	setPaused(true);
+	advance(4);
+	let writes = 0;
+	for (const node of [driveYield, sandYield, waterYield, graderYield, marketYield]) {
+		let val = node.textContent;
+		Object.defineProperty(node, 'textContent', {
+			configurable: true,
+			get() { return val; },
+			set(next) { writes++; val = next; }
+		});
+	}
+	advance(30);
+	assert.equal(writes, 0, 'settled readouts do not rewrite yield nodes');
+	setPaused(false);
+
+	// Clean up solute checkbox & test-rock state for later tests.
+	dom.element('water-pump-solute').checked = false;
+	dom.element('water-pump-solute').dispatch('change');
+	dom.element('reset').dispatch('click');
+	advance(2);
+	assert.equal(sandYield.hidden, true);
+	assert.equal(waterYield.hidden, true);
+	assert.equal(graderYield.hidden, true);
+});
+

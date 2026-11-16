@@ -10,19 +10,19 @@ const playerApi = SteamPlayers;
 const config = physics.config;
 const canvas = document.getElementById('c');
 const context = canvas.getContext('2d');
-const ids = ['clock', 'drive', 'launch', 'status-bar', 'status-ball', 'status-energy', 'fact-reserve', 'fact-cargo', 'fact-temp', 'prediction-status', 'force', 'force-value', 'piston-angle', 'piston-value',
+const ids = ['clock', 'drive', 'launch', 'status-bar', 'status-ball', 'status-energy', 'fact-reserve', 'fact-cargo', 'fact-temp', 'prediction-status', 'drive-yield', 'force', 'force-value', 'piston-angle', 'piston-value',
 	'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'balls', 'ground-bounce', 'ball-perspective', 'debris-compression', 'commune', 'test-mode', 'view-modes',
 	'platform-spec', 'spec-card', 'progression-tree', 'tree-links', 'progression-status', 'research-progress', 'science-funds', 'science-title',
 	'mineral-cell', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price', 'rock-damage-view',
 	'cluster-settings', 'generate-test-rock', 'fall-test-status',
-	'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'sold-mass', 'sold-value', 'sale-count',
+	'extracted', 'falling', 'caught', 'lost', 'credits', 'cargo-mass', 'cargo-value', 'grader-yield', 'sold-mass', 'sold-value', 'sale-count',
 	'inventory-rows', 'market-rows', 'transaction-status', 'transaction-count', 'ledger',
-	'refuel', 'refuel-cost', 'fuel-price', 'reserve-note', 'cargo-note',
+	'refuel', 'refuel-cost', 'fuel-price', 'market-tool-yield', 'reserve-note', 'cargo-note',
 	'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry', 'mineral-tooltip', 'science-drawer', 'market-drawer', 'science-open', 'science-close', 'market-open', 'market-close',
 	'telemetry', 'player-list', 'control-title', 'rig-drive',
 	'rocket-fire', 'rocket-buy', 'rocket-auto', 'rocket-status',
-	'sandblast-fire', 'sandblast-auto', 'sandblast-status',
-	'water-fire', 'water-aim', 'water-auto', 'water-pump', 'water-pump-solute', 'water-status'];
+	'sandblast-fire', 'sandblast-auto', 'sandblast-status', 'sandblast-yield',
+	'water-fire', 'water-aim', 'water-auto', 'water-pump', 'water-pump-solute', 'water-status', 'water-yield'];
 // One mark per help topic, plus the drawer it feeds.
 for (const topic of window.SteamHelp.topics) ids.push('help-' + topic.id);
 ids.push('help-drawer', 'help-close', 'help-head', 'help-title', 'help-body', 'help-index');

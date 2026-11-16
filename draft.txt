@@ -369,7 +369,10 @@ Pause growth at 30% remaining height
 цена небольшая сбалансирована на около нулевую прибыль на дешевых минералах.
 Ракеты взрываются на определенной высоте +-20%, с вероятностью 5% не взрываются или падают назад и взрываются на земле. Типу фейерверка и осыпают потолок осколками, которые разлетаются от точки взрыва. Осколки разрушают потолок, радиус разрушения намного меньше чем у шаров, думаю 1...4px.
 
-
+## Sandblaster
+by design by draft is uses debris. because debris returned and preserve mass - it does not need to buy ammo at shop.
+to add more challenge make it use not all cargo debris but only stone and sand if available.
+auto-buy checkbox replace with auto-fire. i expect in late game with powerful energy source good tactics is to keep it always on. 
 добавляет пескоструйный агрегат, использует энергию и хранилище материала (расходуется, но масса сохраняется - потом падает назад и можно снова собрать).
 пескоструй выстреливает в потолок струей из мелких камней, которые сами по себе падают назад, как остальные обломки, ударяясь о потолок. небольшой урон от него 1px, думаю нужно несколько попаданий для того чтобы сломать хотя бы 1px.
 Давайте балансировать, так чтобы он был примерно с нулевой прибылью на начальном уровне энергии и при добыче дешевых минералов, что было бы выгодно использовать только на дорогих минералах и с продвинутыми двигателями. т.е. расход энергии большой
@@ -415,7 +418,3 @@ because if some player possible to land on only heavy G>~1.5 planets this cause 
 agent told: All 48 planets are generated with spaced geometry when the seeded world is created; adding a bot reveals one rather than moving/generating coordinates.
 i dont know is this cause slow generation. is generation by add and adjust position of planet faster? 
 
-## Sandblaster
-by design by draft is uses debris. because debris returned and preserve mass - it does not need to buy ammo at shop.
-to add more challenge make it use not all cargo debris but only stone and sand if available.
-auto-buy checkbox replace with auto-fire. i expect in late game with powerful energy source good tactics is to keep it always on. 
