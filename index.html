@@ -10,13 +10,14 @@
 	<main>
 		<header class="system-bar panel">
 			<div class="system-row">
-				<span class="chamber-name"><i class="live"></i> ARC STEAM · TEST CHAMBER / 24 × 15 M</span>
+				<span class="chamber-name"><i class="live"></i> <span id="chamber-title">ARC STEAM · TEST CHAMBER / 24 × 15 M</span></span>
+				<label for="game-mode">MODE <select id="game-mode" autocomplete="off"><option value="classic" selected>Classic · 24 × 15 m</option><option value="wild">Wild Mine · cave</option></select></label>
 				<button id="reset" class="quiet">New game ↺</button>
 				<label for="shape">ROCK SHAPE <select id="shape" autocomplete="off"><option value="smooth" selected>Smooth heightmap</option><option value="square">Square cells</option></select></label>
 				<label for="balls">BALLS <select id="balls" autocomplete="off"><option value="shared1" selected>1 shared</option><option value="shared2">2 shared</option><option value="each">1 per platform</option></select></label><button id="help-balls" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: ball arrangements">?</button>
 				<label for="ground-bounce">GROUND <select id="ground-bounce" autocomplete="off"><option value="absorb" selected>Lose all · no bounce</option><option value="half">Lose 50% · rebound</option><option value="elastic">Lose none · elastic</option></select></label><button id="help-ground" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: ground bounce">?</button>
 				<label for="ball-perspective">PERSPECTIVE <select id="ball-perspective" autocomplete="off"><option value="on" selected>Depth scale</option><option value="flat">Constant size</option></select></label><button id="help-perspective" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: ball perspective">?</button>
-				<label for="debris-compression">DEBRIS <select id="debris-compression" autocomplete="off"><option value="1">1 · square rubble</option><option value="2">2</option><option value="3">3</option><option value="4" selected>4 · current 4:1 tile</option><option value="6">6</option><option value="8">8 · flat sheet</option></select></label><button id="help-debris" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: debris compression">?</button>
+				<label for="debris-compression">DEBRIS <select id="debris-compression" autocomplete="off"><option value="1">1 · square rubble</option><option value="1.5">1.5</option><option value="2">2</option><option value="3">3</option><option value="4" selected>4 · current 4:1 tile</option><option value="6">6</option><option value="8">8 · flat sheet</option></select></label><button id="help-debris" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: debris compression">?</button>
 			</div>
 			<div class="system-row system-options">
 				<div class="time-controls" aria-label="Time controls"><span id="clock">0.0 s</span><button id="pause" class="quiet">Pause</button><label for="speed">Simulation <select id="speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label></div>
@@ -172,10 +173,12 @@
 	<script src="js/geology.js"></script>
 	<script src="js/help.js"></script>
 	<script src="js/ceiling.js"></script>
+	<script src="js/cave.js"></script>
 	<script src="js/equipment.js"></script>
 	<script src="js/research.js"></script>
 	<script src="js/water-chemistry.js"></script>
 	<script src="js/physics.js"></script>
+	<script src="js/wild-mine.js"></script>
 	<script src="js/rockets.js"></script>
 	<script src="js/sandblaster.js"></script>
 	<script src="js/water.js"></script>
@@ -188,6 +191,7 @@
 	<script src="js/main_players.js"></script>
 	<script src="js/main_readouts.js"></script>
 	<script src="js/main_draw.js"></script>
+	<script src="js/main_wild.js"></script>
 	<script src="js/main_input.js"></script>
 	<script src="js/main_help.js"></script>
 	<script src="js/main_boot.js"></script>

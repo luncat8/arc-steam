@@ -53,7 +53,8 @@ function setPistonAngle(degrees) {
 	if (playerApi.rigActive()) autopilotApi.override('angle');
 	else playerApi.overrideMachine(player, 'angle');
 	const before = playerApi.pistonAngleOf(player);
-	playerApi.setPistonAngleOf(player, Math.max(-10, Math.min(10, degrees)) * Math.PI / 180);
+	const limit = typeof wildPistonLimitDegrees === 'function' ? wildPistonLimitDegrees() : 10;
+	playerApi.setPistonAngleOf(player, Math.max(-limit, Math.min(limit, degrees)) * Math.PI / 180);
 	if (playerApi.pistonAngleOf(player) !== before) sceneDirty = true;
 	syncPistonControl();
 }
@@ -139,6 +140,10 @@ function rockCellIndex(worldX, worldY) {
 }
 
 function inspectRockAtPointer(event) {
+	if (typeof wildIsActive === 'function' && wildIsActive()) {
+		wildInspectRockAtPointer(event);
+		return;
+	}
 	const bounds = canvas.getBoundingClientRect();
 	const worldX = (event.clientX - bounds.left - offsetX) / scale;
 	const worldY = (floorY - (event.clientY - bounds.top)) / scale;
@@ -248,7 +253,10 @@ function syncForceControl(value) {
 
 // The chamber's own frame: the pointer handlers need the world point under it.
 function worldXOf(event) { return (event.clientX - canvas.getBoundingClientRect().left - offsetX) / scale; }
-function worldYOf(event) { return (floorY - (event.clientY - canvas.getBoundingClientRect().top)) / scale; }
+function worldYOf(event) {
+	if (typeof wildIsActive === 'function' && wildIsActive()) return wildWorldYOf(event);
+	return (floorY - (event.clientY - canvas.getBoundingClientRect().top)) / scale;
+}
 
 function isGameKey(code) {
 	return code === 'Space' || code === 'KeyQ' || code === 'KeyA' || code === 'KeyD' || code === 'KeyW' || code === 'KeyS' || code === 'KeyE'
@@ -327,8 +335,12 @@ function frame(now) {
 function endPistonDrag() { pistonDragActive = false; autopilotApi.hold('angle', false); }
 
 function resetRun(withTestRock) {
+	const chosenMode = ui['game-mode'] ? ui['game-mode'].value : 'classic';
+	if (withTestRock && chosenMode === 'wild' && ui['game-mode']) ui['game-mode'].value = 'classic';
+	const wildOn = typeof wildSyncMode === 'function' && !withTestRock && chosenMode === 'wild';
+	if (typeof wildSyncMode === 'function') wildSyncMode(wildOn ? 'wild' : 'classic');
 	world = physics.createWorld();
-	playerApi.init(world);
+	playerApi.init(world, wildOn ? 0 : undefined);
 	window.SteamCeiling.setShape(ui.shape.value);
 	// The two view-and-shape rules are chamber settings: New game keeps them.
 	physics.setBallPerspective(ui['ball-perspective'].value !== 'flat');
@@ -340,6 +352,8 @@ function resetRun(withTestRock) {
 	renderedSales = -1;
 	clearInput();
 	endPistonDrag();
+	if (wildOn) wildResetRun(world);
+	else resize();
 	setForce(world.forceSetting);
 	autopilotApi.reset();
 	accumulator = 0;
@@ -421,6 +435,7 @@ function bindInput() {
 		refresh();
 	});
 	ui.pause.addEventListener('click', togglePause);
+	if (ui['game-mode']) ui['game-mode'].addEventListener('change', function () { resetRun(false); });
 	ui.shape.addEventListener('change', function () { window.SteamCeiling.setShape(ui.shape.value); sceneDirty = true; });
 	// The ball arrangement re-seats the balls, so the autopilot plan is dropped
 	// with the old set instead of being carried across a new one.
@@ -462,9 +477,14 @@ function bindInput() {
 	// up (negative delta) raises the angle, a standard notch steps about 4°.
 	canvas.addEventListener('wheel', function (event) {
 		event.preventDefault();
-		setPistonAngle(pistonDegrees() - Math.max(-100, Math.min(100, event.deltaY)) * 0.04);
+		const stepRate = typeof wildIsActive === 'function' && wildIsActive() ? 0.08 : 0.04;
+		setPistonAngle(pistonDegrees() - Math.max(-100, Math.min(100, event.deltaY)) * stepRate);
 	}, { passive: false });
 	canvas.addEventListener('pointerdown', function (event) {
+		if (typeof wildIsActive === 'function' && wildIsActive()) {
+			wildPointerDown(event);
+			return;
+		}
 		const bounds = canvas.getBoundingClientRect();
 		const worldX = (event.clientX - bounds.left - offsetX) / scale;
 		const worldY = (floorY - (event.clientY - bounds.top)) / scale;
@@ -496,7 +516,8 @@ function bindInput() {
 		if (pistonDragActive) {
 			// The drag aims the reflection: a positive angle sends a falling ball left,
 			// so dragging left (or up) raises it and the bounce follows the pointer.
-			setPistonAngle(pistonDragAngle - ((event.clientX - pistonDragX) + (event.clientY - pistonDragY)) * 0.05);
+			const dragRate = typeof wildIsActive === 'function' && wildIsActive() ? 0.25 : 0.05;
+			setPistonAngle(pistonDragAngle - ((event.clientX - pistonDragX) + (event.clientY - pistonDragY)) * dragRate);
 			return;
 		}
 		inspectRockAtPointer(event);

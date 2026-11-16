@@ -104,6 +104,10 @@ function buildFallTest() {
 // The computer is the selected platform's, so its readout names that machine
 // and describes the deck it will meet the ball on.
 function predictionReadout() {
+	if (typeof wildIsActive === 'function' && wildIsActive()) {
+		setHidden(ui['prediction-status'], true);
+		return false;
+	}
 	const owner = activePlayerId();
 	const technology = SteamResearch.stateFor(owner);
 	if (!technology.prediction) {
@@ -217,6 +221,10 @@ function mineralStateTag(ceiling, layer, remaining, looseness) {
 }
 
 function mineralReadout() {
+	if (typeof wildIsActive === 'function' && wildIsActive()) {
+		wildMineralReadout();
+		return;
+	}
 	const ceiling = window.SteamCeiling.state;
 	const count = ceiling.mineralNames.length;
 	const layer = currentSelectedLayer(ceiling);
@@ -334,20 +342,28 @@ function readout() {
 	const onPad = physics.onChargePad(world);
 	const chargingNow = physics.charging(world);
 	setWarning('reserve-telemetry', reserveWarning);
-	if (chargingNow) setText(ui['reserve-note'], 'Charging ' + (config.chargePower / 1000).toFixed(1) + ' kW · ' + ((config.battery - world.battery) / config.chargePower).toFixed(1) + ' s to full');
-	else if (onPad && world.battery >= config.battery) setText(ui['reserve-note'], 'Reserve full · centre pad');
-	else if (onPad) setText(ui['reserve-note'], 'On the centre pad · stop to charge (' + config.chargeSeconds + ' s full)');
-	else if (reserveWarning === 'EMPTY') setText(ui['reserve-note'], 'Empty · hand-crank crawl to the centre pad, or market import');
-	else if (reserveWarning) setText(ui['reserve-note'], 'Low reserve · park on the centre pad');
-	else setText(ui['reserve-note'], 'Centre pad refills free in ' + config.chargeSeconds + ' s · emergency import in the market');
+	if (typeof wildIsActive === 'function' && wildIsActive()) {
+		wildModeNotes(reserveWarning);
+	} else {
+		if (chargingNow) setText(ui['reserve-note'], 'Charging ' + (config.chargePower / 1000).toFixed(1) + ' kW · ' + ((config.battery - world.battery) / config.chargePower).toFixed(1) + ' s to full');
+		else if (onPad && world.battery >= config.battery) setText(ui['reserve-note'], 'Reserve full · centre pad');
+		else if (onPad) setText(ui['reserve-note'], 'On the centre pad · stop to charge (' + config.chargeSeconds + ' s full)');
+		else if (reserveWarning === 'EMPTY') setText(ui['reserve-note'], 'Empty · hand-crank crawl to the centre pad, or market import');
+		else if (reserveWarning) setText(ui['reserve-note'], 'Low reserve · park on the centre pad');
+		else setText(ui['reserve-note'], 'Centre pad refills free in ' + config.chargeSeconds + ' s · emergency import in the market');
+	}
 	const heldMass = physics.heldBallMass(world);
 	const cargoFull = ceiling.cargoCells >= ceiling.storageLimit;
 	setWarning('cargo-telemetry', cargoFull ? 'FULL' : '');
-	setText(ui['cargo-note'], cargoFull ? 'Full · extra fragments are refused until you sell at a wall' : '100 cells maximum · cargo adds mass');
+	if (!(typeof wildIsActive === 'function' && wildIsActive())) {
+		setText(ui['cargo-note'], cargoFull ? 'Full · extra fragments are refused until you sell at a wall' : '100 cells maximum · cargo adds mass');
+	}
 	ui.cargo.textContent = cellCount(ceiling.cargoCells) + ' / ' + ceiling.storageLimit;
 	ui['platform-mass'].textContent = (physics.dryMass() + ceiling.cargoMass + heldMass).toFixed(1) + ' kg';
 	ui.funds.textContent = ceiling.commune ? 'commons' : ceiling.funds.toFixed(1) + ' cr';
-	setText(ui['funds-note'], ceiling.commune ? 'Nothing costs · sales still measured' : 'Automatic sale at either wall');
+	if (!(typeof wildIsActive === 'function' && wildIsActive())) {
+		setText(ui['funds-note'], ceiling.commune ? 'Nothing costs · sales still measured' : 'Automatic sale at either wall');
+	}
 	const balls = world.balls || [];
 	const machine = playerApi.machineOf(activePlayer());
 	const watched = physics.focusBallOf(world, machine);
@@ -479,6 +495,14 @@ function yieldTone(entry) {
 }
 
 function toolYieldReadout(driveOn) {
+	if (typeof wildIsActive === 'function' && wildIsActive()) {
+		setMessage(ui['drive-yield'], '', '');
+		setMessage(ui['sandblast-yield'], '', '');
+		setMessage(ui['water-yield'], '', '');
+		setMessage(ui['grader-yield'], '', '');
+		setMessage(ui['market-tool-yield'], '', '');
+		return;
+	}
 	const summary = SteamToolTelemetry.measure(world, activePlayerId(), toolMetrics);
 	const fuelPrice = summary.fuelPrice;
 	const ball = summary.ball;
@@ -559,6 +583,10 @@ function platformGrounded() {
 // that exist only while their condition does. Each message keeps its own
 // tone, so the ball's advice and the reserve warning stand side by side.
 function statusReadout(reserveWarning, onPad, cargoFull, thermalFactor, temperature, canLaunch, driveOn) {
+	if (typeof wildIsActive === 'function' && wildIsActive()) {
+		wildStatusReadout(reserveWarning, thermalFactor, driveOn);
+		return;
+	}
 	const ceiling = window.SteamCeiling.state;
 	setText(ui['fact-reserve'], (world.battery / 1000).toFixed(2) + ' kJ');
 	setTone(ui['fact-reserve'], reserveWarning === 'EMPTY' ? 'danger' : reserveWarning ? 'warn' : '');

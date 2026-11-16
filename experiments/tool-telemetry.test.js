@@ -251,3 +251,24 @@ test('road grader telemetry reflects floor rubble, commune and per-player isolat
 	assert.equal(rivalOut.sandblaster.installed, false);
 	assert.equal(rivalOut.watergun.installed, false);
 });
+
+// The drive flag belongs to the machine, not to the world: a parked rival's
+// ball readout must not inherit the rig's drive.
+test('ball telemetry reports the drive of the measured machine', () => {
+	const world = fresh(1);
+	players.init(world, 1);
+	const rival = players.state.rivals[0];
+	const out = telemetry.createSummary();
+	rival.drive = false;
+	telemetry.measure(world, rival.id, out);
+	assert.equal(out.ball.active, false, 'a parked rival ball is not active');
+	rival.drive = true;
+	telemetry.measure(world, rival.id, out);
+	assert.equal(out.ball.active, true);
+	world.drive = false;
+	telemetry.measure(world, 'rig', out);
+	assert.equal(out.ball.active, false, 'the rig drive flag is the rig machine flag');
+	world.drive = true;
+	telemetry.measure(world, 'rig', out);
+	assert.equal(out.ball.active, true);
+});

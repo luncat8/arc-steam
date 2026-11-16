@@ -453,6 +453,28 @@ async function main() {
 		await page.waitForTimeout(100);
 		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
 		assert.equal(await page.evaluate(() => ['.mine-panel', '.controls-panel', '.cargo-panel'].every(selector => document.querySelector(selector).getBoundingClientRect().height > 200)), true, 'stacked panels keep their content height');
+		// Wild Mine mode switch: narrow + desktop chamber, hidden rival, ±90° piston, tooltip, and Classic restore.
+		await page.locator('#game-mode').selectOption('wild');
+		await page.waitForFunction(() => SteamWildMine.isWild() === true);
+		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Wild Mine mobile fits viewport');
+		await page.setViewportSize({ width: 1440, height: 1000 });
+		await page.locator('#c').scrollIntoViewIfNeeded();
+		await page.waitForTimeout(80);
+		assert.equal(await page.locator('#chamber-title').textContent(), 'ARC STEAM · WILD MINE / CAVE SECTION');
+		assert.equal(await page.locator('#piston-angle').getAttribute('max'), '90');
+		assert.equal(await page.locator('.player-row').nth(1).evaluate(el => getComputedStyle(el).display), 'none', 'rival row hidden in Wild Mine');
+		await page.locator('#piston-angle').fill('60');
+		await page.locator('#piston-angle').dispatchEvent('input');
+		assert.equal(await page.locator('#piston-value').textContent(), '60.0°');
+		const wildCanvas = await page.locator('#c').boundingBox();
+		await page.mouse.move(wildCanvas.x + wildCanvas.width * 0.15, wildCanvas.y + wildCanvas.height * 0.35);
+		await page.waitForFunction(() => !document.getElementById('mineral-tooltip').hidden);
+		assert.match(await page.locator('#mineral-cell').textContent(), /^Cave col -?\d+ · row \d+$/);
+		await page.locator('#game-mode').selectOption('classic');
+		await page.waitForFunction(() => SteamWildMine.isWild() === false);
+		assert.equal(await page.locator('#chamber-title').textContent(), 'ARC STEAM · TEST CHAMBER / 24 × 15 M');
+		assert.equal(await page.locator('#piston-angle').getAttribute('max'), '10');
+		assert.equal(await page.locator('.player-row').nth(1).evaluate(el => getComputedStyle(el).display), 'flex', 'rival row restored in Classic');
 		assert.deepEqual(errors, []);
 		// Touch-only devices keep the view menu click-only. The touch page must be in
 		// front: a background page throttles its animation frames, and an unthrottled

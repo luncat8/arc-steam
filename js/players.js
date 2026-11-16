@@ -154,7 +154,7 @@
 	// rig's angle goes through the physics setter, a competitor's is its own.
 	function setPistonAngleOf(player, angle) {
 		const physics = root.SteamPhysics;
-		const max = physics ? physics.config.pistonMaxAngle : Math.PI / 18;
+		const max = physics && physics.pistonMaxAngleNow ? physics.pistonMaxAngleNow() : (physics ? physics.config.pistonMaxAngle : Math.PI / 18);
 		const clamped = Math.max(-max, Math.min(max, angle));
 		if (player.kind === 'rig' && rigWorld && physics) return physics.setPistonAngle(rigWorld, clamped);
 		machineOf(player).pistonAngle = clamped;
@@ -1369,6 +1369,7 @@
 	function update(world, dt) {
 		rigWorld = world || rigWorld;
 		if (!players.length) return;
+		if (root.SteamWildMine && root.SteamWildMine.isWild()) return;
 		stepRigBot(world, dt);
 		syncLayers();
 		for (let i = 1; i < players.length; i++) stepRival(players[i], dt);

@@ -102,10 +102,14 @@
 	function groundRetentionNow() { return groundRetention; }
 	function groundRestitutionNow() { return Math.sqrt(groundRetention); }
 
+	function wildMode() { return Boolean(root.SteamWildMine && root.SteamWildMine.isWild()); }
+	function pistonMaxAngleNow() { return wildMode() ? root.SteamWildMine.pistonMaxAngle : config.pistonMaxAngle; }
+
 	function platformMin() { return config.platformWidth * 0.5 - config.pocketDepth; }
 	function platformMax() { return config.width - config.platformWidth * 0.5; }
 	// Every platform trades while it touches either end wall.
 	function atSellWall(world, owner) {
+		if (wildMode()) return false;
 		const id = owner && typeof owner === 'object' ? owner.id : owner;
 		const machine = id && id !== 'rig' ? machineById(world, id) : world;
 		const x = machineBody(machine).x;
@@ -113,7 +117,8 @@
 	}
 	function brakeAcceleration() { return config.platformBrakeFriction * config.gravity; }
 
-	function terrainHeight(x) {
+	function terrainHeight(x, refY) {
+		if (wildMode()) return root.SteamWildMine.groundAt(x, refY);
 		return root.SteamCeiling ? root.SteamCeiling.floorAt(x) : 0;
 	}
 
@@ -123,14 +128,18 @@
 	// competitor uses. The garage grader's dome is deliberately not ground: it is
 	// 0.12 m tall against the 0.2 m belly, so the hull passes over it, and a
 	// wheel riding it would lift the whole deck out from under the ball.
-	function platformGroundAt(x, exceptId) {
-		let height = terrainHeight(x);
-		if (root.SteamPlayers) height = Math.max(height, root.SteamPlayers.surfaceAt(x, exceptId));
+	function platformGroundAt(x, exceptId, refY) {
+		let height = terrainHeight(x, refY);
+		if (!wildMode() && root.SteamPlayers) height = Math.max(height, root.SteamPlayers.surfaceAt(x, exceptId));
 		return height;
 	}
-	function platformPitchAt(x, exceptId) {
+	function platformPitchAt(x, exceptId, refY, angle) {
 		const span = config.platformWheelHalfSpan;
-		const rise = platformGroundAt(x + span, exceptId) - platformGroundAt(x - span, exceptId);
+		const sine = Math.sin(angle || 0);
+		const cosine = Math.cos(angle || 0);
+		const leftRef = Number.isFinite(refY) ? refY - span * sine + config.platformBodyTop * cosine : undefined;
+		const rightRef = Number.isFinite(refY) ? refY + span * sine + config.platformBodyTop * cosine : undefined;
+		const rise = platformGroundAt(x + span, exceptId, rightRef) - platformGroundAt(x - span, exceptId, leftRef);
 		return Math.max(-config.platformMaxPitch, Math.min(config.platformMaxPitch, Math.atan2(rise, span * 2)));
 	}
 
@@ -160,17 +169,19 @@
 	// lets the body under them sink into anything it is riding: the underside
 	// points between the wheels are the same hull, so they can only raise the
 	// base.
-	function platformBaseAt(x, angle, exceptId) {
+	function platformBaseAt(x, angle, exceptId, refY) {
 		const cosine = Math.cos(angle);
 		const sine = Math.sin(angle);
 		const radius = config.platformWheelRadius;
 		const span = config.platformWheelHalfSpan;
 		const bodyBottom = config.platformBodyBottom;
+		const hasRef = Number.isFinite(refY);
 		let height = 0;
 		for (let sign = -1; sign <= 1; sign += 2) {
 			const localX = sign * span;
 			const groundX = x + localX * cosine - radius * sine;
-			const required = platformGroundAt(groundX, exceptId) - localX * sine + radius - radius * cosine;
+			const sampleRef = hasRef ? refY + localX * sine + config.platformBodyTop * cosine : undefined;
+			const required = platformGroundAt(groundX, exceptId, sampleRef) - localX * sine + radius - radius * cosine;
 			height = Math.max(height, required);
 		}
 		const bellyHeight = Math.max(0, height);
@@ -186,7 +197,8 @@
 			const localX = -halfWidth + sampleWidth * sample;
 			const depth = hullDepthAt(localX);
 			const groundX = x + localX * cosine - depth * sine;
-			const required = platformGroundAt(groundX, exceptId) - localX * sine - depth * cosine;
+			const sampleRef = hasRef ? refY + localX * sine + config.platformBodyTop * cosine : undefined;
+			const required = platformGroundAt(groundX, exceptId, sampleRef) - localX * sine - depth * cosine;
 			if (required > bellyHeight) height = Math.max(height, required);
 		}
 		return Math.max(0, height);
@@ -202,16 +214,19 @@
 		const radius = config.platformWheelRadius;
 		const span = config.platformWheelHalfSpan;
 		const travel = config.platformWheelTravel;
+		const refBase = wildMode() ? body.y : undefined;
 		for (let wheel = 0; wheel < 2; wheel++) {
 			const localX = wheel ? span : -span;
 			const groundX = body.x + localX * cosine - radius * sine;
-			const gap = body.y + localX * sine + radius * cosine - radius - platformGroundAt(groundX, exceptId);
+			const sampleRef = Number.isFinite(refBase) ? refBase + localX * sine + config.platformBodyTop * cosine : undefined;
+			const gap = body.y + localX * sine + radius * cosine - radius - platformGroundAt(groundX, exceptId, sampleRef);
 			drops[wheel] = gap > travel ? travel : gap > 0 ? gap : 0;
 		}
 	}
 
 	function settlePose(body, dt, exceptId) {
-		const wantedAngle = platformPitchAt(body.x, exceptId);
+		const refY = wildMode() ? body.previousY : undefined;
+		const wantedAngle = platformPitchAt(body.x, exceptId, refY, body.angle);
 		const turn = config.platformPitchRate * dt;
 		// The lean and the base are one pose: the hull may not be driven down by a
 		// pitch it cannot keep up with, so the slew is only taken as far as the
@@ -219,12 +234,12 @@
 		const floor = body.previousY - config.platformDropRate * dt;
 		let step = Math.max(-turn, Math.min(turn, wantedAngle - body.angle));
 		body.angle += step;
-		let wantedHeight = platformBaseAt(body.x, body.angle, exceptId);
+		let wantedHeight = platformBaseAt(body.x, body.angle, exceptId, refY);
 		if (wantedHeight < floor) {
 			for (let i = 0; i < 8; i++) {
 				step *= 0.5;
 				body.angle -= step;
-				wantedHeight = platformBaseAt(body.x, body.angle, exceptId);
+				wantedHeight = platformBaseAt(body.x, body.angle, exceptId, refY);
 				if (wantedHeight >= floor) break;
 			}
 		}
@@ -418,7 +433,8 @@
 
 
 	function setPistonAngle(world, angle) {
-		world.pistonAngle = Math.max(-config.pistonMaxAngle, Math.min(config.pistonMaxAngle, angle));
+		const limit = pistonMaxAngleNow();
+		world.pistonAngle = Math.max(-limit, Math.min(limit, angle));
 		return world.pistonAngle;
 	}
 
@@ -552,6 +568,7 @@
 	function chargePadMin() { return config.width * 0.5 - config.chargePadWidth * 0.5; }
 	function chargePadMax() { return config.width * 0.5 + config.chargePadWidth * 0.5; }
 	function onChargePad(world) {
+		if (wildMode()) return false;
 		const x = world.platform.x;
 		return x >= chargePadMin() && x <= chargePadMax();
 	}
@@ -780,6 +797,7 @@
 	// Constant size is the classic 0.18 m sphere at every height. Below the
 	// warp the scale is 1 either way, so the floor game is untouched.
 	function ballRadiusAt(y) {
+		if (wildMode()) return config.radius;
 		const ceiling = root.SteamCeiling;
 		if (!ceiling) return config.radius;
 		return config.radius * ceiling.perspectiveScale(y);
@@ -1148,6 +1166,7 @@
 	// The release belongs to the platform that holds the ball, so the drive
 	// flag, the pulse and the height are all that machine's.
 	function canLaunch(world, target) {
+		if (wildMode()) return false;
 		const ball = target || world.ball;
 		if (!ball || ball.state !== 'held') return false;
 		const machine = machineById(world, ball.holder);
@@ -1275,14 +1294,18 @@
 		}
 		platform.vx = finalVelocity;
 		platform.x += (oldVelocity + finalVelocity) * 0.5 * dt;
-		const minX = platformMin();
-		const maxX = platformMax();
-		if (platform.x < minX || platform.x > maxX) {
-			// A wall stop is a crash, not braking: all of it becomes heat. The sale
-			// itself is handled once per step by step(), which also covers fragments.
-			platform.x = Math.max(minX, Math.min(maxX, platform.x));
-			world.heat += 0.5 * mass * finalVelocity * finalVelocity;
-			platform.vx = 0;
+		if (wildMode()) {
+			root.SteamWildMine.constrainPlatform(world, dt);
+		} else {
+			const minX = platformMin();
+			const maxX = platformMax();
+			if (platform.x < minX || platform.x > maxX) {
+				// A wall stop is a crash, not braking: all of it becomes heat. The sale
+				// itself is handled once per step by step(), which also covers fragments.
+				platform.x = Math.max(minX, Math.min(maxX, platform.x));
+				world.heat += 0.5 * mass * finalVelocity * finalVelocity;
+				platform.vx = 0;
+			}
 		}
 		// Wheels roll with the distance actually travelled, so the drawn spokes
 		// match the ground contact rather than the commanded velocity.
@@ -1794,6 +1817,10 @@
 	}
 
 	function step(world, dt) {
+		if (wildMode()) {
+			root.SteamWildMine.step(world, dt);
+			return;
+		}
 		movePlatform(world, dt);
 		resolvePlatformContacts(world, dt);
 		updatePlatformTerrain(world, dt);
@@ -1823,6 +1850,7 @@
 		engines, engineNow, selectEngine, reserveNow, reserveCost, spend, packMass,
 		config, createWorld, step, launch, canLaunch, releaseReady, launchCapacity, ballEnergy, totalEnergy, temperature,
 		thermalFactor, coolingPower, platformMass, machineMass, applyMachineMassChange, platformMin, platformMax, atSellWall, dryMass, brakeAcceleration, resolvePlatformContacts,
+		movePlatform, updatePlatformTerrain, advancePiston, cool, setHeldBallPose, wildMode, pistonMaxAngleNow,
 		platformPitchAt, platformBaseAt, platformPointAt, platformSurfaceAt, planeContactTime, hullDepthAt,
 		chargePadMin, chargePadMax, onChargePad, charging,
 		retentionNow, rockRetentionNow, ballMassNow, ballMassFor, damageBonusNow, damageRadiusBonusNow, pulseNow, forceNow, speedNow, arrivalSpeed, coverage, travelTime, stopTime, recoveryNow, conductanceNow, radiatorArea, applyMassChange,

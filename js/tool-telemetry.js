@@ -122,7 +122,7 @@
 		const pulse = physics.pulseNow(id);
 		const reserveJ = physics.reserveCost(pulse, id);
 		out.ready = !isRig || (physics.thermalFactor(world) > 0 && world.battery >= reserveJ);
-		out.active = Boolean(physics.machineDrive(world, id));
+		out.active = physics.machineDrive(machine);
 
 		const retention = physics.retentionNow(id);
 		const rockRetention = physics.rockRetentionNow(id);

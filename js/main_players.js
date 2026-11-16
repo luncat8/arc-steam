@@ -62,8 +62,11 @@ function refreshPlayers() {
 	playerApi.syncRigBot();
 	syncAutopilot();
 	const list = playerApi.state.players;
-	for (let index = 0; index < playerRows.length && index < list.length; index++) {
+	for (let index = 0; index < playerRows.length; index++) {
 		const entry = playerRows[index];
+		const hidden = index >= list.length;
+		setHidden(entry.row, hidden);
+		if (hidden) continue;
 		const player = list[index];
 		setText(entry.purse, playerApi.money(index).toFixed(1) + ' cr');
 		setChecked(entry.box, player.bot);

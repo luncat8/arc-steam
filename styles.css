@@ -73,6 +73,7 @@ main { padding: 8px; display: grid; gap: 8px; }
 .scoreboard .eyebrow { margin: 0; }
 .player-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .player-row { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--line); border-radius: 5px; background: #0b1316; overflow: hidden; }
+.player-row[hidden] { display: none; }
 .player-row[data-active="true"] { border-color: var(--accent); background: #14201a; box-shadow: inset 0 0 0 1px #b9ed9133; }
 .player-select { display: flex; flex: 1 1 auto; align-items: center; gap: 8px; padding: 5px 10px; border: 0; border-radius: 0; background: transparent; text-align: left; min-width: 0; }
 .player-select:hover:not(:disabled) { border-color: transparent; background: #18262a; }

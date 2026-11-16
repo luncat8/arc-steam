@@ -60,6 +60,10 @@ const view = { scale: 1, offsetX: 0, floorY: 0 };
 const padLabel = 'CHARGE PAD · 3 kW';
 const padLabelActive = 'CHARGING';
 function resize() {
+	if (typeof wildIsActive === 'function' && wildIsActive()) {
+		wildResize();
+		return;
+	}
 	const bounds = canvas.getBoundingClientRect();
 	width = bounds.width;
 	height = bounds.height;
@@ -204,6 +208,10 @@ function drawRigMachinery(context, player) {
 }
 
 function draw() {
+	if (typeof wildIsActive === 'function' && wildIsActive()) {
+		wildDraw();
+		return;
+	}
 	context.clearRect(0, 0, width, height);
 	context.save();
 	context.translate(offsetX, floorY);
