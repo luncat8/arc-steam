@@ -155,7 +155,7 @@ test('a grain spends reserve energy and hopper material, climbs and chips the fa
 
 	assert.equal(sandblaster.fire(world), true);
 	assert.equal(sandblaster.grainsAboard(world), grains - 1, 'a throw takes one grain out of the hopper');
-	near(world.battery, battery - sand.shotEnergy, 1e-9, 'a throw draws its energy from the reserve');
+	near(world.battery, battery - physics.reserveCost(sand.shotEnergy), 1e-9, 'a throw draws its engine-efficiency cost from the reserve');
 	assert.equal(sandblaster.fire(world), false, 'the stream has a rate');
 
 	let slot = -1;
@@ -363,9 +363,12 @@ test('the pools are fixed: a sustained stream never leaves anything in the air',
 
 test('a long high-power stream fills the hopper and spills the rest with its ledger closed', () => {
 	const world = fresh();
+	harness.research.grant('thermodynamics', world, 'rig');
+	assert.equal(equipment.installRadiator('radiator', world, true, 'rig'), true);
 	park(world, 12);
 	stock(world, stoneIndex, 1000);
 	world.drive = false;
+	harness.sync(world);
 	for (let i = 0; i < 240 * 50; i++) {
 		sandblaster.fire(world);
 		physics.step(world, c.step);
@@ -527,7 +530,7 @@ test('bots avoid a stream their engine cannot sustain, but a hand blast still wo
 test('the rig charge trip includes a second of stream draw, without charging early for a dry nozzle', () => {
 	let world = fresh();
 	park(world, 8);
-	const reserve = c.battery * sand.autoFireReserve + sand.shotEnergy * sand.rate * 0.5;
+	const reserve = c.battery * sand.autoFireReserve + sandblaster.streamPower('rig') * 0.5;
 	world.battery = reserve;
 	harness.sync(world);
 	players.setBot(0, true);
@@ -604,3 +607,31 @@ test('a raised rival imports its full grain energy, including inherited vertical
 	settle(world);
 	harness.balanced(world);
 });
+
+test('nozzle charges engine-efficiency reserve cost, books motor waste as heat, and stops at thermal cutoff', () => {
+	const world = fresh();
+	park(world, physics.platformMin());
+	stock(world, sandIndex, 40);
+	assert.equal(physics.selectEngine('coal', world, 'rig'), true);
+	world.battery = c.battery;
+	world.heat = 0;
+	harness.sync(world);
+
+	const before = world.battery;
+	assert.equal(sandblaster.fire(world), true);
+	const expectedCost = sand.shotEnergy / physics.engineNow('rig').efficiency;
+	near(before - world.battery, expectedCost, 1e-9, 'coal pays 5x useful launch work');
+	near(world.heat, expectedCost - sand.shotEnergy, 1e-9, 'motor loss lands in machine heat');
+	settle(world);
+	harness.balanced(world);
+
+	world.heat = (c.thermalCutoff + 4 - c.ambientTemperature) * c.heatCapacity;
+	harness.sync(world);
+	assert.equal(sandblaster.canFire(world), false, 'thermal cutoff stops the nozzle');
+	assert.equal(sandblaster.fire(world), false);
+	world.heat = (c.thermalCutoff - 4 - c.ambientTemperature) * c.heatCapacity;
+	harness.sync(world);
+	assert.equal(sandblaster.canFire(world), true, 'cooling below cutoff re-enables the nozzle');
+	harness.balanced(world);
+});
+

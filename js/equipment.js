@@ -51,11 +51,11 @@
 		}),
 		Object.freeze({
 			id: 'sandblaster', name: 'Sandblaster', cost: 520, mass: 7, requires: 'impact',
-			effect: 'Mounts an abrasive nozzle in the collector; hold F or set auto-fire to throw up to 20 grains a second at the ceiling. Each grain draws 135 J and 20 g of hopper sand or stone, then falls back to be caught again.'
+			effect: 'Mounts an abrasive nozzle in the collector; hold F or set auto-fire to throw up to 20 grains a second at the ceiling. Each grain puts 135 J into 20 g of hopper sand or stone (charged from the reserve at engine efficiency, 169 J on stock electric) and falls back to be caught again.'
 		}),
 		Object.freeze({
 			id: 'watergun', name: 'Water gun', cost: 900, mass: 9, requires: 'hydrology',
-			effect: 'Mounts a water cannon in the collector; hold G or set auto-fire to flood up to 46 droplets a second into the chamber. Water barely chips hard rock but dissolves salt seams on contact, and the under-hull pump lifts the brine back into the hopper as cargo. Gas driven out of a seam is lost: it cannot be caught wet.'
+			effect: 'Mounts a water cannon in the collector; hold G or set auto-fire to spray up to 46 droplets a second (36 J useful per droplet, plus 120 J per water unit pumped, charged at engine efficiency). Water dissolves salt seams on contact and the under-hull pump lifts the brine into the hopper; vented gas is lost.'
 		})
 	]);
 	const radiators = Object.freeze([

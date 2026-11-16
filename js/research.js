@@ -26,8 +26,8 @@
 		}),
 		Object.freeze({
 			id: 'thermodynamics', name: 'Heat transfer', cost: 340, requires: Object.freeze(['alloys']),
-			coolingBonus: 0.5,
-			effect: 'Ducting and surface treatment add +0.5 W/K of chassis convective cooling.'
+			coolingBonus: 1.4,
+			effect: 'Ducting and surface treatment add +1.4 W/K of chassis convective cooling.'
 		}),
 		Object.freeze({
 			id: 'storage', name: 'Flywheel storage', cost: 460, requires: Object.freeze(['thermodynamics']),

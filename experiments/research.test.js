@@ -110,7 +110,7 @@ test('research deltas reach the simulation instead of acting as labels', () => {
 	sync(w);
 	const before = physics.coolingPower(w);
 	assert.equal(research.research('thermodynamics', w), true);
-	near(physics.conductanceNow(), c.convectiveConductance + 0.5);
+	near(physics.conductanceNow(), c.convectiveConductance + research.find('thermodynamics').coolingBonus);
 	assert.ok(physics.coolingPower(w) > before);
 	run(w, 1);
 	assert.ok(w.cooledEnergy > 0);

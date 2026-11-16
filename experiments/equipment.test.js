@@ -131,14 +131,15 @@ test('installed equipment changes retention, pulse and dry mass in the simulatio
 		assert.equal(equipment.installRadiator('radiator', w), false, 'the radiator tiers are locked without their research');
 		unlockResearch(w, 'alloys');
 		unlockResearch(w, 'thermodynamics');
-		near(physics.conductanceNow(), c.convectiveConductance + 0.5);
+		const thermoBonus = research.find('thermodynamics').coolingBonus;
+		near(physics.conductanceNow(), c.convectiveConductance + thermoBonus);
 		near(physics.radiatorArea(), 0);
 		const baseMass = physics.dryMass();
 		assert.equal(equipment.installRadiator('radiator', w), true, 'the radiator array installs');
 		assert.equal(equipment.installedRadiator(), 'radiator');
 		near(equipment.state.massDelta, 8);
 		near(physics.radiatorArea(), 0.35);
-		near(physics.conductanceNow(), c.convectiveConductance + 0.5 + c.radiatorConvectionCoefficient * 0.35);
+		near(physics.conductanceNow(), c.convectiveConductance + thermoBonus + c.radiatorConvectionCoefficient * 0.35);
 		assert.ok(physics.dryMass() > baseMass, 'the radiator adds mass');
 		// Swapping tiers replaces mass and area instead of stacking them.
 		assert.equal(equipment.installRadiator('vent', w), true, 'the vent grille installs');

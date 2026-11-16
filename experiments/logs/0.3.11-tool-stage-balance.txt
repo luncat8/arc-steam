@@ -1,0 +1,65 @@
+=== 1. ENGINE x STAGE RESERVE, PAD POWER & NOZZLE STREAM DRAW ===
+T1 hand      |  eff 97% |  mass 43.9 kg |    F 60 N |    raw 0.3 kJ |   useful 0.3 kJ |  pad 0.02 kW (18s) |    G 3.6 W/K |  sand 2.78 kW |  water 2.03 kW
+T1 coal      |  eff 20% |  mass 89.0 kg |   F 312 N |   raw 63.7 kJ |  useful 12.7 kJ |  pad 3.98 kW (16s) |    G 3.6 W/K | sand 13.50 kW |  water 9.84 kW
+T1 oil       |  eff 55% |  mass 69.3 kg |   F 360 N |   raw 27.7 kJ |  useful 15.2 kJ |   pad 9.24 kW (3s) |    G 3.6 W/K |  sand 4.91 kW |  water 3.58 kW
+T1 electric  |  eff 80% |  mass 60.0 kg |   F 480 N |   raw 22.8 kJ |  useful 18.2 kJ |   pad 3.79 kW (6s) |    G 3.6 W/K |  sand 3.38 kW |  water 2.46 kW
+T1 nuclear   |  eff 55% |  mass 95.9 kg |   F 528 N |   raw 52.5 kJ |  useful 28.9 kJ |   pad 6.56 kW (8s) |    G 3.6 W/K |  sand 4.91 kW |  water 3.58 kW
+T2 hand      |  eff 97% |  mass 71.9 kg |   F 135 N |    raw 1.6 kJ |   useful 1.5 kJ |  pad 0.09 kW (18s) |   G 54.0 W/K |  sand 2.78 kW |  water 2.03 kW
+T2 coal      |  eff 20% | mass 126.6 kg |   F 702 N |  raw 255.5 kJ |  useful 51.1 kJ | pad 15.97 kW (16s) |   G 54.0 W/K | sand 13.50 kW |  water 9.84 kW
+T2 oil       |  eff 55% |  mass 98.8 kg |   F 810 N |  raw 117.3 kJ |  useful 64.5 kJ |  pad 39.10 kW (3s) |   G 54.0 W/K |  sand 4.91 kW |  water 3.58 kW
+T2 electric  |  eff 80% |  mass 91.9 kg |  F 1080 N |  raw 100.6 kJ |  useful 80.5 kJ |  pad 16.77 kW (6s) |   G 54.0 W/K |  sand 3.38 kW |  water 2.46 kW
+T2 nuclear   |  eff 55% | mass 124.0 kg |  F 1188 N |  raw 187.1 kJ | useful 102.9 kJ |  pad 23.39 kW (8s) |   G 54.0 W/K |  sand 4.91 kW |  water 3.58 kW
+T3 hand      |  eff 97% | mass 100.1 kg |   F 240 N |    raw 4.6 kJ |   useful 4.4 kJ |  pad 0.25 kW (18s) |  G 103.0 W/K |  sand 2.78 kW |  water 2.03 kW
+T3 coal      |  eff 20% | mass 168.9 kg |  F 1248 N |  raw 540.6 kJ | useful 108.1 kJ | pad 33.79 kW (16s) |  G 103.0 W/K | sand 13.50 kW |  water 9.84 kW
+T3 oil       |  eff 55% | mass 128.6 kg |  F 1440 N |  raw 226.8 kJ | useful 124.8 kJ |  pad 75.61 kW (3s) |  G 103.0 W/K |  sand 4.91 kW |  water 3.58 kW
+T3 electric  |  eff 80% | mass 125.3 kg |  F 1920 N |  raw 207.9 kJ | useful 166.3 kJ |  pad 34.66 kW (6s) |  G 103.0 W/K |  sand 3.38 kW |  water 2.46 kW
+T3 nuclear   |  eff 55% | mass 152.0 kg |  F 2112 N |  raw 332.7 kJ | useful 183.0 kJ |  pad 41.59 kW (8s) |  G 103.0 W/K |  sand 4.91 kW |  water 3.58 kW
+
+=== 2. T1 WEAK-ENGINE OFF-PAD NOZZLE BURSTS (x=8, full pack -> 20% floor or 135 C cutoff, bare hull) ===
+sand / hand      |   res 0.4 kJ | stop 0.05s reserve   |    sand 2 |    drops 0 |  Tmax 96 C |  bot no | err 5.8e-11
+sand / coal      |  res 68.6 kJ | stop 2.60s cutoff    |   sand 61 |    drops 0 | Tmax 137 C |  bot no | err 2.9e-10
+sand / oil       |  res 30.4 kJ | stop 4.90s reserve   |   sand 99 |    drops 0 |  Tmax 99 C | bot yes | err 1.2e-10
+sand / electric  |  res 25.3 kJ | stop 5.95s reserve   |  sand 120 |    drops 0 |  Tmax 86 C | bot yes | err 1.2e-10
+sand / nuclear   |  res 56.2 kJ | stop 7.30s cutoff    |  sand 160 |    drops 0 | Tmax 136 C | bot yes | err 1.2e-10
+water / hand     |   res 0.4 kJ | stop 0.17s reserve   |    sand 0 |    drops 9 |  Tmax 96 C |  bot no | err 1.7e-10
+water / coal     |  res 70.0 kJ | stop 3.63s cutoff    |    sand 0 |  drops 206 | Tmax 136 C |  bot no | err 1.7e-10
+water / oil      |  res 31.1 kJ | stop 6.88s reserve   |    sand 0 |  drops 331 | Tmax 102 C | bot yes | err 4.1e-10
+water / electric |  res 26.0 kJ | stop 8.34s reserve   |    sand 0 |  drops 401 |  Tmax 88 C | bot yes | err 5.8e-11
+water / nuclear  |  res 57.2 kJ | stop 10.09s cutoff   |    sand 0 |  drops 519 | Tmax 135 C | bot yes | err 3.7e-9
+both / hand      |   res 0.4 kJ | stop 0.05s reserve   |    sand 2 |    drops 3 |  Tmax 96 C |  bot no | err 0.0e+0
+both / coal      |  res 75.0 kJ | stop 1.55s cutoff    |   sand 41 |   drops 75 | Tmax 137 C |  bot no | err 5.8e-11
+both / oil       |  res 33.8 kJ | stop 3.20s reserve   |   sand 65 |  drops 154 | Tmax 111 C | bot yes | err 1.2e-9
+both / electric  |  res 28.5 kJ | stop 3.90s reserve   |   sand 79 |  drops 188 |  Tmax 96 C |  bot no | err 1.5e-9
+both / nuclear   |  res 60.9 kJ | stop 4.19s cutoff    |  sand 104 |  drops 202 | Tmax 136 C |  bot no | err 8.1e-10
+
+=== 3. LIVE STAGE SHIFTS (S1 120 s, S2/S3 90 s, seed 1) ===
+S1 move-only (55% thrust)      | electric |   G 3.6 |  T2h 92C | Tmax 102C |  min 66% | hot 44% |  cut 0% |  pad 8% |  tP 0% | rk 0 |    sF 0 |    wD 0 |    cr 0 | err 2.3e-10
+S1 smart move+piston           | electric |   G 3.6 |  T2h 74C |  Tmax 81C | min 100% |  hot 0% |  cut 0% |  pad 0% |  tP 0% | rk 0 |    sF 0 |    wD 0 |  cr 140 | err 1.9e-8
+S1 chase BOT move+piston       | electric |   G 3.6 |  T2h 82C |  Tmax 92C |  min 86% | hot 23% |  cut 0% |  pad 0% | tP 34% | rk 0 |    sF 0 |    wD 0 |  cr 220 | err 1.6e-8
+S1 chase BOT + grader (bare)   | electric |   G 3.6 |  T2h 76C |  Tmax 92C |  min 85% | hot 16% |  cut 0% |  pad 3% | tP 17% | rk 0 |    sF 0 |    wD 0 | cr 1897 | err 1.9e-9
+S1 smart + grader + thermo     | electric |   G 5.0 |  T2h 55C |  Tmax 68C | min 100% |  hot 0% |  cut 0% |  pad 1% |  tP 0% | rk 0 |    sF 0 |    wD 0 |  cr 740 | err 5.8e-11
+S1 hand BOT (bare)             | hand     |   G 3.6 |  T2h 49C |  Tmax 95C |  min 80% |  hot 9% |  cut 0% | pad 56% | tP 44% | rk 0 |    sF 0 |    wD 0 |    cr 0 | err 3.0e-9
+S1 coal chase BOT (bare)       | coal     |   G 3.6 |  T2h 97C | Tmax 108C |  min 55% | hot 40% |  cut 0% |  pad 1% | tP 53% | rk 0 |    sF 0 |    wD 0 |   cr 68 | err 1.1e-8
+S1 coal chase BOT + vent       | coal     |  G 26.0 |  T2h 40C |  Tmax 55C | min 100% |  hot 0% |  cut 0% |  pad 5% |  tP 0% | rk 0 |    sF 0 |    wD 0 |  cr 143 | err 6.0e-9
+S1 oil chase BOT (bare)        | oil      |   G 3.6 |  T2h 75C |  Tmax 94C |  min 83% | hot 13% |  cut 0% |  pad 1% | tP 24% | rk 0 |    sF 0 |    wD 0 |  cr 577 | err 5.9e-9
+S1 nuclear chase BOT (bare)    | nuclear  |   G 3.6 |  T2h 81C | Tmax 106C |  min 58% | hot 20% |  cut 0% |  pad 2% | tP 30% | rk 0 |    sF 0 |    wD 0 |    cr 0 | err 1.1e-8
+S2 T2+vent+grader BOT          | coal     |  G 26.0 |  T2h 63C |  Tmax 90C |  min 89% |  hot 4% |  cut 0% |  pad 0% | tP 16% | rk 0 |    sF 0 |    wD 0 |  cr 302 | err 1.0e-8
+S2 T2+vent+grader BOT          | oil      |  G 26.0 |  T2h 45C |  Tmax 60C | min 100% |  hot 0% |  cut 0% |  pad 0% |  tP 0% | rk 0 |    sF 0 |    wD 0 |  cr 600 | err 9.0e-9
+S2 T2+vent+grader BOT          | electric |  G 26.0 |  T2h 45C |  Tmax 60C | min 100% |  hot 0% |  cut 0% |  pad 1% |  tP 0% | rk 0 |    sF 0 |    wD 0 | cr 2115 | err 4.8e-9
+S2 T2+vent+grader BOT          | nuclear  |  G 26.0 |  T2h 54C |  Tmax 83C | min 100% |  hot 0% |  cut 0% |  pad 0% |  tP 3% | rk 0 |    sF 0 |    wD 0 |  cr 756 | err 2.0e-8
+S2 T2+rad+grader+sand BOT      | electric |  G 54.0 |  T2h 66C |  Tmax 82C | min 100% |  hot 0% |  cut 0% | pad 16% | tP 16% | rk 0 | sF 1235 |    wD 0 |  cr 582 | err 1.2e-8
+S2 T2+rad+grader+sand BOT      | oil      |  G 54.0 |  T2h 70C |  Tmax 81C | min 100% |  hot 0% |  cut 0% | pad 10% | tP 50% | rk 0 |  sF 807 |    wD 0 |  cr 301 | err 2.4e-8
+S2 T2+rad+grader+sand BOT      | nuclear  |  G 54.0 |  T2h 70C |  Tmax 85C | min 100% |  hot 0% |  cut 0% | pad 11% | tP 51% | rk 0 |  sF 777 |    wD 0 |  cr 241 | err 1.2e-8
+S2 T2+rad+grader+sand BOT      | coal     |  G 54.0 |  T2h 75C |  Tmax 90C |  min 90% |  hot 2% |  cut 0% |  pad 3% | tP 87% | rk 0 |  sF 267 |    wD 0 |  cr 613 | err 2.0e-8
+S2 T2+rad+grader+water BOT     | electric |  G 54.0 |  T2h 69C |  Tmax 82C | min 100% |  hot 0% |  cut 0% | pad 12% | tP 11% | rk 0 |    sF 0 | wD 3483 |  cr 962 | err 1.7e-8
+S2 T2+rad+grader+water BOT     | oil      |  G 54.0 |  T2h 72C |  Tmax 83C | min 100% |  hot 0% |  cut 0% |  pad 7% | tP 33% | rk 0 |    sF 0 | wD 2576 |  cr 988 | err 3.9e-8
+S2 T2+rad+grader+water BOT     | nuclear  |  G 54.0 |  T2h 69C |  Tmax 91C |  min 89% |  hot 3% |  cut 0% | pad 10% | tP 37% | rk 0 |    sF 0 | wD 2298 |  cr 721 | err 8.6e-8
+S2 T2+rad+grader+water BOT     | coal     |  G 54.0 |  T2h 75C |  Tmax 96C |  min 78% | hot 10% |  cut 0% |  pad 6% | tP 79% | rk 0 |    sF 0 |  wD 813 |  cr 368 | err 2.4e-8
+S3 T3+bank+ALL BOT             | electric | G 103.0 |  T2h 50C |  Tmax 81C | min 100% |  hot 0% |  cut 0% |  pad 8% |  tP 6% | rk 3 | sF 1094 | wD 2773 | cr 4343 | err 6.8e-9
+S3 T3+bank+ALL BOT             | oil      | G 103.0 |  T2h 55C |  Tmax 81C | min 100% |  hot 0% |  cut 0% |  pad 6% | tP 28% | rk 3 |  sF 752 | wD 1787 | cr 3275 | err 8.4e-8
+S3 T3+bank+ALL BOT             | nuclear  | G 103.0 |  T2h 63C |  Tmax 81C | min 100% |  hot 0% |  cut 0% |  pad 4% | tP 30% | rk 3 |  sF 832 | wD 1971 | cr 1902 | err 6.5e-8
+S3 T3+bank+ALL BOT             | coal     | G 103.0 |  T2h 70C | Tmax 111C |  min 47% |  hot 7% |  cut 0% |  pad 0% | tP 72% | rk 2 |  sF 298 |  wD 763 | cr 2689 | err 3.6e-8
+S3 T3+bank+ALL player-auto     | electric | G 103.0 |  T2h 72C |  Tmax 86C |  min 98% |  hot 1% |  cut 0% | pad 15% | tP 59% | rk 3 | sF 1345 | wD 4286 | cr 3807 | err 2.7e-8
+S3 T3+bank+ALL player-auto     | oil      | G 103.0 |  T2h 82C | Tmax 107C |  min 57% | hot 61% |  cut 0% | pad 11% | tP 82% | rk 2 | sF 1188 | wD 4130 | cr 3031 | err 1.6e-7
+S3 T3+bank+ALL player-auto     | nuclear  | G 103.0 |  T2h 78C | Tmax 110C |  min 50% | hot 64% |  cut 0% | pad 10% | tP 76% | rk 3 | sF 1109 | wD 4228 | cr 2928 | err 1.6e-7
+S3 T3+bank+ALL player-auto     | coal     | G 103.0 | T2h 134C | Tmax 137C |   min 0% | hot 99% | cut 82% |  pad 3% | tP 99% | rk 1 | sF 1529 |  wD 556 | cr 2466 | err 1.1e-7

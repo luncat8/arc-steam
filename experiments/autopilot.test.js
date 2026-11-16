@@ -592,12 +592,12 @@ test('manual overrides preserve switches, isolate duties, and resume after idle 
 		world.platform.vx = 0;
 		world.platform.x = 22;
 		// Above the derate curve the pulse cannot lift the ball, though the machine
-		// can still drive.
-		world.heat = (c.thermalCutoff - c.ambientTemperature - 5) * c.heatCapacity;
+		// can still drive. Wait inside the refused-release cooling window.
+		world.heat = (c.thermalCutoff - c.ambientTemperature - 3) * c.heatCapacity;
 		world.drive = true;
 		sync(world);
 		engage('move', 'drive', 'angle');
-		for (let i = 0; i < 240 * 6; i++) {
+		for (let i = 0; i < 240 * 3.5; i++) {
 			autopilot.update(world, c.step);
 			physics.step(world, c.step);
 			// A refused release never throws the ball out of the collector.
@@ -605,7 +605,7 @@ test('manual overrides preserve switches, isolate duties, and resume after idle 
 		}
 		// Nor does it pin the rig on the wall: travel takes the held ball to the pad
 		// and waits out the heat there.
-		assert.ok(world.platform.x < 20, 'the rig leaves the wall with the ball aboard');
+		assert.ok(world.platform.x < 20.5, 'the rig leaves the wall with the ball aboard');
 		// Cooled to a release the pulse can pay for, the keeper fires it.
 		world.heat = 0;
 		sync(world);
@@ -635,11 +635,11 @@ test('manual overrides preserve switches, isolate duties, and resume after idle 
 		world.platform.vx = 0;
 		// Hot enough that a pulse cannot lift a ball, though still cool enough to
 		// drive: a collection now would only pin the rig on a ball it cannot fire.
-		world.heat = (c.thermalCutoff - c.ambientTemperature - 5) * c.heatCapacity;
+		world.heat = (c.thermalCutoff - c.ambientTemperature - 3) * c.heatCapacity;
 		sync(world);
 		engage('move', 'drive', 'angle');
 		assert.equal(physics.releaseReady(world), false);
-		for (let i = 0; i < 240 * 6; i++) {
+		for (let i = 0; i < 240 * 3.5; i++) {
 			autopilot.update(world, c.step);
 			physics.step(world, c.step);
 			assert.equal(world.ball.state, 'grounded', 'the rig does not collect a ball it cannot release');

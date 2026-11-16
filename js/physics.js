@@ -67,7 +67,11 @@
 		crankForce: 60, crankMaxSpeed: 0.8,
 		recoveryEfficiency: 0.9,
 		ambientTemperature: 20, heatCapacity: 300,
-		convectiveConductance: 1.1, radiatorConvectionCoefficient: 72,
+		// Bare chassis convection carries one starter duty (or gentle smart
+		// move+piston on stock electric) just under the 85 °C derate line;
+		// sustained grading, coal waste heat and high-draw nozzles need the
+		// Heat transfer node and radiator fins.
+		convectiveConductance: 3.6, radiatorConvectionCoefficient: 140,
 		radiatingArea: 0.08, emissivity: 0.85,
 		thermalDerateStart: 85, thermalCutoff: 135,
 		// Left-wall pocket lets the asymmetric collector slide into the wall so
@@ -1067,10 +1071,14 @@
 		world.cooledEnergy += removed;
 	}
 
+	function reserveCost(useful, owner) {
+		return useful / engineNow(owner).efficiency;
+	}
+
 	function spend(world, useful) {
 		const efficiency = engine.efficiency;
 		const delivered = Math.min(useful, world.battery * efficiency);
-		const cost = delivered / efficiency;
+		const cost = Math.min(world.battery, delivered / efficiency);
 		world.battery -= cost;
 		world.heat += cost - delivered;
 		return delivered;
@@ -1812,7 +1820,7 @@
 	}
 
 	const api = {
-		engines, engineNow, selectEngine, reserveNow, packMass,
+		engines, engineNow, selectEngine, reserveNow, reserveCost, spend, packMass,
 		config, createWorld, step, launch, canLaunch, releaseReady, launchCapacity, ballEnergy, totalEnergy, temperature,
 		thermalFactor, coolingPower, platformMass, machineMass, applyMachineMassChange, platformMin, platformMax, atSellWall, dryMass, brakeAcceleration, resolvePlatformContacts,
 		platformPitchAt, platformBaseAt, platformPointAt, platformSurfaceAt, planeContactTime, hullDepthAt,

@@ -1614,18 +1614,18 @@ test('a tier family previews the selected tier as a swap, not as a stack', () =>
 	const select = selectOf(bay);
 	buttonOf(bay).dispatch('pointerenter');
 	assert.equal(select.value, 'vent', 'the first unowned tier is preselected');
-	assert.equal(specValue(spec, 8), '12.40 W/K', 'the strip shows the cooling the vent would add');
-	assert.equal(spec.children[8].children[1].children[1].textContent, '+10.80 W/K');
+	assert.equal(specValue(spec, 8), '26.00 W/K', 'the strip shows the cooling the vent would add');
+	assert.equal(spec.children[8].children[1].children[1].textContent, '+21.00 W/K');
 	assert.equal(spec.children[0].children[1].children[1].textContent, '+4.1 kg');
 	// Changing the tier under an open preview re-reads the strip at once.
 	select.value = 'bank';
 	select.dispatch('change');
-	assert.equal(spec.children[8].children[1].children[1].textContent, '+50.40 W/K', 'the preview carries the full bank conductance');
+	assert.equal(spec.children[8].children[1].children[1].textContent, '+98.00 W/K', 'the preview carries the full bank conductance');
 	assert.equal(spec.children[0].children[1].children[1].textContent, '+16.3 kg');
 	buttonOf(bay).dispatch('pointerleave');
 	advance(2);
 	assert.equal(spec.children[8].children[1].children[1].textContent, '');
-	assert.equal(specValue(spec, 8), '1.60 W/K', 'the live cooling comes back');
+	assert.equal(specValue(spec, 8), '5.00 W/K', 'the live cooling comes back');
 	// Installing one tier and previewing another shows only the swap delta, not a stack.
 	select.value = 'vent';
 	select.dispatch('change');
@@ -1633,16 +1633,16 @@ test('a tier family previews the selected tier as a swap, not as a stack', () =>
 	buttonOf(bay).dispatch('click');
 	advance(2);
 	assert.equal(equipment.installedRadiator('rig'), 'vent');
-	assert.equal(specValue(spec, 8), '12.40 W/K');
+	assert.equal(specValue(spec, 8), '26.00 W/K');
 	select.value = 'bank';
 	select.dispatch('change');
 	buttonOf(bay).dispatch('pointerenter');
-	assert.equal(spec.children[8].children[1].children[1].textContent, '+39.60 W/K', 'the swap subtracts the installed vent instead of stacking');
+	assert.equal(spec.children[8].children[1].children[1].textContent, '+77.00 W/K', 'the swap subtracts the installed vent instead of stacking');
 	assert.equal(spec.children[0].children[1].children[1].textContent, '+12.2 kg');
 	buttonOf(bay).dispatch('pointerleave');
 	advance(2);
 	assert.equal(spec.children[8].children[1].children[1].textContent, '');
-	assert.equal(specValue(spec, 8), '12.40 W/K', 'the installed vent cooling comes back');
+	assert.equal(specValue(spec, 8), '26.00 W/K', 'the installed vent cooling comes back');
 });
 
 test('market drawer renders live quote drift and rate with zero redundant DOM writes when settled', () => {
@@ -2092,7 +2092,7 @@ test('the sandblaster feeds on the hopper, blasts on F, auto-fires, and reads it
 	dom.keyUp('KeyF');
 	assert.equal(sand.fired, 1, 'F throws one grain');
 	assert.equal(sandblaster.grainsAboard(world), 11, 'the grain left the hopper');
-	harness.near(world.battery, battery - sand.shotEnergy, 1e-9, 'the throw draws the reserve');
+	harness.near(world.battery, battery - physics.reserveCost(sand.shotEnergy), 1e-9, 'the throw draws the engine-efficiency reserve cost');
 	assert.equal(sandblaster.canFire(world), false, 'the nozzle cools for a tenth of a second');
 	advance(Math.ceil(sand.rate * 1.5 * 60));
 	assert.equal(fire.disabled, false, 'the rate lets the next grain go');
@@ -2224,7 +2224,7 @@ test('the water gun sprays on G, aims with the pointer, pumps, and reads its own
 	advance(1);
 	dom.keyUp('KeyG');
 	assert.equal(water.totals.droplets, 1, 'G throws one droplet');
-	harness.near(world.battery, battery - gun.shotEnergy, 1e-9, 'the throw draws the reserve');
+	harness.near(world.battery, battery - physics.reserveCost(gun.shotEnergy), 1e-9, 'the throw draws the engine-efficiency reserve cost');
 	// Wait past both the 1/46 s nozzle reload and the 100 ms readout throttle.
 	advance(8);
 	assert.equal(fire.disabled, false, 'the rate lets the next droplet go');

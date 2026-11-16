@@ -68,7 +68,7 @@ function sample(seed, p, blast) {
 	const fired = sand.fired;
 	const recovered = sand.recovered;
 	const lost = sand.lost;
-	const energyJ = fired * sand.shotEnergy;
+	const energyJ = fired * physics.reserveCost(sand.shotEnergy);
 	// The abrasive the stream spent is the sale value of the stocked stone
 	// that was spilled instead of caught again.
 	const abrasive = lost * stocked * sand.grainMass / rock.cellMass;

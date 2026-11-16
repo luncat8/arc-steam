@@ -63,10 +63,14 @@
 	const submergedGrainRate = 3;
 	const undermineStart = 0.55;
 
-	// Energy: the gun spends what a sandblaster grain spends; the pump pays a
-	// fixed price per water unit it lifts back.
-	const shotEnergy = 135;
-	const pumpJoulesPerUnit = 420;
+	// Useful mechanical work: the high-pressure jet spends 36 J per droplet
+	// (1.66 kW at 46/s) and the suction pump pays 120 J per lifted water unit
+	// (up to 0.31 kW at 2.6 units/s). Both draw from the reserve through the
+	// installed engine's efficiency (45 J/droplet and 150 J/unit on the stock
+	// 80% electric drive, ~2.46 kW together), so weak starter packs drain in a
+	// few seconds while upgraded engines and radiators sustain continuous play.
+	const shotEnergy = 36;
+	const pumpJoulesPerUnit = 120;
 	const pumpUnitsPerSecond = 2.6;
 	const pumpHalfWidth = 1.58;
 	const pumpDepth = 0.85;
@@ -173,9 +177,11 @@
 		const id = ownerIdOf(owner);
 		let profile = profiles.get(id);
 		if (profile) return profile;
-		profile = { id, autoFire: false, botFire: false, fireBudget: 0, shots: 0, pumpedMass: 0, pumpedValue: 0, view: null };
+		profile = { id, autoFire: false, botFire: false, botManaged: false, botPaused: false, fireBudget: 0, shots: 0, pumpedMass: 0, pumpedValue: 0, view: null };
 		profile.view = Object.freeze({
 			get autoFire() { return profile.autoFire || profile.botFire; },
+			get botFire() { return profile.botFire; },
+			get botPaused() { return profile.botPaused; },
 			get shots() { return profile.shots; },
 			get pumpedMass() { return profile.pumpedMass; },
 			get pumpedValue() { return profile.pumpedValue; }
@@ -213,7 +219,7 @@
 		world = null;
 		for (const key in totals) totals[key] = 0;
 		for (const profile of profiles.values()) {
-			profile.botFire = false;
+			profile.botFire = profile.botManaged = profile.botPaused = false;
 			profile.fireBudget = 0;
 			profile.shots = 0;
 			profile.pumpedMass = 0;
@@ -344,19 +350,24 @@
 		const id = ownerIdOf(owner);
 		if (!target || !hasTool(id)) return false;
 		if (profileFor(id).fireBudget > 0) return false;
-		const machine = root.SteamPhysics.machineById(target, id);
-		if (machine === target && target.battery < shotEnergy) return false;
+		const physics = root.SteamPhysics;
+		const machine = physics.machineById(target, id);
+		if (machine === target) {
+			if (physics.thermalFactor(target) <= 0) return false;
+			if (target.battery < physics.reserveCost(shotEnergy, id)) return false;
+		}
 		return true;
 	}
 
-	// Fire one droplet. The reserve pays for the throw and the same joules become
-	// chamber heat at once - the motor's loss and the water's momentum together -
-	// so the energy ledger closes without tracking a droplet's kinetic energy.
+	// Fire one droplet. The reserve pays the engine-efficiency cost of the throw
+	// and the whole draw becomes chamber heat at once - motor waste plus droplet
+	// work - so the energy ledger closes without tracking airborne water energy.
 	function fire(target, owner) {
 		const id = ownerIdOf(owner);
 		if (!canFire(target, id)) return false;
-		const machine = root.SteamPhysics.machineById(target, id);
-		const body = root.SteamPhysics.machineBody(machine);
+		const physics = root.SteamPhysics;
+		const machine = physics.machineById(target, id);
+		const body = physics.machineBody(machine);
 		// The gun points where the jet must go, not where the bound machine body is.
 		const muzzle = nozzleOf(target, id);
 		const slot = freeDroplet();
@@ -375,9 +386,10 @@
 		for (let m = 0; m < count; m++) { dropLoad[offset + m] = 0; dropLoadValue[offset + m] = 0; }
 		const rig = machine === target;
 		if (rig) {
-			target.battery -= shotEnergy;
-			target.heat += shotEnergy;
-			totals.shotJoules += shotEnergy;
+			const before = target.battery;
+			const delivered = physics.spend(target, shotEnergy);
+			target.heat += delivered;
+			totals.shotJoules += before - target.battery;
 		} else {
 			// A rival's pack is outside the rig's ledger: its throw is imported work.
 			target.importedEnergy += shotEnergy;
@@ -977,23 +989,23 @@
 			if (grainY[i] > deck) continue;
 			const left = body.x - physics.config.platformWidth * 0.5;
 			if (grainX[i] < left || grainX[i] > left + physics.config.platformWidth * collector) continue;
-			if (!root.SteamCeiling.loadWetCargo(world, machine, grainMineral[i], grainMass[i], grainValue[i])) continue;
 			const mass = physics.machineMass(world, machine);
+			if (!root.SteamCeiling.loadWetCargo(world, machine, grainMineral[i], grainMass[i], grainValue[i])) continue;
 			const before = 0.5 * mass * body.vx * body.vx;
 			body.vx = (mass * body.vx + grainMass[i] * grainVx[i]) / (mass + grainMass[i]);
 			if (machine === world) {
 				world.heat += before - 0.5 * (mass + grainMass[i]) * body.vx * body.vx;
-			world.importedEnergy += grainMass[i] * gravity * root.SteamCeiling.state.cargoHeight;
+				world.importedEnergy += grainMass[i] * gravity * root.SteamCeiling.state.cargoHeight;
+			}
+			// The grain is cargo now, outside this ledger, so the handover is booked
+			// or the ledger cannot say where the gram the chemistry took went.
+			totals.caughtMass += grainMass[i];
+			totals.caughtValue += grainValue[i];
+			grainActive[i] = 0;
+			return true;
 		}
-		// The grain is cargo now, outside this ledger, so the handover is booked
-		// or the ledger cannot say where the gram the chemistry took went.
-		totals.caughtMass += grainMass[i];
-		totals.caughtValue += grainValue[i];
-		grainActive[i] = 0;
-		return true;
+		return false;
 	}
-	return false;
-}
 
 	function groundAt(x) {
 		const physics = root.SteamPhysics;
@@ -1029,12 +1041,16 @@
 
 	// ---- Pump ----
 	// The pump lifts water and its dissolved load from under the hull into the
-	// hopper. Solid grains are never pumped: dry collection stays a separate
-	// mechanic. A full hopper stalls the pump instead of destroying
-	// what it cannot hold.
+	// hopper when the rig has a water gun fitted, power in its reserve and
+	// headroom below thermal cutoff. Solid grains are never pumped: dry
+	// collection stays a separate mechanic. A full hopper or empty reserve
+	// stalls the pump instead of destroying solute or minting free energy.
 	function stepPump(dt) {
-		if (!settings.pumpOn) return 0;
+		if (!settings.pumpOn || !hasTool('rig')) return 0;
 		const physics = root.SteamPhysics;
+		if (physics.thermalFactor(world) <= 0) return 0;
+		const affordable = world.battery * physics.engineNow('rig').efficiency / pumpJoulesPerUnit;
+		if (affordable <= 1e-6) return 0;
 		const machine = physics.machineById(world, 'rig');
 		const body = physics.machineBody(machine);
 		// Suction reaches from under the hull to the deck: the intake sits in the
@@ -1047,7 +1063,8 @@
 		const cellMass = root.SteamCeiling.state.cellMass;
 		let capacity = root.SteamCeiling.cargoSpace(world, machine) * cellMass;
 		if (capacity <= 1e-9) return 0;
-		let budget = pumpUnitsPerSecond * dt;
+		const massBefore = physics.machineMass(world, machine);
+		let budget = Math.min(pumpUnitsPerSecond * dt, affordable);
 		let lifted = 0;
 		let soluteMass = 0;
 		for (let row = lastRow; row >= firstRow && budget > 1e-6 && capacity > 1e-9; row--) {
@@ -1082,34 +1099,50 @@
 			}
 		}
 		if (lifted <= 0) return 0;
-		// The pump's work leaves the reserve and arrives as chamber heat: the lift
-		// is real work, but the solute it lifted was already imported by the
-		// chemistry, and the hopper books that solute at `g * cargoHeight`. The
-		// brine leaves this module's fluid at the same moment, so that hopper
-		// entry is imported mass-energy, not new energy.
-		const joules = lifted * pumpJoulesPerUnit;
-		const spent = Math.min(world.battery, joules);
-		world.battery -= spent;
-		world.heat += joules;
-		world.importedEnergy += joules - spent + soluteMass * gravity * root.SteamCeiling.state.cargoHeight;
-		totals.pumpJoules += joules;
+		// The pump's work leaves the reserve at the installed engine's efficiency
+		// and arrives as chamber heat (motor loss plus hydraulic lift). Dissolved
+		// solute enters the dry cargo ledger at `g * cargoHeight`, so that hopper
+		// handover is booked as imported mass-energy.
+		if (soluteMass > 0 && body.vx !== 0) {
+			// Lifted floor brine joins the moving hull inelastically, just like a
+			// caught grain, so cargo mass never adds unbooked kinetic energy.
+			const massAfter = massBefore + soluteMass;
+			const beforeKe = 0.5 * massBefore * body.vx * body.vx;
+			body.vx = massBefore * body.vx / massAfter;
+			world.heat += beforeKe - 0.5 * massAfter * body.vx * body.vx;
+		}
+		const before = world.battery;
+		const delivered = physics.spend(world, lifted * pumpJoulesPerUnit);
+		world.heat += delivered;
+		world.importedEnergy += soluteMass * gravity * root.SteamCeiling.state.cargoHeight;
+		totals.pumpJoules += before - world.battery;
 		return lifted;
+	}
+
+	function chamberWet() {
+		for (let i = 0; i < maxDroplets; i++) if (dropState[i] !== FREE) return true;
+		for (let i = 0; i < maxGrains; i++) if (grainActive[i]) return true;
+		for (let i = 0; i < cellCount; i++) if (water[i] > 0 || loadTotal[i] > 0) return true;
+		return false;
 	}
 
 	// ---- Step ----
 	function step(target, dt) {
 		if (!target || !root.SteamCeiling) return;
 		world = target;
-		const rock = root.SteamCeiling;
-		rebuildSolidMask(rock);
 		stepOwners(dt);
-		stepDroplets(dt);
-		// Standing water works the face before gravity drains it away, and before
-		// the pump empties the parcels: only the brine that is left gets lifted.
-		dissolveContacts(dt);
-		stepFluid();
-		stepPump(dt);
-		stepGrains(dt);
+		// A dry chamber skips the 5760-parcel solid-mask rebuild and fluid sweeps
+		// without changing a single wet step.
+		if (chamberWet()) {
+			rebuildSolidMask(root.SteamCeiling);
+			stepDroplets(dt);
+			// Standing water works the face before gravity drains it away, and before
+			// the pump empties the parcels: only the brine that is left gets lifted.
+			dissolveContacts(dt);
+			stepFluid();
+			stepPump(dt);
+			stepGrains(dt);
+		}
 		world = null;
 	}
 
@@ -1133,16 +1166,23 @@
 		return owner !== world.platform.id || world.battery >= root.SteamPhysics.config.battery * autoFireReserve;
 	}
 
+	function streamPower(owner) {
+		const id = ownerIdOf(owner);
+		const pump = id === 'rig' && settings.pumpOn ? pumpJoulesPerUnit * pumpUnitsPerSecond : 0;
+		return root.SteamPhysics.reserveCost(shotEnergy * dropletsPerSecond + pump, id);
+	}
+
 	// A bot only orders a jet its installed engine can replenish at the pad, and
 	// only while its hopper has room for what the pump would lift. A hand press
 	// is always allowed: the stream is the module's own rate limit, not a duty.
 	function streamReady(target, owner) {
 		const id = ownerIdOf(owner);
 		if (!hasTool(id)) return false;
-		const machine = root.SteamPhysics.machineById(target, id);
+		const physics = root.SteamPhysics;
+		const machine = physics.machineById(target, id);
 		if (!root.SteamCeiling.cargoSpace(target, machine)) return false;
-		const engine = root.SteamPhysics.engineNow(id);
-		return root.SteamPhysics.reserveNow(id) / engine.reload >= shotEnergy * dropletsPerSecond;
+		const engine = physics.engineNow(id);
+		return physics.reserveNow(id) / engine.reload >= streamPower(id);
 	}
 
 	// ---- Metrics ----
@@ -1255,19 +1295,30 @@
 		return aim;
 	}
 
+	// Match the sandblaster's standing-order rules: turning BOT off clears its
+	// temporary order without erasing the player's own choice, and unchecking
+	// Auto-fire while BOT manages the jet pauses the bot stream until BOT cycles.
 	function setAutoFire(on, owner) {
 		const profile = profileFor(owner);
 		profile.autoFire = Boolean(on);
-		return profile.autoFire;
+		if (on) profile.botPaused = false;
+		else if (profile.botManaged) {
+			profile.botPaused = true;
+			profile.botFire = false;
+		}
+		return profile.autoFire || profile.botFire;
 	}
 
 	function setBotFire(on, owner) {
-		profileFor(owner).botFire = Boolean(on);
-		return profileFor(owner).botFire;
+		const profile = profileFor(owner);
+		profile.botManaged = true;
+		profile.botFire = Boolean(on) && !profile.botPaused;
+		return profile.botFire;
 	}
 
 	function clearBotFire(owner) {
-		profileFor(owner).botFire = false;
+		const profile = profileFor(owner);
+		profile.botFire = profile.botManaged = profile.botPaused = false;
 		return true;
 	}
 
@@ -1391,7 +1442,7 @@
 	const state = Object.freeze({
 		columns, rows, cellSize, cellCount, parcelCapacity, maxDroplets, maxGrains,
 		dropletsPerSecond, dropletWater, jetSpeed, shotEnergy, pumpJoulesPerUnit, pumpUnitsPerSecond,
-		pumpHalfWidth, pumpDepth, satCapDefault, dissolveRateDefault,
+		pumpHalfWidth, pumpDepth, autoFireReserve, satCapDefault, dissolveRateDefault,
 		FREE, FLYING, HOPPING,
 		get model() { return settings.model; },
 		get satCap() { return settings.satCap; },
@@ -1417,7 +1468,7 @@
 		state, stateFor, reset, step, measureMetrics, createMetrics, depthAt, fill,
 		fire, canFire, setAim, setAutoFire, setBotFire, clearBotFire,
 		setSaturationCap, setDissolveRate, setModel, setPump, setErosion,
-		nozzleOf, cellIndexAt, settings, totals, draw, streamReady,
+		nozzleOf, cellIndexAt, settings, totals, draw, streamPower, streamReady,
 		water, load, loadValue, loadTotal, solidMask,
 		dropState, dropX, dropY, dropWater, grainActive, grainX, grainY, grainMass, grainValue, grainMineral, maxGrains
 	};

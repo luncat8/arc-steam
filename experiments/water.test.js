@@ -67,17 +67,18 @@ function faceAbove() {
 	return -1;
 }
 
-test('the gun runs the planned nozzle: unlimited tank, a reserve draw per droplet', () => {
+test('the gun runs the planned nozzle: unlimited tank, an engine-efficiency draw per droplet', () => {
 	assert.equal(water.state.dropletWater, 0.075);
 	assert.equal(water.state.dropletsPerSecond, 46);
-	assert.equal(water.state.shotEnergy, 135, 'a droplet spends what a sandblaster grain spends');
-	assert.equal(water.state.pumpJoulesPerUnit, 420);
+	assert.equal(water.state.shotEnergy, 36, 'a droplet spends 36 J of useful work');
+	assert.equal(water.state.pumpJoulesPerUnit, 120);
 	assert.equal(water.state.satCap, water.state.satCapDefault, 'the chemistry cap starts at its default');
 	const world = fresh();
 	const battery = world.battery;
+	const cost = physics.reserveCost(water.state.shotEnergy, 'rig');
 	assert.equal(water.fire(world, 'rig'), true);
-	near(world.battery, battery - water.state.shotEnergy, 1e-9, 'the throw leaves the reserve');
-	near(world.heat, water.state.shotEnergy, 1e-9, 'and arrives as heat');
+	near(world.battery, battery - cost, 1e-9, 'the throw leaves the reserve at engine efficiency');
+	near(world.heat, cost, 1e-9, 'and motor waste plus droplet work arrive as heat');
 	assert.equal(water.totals.flooded, water.state.dropletWater, 'the tank is unlimited');
 	harness.balanced(world);
 });
@@ -147,7 +148,7 @@ test('the energy ledger closes with the gun, the pump and the chemistry running'
 	soak(world, 20);
 	const metrics = water.measureMetrics();
 	assert.ok(metrics.dissolvedCells > 0, 'the wash did some mining');
-	assert.ok(world.battery < c.battery, 'the gun and the pump spent reserve');
+	assert.ok(water.totals.shotJoules > 0 && water.totals.pumpJoules > 0, 'the gun and the pump spent reserve');
 	near(physics.totalEnergy(world), start, 1e-6, 'the chamber ledger holds');
 });
 
@@ -157,17 +158,19 @@ test('the pump books the lift and the hopper entry, and never the same joule twi
 	water.fill(11.2, 0.02, 12.8, 0.6);
 	const brine = water.totals.flooded;
 	assert.ok(brine > 0);
-	const cost = brine * water.state.pumpJoulesPerUnit;
+	const cost = physics.reserveCost(brine * water.state.pumpJoulesPerUnit, 'rig');
 	world.battery = c.battery;
 	world.heat = 0;
 	world.importedEnergy = 0;
 	harness.sync(world);
 	water.setPump(true);
 	for (let i = 0; i < 600; i++) physics.step(world, c.step);
-	const spent = world.battery;
+	const spent = c.battery - world.battery + world.chargedEnergy;
 	assert.ok(world.heat > 0, 'the pump work arrives as heat');
-	assert.ok(spent < c.battery, 'the reserve paid for it');
-	assert.ok(spent >= Math.min(c.battery, cost * 0.5), 'the lift is charged per water unit');
+	assert.ok(spent > 0, 'the reserve paid for it');
+	near(spent, water.totals.pumpJoules, 1e-9, 'booked pump joules match the reserve draw');
+	near(water.totals.pumpJoules, physics.reserveCost(water.totals.pumped * water.state.pumpJoulesPerUnit, 'rig'), 1e-9, 'the lift is charged per water unit at engine efficiency');
+	assert.ok(spent <= cost + 1e-9, 'never more than the flooded volume');
 	harness.balanced(world);
 });
 
@@ -239,10 +242,8 @@ test('determinism: the same seed plays the same wash', () => {
 test('a bot sprays only with a cannon, a hopper with room and an engine that can carry it', () => {
 	const world = fresh();
 	water.setAutoFire(false, 'rig');
-	// A bot order needs an engine whose pad refill power covers the stream, so the
-	// stock electric pack cannot carry 46 droplets a second on its own.
-	const carried = physics.reserveNow('rig') / physics.engineNow('rig').reload >= water.state.shotEnergy * water.state.dropletsPerSecond;
-	assert.equal(water.streamReady(world, 'rig'), carried, 'readiness is the engine rule, not a key');
+	const carried = physics.reserveNow('rig') / physics.engineNow('rig').reload >= water.streamPower('rig');
+	assert.equal(water.streamReady(world, 'rig'), carried, 'readiness matches the engine pad-power rule');
 	// A full hopper has nowhere to put what the pump would lift.
 	ceiling.loadCargo(halite, rock.storageLimit * rock.cellMass, 0);
 	assert.equal(water.streamReady(world, 'rig'), false, 'a full hopper stands the stream down');
@@ -250,10 +251,15 @@ test('a bot sprays only with a cannon, a hopper with room and an engine that can
 	harness.sync(world);
 	// A rival without the tool has no stream at all.
 	assert.equal(water.streamReady(world, 'rival-1'), false, 'no cannon, no jet');
-	// Bot fire is a separate order from the player's, and BOT off clears it.
+	// Weak engines (hand, un-upgraded coal) cannot carry the jet+pump stream.
 	world.platform.x = physics.platformMin();
 	world.platform.previousX = physics.platformMin();
 	harness.sync(world);
+	assert.equal(physics.selectEngine('coal', world), true, 'the pack swaps to coal at the wall');
+	assert.equal(water.streamReady(world, 'rig'), false, 'a starter coal pack cannot carry the stream');
+	assert.equal(physics.selectEngine('hand', world), true, 'the pack swaps to hand at the wall');
+	assert.equal(water.streamReady(world, 'rig'), false, 'a hand crank cannot carry the stream');
+	// Bot fire is a separate order from the player's, and BOT off clears it.
 	assert.equal(physics.selectEngine('nuclear', world), true, 'the pack swaps at the wall, at rest');
 	world.battery = c.battery;
 	harness.sync(world);
@@ -271,3 +277,103 @@ test('a bot sprays only with a cannon, a hopper with room and an engine that can
 	advanceSteps(world, 3);
 	assert.equal(water.totals.droplets, held, 'clearing the bot order stops the jet');
 });
+
+test('the pump requires an installed water gun, stops at an empty reserve and thermal cutoff, and closes while moving', () => {
+	// Without a fitted water gun, floor water is never pumped or billed.
+	const bare = physics.createWorld();
+	players.init(bare, 0);
+	water.reset(1);
+	water.setPump(true);
+	bare.platform.x = bare.platform.previousX = 8;
+	water.fill(6.5, 0.02, 9.5, 0.6);
+	bare.initialEnergy = physics.totalEnergy(bare);
+	advanceSteps(bare, 1);
+	assert.equal(water.totals.pumped, 0, 'a hull without a water gun cannot pump');
+	assert.equal(water.totals.pumpJoules, 0);
+	harness.balanced(bare);
+
+	// Off the pad, a small reserve lifts only what it can pay for, with zero free import.
+	const short = fresh();
+	short.platform.x = short.platform.previousX = 8;
+	water.fill(6.5, 0.02, 9.5, 0.7);
+	short.battery = 150;
+	const importedBefore = short.importedEnergy;
+	harness.sync(short);
+	advanceSteps(short, 4);
+	near(short.battery, 0, 1e-6, 'the pump drains only down to an empty reserve');
+	near(water.totals.pumped, 150 * physics.engineNow('rig').efficiency / water.state.pumpJoulesPerUnit, 1e-5, 'lifted units match the available energy');
+	near(short.importedEnergy, importedBefore, 1e-9, 'no unbacked imported energy is fabricated');
+	harness.balanced(short);
+
+	// Thermal cutoff pauses both jet and pump until the machine cools below 135 C.
+	const hot = fresh();
+	hot.platform.x = hot.platform.previousX = 8;
+	water.fill(6.5, 0.02, 9.5, 0.5);
+	hot.heat = (c.thermalCutoff + 5 - c.ambientTemperature) * c.heatCapacity;
+	harness.sync(hot);
+	assert.equal(water.canFire(hot, 'rig'), false, 'thermal cutoff stops the jet');
+	advanceSteps(hot, 0.2);
+	assert.equal(water.totals.pumped, 0, 'thermal cutoff stalls the pump');
+	harness.balanced(hot);
+
+	// Engine efficiency scales the reserve draw, and pumping solute while moving keeps totalEnergy exact.
+	const moving = fresh();
+	moving.platform.x = moving.platform.previousX = physics.platformMin();
+	assert.equal(physics.selectEngine('coal', moving), true);
+	moving.battery = c.battery;
+	harness.sync(moving);
+	const coalStart = moving.battery;
+	assert.equal(water.fire(moving, 'rig'), true);
+	near(coalStart - moving.battery, water.state.shotEnergy / 0.2, 1e-9, 'coal pays 5x useful droplet energy');
+	moving.platform.x = moving.platform.previousX = 8;
+	moving.direction = 1;
+	water.setAim(8, 14.5);
+	water.setAutoFire(true, 'rig');
+	harness.sync(moving);
+	advanceSteps(moving, 2.5);
+	water.setAutoFire(false, 'rig');
+	assert.ok(water.totals.pumpedSolute > 0 || water.totals.pumped > 0, 'moving hull pumped water');
+	harness.balanced(moving);
+});
+
+test('rig BOT manages water as a temporary thermal- and reserve-aware duty without overriding Pump', () => {
+	const world = fresh();
+	world.platform.x = world.platform.previousX = 8;
+	water.setAutoFire(false, 'rig');
+	water.setPump(false);
+	harness.sync(world);
+
+	players.setBot(0, true);
+	players.update(world, c.step);
+	assert.equal(water.stateFor('rig').botFire, true, 'BOT starts a temporary water stream');
+	assert.equal(water.settings.pumpOn, false, 'BOT leaves the player Pump choice untouched');
+
+	// Manual uncheck pauses BOT until BOT cycles; thermal threshold also holds it.
+	water.setAutoFire(false, 'rig');
+	players.update(world, c.step);
+	assert.equal(water.stateFor('rig').botPaused, true);
+	assert.equal(water.stateFor('rig').autoFire, false, 'manual uncheck pauses the bot jet');
+	players.setBot(0, false);
+	players.setBot(0, true);
+	world.heat = (c.thermalDerateStart - 4 - c.ambientTemperature) * c.heatCapacity;
+	players.update(world, c.step);
+	assert.equal(water.stateFor('rig').botFire, false, 'BOT pauses the jet before thermal derating');
+	world.heat = 0;
+
+	// Charge-trip lead includes water+pump stream power when Pump is on.
+	water.setPump(true);
+	world.battery = c.battery * water.state.autoFireReserve + water.streamPower('rig') * 0.5;
+	harness.sync(world);
+	players.update(world, c.step);
+	assert.equal(players.state.recharging, true, 'active water+pump draw triggers an early pad trip');
+	assert.equal(water.stateFor('rig').botFire, false, 'BOT pauses the jet during the pad trip');
+
+	// Turning BOT off clears botFire while keeping an explicit player autoFire order.
+	water.setAutoFire(true, 'rig');
+	players.setBot(0, false);
+	assert.equal(water.stateFor('rig').botFire, false);
+	assert.equal(water.stateFor('rig').autoFire, true, 'player standing order survives BOT off');
+	water.setAutoFire(false, 'rig');
+	harness.balanced(world);
+});
+

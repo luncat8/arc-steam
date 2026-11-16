@@ -495,7 +495,7 @@
 				selling = false;
 				recharging = false;
 				clearRocketTrip();
-				if (root.SteamSandblaster) root.SteamSandblaster.clearBotFire('rig');
+				clearRigNozzles();
 				autopilot.reset();
 			}
 			return value;
@@ -508,8 +508,14 @@
 		if (!value) {
 			clearRivalRocketTrip(player);
 			if (root.SteamSandblaster) root.SteamSandblaster.clearBotFire(player.id);
+			if (root.SteamWater) root.SteamWater.clearBotFire(player.id);
 		}
 		return value;
+	}
+
+	function clearRigNozzles() {
+		if (root.SteamSandblaster) root.SteamSandblaster.clearBotFire('rig');
+		if (root.SteamWater) root.SteamWater.clearBotFire('rig');
 	}
 
 	// Read back the autopilot so the rig's BOT box follows its real duties even
@@ -521,7 +527,7 @@
 		rig.bot = autopilot.state.move && autopilot.state.drive && autopilot.state.angle;
 		if (!rig.bot) {
 			selling = false; recharging = false; clearRocketTrip();
-			if (root.SteamSandblaster) root.SteamSandblaster.clearBotFire('rig');
+			clearRigNozzles();
 		}
 		return rig.bot;
 	}
@@ -1175,8 +1181,7 @@
 		if (!sand || !physics || !root.SteamEquipment || !root.SteamEquipment.isInstalled('sandblaster', owner)
 			|| sand.feed(world, owner) < 0 || sand.hopperFull(world, owner)) return false;
 		const engine = physics.engineNow(owner);
-		const profile = sand.stateFor(owner);
-		return physics.reserveNow(owner) / engine.reload >= profile.shotEnergy * profile.rate;
+		return physics.reserveNow(owner) / engine.reload >= sand.streamPower(owner);
 	}
 
 	// The water gun follows the nozzle's own rule: a rival bot sprays only with a
@@ -1250,55 +1255,67 @@
 		return !rigSandCooling;
 	}
 
-	// The jet is a standing duty beside the nozzle: same trips pause it, and the
-	// pump runs with it so the brine it makes is actually collected.
+	// The jet is a standing duty beside the sandblaster: the same service trips,
+	// reserve floor and thermal guard pause it, while the player's own Pump order
+	// is left untouched.
 	function setRigWaterGun(world, enabled) {
 		const gun = root.SteamWater;
-		if (!gun) return;
+		const physics = root.SteamPhysics;
+		if (!gun || !physics) return;
 		const ready = enabled && gun.streamReady(world, 'rig')
-			&& world.battery >= root.SteamPhysics.config.battery * rechargeStart + gun.state.shotEnergy * gun.state.dropletsPerSecond;
+			&& world.battery >= physics.config.battery * rechargeStart + physics.reserveCost(gun.state.shotEnergy, 'rig')
+			&& !rigSandCooling;
 		gun.setBotFire(ready, 'rig');
-		gun.setPump(true);
 	}
 
 	function setRigSandblaster(world, enabled) {
 		const sand = root.SteamSandblaster;
-		if (!sand) return;
+		const physics = root.SteamPhysics;
+		if (!sand || !physics) return;
 		const ready = enabled && sandStreamReady(world, 'rig')
-			&& world.battery >= root.SteamPhysics.config.battery * rechargeStart + sand.state.shotEnergy
-			&& rigSandThermallyReady(world);
+			&& world.battery >= physics.config.battery * rechargeStart + physics.reserveCost(sand.state.shotEnergy, 'rig')
+			&& !rigSandCooling;
 		sand.setBotFire(ready, 'rig');
 	}
 
 	// The rig bot sells a full hopper, refills a short reserve at the centre pad,
-	// then works its rocket rack at the richest seam. The nozzle is a fourth,
-	// concurrent duty: it pauses for these trips and manual travel, and gives
-	// the charge decision a second of its own draw as a safety lead. Trips own
-	// travel through the manual override; the ball keepers stay live.
+	// then works its rocket rack at the richest seam. The sandblaster and water
+	// gun run concurrently: both pause for trips, manual travel and overheating,
+	// and give the charge decision a second of their active draw as a safety lead.
+	// Trips own travel through the manual override; the ball keepers stay live.
 	function stepRigBot(world, dt) {
 		const rig = players[0];
 		const sand = root.SteamSandblaster;
+		const gun = root.SteamWater;
 		if (!world || !rig || !rig.bot) {
 			selling = recharging = false; clearRocketTrip();
-			if (sand) sand.clearBotFire('rig');
+			clearRigNozzles();
 			return;
 		}
 		const ceiling = root.SteamCeiling;
 		const autopilot = root.SteamAutopilot;
 		const physics = root.SteamPhysics;
-		if (!ceiling || !autopilot || !physics) { if (sand) sand.clearBotFire('rig'); return; }
+		if (!ceiling || !autopilot || !physics) { clearRigNozzles(); return; }
 		if (!autopilot.state.move || !autopilot.state.drive) {
 			selling = recharging = false; clearRocketTrip();
-			if (sand) sand.clearBotFire('rig');
+			clearRigNozzles();
 			return;
 		}
 		if (rigRocketTrip.wait > 0) rigRocketTrip.wait = Math.max(0, rigRocketTrip.wait - dt);
 		const full = ceiling.state.cargoCells >= ceiling.state.storageLimit;
-		const hasFeed = sand && root.SteamEquipment && root.SteamEquipment.isInstalled('sandblaster', 'rig')
+		const equipment = root.SteamEquipment;
+		const cool = rigSandThermallyReady(world);
+		const fine = physics.thermalFactor(world) > 0;
+		const hasFeed = sand && equipment && equipment.isInstalled('sandblaster', 'rig')
 			&& !full && sand.feed(world, 'rig') >= 0;
-		const botStreamReady = hasFeed && !sand.state.botPaused && sandStreamReady(world, 'rig') && rigSandThermallyReady(world);
-		const streamDraw = hasFeed && (sand.state.autoFire || botStreamReady)
-			? sand.state.shotEnergy * sand.state.rate * streamChargeLead : 0;
+		const playerSand = hasFeed && fine && sand.state.autoFire && !sand.state.botFire;
+		const botSand = hasFeed && !sand.state.botPaused && sandStreamReady(world, 'rig') && cool;
+		const gunView = gun ? gun.stateFor('rig') : null;
+		const hasWater = gun && equipment && equipment.isInstalled('watergun', 'rig') && !full;
+		const playerWater = hasWater && fine && gunView.autoFire && !gunView.botFire;
+		const botWater = hasWater && !gunView.botPaused && gun.streamReady(world, 'rig') && cool;
+		const streamDraw = ((playerSand || botSand ? sand.streamPower('rig') : 0)
+			+ (playerWater || botWater ? gun.streamPower('rig') : 0)) * streamChargeLead;
 		// Even while the reserve is above 20%, a running stream can cross that
 		// line before the next charge decision. Start the trip with headroom.
 		const chargeAt = physics.config.battery * rechargeStart + streamDraw;

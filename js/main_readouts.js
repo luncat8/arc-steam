@@ -411,16 +411,18 @@ function sandblastReadout() {
 	const installed = SteamEquipment.isInstalled('sandblaster', owner);
 	const bot = playerApi.state.players[playerApi.state.active].bot;
 	const engine = bot ? physics.engineNow(owner) : null;
-	const underpowered = bot && physics.reserveNow(owner) / engine.reload < sand.shotEnergy * sand.rate;
+	const stream = installed ? SteamSandblaster.streamPower(owner) : 0;
+	const underpowered = bot && physics.reserveNow(owner) / engine.reload < stream;
 	setText(ui['sandblast-fire'].firstChild, 'Blast ' + SteamSandblaster.grainsAboard(world, owner) + ' ');
 	setDisabled(ui['sandblast-fire'], !installed || !SteamSandblaster.canFire(world, owner));
 	setChecked(ui['sandblast-auto'], sand.autoFire);
 	const reason = !installed ? 'No sandblaster installed · fit one in Science + Shop'
 		: SteamSandblaster.hopperFull(world, owner) ? 'Hopper full · sell at a wall to blast again'
 		: SteamSandblaster.feed(world, owner) < 0 ? 'No sand or stone in the hopper · catch debris to feed the nozzle'
-		: owner === 'rig' && world.battery < sand.shotEnergy ? 'Reserve too low to throw a grain'
+		: owner === 'rig' && physics.thermalFactor(world) <= 0 ? 'Thermal cutoff · wait for the machine to cool'
+		: owner === 'rig' && world.battery < physics.reserveCost(sand.shotEnergy, owner) ? 'Reserve too low to throw a grain'
 		: sand.botPaused ? 'BOT nozzle paused · cycle BOT or check Auto-fire to resume'
-		: underpowered && !sand.autoFire ? 'BOT needs an engine that can carry the ' + (sand.shotEnergy * sand.rate / 1000).toFixed(1) + ' kW stream'
+		: underpowered && !sand.autoFire ? 'BOT needs an engine that can carry the ' + (stream / 1000).toFixed(1) + ' kW stream'
 		: owner === 'rig' && bot && playerApi.state.sandCooling && !sand.autoFire ? 'BOT cooling nozzle · wait for the machine to cool'
 		: '';
 	setHidden(ui['sandblast-status'], !reason);
@@ -431,11 +433,15 @@ function sandblastReadout() {
 const waterMetrics = SteamWater.createMetrics();
 
 // The water gun: the nozzle's own state, the pump, and one line only while a
-// press would do nothing.
+// press or BOT duty waits.
 function waterReadout() {
 	const owner = activePlayerId();
 	const gun = SteamWater.stateFor(owner);
 	const installed = SteamEquipment.isInstalled('watergun', owner);
+	const bot = playerApi.state.players[playerApi.state.active].bot;
+	const engine = bot ? physics.engineNow(owner) : null;
+	const stream = installed ? SteamWater.streamPower(owner) : 0;
+	const underpowered = bot && physics.reserveNow(owner) / engine.reload < stream;
 	const metrics = SteamWater.measureMetrics(waterMetrics);
 	setDisabled(ui['water-fire'], !installed || !SteamWater.canFire(world, owner));
 	setDisabled(ui['water-aim'], !installed);
@@ -445,7 +451,11 @@ function waterReadout() {
 	const reason = !installed ? 'No water gun installed · fit one in Science + Shop'
 		: !SteamWater.state.pumpOn ? 'Pump off · brine stays in the chamber'
 		: ceilingCargoFull() ? 'Hopper full · the pump waits for a sale'
-		: owner === 'rig' && world.battery < SteamWater.state.shotEnergy ? 'Reserve too low to pressurize a droplet'
+		: owner === 'rig' && physics.thermalFactor(world) <= 0 ? 'Thermal cutoff · wait for the machine to cool'
+		: owner === 'rig' && world.battery < physics.reserveCost(SteamWater.state.shotEnergy, owner) ? 'Reserve too low to pressurize a droplet'
+		: gun.botPaused ? 'BOT jet paused · cycle BOT or check Auto-fire to resume'
+		: underpowered && !gun.autoFire ? 'BOT needs an engine that can carry the ' + (stream / 1000).toFixed(1) + ' kW jet'
+		: owner === 'rig' && bot && playerApi.state.sandCooling && !gun.autoFire ? 'BOT cooling jet · wait for the machine to cool'
 		: metrics.dissolvedMass > 0 && metrics.brineMass > 0.02 ? 'Brine in the chamber · the pump lifts from under the hull'
 		: '';
 	setHidden(ui['water-status'], !reason);

@@ -12,8 +12,9 @@
 	// The feed order: sand is nearly worthless, so it goes first.
 	const abrasives = [mineralIds.indexOf('sand'), mineralIds.indexOf('stone')];
 	const gravity = 9.81;
-	// A grain now spends ten times the old 13.5 J draw. Its entire draw goes
-	// into the throw, not an unbooked motor loss: the hit and the ledger see it.
+	// Useful launch work per grain (2.7 kW at 20 grains/s). Like movement and
+	// the piston, the reserve pays `shotEnergy / engine.efficiency` and books the
+	// motor's waste share directly into machine heat, so the ledger stays exact.
 	const shotEnergy = 135;
 	const grainMass = 0.02;
 	const nozzle = { x: 0, y: 0, angle: 0 };
@@ -195,28 +196,38 @@
 		return count;
 	}
 
+	function streamPower(owner) {
+		return root.SteamPhysics.reserveCost(shotEnergy * rate, ownerId(owner));
+	}
+
 	// A grain is thrown only while the hopper holds sand or stone and is not
-	// packed full, the reserve covers the draw, the stream's rate has recovered
-	// and the pool has room. A full hopper stops the nozzle: nothing it brought
-	// down could be caught, and the grains could not come home.
+	// packed full, the machine is below thermal cutoff, the reserve covers the
+	// engine-efficiency draw, the stream's rate has recovered and the pool has
+	// room. A full hopper stops the nozzle: nothing it brought down could be
+	// caught, and the grains could not come home.
 	function canFire(world, owner) {
 		const id = ownerId(owner);
 		const index = ownerIndex(id);
 		if (!world || !hasTool(id) || profileFor(id).rate > 0 || index < 0) return false;
-		if (id === world.platform.id && world.battery < shotEnergy) return false;
+		const physics = root.SteamPhysics;
+		if (id === world.platform.id) {
+			if (physics.thermalFactor(world) <= 0) return false;
+			if (world.battery < physics.reserveCost(shotEnergy, id)) return false;
+		}
 		if (hopperFull(world, id) || feed(world, id) < 0) return false;
 		return aloftBy(index) < maxGrainsPerOwner;
 	}
 
-	// The per-grain draw becomes vertical launch energy. The grain starts with
-	// the platform's velocity *at fire time*, plus its upward speed relative
-	// to the nozzle; after that only gravity changes its flight. The rig's
-	// hopper is already in the ledger at cargoHeight, so the launch accounts
-	// for the height difference. The terrain-prescribed vertical speed of a
-	// climbing platform is not in platform kinetic energy: its contribution
-	// to the launched grain is booked as terrain work. A rival's hopper and
-	// machine are outside the rig's ledger, so the grain's whole initial
-	// energy is imported instead.
+	// Useful per-grain work becomes vertical launch energy while `physics.spend`
+	// debits the installed engine's reserve cost and books motor waste as heat.
+	// The grain starts with the platform's velocity *at fire time*, plus its
+	// upward speed relative to the nozzle; after that only gravity changes its
+	// flight. The rig's hopper is already in the ledger at cargoHeight, so the
+	// launch accounts for the height difference. The terrain-prescribed vertical
+	// speed of a climbing platform is not in platform kinetic energy: its
+	// contribution to the launched grain is booked as terrain work. A rival's
+	// hopper and machine are outside the rig's ledger, so the grain's whole
+	// initial energy is imported instead.
 	function fire(world, owner) {
 		const id = ownerId(owner);
 		if (!canFire(world, id)) return false;
@@ -227,11 +238,10 @@
 		let slot = 0;
 		while (grainState[slot] !== FREE) slot++;
 		const rig = machine === world;
-		const lift = shotEnergy + (rig ? grainMass * gravity * root.SteamCeiling.state.cargoHeight : 0);
-		if (rig) {
-			world.battery -= shotEnergy;
-			grainValue[slot] = root.SteamCeiling.unloadCargo(mineral, grainMass);
-		} else grainValue[slot] = root.SteamPlayers.unloadCargo(machine, mineral, grainMass);
+		const delivered = rig ? physics.spend(world, shotEnergy) : shotEnergy;
+		const lift = delivered + (rig ? grainMass * gravity * root.SteamCeiling.state.cargoHeight : 0);
+		if (rig) grainValue[slot] = root.SteamCeiling.unloadCargo(mineral, grainMass);
+		else grainValue[slot] = root.SteamPlayers.unloadCargo(machine, mineral, grainMass);
 		const profile = profileFor(id);
 		profile.fired++;
 		profile.rate = rateStep;
@@ -395,7 +405,7 @@
 
 	function stateFor(owner) { return profileFor(owner).view; }
 	const state = stateFor('rig');
-	const api = { state, stateFor, reset, setAutoFire, setBotFire, clearBotFire, canFire, fire, feed, grainsAboard, hopperFull, step, draw };
+	const api = { state, stateFor, reset, setAutoFire, setBotFire, clearBotFire, canFire, fire, feed, grainsAboard, hopperFull, streamPower, step, draw };
 	root.SteamSandblaster = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
