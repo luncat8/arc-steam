@@ -1,15 +1,18 @@
-// Wild Mine mode state, vertical projection (D7), camera follow (D8), and
-// cave-grounded platform motion (M2). Lives behind a mode guard so Classic mode
-// remains untouched.
+// Wild Mine mode state, vertical projection (D7), camera follow (D8),
+// cave-grounded platform motion (M2) and the P1/P2 step owner. Lives behind a
+// mode guard so Classic mode remains untouched.
 //
-// Depends on: js/cave.js, js/physics.js
+// Depends on: js/cave.js, js/physics.js, js/wild-ball.js
 (function (root) {
 	'use strict';
 	const node = typeof module !== 'undefined' && module.exports;
 	const caveApi = node ? require('./cave.js') : root.SteamCave;
 	const physicsRef = node ? require('./physics.js') : root.SteamPhysics;
+	const ballRef = node ? require('./wild-ball.js') : null;
 
 	function phys() { return physicsRef || root.SteamPhysics; }
+	// Loaded after this file in the page, so the ball is resolved at call time.
+	function ballApi() { return ballRef || root.SteamWildBall; }
 
 	const pistonMaxAngle = Math.PI * 0.5;
 	// D7 vertical scale: s(u) = 1 / (1 + 3u) anchored on the active ball's y,
@@ -237,6 +240,8 @@
 				ball.vy = 0;
 				p.setHeldBallPose(world, ball);
 			}
+			const ballModule = ballApi();
+			if (ballModule) ballModule.init(world);
 			readCameraTarget(world);
 			camera.x = targetPoint.x;
 			camera.y = targetPoint.y;
@@ -260,10 +265,10 @@
 		p.updatePlatformTerrain(world, dt);
 		protectHull(world, dt);
 		p.advancePiston(world, dt);
+		const ballModule = ballApi();
+		if (ballModule) ballModule.step(world, cave, dt);
 		p.cool(world, dt);
 		world.time += dt;
-		const ball = activeBall(world);
-		if (ball && ball.state === 'held') p.setHeldBallPose(world, ball);
 		stepCamera(world, dt);
 		const halfSpan = viewWidth * 0.75;
 		cave.stream(camera.x - halfSpan, camera.x + halfSpan, 1);

@@ -92,3 +92,50 @@ test('switching #game-mode between Classic and Wild Mine reconfigures chamber, p
 	assert.equal(players.state.players.length, 2);
 	assert.equal(playerList.children[1].hidden, false);
 });
+
+test('M3 ball controls: the ball panel appears only in Wild Mine and its keys and buttons reach the ball', () => {
+	const modeSelect = dom.element('game-mode');
+	modeSelect.value = 'wild';
+	modeSelect.dispatch('change');
+	advance(4);
+	const panel = dom.element('ball-controls');
+	assert.equal(panel.hidden, false, 'the ball panel shows in Wild Mine');
+	const ball = world.balls[0];
+	assert.equal(ball.state, 'held');
+
+	// D1: the chamber's launch button releases the ball and the battery pays.
+	const battery = ball.battery;
+	dom.element('launch').dispatch('click');
+	assert.equal(ball.state, 'flying');
+	assert.ok(ball.battery < battery, 'the release draws the ball battery');
+
+	dom.key('ArrowRight');
+	assert.equal(ball.motor, 1, 'ArrowRight drives the motor right');
+	dom.keyUp('ArrowRight');
+	assert.equal(ball.motor, 0, 'releasing the key stops the motor');
+	dom.key('ArrowLeft');
+	assert.equal(ball.motor, -1, 'ArrowLeft drives the motor left');
+	dom.keyUp('ArrowLeft');
+	dom.key('ArrowUp');
+	assert.equal(ball.jump, true, 'ArrowUp queues a jump along the contact normal');
+	advance(2);
+
+	const right = dom.element('ball-right');
+	right.dispatch('pointerdown', { pointerId: 1 });
+	assert.equal(ball.motor, 1, 'the panel button runs the motor');
+	right.dispatch('pointerup', { pointerId: 1 });
+	assert.equal(ball.motor, 0);
+	dom.element('ball-jump').dispatch('pointerdown', { pointerId: 1 });
+	assert.equal(ball.jump, true, 'the panel jump button queues a jump');
+
+	// Classic mode keeps the ball panel out of the way and the arrows inert.
+	modeSelect.value = 'classic';
+	modeSelect.dispatch('change');
+	advance(4);
+	assert.equal(panel.hidden, true, 'the ball panel hides in Classic');
+	assert.equal(physics.wildMode(), false);
+	const classicMotor = world.balls[0].motor;
+	dom.key('ArrowRight');
+	assert.equal(world.balls[0].motor, classicMotor, 'arrows do not drive a classic ball');
+	dom.keyUp('ArrowRight');
+});

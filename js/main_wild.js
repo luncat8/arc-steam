@@ -1,7 +1,7 @@
 // Wild Mine canvas renderer, tile cache and mode-aware UI helpers.
 // Shares lexical scope with js/main*.js; all top-level bindings use a wild* prefix.
 // provides: wildIsActive, wildDraw, wildResize, wildSyncMode, wildResetRun, wildInspectRockAtPointer, wildPointerDown, wildWorldYOf, wildMineralReadout, wildStatusReadout, wildModeNotes, wildPistonLimitDegrees
-// depends: main.js bindings, SteamCave, SteamWildMine, SteamRockMaterials, SteamCeiling
+// depends: main.js bindings, SteamCave, SteamWildMine, SteamWildBall, SteamRockMaterials, SteamCeiling
 
 'use strict';
 
@@ -41,6 +41,25 @@ for (let i = 0; i <= 100; i++) {
 
 function wildIsActive() {
 	return Boolean(window.SteamWildMine && window.SteamWildMine.isWild());
+}
+
+// Debris rides the same draw map as the rock: a fragment is one cell, so it is
+// drawn at the vertical scale of its own height and stays square in the world.
+function wildDrawDebris(wild, anchorY, minWorldY, maxWorldY) {
+	const ball = window.SteamWildBall;
+	if (!ball || !ball.debrisCount) return;
+	const count = ball.debrisActive.length;
+	for (let i = 0; i < count; i++) {
+		if (!ball.debrisActive[i]) continue;
+		const y = ball.debrisY[i];
+		if (y < minWorldY || y > maxWorldY) continue;
+		const size = ball.debrisSize[i];
+		const vertical = size * wild.scaleAt(y, anchorY);
+		const half = size * 0.5;
+		const drawn = wild.drawnY(y, anchorY);
+		context.fillStyle = 'rgb(' + ball.debrisRed[i] + ', ' + ball.debrisGreen[i] + ', ' + ball.debrisBlue[i] + ')';
+		context.fillRect(ball.debrisX[i] - half, drawn - vertical * 0.5, size, vertical);
+	}
 }
 
 function wildPistonLimitDegrees() {
@@ -312,6 +331,7 @@ function wildDraw() {
 
 	wildDrawGrid(wild, minX, maxX, minRow * cell, (maxRow + 1) * cell);
 	wildDrawCave(cave, minX, maxX, minRow, maxRow);
+	wildDrawDebris(wild, anchorY, minRow * cell, (maxRow + 1) * cell);
 
 	if (wildSelectedRow >= minRow && wildSelectedRow <= maxRow && wildSelectedColumn >= cave.columnAt(minX) - 1 && wildSelectedColumn <= cave.columnAt(maxX) + 1) {
 		const y0 = wildDrawnRowY[wildSelectedRow];
@@ -360,6 +380,23 @@ function wildDraw() {
 		context.beginPath();
 		context.arc(ball.x, ballY, radius + 0.13 * ballScale, 0, Math.PI * 2);
 		context.stroke();
+		if (ball.state !== 'held') {
+			// The spin marker is the roll the contact solver really holds, so a
+			// silent slip or a stuck ball shows at once.
+			context.strokeStyle = '#0b1316';
+			context.beginPath();
+			context.moveTo(ball.x, ballY);
+			context.lineTo(ball.x + Math.cos(ball.spin || 0) * radius, ballY - Math.sin(ball.spin || 0) * radius);
+			context.stroke();
+		}
+		const battery = window.SteamWildBall ? ball.battery || 0 : 0;
+		const charge = window.SteamWildBall ? battery / window.SteamWildBall.batteryCapacity : 1;
+		if (charge < 0.999) {
+			context.strokeStyle = charge < 0.2 ? '#e0775e' : '#e6b66e';
+			context.beginPath();
+			context.arc(ball.x, ballY, radius + 0.26 * ballScale, -Math.PI * 0.5, -Math.PI * 0.5 + Math.PI * 2 * Math.max(0, charge));
+			context.stroke();
+		}
 		if (showDamageRadius) {
 			const rock = window.SteamCeiling.state;
 			const dr = window.SteamCeiling.damageRadiusNow(ball.owner || 'rig') * rock.cell;
@@ -375,7 +412,12 @@ function wildDraw() {
 	}
 	context.restore();
 
-	const hudText = 'WILD MINE · X ' + world.platform.x.toFixed(1) + ' m · Y ' + world.platform.y.toFixed(1) + ' m · SCALE 1.00× @ P2';
+	const ballState = window.SteamWildBall ? window.SteamWildBall.readouts(world) : null;
+	const ballNote = ballState
+		? ' · P2 ' + ballState.battery.toFixed(0) + ' J · ' + ballState.speed.toFixed(1) + ' m/s · '
+			+ (ballState.contact === window.SteamWildBall.CONTACT_DECK ? 'DECK' : ballState.contact === window.SteamWildBall.CONTACT_ROCK ? 'ROLL' : 'AIR')
+		: '';
+	const hudText = 'WILD MINE · X ' + world.platform.x.toFixed(1) + ' m · Y ' + world.platform.y.toFixed(1) + ' m' + ballNote + ' · SCALE 1.00× @ P2';
 	context.font = '600 10px ui-monospace, monospace';
 	const textW = typeof context.measureText === 'function' ? context.measureText(hudText).width : hudText.length * 6;
 	context.fillStyle = 'rgba(11, 18, 22, 0.82)';
@@ -392,6 +434,7 @@ function wildSyncMode(nextMode) {
 	if (ui['chamber-title']) {
 		setText(ui['chamber-title'], wild ? 'ARC STEAM · WILD MINE / CAVE SECTION' : 'ARC STEAM · TEST CHAMBER / 24 × 15 M');
 	}
+	setHidden(ui['ball-controls'], !wild);
 	const limitDeg = wildPistonLimitDegrees();
 	if (ui['piston-angle']) {
 		ui['piston-angle'].min = String(-limitDeg);
@@ -488,7 +531,7 @@ function wildMineralReadout() {
 function wildModeNotes(reserveWarning) {
 	if (reserveWarning === 'EMPTY') setText(ui['reserve-note'], 'Empty · hand-crank crawl · cart dock arrives in M5');
 	else if (reserveWarning) setText(ui['reserve-note'], 'Low reserve · Wild Mine mode');
-	else setText(ui['reserve-note'], 'Wild Mine · no centre pad · P1 platform / P2 ball');
+	else setText(ui['reserve-note'], 'Wild Mine · deck induction only · P1 platform / P2 ball');
 	setText(ui['cargo-note'], 'Wild Mine · cart economy activates in M5');
 	setText(ui['funds-note'], 'Wild Mine · open cave section');
 }
@@ -502,7 +545,21 @@ function wildStatusReadout(reserveWarning, thermalFactor, driveOn) {
 	setTone(ui['fact-cargo'], '');
 	setText(ui['fact-temp'], temperature.toFixed(0) + ' °C');
 	setTone(ui['fact-temp'], thermalFactor === 0 ? 'danger' : thermalFactor < 1 ? 'warn' : '');
-	const note = !driveOn ? 'Wild Mine · drive off' : 'Wild Mine · P1 rides cave · P2 ball physics activates in M3';
-	setMessage(ui['status-ball'], note, thermalFactor < 1 ? 'warn' : 'info');
+	const ball = window.SteamWildBall ? window.SteamWildBall.readouts(world) : null;
+	if (!ball) {
+		setMessage(ui['status-ball'], 'Wild Mine · no ball in the section', 'warn');
+	} else {
+		const energy = ball.battery.toFixed(0) + ' J';
+		if (world.ball && world.ball.state === 'held') {
+			setMessage(ui['status-ball'], !driveOn ? 'Wild Mine · P2 held · drive off · E is disabled'
+				: 'Wild Mine · P2 held · ' + energy + ' · E releases · deck induction charges', ball.battery < 30 ? 'warn' : 'info');
+		} else if (ball.contact === window.SteamWildBall.CONTACT_ROCK) {
+			setMessage(ui['status-ball'], 'Wild Mine · P2 rolling · ' + ball.speed.toFixed(1) + ' m/s · ' + energy + ' · ← → motor · ↑ jump', ball.battery < 30 ? 'warn' : 'info');
+		} else if (ball.contact === window.SteamWildBall.CONTACT_DECK) {
+			setMessage(ui['status-ball'], 'Wild Mine · P2 on the deck · ' + energy + ' · induction charging', 'info');
+		} else {
+			setMessage(ui['status-ball'], 'Wild Mine · P2 in the air · ' + ball.speed.toFixed(1) + ' m/s · ' + energy, ball.battery < 30 ? 'warn' : 'info');
+		}
+	}
 	setMessage(ui['status-energy'], reserveWarning ? 'Low reserve · hand-crank crawl available' : '', 'danger');
 }

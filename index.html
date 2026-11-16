@@ -51,6 +51,10 @@
 					<label for="force">Movement force <output id="force-value">60%</output></label>
 					<input id="force" type="range" min="10" max="100" value="60">
 					<div class="control-row"><button id="left" aria-label="Move left">← A</button><button id="right" aria-label="Move right">D →</button></div>
+					<div id="ball-controls" class="ball-controls" hidden>
+						<div class="eyebrow-row"><p class="eyebrow">BALL · P2</p><button id="help-ball" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: the ball player">?</button></div>
+						<div class="control-row"><button id="ball-left" aria-label="Run the ball motor left">◀ ←</button><button id="ball-jump" class="ball-jump" aria-label="Jump the ball">Jump ↑</button><button id="ball-right" aria-label="Run the ball motor right">→ ▶</button></div>
+					</div>
 					<div id="rig-drive">
 						<div class="eyebrow-row"><p class="eyebrow">BOUNCE ASSIST</p><button id="help-drive" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: bounce drive">?</button></div>
 						<button id="drive" class="drive" aria-pressed="true">Drive on <span>SPACE / Q</span></button>
@@ -179,6 +183,7 @@
 	<script src="js/water-chemistry.js"></script>
 	<script src="js/physics.js"></script>
 	<script src="js/wild-mine.js"></script>
+	<script src="js/wild-ball.js"></script>
 	<script src="js/rockets.js"></script>
 	<script src="js/sandblaster.js"></script>
 	<script src="js/water.js"></script>

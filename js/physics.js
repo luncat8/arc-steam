@@ -103,6 +103,9 @@
 	function groundRestitutionNow() { return Math.sqrt(groundRetention); }
 
 	function wildMode() { return Boolean(root.SteamWildMine && root.SteamWildMine.isWild()); }
+	// The Wild Mine ball player owns the ball's release and its battery, so the
+	// two entry points the page already calls (canLaunch, launch) delegate there.
+	function wildBall() { return root.SteamWildBall || null; }
 	function pistonMaxAngleNow() { return wildMode() ? root.SteamWildMine.pistonMaxAngle : config.pistonMaxAngle; }
 
 	function platformMin() { return config.platformWidth * 0.5 - config.pocketDepth; }
@@ -1021,8 +1024,19 @@
 	}
 
 	function ballEnergy(ball) {
-		if (ball.state === 'held') return 0;
-		return ballMassFor(ball) * (0.5 * (ball.vx * ball.vx + ball.vy * ball.vy) + config.ballGravity * (ball.y - config.radius));
+		// A held ball is carried by its platform in the chamber, so it contributes
+		// nothing to the ledger there; in Wild Mine its own battery is still its
+		// own charge and stays counted in either state.
+		if (!wildMode()) {
+			if (ball.state === 'held') return 0;
+			return ballMassFor(ball) * (0.5 * (ball.vx * ball.vx + ball.vy * ball.vy) + config.ballGravity * (ball.y - config.radius));
+		}
+		if (ball.state === 'held') return ball.battery || 0;
+		const mass = ballMassFor(ball);
+		// The roll's rotational share (I = 2/5 m r^2) is part of the body.
+		return mass * (0.5 * (ball.vx * ball.vx + ball.vy * ball.vy) + config.ballGravity * (ball.y - config.radius))
+			+ 0.2 * mass * config.radius * config.radius * ball.omega * ball.omega
+			+ (ball.battery || 0);
 	}
 
 	function cargoMass() {
@@ -1166,7 +1180,10 @@
 	// The release belongs to the platform that holds the ball, so the drive
 	// flag, the pulse and the height are all that machine's.
 	function canLaunch(world, target) {
-		if (wildMode()) return false;
+		if (wildMode()) {
+			const ball = wildBall();
+			return Boolean(ball && ball.canLaunch(world, target));
+		}
 		const ball = target || world.ball;
 		if (!ball || ball.state !== 'held') return false;
 		const machine = machineById(world, ball.holder);
@@ -1181,6 +1198,10 @@
 	// its machinery is not in the rig's ledger, so only the rig's release spends
 	// the reserve and heats the chamber.
 	function launch(world, target, machine) {
+		if (wildMode()) {
+			const wildBallApi = wildBall();
+			return Boolean(wildBallApi && wildBallApi.launch(world, target, machine));
+		}
 		if (!canLaunch(world, target)) return false;
 		const ball = target || world.ball;
 		const holder = machine || machineById(world, ball.holder);

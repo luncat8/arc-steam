@@ -170,6 +170,10 @@ canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 #rocket-orders { margin: 2px 0 0; border-top: 0; padding-top: 0; }
 .control-row { display: flex; gap: 8px; touch-action: none; }
 .control-row button { text-align: center; user-select: none; }
+/* The ball player is Wild Mine only, so the row is hidden until the mode asks. */
+.ball-controls[hidden] { display: none; }
+.ball-controls .control-row { margin-top: 6px; }
+.ball-controls .ball-jump { flex: 1.2; color: var(--accent); border-color: #6a9757; background: #25392a; }
 .eyebrow-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 16px 0 3px; }
 .eyebrow-row .eyebrow { margin: 0; }
 .controls > .eyebrow-row:first-child { margin-top: 0; }
