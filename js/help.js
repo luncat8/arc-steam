@@ -178,17 +178,17 @@
 			label: 'Wild ball',
 			title: 'Wild Mine ball player · P2',
 			text: [
-				'In Wild Mine the ball is the second player: a rigid body with its own onboard battery. It rests in the collector until E releases it, then ← and → run its motor and ↑ jumps from any rolling contact. A jump and a motor pulse are impulses along the contact; the air is a plain projectile and the spin is carried, not driven.',
-				'The battery is the ball’s own. It drains with every motor pulse, jump and release kick, and recharges only by induction while the ball is held or rolling on the platform deck: the platform’s reserve pays and the loss becomes heat. A ball that lands softly on the deck is caught back into the collector, so a run ends with a recharge rather than a stranding.',
-				'A contact rolls while the surface turns less than 30° across one ball diameter and the closing speed stays under 0.35 m/s; a roll is frictionless apart from a small resistance and does no damage. Anything else is a hit: the ball keeps 90% of its normal energy, reflects the rest, and the lost energy cracks the rock it touched — floor, wall or ceiling. Debris falls and rests on that same surface, on any slope shallow enough to hold it.',
-				'Keys: A / D and the ← → buttons still drive P1; the ball’s arrows and its three buttons are P2’s. The release belongs to the selected platform and needs its drive on.'
+				'In Wild Mine the ball is the second player: a rigid sphere with moment of inertia 2/5 m r² and its own onboard battery. It rests in the collector until E releases it, then ← and → apply spin torque in either direction. On rock, surface friction turns that spin into rolling; in mid-air there is no friction and no translational mass to push, so the motor winds spin up 3.5× faster and to a higher free speed. When a spinning ball hits a floor, wall, ceiling or deck, Coulomb friction bites in proportion to the normal impact force — kicking topspin forward, checking backspin, climbing walls or skidding and carrying leftover spin into the next bounce.',
+				'The jump actuator works like the platform’s bounce drive: switching it on (the Jump actuator button or ↑) feeds battery energy into the actuator, kicking off from a roll along the contact normal while keeping tangential speed and spin, and boosting every subsequent rock bounce until switched off or drained.',
+				'Recycle bounce energy (the checkbox or ↓) acts like the platform’s regenerative brake flywheel: it actively damps rebounds to stop bouncing quickly and returns 55% of the damped energy to the ball battery at 90% efficiency, venting the rest as heat while leaving the roll intact. Engaging jump switches recycling off, and engaging recycling switches jump off.',
+				'The battery recharges cleanly by induction while the ball is held or resting on the platform deck (drawn from the platform’s reserve, loss as heat), and a landing on the deck catches the ball back into the collector. Smooth contacts below 0.35 m/s roll without damage; faster impacts and sharp corners lose 10% of their normal energy into rock fracture and heat on any cave face.'
 			],
 			keys: [
-				['← / →', 'Run the ball motor left or right on a rolling contact'],
-				['↑', 'Jump: an impulse along the contact normal'],
-				['E', 'Release the held ball from the reflector face'],
-				['Deck', 'Induction charges the battery while the ball is held or resting on it'],
-			['Soft landing', 'The deck catches the ball back into the collector']
+				['← / →', 'Spin motor left or right — rolls on rock, winds up fast in mid-air'],
+				['↑', 'Toggle jump actuator on or off (powered bounce pulses)'],
+				['↓', 'Toggle bounce energy recycling (active damper + battery recovery)'],
+				['E', 'Release the held ball along the tilted reflector face'],
+				['Deck', 'Catches the ball and recharges its battery by induction']
 			]
 		},
 		{

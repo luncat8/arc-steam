@@ -244,38 +244,274 @@ test('M3 battery: deck induction charges from the platform reserve, only while t
 	}
 });
 
-test('M3 motor and jump: torque drives only a rolling contact, the jump is an impulse along the normal', () => {
+test('M3 motor: spin torque rolls on rock and winds up much faster in frictionless mid-air', () => {
 	try {
 		const { world, cave, ball } = wildWorld(1);
+		const r = physics.config.radius;
 		freeBall(world, cave, 1.5, shelfRest(world, cave, 1.5), 0, 0);
 		ball.contact = wildBall.CONTACT_ROCK;
 		world.initialEnergy = physics.totalEnergy(world);
 		const battery = ball.battery;
 		wildBall.setMotor(world, 1);
 		for (let i = 0; i < 120; i++) physics.step(world, physics.config.step);
+		const groundOmega = ball.omega;
 		assert.ok(ball.vx > 0.5, 'right torque rolls the ball right');
-		assert.ok(ball.omega > 1, 'the roll carries angular velocity');
+		assert.ok(groundOmega > 1, 'the roll carries clockwise angular velocity');
+		assert.ok(Math.abs(ball.vx - groundOmega * r) < 1e-6, 'flat floor grip locks into pure no-slip rolling');
 		assert.ok(ball.x > 1.6, 'the ball travelled');
 		assert.ok(ball.battery < battery - 1, 'the motor spends the battery');
 		assert.equal(ball.contact, wildBall.CONTACT_ROCK);
 		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
 
-		wildBall.setMotor(world, 0);
-		const rollVx = ball.vx;
-		wildBall.requestJump(world);
-		for (let i = 0; i < 3; i++) physics.step(world, physics.config.step);
-		assert.ok(ball.vy > wildBall.jumpSpeed * 0.9, 'the jump leaves along the contact normal');
-		assert.ok(ball.battery < battery, 'the jump spends the battery');
-		assert.equal(ball.contact, wildBall.CONTACT_NONE, 'the jump leaves the surface');
-		assert.ok(Math.abs(ball.vx - rollVx) < 1e-9, 't_v is preserved by the jump');
+		// Mid-air motor: no ground reaction on vx, but I alone takes the full
+		// torque (7/2 = 3.5x faster before rolling resistance) and reaches above
+		// motorTopSpeed up to motorFreeSpeed.
+		const air = wildWorld(1);
+		freeBall(air.world, air.cave, 0, 32.0, 0.4, 1.8);
+		const airStartBattery = air.ball.battery;
+		wildBall.setMotor(air.world, 1);
+		for (let i = 0; i < 120; i++) physics.step(air.world, physics.config.step);
+		assert.equal(air.ball.contact, wildBall.CONTACT_NONE, 'still airborne');
+		assert.ok(Math.abs(air.ball.vx - 0.4) < 1e-9, 'mid-air spin exerts no horizontal push without contact');
+		assert.ok(air.ball.omega > groundOmega * 3.4, 'mid-air spin accelerates >3.4x faster than ground roll');
+		assert.ok(air.ball.battery < airStartBattery - 5, 'mid-air spin pays for its rotational energy');
+		assert.ok(Math.abs(ledgerDrift(air.world)) < 1e-8);
+
+		for (let i = 0; i < 180 && air.ball.contact === wildBall.CONTACT_NONE; i++) {
+			physics.step(air.world, physics.config.step);
+		}
+		assert.ok(air.ball.omega * r > wildBall.motorTopSpeed + 1.5, 'unloaded mid-air spin exceeds ground motorTopSpeed');
+		assert.ok(air.ball.omega * r <= wildBall.motorFreeSpeed + 1e-9, 'free spin respects motorFreeSpeed');
+
+		// Reversing motor in mid-air brakes existing spin into heat without spending battery.
+		const rev = wildWorld(1);
+		freeBall(rev.world, rev.cave, 0, 32.2, 0, 1.5);
+		rev.ball.omega = 25;
+		rev.world.initialEnergy = physics.totalEnergy(rev.world);
+		const beforeBrake = rev.ball.battery;
+		wildBall.setMotor(rev.world, -1);
+		for (let i = 0; i < 60; i++) physics.step(rev.world, physics.config.step);
+		assert.ok(rev.ball.omega > 0 && rev.ball.omega < 15, 'opposing torque decelerates mid-air spin');
+		assert.equal(rev.ball.battery, beforeBrake, 'braking spin draws zero battery');
+		assert.ok(Math.abs(ledgerDrift(rev.world)) < 1e-8);
+	} finally {
+		resetClassic();
+	}
+});
+
+test('M3 Coulomb bounce friction: spinning bounces transfer spin by normal impulse on floor, wall, ceiling and deck', () => {
+	try {
+		const r = physics.config.radius;
+		const m = physics.config.ballMass;
+		const inertia = wildBall.inertiaFactor * m * r * r;
+
+		// 1. Mid-air spin -> hard floor bounce grips to no-slip (vx = omega*r = 2/7 * w0*r)
+		// and conserves angular momentum about the contact point.
+		const hard = wildWorld(1);
+		const floor = shelfRest(hard.world, hard.cave, 2.2);
+		freeBall(hard.world, hard.cave, 2.2, floor + 0.01, 0, -4);
+		hard.ball.omega = 40;
+		hard.world.initialEnergy = physics.totalEnergy(hard.world);
+		const contactAngularBefore = inertia * hard.ball.omega + m * r * hard.ball.vx;
+		for (let i = 0; i < 8 && hard.ball.hits === 0; i++) physics.step(hard.world, physics.config.step);
+		assert.equal(hard.ball.hits, 1);
+		const expectedRoll = (2 / 7) * 40 * r;
+		assert.ok(Math.abs(hard.ball.vx - expectedRoll) < 0.03, 'hard topspin bounce kicks right to 2/7 w0 r');
+		assert.ok(Math.abs(hard.ball.vx - hard.ball.omega * r) < 1e-6, 'full grip settles into vx = omega*r');
+		const contactAngularAfter = inertia * hard.ball.omega + m * r * hard.ball.vx;
+		assert.ok(Math.abs(contactAngularAfter - contactAngularBefore) < 1e-6, 'angular momentum about contact conserved');
+		assert.ok(Math.abs(ledgerDrift(hard.world)) < 1e-8);
+
+		// 2. Same high spin on a gentle bounce exceeds mu*Jn: skids on first bounce,
+		// retains surplus spin, and accelerates further on the second bounce.
+		const soft = wildWorld(1);
+		freeBall(soft.world, soft.cave, 2.2, floor + 0.01, 0, -0.75);
+		soft.ball.omega = 44;
+		soft.world.initialEnergy = physics.totalEnergy(soft.world);
+		for (let i = 0; i < 12 && soft.ball.hits === 0; i++) physics.step(soft.world, physics.config.step);
+		assert.equal(soft.ball.hits, 1);
+		const firstVx = soft.ball.vx;
+		assert.ok(firstVx > 0.8 && firstVx < (2 / 7) * 44 * r - 0.5, 'Coulomb cone caps tangential impulse on a gentle bounce');
+		assert.ok(soft.ball.omega * r > firstVx + 2, 'leftover spin stays above linear speed after a skid');
+		for (let i = 0; i < 200 && soft.ball.hits === 1; i++) physics.step(soft.world, physics.config.step);
+		assert.equal(soft.ball.hits, 2);
+		assert.ok(soft.ball.vx > firstVx + 0.5, 'leftover spin bites again on the second bounce');
+		assert.ok(Math.abs(ledgerDrift(soft.world)) < 1e-8);
+
+		// 3. Heavy backspin checks forward motion on bounce.
+		const back = wildWorld(1);
+		freeBall(back.world, back.cave, 2.2, floor + 0.01, 2.5, -4);
+		back.ball.omega = -44;
+		back.world.initialEnergy = physics.totalEnergy(back.world);
+		for (let i = 0; i < 8 && back.ball.hits === 0; i++) physics.step(back.world, physics.config.step);
+		assert.ok(back.ball.vx < 0, 'heavy backspin reverses forward bounce');
+		assert.ok(Math.abs(ledgerDrift(back.world)) < 1e-8);
+
+		// 4. Oriented tangent across cave faces: clockwise spin (+omega) kicks LEFT
+		// off a ceiling (ny = -1) and UP off a right wall (nx = -1).
+		const ceil = wildWorld(1);
+		const roof = ceil.cave.roofAbove(0, 32);
+		freeBall(ceil.world, ceil.cave, 0, roof - r - 0.02, 0, 5);
+		ceil.ball.omega = 35;
+		ceil.world.initialEnergy = physics.totalEnergy(ceil.world);
+		for (let i = 0; i < 10 && ceil.ball.hits === 0; i++) physics.step(ceil.world, physics.config.step);
+		assert.ok(ceil.ball.vx < -1, 'clockwise spin hitting ceiling kicks ball left');
+		assert.ok(Math.abs(ledgerDrift(ceil.world)) < 1e-8);
+
+		const wallRun = wildWorld(1);
+		let wall = NaN;
+		for (let x = 2.5; x < 6; x += 0.02) {
+			if (wallRun.cave.solidAt(x, 31.5)) { wall = x; break; }
+		}
+		freeBall(wallRun.world, wallRun.cave, wall - r - 0.04, 31.5, 5, 0);
+		wallRun.ball.omega = 35;
+		wallRun.world.initialEnergy = physics.totalEnergy(wallRun.world);
+		for (let i = 0; i < 10 && wallRun.ball.hits === 0; i++) physics.step(wallRun.world, physics.config.step);
+		assert.ok(wallRun.ball.vx < 0 && wallRun.ball.vy > 1, 'clockwise spin hitting right wall climbs upward on rebound');
+		assert.ok(Math.abs(ledgerDrift(wallRun.world)) < 1e-8);
+
+		// 5. Spinning deck bounce transfers spin with exact energy balance.
+		const deckRun = wildWorld(1);
+		freeBall(deckRun.world, deckRun.cave, deckRun.world.platform.x + 0.3,
+			deckRun.world.platform.y + physics.config.deck + r + 0.04, 0, -3);
+		deckRun.ball.omega = 38;
+		deckRun.ball.releaseCooldown = 0.4;
+		deckRun.world.initialEnergy = physics.totalEnergy(deckRun.world);
+		for (let i = 0; i < 12 && deckRun.ball.bounces === 0; i++) physics.step(deckRun.world, physics.config.step);
+		assert.ok(deckRun.ball.vx > 1.5 && deckRun.ball.vy > 2, 'spinning bounce off deck converts spin to forward speed');
+		assert.ok(Math.abs(ledgerDrift(deckRun.world)) < 1e-8);
+	} finally {
+		resetClassic();
+	}
+});
+
+test('M3 jump actuator: piston-style on/off energy toggle launches from roll and boosts repeated bounces', () => {
+	try {
+		const { world, cave, ball } = wildWorld(1);
+		world.platform.x = -2.2;
+		const r = physics.config.radius;
+		const floor = shelfRest(world, cave, 2.2);
+		freeBall(world, cave, 2.2, floor, 1.1, 0);
+		ball.omega = 1.1 / r;
+		ball.contact = wildBall.CONTACT_ROCK;
+		world.initialEnergy = physics.totalEnergy(world);
+
+		assert.equal(ball.jump, false, 'jump actuator starts off');
+		const startBattery = ball.battery;
+		wildBall.setJump(world, true);
+		assert.equal(ball.jump, true);
+		physics.step(world, physics.config.step);
+		assert.equal(ball.contact, wildBall.CONTACT_NONE, 'energised jump actuator lifts off from a roll');
+		assert.ok(Math.abs(ball.vy - wildBall.jumpSpeed) < 1e-6, 'first jump delivers jumpSpeed along normal');
+		assert.ok(Math.abs(ball.vx - 1.1) < 1e-9, 'jump preserves tangential speed');
+		assert.ok(Math.abs(ball.omega - 1.1 / r) < 1e-9, 'jump preserves rotational velocity');
+		assert.equal(ball.jump, true, 'actuator remains switched on like platform Drive');
+		assert.ok(ball.battery < startBattery - 10, 'jump pulse draws battery at jumpEfficiency');
 		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
 
-		const airVx = ball.vx;
-		wildBall.setMotor(world, 1);
-		for (let i = 0; i < 30; i++) physics.step(world, physics.config.step);
-		assert.equal(ball.contact, wildBall.CONTACT_NONE, 'still airborne');
-		assert.ok(Math.abs(ball.vx - airVx) < 1e-9, 'no torque in the air: omega is carried, not driven');
-		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
+		// Sustained powered bounces climb higher on each rock contact, then go
+		// passive once the actuator is switched off.
+		const pogo = wildWorld(1);
+		pogo.world.platform.x = -2.2;
+		freeBall(pogo.world, pogo.cave, 2.2, floor, 0, 0);
+		pogo.ball.contact = wildBall.CONTACT_ROCK;
+		pogo.world.initialEnergy = physics.totalEnergy(pogo.world);
+		wildBall.setJump(pogo.world, true);
+		let apex1 = floor;
+		let apex2 = floor;
+		for (let i = 0; i < 650; i++) {
+			physics.step(pogo.world, physics.config.step);
+			if (pogo.ball.jumps === 1 && pogo.ball.y > apex1) apex1 = pogo.ball.y;
+			if (pogo.ball.jumps === 2 && pogo.ball.y > apex2) apex2 = pogo.ball.y;
+		}
+		assert.ok(pogo.ball.jumps >= 2, 'staying on powers subsequent bounces automatically');
+		assert.ok(apex2 > apex1 + 0.5, 'second powered bounce reaches higher than the first');
+
+		wildBall.setJump(pogo.world, false);
+		const jumpsAtOff = pogo.ball.jumps;
+		const batteryAtOff = pogo.ball.battery;
+		const hitsAtOff = pogo.ball.hits;
+		for (let i = 0; i < 480 && pogo.ball.hits === hitsAtOff; i++) physics.step(pogo.world, physics.config.step);
+		assert.ok(pogo.ball.hits > hitsAtOff, 'ball hits rock again after actuator turned off');
+		assert.equal(pogo.ball.jumps, jumpsAtOff, 'switched-off actuator adds no pulse');
+		assert.equal(pogo.ball.battery, batteryAtOff, 'switched-off actuator spends no battery');
+		assert.ok(Math.abs(ledgerDrift(pogo.world)) < 1e-8);
+	} finally {
+		resetClassic();
+	}
+});
+
+test('M3 bounce energy recycling: actively stops bouncing, returns energy to battery, and coordinates with jump', () => {
+	try {
+		const dt = physics.config.step;
+		const r = physics.config.radius;
+
+		// Passive reference drop.
+		const passive = wildWorld(1);
+		const floor = shelfRest(passive.world, passive.cave, 2.5);
+		passive.ball.battery = 150;
+		freeBall(passive.world, passive.cave, 2.5, floor + 1.5, 0, 0);
+		let passiveSettle = -1;
+		for (let i = 0; i < 240 * 30; i++) {
+			physics.step(passive.world, dt);
+			if (passiveSettle < 0 && i > 10 && passive.ball.contact === wildBall.CONTACT_ROCK) passiveSettle = i;
+		}
+
+		// Recycled drop from identical height and battery (rolling left across the open shelf).
+		const recycled = wildWorld(1);
+		recycled.world.platform.x = -3;
+		recycled.ball.battery = 150;
+		wildBall.setRecycle(recycled.world, true);
+		freeBall(recycled.world, recycled.cave, 2.5, floor + 1.5, -0.8, 0);
+		recycled.ball.omega = -0.8 / r;
+		recycled.world.initialEnergy = physics.totalEnergy(recycled.world);
+		let recycleSettle = -1;
+		let settleHits = 0;
+		let settleVx = 0;
+		for (let i = 0; i < 240 * 3; i++) {
+			physics.step(recycled.world, dt);
+			if (recycleSettle < 0 && i > 10 && recycled.ball.contact === wildBall.CONTACT_ROCK) {
+				recycleSettle = i;
+				settleHits = recycled.ball.hits;
+				settleVx = recycled.ball.vx;
+			}
+		}
+		assert.ok(recycleSettle > 0 && recycleSettle < passiveSettle * 0.15, 'recycling settles bouncing much faster than passive');
+		assert.ok(settleHits <= 3 && passive.ball.hits > 15, 'recycling cuts dozens of bounces down to a cushioned stop');
+		assert.ok(recycled.ball.battery > 155, 'recycling returns damped bounce energy to the battery');
+		assert.ok(Math.abs((recycled.ball.battery - 150) - recycled.ball.recycled) < 1e-9);
+		assert.ok(settleVx < -0.7, 'recycling stops normal rebound while preserving tangential roll');
+		assert.ok(Math.abs(ledgerDrift(recycled.world)) < 1e-8);
+
+		// Full battery: still stops bouncing, caps at batteryCapacity, vents rest as heat.
+		const full = wildWorld(1);
+		wildBall.setRecycle(full.world, true);
+		freeBall(full.world, full.cave, 2.5, floor + 1.5, 0, 0);
+		for (let i = 0; i < 240 * 3; i++) physics.step(full.world, dt);
+		assert.equal(full.ball.contact, wildBall.CONTACT_ROCK, 'full battery still damps bouncing to a stop');
+		assert.equal(full.ball.battery, wildBall.batteryCapacity, 'battery never overflows capacity');
+		assert.ok(Math.abs(ledgerDrift(full.world)) < 1e-8);
+
+		// Round-trip jump -> recycle strictly loses net energy (no free-energy loop)
+		// and jump / recycle mutually disengage each other.
+		const cycle = wildWorld(1);
+		freeBall(cycle.world, cycle.cave, 2.4, floor, 0, 0);
+		cycle.ball.contact = wildBall.CONTACT_ROCK;
+		cycle.world.initialEnergy = physics.totalEnergy(cycle.world);
+		const initialBatt = cycle.ball.battery;
+		wildBall.setJump(cycle.world, true);
+		physics.step(cycle.world, dt);
+		const postJumpBatt = cycle.ball.battery;
+		wildBall.setRecycle(cycle.world, true);
+		assert.equal(cycle.ball.jump, false, 'enabling recycle turns jump actuator off');
+		assert.equal(cycle.ball.recycle, true);
+		for (let i = 0; i < 240 * 3; i++) physics.step(cycle.world, dt);
+		assert.ok(cycle.ball.battery > postJumpBatt + 3, 'landing recovers part of the jump energy');
+		assert.ok(cycle.ball.battery < initialBatt - 5, 'round trip stays strictly dissipative');
+		wildBall.toggleJump(cycle.world);
+		assert.equal(cycle.ball.jump, true);
+		assert.equal(cycle.ball.recycle, false, 'enabling jump turns recycle off');
+		assert.ok(Math.abs(ledgerDrift(cycle.world)) < 1e-8);
 	} finally {
 		resetClassic();
 	}

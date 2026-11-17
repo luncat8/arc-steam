@@ -167,13 +167,13 @@ canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 .autopilot i { flex: none; font: 9px ui-monospace, monospace; letter-spacing: 0.6px; color: #7d9094; }
 .rocket-row { display: flex; gap: 8px; }
 .rocket-row button:last-child { flex: 0 1 44%; text-align: center; white-space: nowrap; }
-#rocket-orders { margin: 2px 0 0; border-top: 0; padding-top: 0; }
+#rocket-orders, #ball-orders { margin: 2px 0 0; border-top: 0; padding-top: 0; }
 .control-row { display: flex; gap: 8px; touch-action: none; }
 .control-row button { text-align: center; user-select: none; }
 /* The ball player is Wild Mine only, so the row is hidden until the mode asks. */
 .ball-controls[hidden] { display: none; }
 .ball-controls .control-row { margin-top: 6px; }
-.ball-controls .ball-jump { flex: 1.2; color: var(--accent); border-color: #6a9757; background: #25392a; }
+.ball-controls .drive { margin-top: 8px; }
 .eyebrow-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 16px 0 3px; }
 .eyebrow-row .eyebrow { margin: 0; }
 .controls > .eyebrow-row:first-child { margin-top: 0; }

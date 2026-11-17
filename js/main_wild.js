@@ -376,7 +376,7 @@ function wildDraw() {
 		context.beginPath();
 		context.arc(ball.x, ballY, radius, 0, Math.PI * 2);
 		context.fill();
-		context.strokeStyle = owner ? '#6f5a44' : '#a9c7bc';
+		context.strokeStyle = ball.jump ? '#b9ed91' : ball.recycle ? '#7fb6d9' : owner ? '#6f5a44' : '#a9c7bc';
 		context.beginPath();
 		context.arc(ball.x, ballY, radius + 0.13 * ballScale, 0, Math.PI * 2);
 		context.stroke();
@@ -413,9 +413,11 @@ function wildDraw() {
 	context.restore();
 
 	const ballState = window.SteamWildBall ? window.SteamWildBall.readouts(world) : null;
+	const actuatorNote = !ballState ? '' : ballState.jump ? ' · JUMP' : ballState.recycle ? ' · RECUP' : '';
 	const ballNote = ballState
 		? ' · P2 ' + ballState.battery.toFixed(0) + ' J · ' + ballState.speed.toFixed(1) + ' m/s · '
 			+ (ballState.contact === window.SteamWildBall.CONTACT_DECK ? 'DECK' : ballState.contact === window.SteamWildBall.CONTACT_ROCK ? 'ROLL' : 'AIR')
+			+ actuatorNote
 		: '';
 	const hudText = 'WILD MINE · X ' + world.platform.x.toFixed(1) + ' m · Y ' + world.platform.y.toFixed(1) + ' m' + ballNote + ' · SCALE 1.00× @ P2';
 	context.font = '600 10px ui-monospace, monospace';
@@ -536,6 +538,16 @@ function wildModeNotes(reserveWarning) {
 	setText(ui['funds-note'], 'Wild Mine · open cave section');
 }
 
+function wildSyncBallControls(ball) {
+	const jumpOn = Boolean(ball && ball.jump);
+	const pressed = String(jumpOn);
+	if (ui['ball-jump']) {
+		if (ui['ball-jump'].getAttribute('aria-pressed') !== pressed) ui['ball-jump'].setAttribute('aria-pressed', pressed);
+		setText(ui['ball-jump'].firstChild, jumpOn ? 'Jump actuator on ' : 'Jump actuator off ');
+	}
+	if (ui['ball-recycle']) setChecked(ui['ball-recycle'], Boolean(ball && ball.recycle));
+}
+
 function wildStatusReadout(reserveWarning, thermalFactor, driveOn) {
 	const ceiling = window.SteamCeiling.state;
 	const temperature = physics.temperature(world);
@@ -546,19 +558,21 @@ function wildStatusReadout(reserveWarning, thermalFactor, driveOn) {
 	setText(ui['fact-temp'], temperature.toFixed(0) + ' °C');
 	setTone(ui['fact-temp'], thermalFactor === 0 ? 'danger' : thermalFactor < 1 ? 'warn' : '');
 	const ball = window.SteamWildBall ? window.SteamWildBall.readouts(world) : null;
+	wildSyncBallControls(ball);
 	if (!ball) {
 		setMessage(ui['status-ball'], 'Wild Mine · no ball in the section', 'warn');
 	} else {
 		const energy = ball.battery.toFixed(0) + ' J';
+		const actuator = ball.jump ? ' · jump on' : ball.recycle ? ' · recycle on' : '';
 		if (world.ball && world.ball.state === 'held') {
 			setMessage(ui['status-ball'], !driveOn ? 'Wild Mine · P2 held · drive off · E is disabled'
-				: 'Wild Mine · P2 held · ' + energy + ' · E releases · deck induction charges', ball.battery < 30 ? 'warn' : 'info');
+				: 'Wild Mine · P2 held · ' + energy + actuator + ' · E releases · deck induction charges', ball.battery < 30 ? 'warn' : 'info');
 		} else if (ball.contact === window.SteamWildBall.CONTACT_ROCK) {
-			setMessage(ui['status-ball'], 'Wild Mine · P2 rolling · ' + ball.speed.toFixed(1) + ' m/s · ' + energy + ' · ← → motor · ↑ jump', ball.battery < 30 ? 'warn' : 'info');
+			setMessage(ui['status-ball'], 'Wild Mine · P2 rolling · ' + ball.speed.toFixed(1) + ' m/s · ' + energy + actuator + ' · ← → roll · ↑ jump · ↓ recycle', ball.battery < 30 ? 'warn' : 'info');
 		} else if (ball.contact === window.SteamWildBall.CONTACT_DECK) {
-			setMessage(ui['status-ball'], 'Wild Mine · P2 on the deck · ' + energy + ' · induction charging', 'info');
+			setMessage(ui['status-ball'], 'Wild Mine · P2 on the deck · ' + energy + actuator + ' · induction charging', 'info');
 		} else {
-			setMessage(ui['status-ball'], 'Wild Mine · P2 in the air · ' + ball.speed.toFixed(1) + ' m/s · ' + energy, ball.battery < 30 ? 'warn' : 'info');
+			setMessage(ui['status-ball'], 'Wild Mine · P2 in the air · ' + ball.speed.toFixed(1) + ' m/s · ω ' + ball.omega.toFixed(0) + ' rad/s · ' + energy + actuator, ball.battery < 30 ? 'warn' : 'info');
 		}
 	}
 	setMessage(ui['status-energy'], reserveWarning ? 'Low reserve · hand-crank crawl available' : '', 'danger');

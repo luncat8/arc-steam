@@ -20,7 +20,7 @@ const ids = ['chamber-title', 'game-mode', 'clock', 'drive', 'launch', 'status-b
 	'refuel', 'refuel-cost', 'fuel-price', 'market-tool-yield', 'reserve-note', 'cargo-note',
 	'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry', 'mineral-tooltip', 'science-drawer', 'market-drawer', 'science-open', 'science-close', 'market-open', 'market-close',
 	'telemetry', 'player-list', 'control-title', 'rig-drive',
-	'ball-controls', 'ball-left', 'ball-right', 'ball-jump',
+	'ball-controls', 'ball-left', 'ball-right', 'ball-jump', 'ball-orders', 'ball-recycle',
 	'rocket-fire', 'rocket-buy', 'rocket-auto', 'rocket-status',
 	'sandblast-fire', 'sandblast-auto', 'sandblast-status', 'sandblast-yield',
 	'water-fire', 'water-aim', 'water-auto', 'water-pump', 'water-pump-solute', 'water-status', 'water-yield'];

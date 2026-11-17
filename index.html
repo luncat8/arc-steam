@@ -51,9 +51,11 @@
 					<label for="force">Movement force <output id="force-value">60%</output></label>
 					<input id="force" type="range" min="10" max="100" value="60">
 					<div class="control-row"><button id="left" aria-label="Move left">← A</button><button id="right" aria-label="Move right">D →</button></div>
-					<div id="ball-controls" class="ball-controls" hidden>
+					<div id="ball-controls" class="ball-controls" data-topic="ball" hidden>
 						<div class="eyebrow-row"><p class="eyebrow">BALL · P2</p><button id="help-ball" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: the ball player">?</button></div>
-						<div class="control-row"><button id="ball-left" aria-label="Run the ball motor left">◀ ←</button><button id="ball-jump" class="ball-jump" aria-label="Jump the ball">Jump ↑</button><button id="ball-right" aria-label="Run the ball motor right">→ ▶</button></div>
+						<div class="control-row"><button id="ball-left" type="button" aria-label="Roll ball left">← Roll</button><button id="ball-right" type="button" aria-label="Roll ball right">Roll →</button></div>
+						<button id="ball-jump" class="drive" type="button" aria-pressed="false" aria-keyshortcuts="ArrowUp">Jump actuator off <span>↑</span></button>
+						<div class="autopilot" id="ball-orders"><label><input type="checkbox" id="ball-recycle" autocomplete="off"><span>Recycle bounce energy</span><i>↓</i></label></div>
 					</div>
 					<div id="rig-drive">
 						<div class="eyebrow-row"><p class="eyebrow">BOUNCE ASSIST</p><button id="help-drive" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: bounce drive">?</button></div>

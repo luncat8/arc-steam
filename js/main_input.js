@@ -200,13 +200,25 @@ function clearInput() { world.brake = false; leftHeld = false; rightHeld = false
 // One writer for P2's motor, the same shape as P1's direction: the held arrow
 // or button that is down is the command, and a release stops the torque.
 function setBallMotor() {
-	if (!window.SteamWildBall) return;
+	if (!window.SteamWildBall || !(typeof wildIsActive === 'function' && wildIsActive())) return;
 	window.SteamWildBall.setMotor(world, Number(ballRightHeld) - Number(ballLeftHeld));
 }
 
-function jumpBall() {
-	if (!window.SteamWildBall) return;
-	window.SteamWildBall.requestJump(world);
+function toggleBallJump() {
+	if (!window.SteamWildBall || !(typeof wildIsActive === 'function' && wildIsActive())) return;
+	window.SteamWildBall.toggleJump(world);
+	refresh();
+}
+
+function setBallRecycle(on) {
+	if (!window.SteamWildBall || !(typeof wildIsActive === 'function' && wildIsActive())) return;
+	window.SteamWildBall.setRecycle(world, on);
+	refresh();
+}
+
+function toggleBallRecycle() {
+	if (!window.SteamWildBall || !(typeof wildIsActive === 'function' && wildIsActive())) return;
+	window.SteamWildBall.toggleRecycle(world);
 	refresh();
 }
 // The drive toggle flips the selected machine's own drive, like every other
@@ -278,7 +290,7 @@ function worldYOf(event) {
 function isGameKey(code) {
 	return code === 'Space' || code === 'KeyQ' || code === 'KeyA' || code === 'KeyD' || code === 'KeyW' || code === 'KeyS' || code === 'KeyE'
 		|| code === 'KeyR' || code === 'KeyB' || code === 'KeyX' || code === 'KeyZ' || code === 'KeyC' || code === 'KeyM' || code === 'KeyF' || code === 'KeyG' || code === 'F4'
-		|| code === 'ArrowLeft' || code === 'ArrowRight' || code === 'ArrowUp';
+		|| code === 'ArrowLeft' || code === 'ArrowRight' || code === 'ArrowUp' || code === 'ArrowDown';
 }
 
 function keydown(event) {
@@ -289,7 +301,7 @@ function keydown(event) {
 	const wildBallOn = typeof wildIsActive === 'function' && wildIsActive();
 	// The arrows are P2's commands in Wild Mine and do nothing in the chamber, so
 	// the chamber leaves them to the browser instead of swallowing the scroll.
-	if (!wildBallOn && (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'ArrowUp')) return;
+	if (!wildBallOn && (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'ArrowUp' || key === 'ArrowDown')) return;
 	if (!isGameKey(key)) return;
 	event.preventDefault();
 	if (document.activeElement && document.activeElement !== canvas && document.activeElement !== document.body) {
@@ -311,7 +323,8 @@ function keydown(event) {
 	if (event.repeat) return;
 	if (key === 'Space' || key === 'KeyQ') toggleDrive();
 	if (key === 'KeyE') releaseBall();
-	if (key === 'ArrowUp' && wildBallOn) jumpBall();
+	if (key === 'ArrowUp' && wildBallOn) toggleBallJump();
+	if (key === 'ArrowDown' && wildBallOn) toggleBallRecycle();
 	if (key === 'KeyR') fireRocket();
 	if (key === 'KeyM') setCommune(!window.SteamCeiling.state.commune);
 	if (key === 'F4') { showDamageRadius = !showDamageRadius; sceneDirty = true; }
@@ -335,7 +348,8 @@ function keyup(event) {
 	if (key === 'KeyA' || key === 'KeyD') updateDirection();
 }
 
-// The ball row binds like P1's: a held pointer is the motor, a tap is the jump.
+// P2's panel mirrors P1's: held pointers spin the motor, the jump actuator is
+// an on/off toggle like Drive, and the checkbox engages bounce recuperation.
 function bindBallControls() {
 	const left = ui['ball-left'];
 	const right = ui['ball-right'];
@@ -355,9 +369,9 @@ function bindBallControls() {
 		button.addEventListener('pointercancel', stop);
 		button.addEventListener('lostpointercapture', stop);
 	}
-	ui['ball-jump'].addEventListener('pointerdown', function (event) {
-		ui['ball-jump'].setPointerCapture(event.pointerId);
-		jumpBall();
+	ui['ball-jump'].addEventListener('click', toggleBallJump);
+	ui['ball-recycle'].addEventListener('change', function () {
+		setBallRecycle(ui['ball-recycle'].checked);
 	});
 }
 

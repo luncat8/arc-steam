@@ -17,8 +17,11 @@ physics.step = function (stepped, dt) {
 };
 dom.loadMainScripts();
 
+let frameClock = 1000;
 function advance(frames = 8) {
-	dom.frames(frames, performance.now(), 1000 / 60);
+	const step = 1000 / 60;
+	dom.frames(frames, frameClock, step);
+	frameClock += frames * step;
 }
 
 test('switching #game-mode between Classic and Wild Mine reconfigures chamber, players, piston bounds and view', () => {
@@ -93,13 +96,18 @@ test('switching #game-mode between Classic and Wild Mine reconfigures chamber, p
 	assert.equal(playerList.children[1].hidden, false);
 });
 
-test('M3 ball controls: the ball panel appears only in Wild Mine and its keys and buttons reach the ball', () => {
+test('M3 ball controls: motor buttons/keys, piston-style jump actuator toggle and bounce recycle checkbox', () => {
 	const modeSelect = dom.element('game-mode');
 	modeSelect.value = 'wild';
 	modeSelect.dispatch('change');
 	advance(4);
 	const panel = dom.element('ball-controls');
+	const jumpButton = dom.element('ball-jump');
+	const recycleBox = dom.element('ball-recycle');
 	assert.equal(panel.hidden, false, 'the ball panel shows in Wild Mine');
+	assert.equal(jumpButton.getAttribute('aria-pressed'), 'false', 'jump actuator starts off like an unpowered piston');
+	assert.equal(jumpButton.firstChild.textContent, 'Jump actuator off ');
+	assert.equal(recycleBox.checked, false, 'bounce recycle starts unchecked');
 	const ball = world.balls[0];
 	assert.equal(ball.state, 'held');
 
@@ -109,33 +117,71 @@ test('M3 ball controls: the ball panel appears only in Wild Mine and its keys an
 	assert.equal(ball.state, 'flying');
 	assert.ok(ball.battery < battery, 'the release draws the ball battery');
 
+	// Motor spins up mid-air while ArrowRight is held.
 	dom.key('ArrowRight');
 	assert.equal(ball.motor, 1, 'ArrowRight drives the motor right');
+	advance(8);
+	assert.ok(ball.omega > 4, 'holding ArrowRight mid-air spins the ball up');
 	dom.keyUp('ArrowRight');
 	assert.equal(ball.motor, 0, 'releasing the key stops the motor');
 	dom.key('ArrowLeft');
 	assert.equal(ball.motor, -1, 'ArrowLeft drives the motor left');
 	dom.keyUp('ArrowLeft');
+
+	// Jump actuator toggles on/off via ArrowUp and click, mirroring #drive.
 	dom.key('ArrowUp');
-	assert.equal(ball.jump, true, 'ArrowUp queues a jump along the contact normal');
-	advance(2);
+	assert.equal(ball.jump, true, 'ArrowUp switches jump actuator on');
+	assert.equal(jumpButton.getAttribute('aria-pressed'), 'true');
+	assert.equal(jumpButton.firstChild.textContent, 'Jump actuator on ');
+	dom.key('ArrowUp');
+	assert.equal(ball.jump, false, 'second ArrowUp switches jump actuator off');
+	assert.equal(jumpButton.getAttribute('aria-pressed'), 'false');
+	assert.equal(jumpButton.firstChild.textContent, 'Jump actuator off ');
+
+	jumpButton.dispatch('click');
+	assert.equal(ball.jump, true, 'clicking jump button switches actuator on');
+	assert.equal(jumpButton.getAttribute('aria-pressed'), 'true');
+
+	// Bounce recycling checkbox and ArrowDown toggle, mutually exclusive with jump.
+	recycleBox.checked = true;
+	recycleBox.dispatch('change');
+	assert.equal(ball.recycle, true, 'checking ball-recycle enables bounce energy recycling');
+	assert.equal(ball.jump, false, 'enabling recycling switches jump actuator off');
+	assert.equal(jumpButton.getAttribute('aria-pressed'), 'false');
+	assert.equal(jumpButton.firstChild.textContent, 'Jump actuator off ');
+
+	dom.key('ArrowDown');
+	assert.equal(ball.recycle, false, 'ArrowDown toggles bounce recycling off');
+	assert.equal(recycleBox.checked, false);
+	dom.key('ArrowDown');
+	assert.equal(ball.recycle, true, 'ArrowDown toggles bounce recycling back on');
+	assert.equal(recycleBox.checked, true);
+
+	jumpButton.dispatch('click');
+	assert.equal(ball.jump, true);
+	assert.equal(ball.recycle, false, 'switching jump on unchecks bounce recycling');
+	assert.equal(recycleBox.checked, false);
+	jumpButton.dispatch('click');
+	assert.equal(ball.jump, false);
 
 	const right = dom.element('ball-right');
 	right.dispatch('pointerdown', { pointerId: 1 });
 	assert.equal(ball.motor, 1, 'the panel button runs the motor');
 	right.dispatch('pointerup', { pointerId: 1 });
 	assert.equal(ball.motor, 0);
-	dom.element('ball-jump').dispatch('pointerdown', { pointerId: 1 });
-	assert.equal(ball.jump, true, 'the panel jump button queues a jump');
 
-	// Classic mode keeps the ball panel out of the way and the arrows inert.
+	// Classic mode keeps the ball panel out of the way and all four arrows inert.
 	modeSelect.value = 'classic';
 	modeSelect.dispatch('change');
 	advance(4);
 	assert.equal(panel.hidden, true, 'the ball panel hides in Classic');
 	assert.equal(physics.wildMode(), false);
-	const classicMotor = world.balls[0].motor;
+	const classicBall = world.balls[0];
 	dom.key('ArrowRight');
-	assert.equal(world.balls[0].motor, classicMotor, 'arrows do not drive a classic ball');
+	dom.key('ArrowUp');
+	dom.key('ArrowDown');
+	assert.equal(classicBall.motor, undefined, 'ArrowRight does not touch a classic ball');
+	assert.equal(classicBall.jump, undefined, 'ArrowUp does not touch a classic ball');
+	assert.equal(classicBall.recycle, undefined, 'ArrowDown does not touch a classic ball');
 	dom.keyUp('ArrowRight');
 });

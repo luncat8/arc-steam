@@ -1,12 +1,14 @@
-// The Wild Mine ball player (P2). One rigid body with an onboard battery: deck
-// induction charges it, the motor and the jump spend it, and a contact is
-// either a roll (no damage) or a hit (restitution, contact-force damage, the
-// chamber's 10% loss) by the surface curvature and the normal speed (D5).
+// The Wild Mine ball player (P2). One rigid sphere (I = 2/5 m r^2) with an
+// onboard battery: deck induction charges it, the motor applies spin torque on
+// surfaces and in mid-air, the jump actuator toggles powered bounce pulses like
+// the platform's reflector drive, and bounce recycling actively damps rebounds
+// to return part of the energy to the battery like regenerative braking.
 //
-// The ball owns its share of the one energy ledger: translational and
-// rotational energy on the ball, the charge in its battery, the fracture energy
-// it puts into the cave and the heat it gives up all pass through `bookMech`,
-// so `physics.totalEnergy` stays exact while `cave.weaken` owns the rock.
+// Contacts couple linear and angular velocity through Coulomb friction along
+// the oriented surface tangent t = (ny, -nx), conserving angular momentum about
+// the contact point and booking slip work as heat. Every mechanical and battery
+// change goes through the single energy ledger so `physics.totalEnergy` stays
+// exact while `cave.weaken` owns the rock.
 //
 // Depends on: js/cave.js, js/ceiling.js, js/minerals.js, js/physics.js,
 // js/rock-materials.js
@@ -26,34 +28,52 @@
 	const CONTACT_ROCK = 1;
 	const CONTACT_DECK = 2;
 
+	// Solid sphere geometry: I = 2/5 m r^2, rolling inertia m + I/r^2 = 7/5 m,
+	// and effective tangential contact mass 1 / (1/m + r^2/I) = 2/7 m. In free
+	// air the same motor torque accelerates omega 7/2 = 3.5x faster than a roll.
+	const inertiaFactor = 0.4;
+	const rollMassFactor = 1 + inertiaFactor;
+	const tangentMassFactor = inertiaFactor / rollMassFactor;
+
 	// D5: a contact rolls while the surface turns less than 30 degrees across one
 	// ball diameter and the normal closing speed stays under 0.35 m/s.
 	const curvatureLimit = Math.PI / 6;
 	const bounceFloor = 0.35;
-	// D2: a hit keeps 90% of its normal energy.
+	// D2: a passive hit keeps 90% of its normal energy.
 	const restitution = Math.sqrt(0.9);
-	// D1: the ball's own engine. The capacity is about seven seconds of full
-	// throttle or twenty jumps, and a deck charge refills it in five seconds.
+	// D4: Coulomb friction couples spin and tangential velocity on bounce and roll;
+	// rolling resistance settles a coasting roll into heat.
+	const surfaceFriction = 0.85;
+	const rollingResistance = 0.35;
+
+	// D1: onboard battery and actuators. Motor torque is flat up to motorTopSpeed
+	// and tapers by back-EMF to motorFreeSpeed, so an unloaded ball in mid-air
+	// both spins up 3.5x faster and reaches a higher rim speed than on ground.
 	const batteryCapacity = 300;
 	const chargePower = 60;
 	const chargeEfficiency = 0.85;
-	const motorAcceleration = 3.2;
+	const motorAcceleration = 2.5;
 	const motorTopSpeed = 5;
+	const motorFreeSpeed = 8;
 	const motorEfficiency = 0.8;
 	const jumpSpeed = 2.6;
 	const jumpEfficiency = 0.8;
 	const launchSpeed = 3.2;
 	const launchEfficiency = 0.8;
-	// D4: frictionless rolling never settles, so a small resistance does.
-	const rollingResistance = 0.35;
+
+	// Bounce recuperation mirrors the platform's brake flywheel (55% recovery at
+	// 90% efficiency): active damping removes most of each rebound, stores the
+	// recovered share in the ball battery, and vents the remainder as heat.
+	const recycleDamping = 0.88;
+	const recycleRecovery = 0.55;
+	const recycleEfficiency = 0.9;
+
 	const releaseCooldownTime = 0.5;
 	const contactSlop = 0.012;
 	const leaveSpeed = 0.02;
 
 	// Debris is outside the ball's ledger: a removed cell's potential energy was
-	// never counted for the cave, exactly as a platform's own height is not. A
-	// fragment is one cell, coloured by its own mix, and rests on the SDF face it
-	// meets at any orientation unless that face is steeper than `debrisSteep`.
+	// never counted for the cave, exactly as a platform's own height is not.
 	const maxDebris = 512;
 	const debrisRestitution = 0.2;
 	const debrisFriction = 0.72;
@@ -74,15 +94,12 @@
 
 	const rockNormal = { nx: 0, ny: 1 };
 	const trace = { time: Infinity, x: 0, y: 0, nx: 0, ny: 1 };
-	// The deck is one capsule: a segment across the platform top, rounded at its
-	// ends. This scratch is the only allocation-free way to ask it twice (the
-	// step and the release) and get the same answer.
 	const deckHit = { hit: false, nx: 0, ny: 1, lny: 0, distance: 0, clampedX: 0, push: 0 };
 	const mixScratch = new Float32Array(rockTable.mineralCount);
 	const elementScratch = new Float32Array(3);
 	const rgbScratch = new Float64Array(3);
 
-	function radiusOf(ball) {
+	function radiusOf() {
 		return phys().config.radius;
 	}
 
@@ -90,14 +107,50 @@
 		return phys().ballMassFor(ball);
 	}
 
-	// I/m = 2/5 r^2, the only rotational constant the contact solver needs.
-	function inertiaShare(ball) {
-		const r = radiusOf(ball);
-		return 0.4 * r * r;
+	function inertiaShare() {
+		const r = radiusOf();
+		return inertiaFactor * r * r;
 	}
 
-	// Where the ball is against the deck capsule. Both the step's contact and the
-	// release's placement read this one query.
+	function kineticEnergy(ball) {
+		const m = massOf(ball);
+		return 0.5 * m * (ball.vx * ball.vx + ball.vy * ball.vy + inertiaShare() * ball.omega * ball.omega);
+	}
+
+	// Translational + rotational + gravitational energy; a held ball contributes
+	// none of it, matching a caught ball in the chamber.
+	function mechanicalEnergy(ball) {
+		if (!ball || ball.state === 'held') return 0;
+		const m = massOf(ball);
+		const gravity = phys().config.ballGravity;
+		return kineticEnergy(ball) + m * gravity * (ball.y - radiusOf());
+	}
+
+	function bookMech(world, before, after) {
+		const delta = after - before;
+		if (delta > 0) world.importedEnergy += delta;
+		else if (delta < 0) world.heat -= delta;
+	}
+
+	function bookLift(world, ball, dy) {
+		if (!dy) return;
+		const delta = massOf(ball) * phys().config.ballGravity * dy;
+		if (delta > 0) world.importedEnergy += delta;
+		else world.heat -= delta;
+	}
+
+	// Same recuperation law as physics.dissipate, routed into the ball's battery.
+	function recycleEnergy(world, ball, energy) {
+		if (!(energy > 0)) return 0;
+		const room = Math.max(0, batteryCapacity - ball.battery);
+		const returned = Math.min(room, energy * recycleRecovery * recycleEfficiency);
+		ball.battery += returned;
+		world.heat += energy - returned;
+		ball.recycled += returned;
+		ball.lastRecycle = returned;
+		return returned;
+	}
+
 	function probeDeck(world, x, y, r) {
 		const plate = world.platform;
 		const cosine = Math.cos(plate.angle);
@@ -116,15 +169,8 @@
 		deckHit.distance = distance;
 		deckHit.hit = distance < r;
 		if (!deckHit.hit) return deckHit;
-		let lnx;
-		let lny;
-		if (distance > 1e-6) {
-			lnx = ex / distance;
-			lny = ey / distance;
-		} else {
-			lnx = 0;
-			lny = 1;
-		}
+		const lnx = distance > 1e-6 ? ex / distance : 0;
+		const lny = distance > 1e-6 ? ey / distance : 1;
 		deckHit.nx = lnx * cosine - lny * sine;
 		deckHit.ny = lnx * sine + lny * cosine;
 		deckHit.lny = lny;
@@ -137,36 +183,6 @@
 		return world.balls[0];
 	}
 
-	// Translational + rotational + gravitational energy; a held ball contributes
-	// none of it, exactly as a caught ball in the chamber.
-	function mechanicalEnergy(ball) {
-		if (!ball || ball.state === 'held') return 0;
-		const m = massOf(ball);
-		const speed = ball.vx * ball.vx + ball.vy * ball.vy;
-		const gravity = phys().config.ballGravity;
-		return m * (0.5 * speed + gravity * (ball.y - radiusOf(ball))) + 0.5 * m * inertiaShare(ball) * ball.omega * ball.omega;
-	}
-
-	// One booking for every mechanical change the ball does not take from rock:
-	// work by machinery outside the ledger or heat. Battery and fracture energy
-	// are booked where they move.
-	function bookMech(world, before, after) {
-		const delta = after - before;
-		if (delta > 0) world.importedEnergy += delta;
-		else world.heat -= delta;
-	}
-
-	// A snap or push-out along a normal changes the ball's height without any
-	// velocity doing the work, so the potential difference is booked here.
-	function bookLift(world, ball, dy) {
-		if (!dy) return;
-		const delta = massOf(ball) * phys().config.ballGravity * dy;
-		if (delta > 0) world.importedEnergy += delta;
-		else world.heat -= delta;
-	}
-
-	// The chamber's own damage rule, over the cave: gain and radius are the
-	// installed ball's, so the numbers stay comparable across the two modes.
 	function weakenRock(world, cave, x, y, budget) {
 		if (!(budget > 0)) return 0;
 		const ceiling = chamber();
@@ -175,7 +191,7 @@
 		return Math.min(budget, cave.weaken(x, y, budget * gain, gain, radius));
 	}
 
-	// ---- ball state -------------------------------------------------------
+	// ---- ball state & commands --------------------------------------------
 
 	function init(world) {
 		debrisActive.fill(0);
@@ -191,14 +207,19 @@
 		ball.spin = 0;
 		ball.motor = 0;
 		ball.jump = false;
+		ball.recycle = false;
 		ball.releaseCooldown = 0;
 		ball.contact = CONTACT_NONE;
 		ball.deckContact = false;
 		ball.hits = 0;
 		ball.bounces = 0;
+		ball.jumps = 0;
+		ball.recycled = 0;
 		ball.lastImpact = 0;
 		ball.lastFracture = 0;
 		ball.lastCharge = 0;
+		ball.lastJump = 0;
+		ball.lastRecycle = 0;
 		return ball;
 	}
 
@@ -209,14 +230,39 @@
 		return ball.motor;
 	}
 
-	function requestJump(world) {
+	// Jump actuator and bounce recuperation are opposite duties of the same
+	// bounce actuator, so engaging one disengages the other.
+	function setJump(world, enabled) {
 		const ball = activeBall(world);
-		if (!ball || ball.state === 'held') return false;
-		ball.jump = true;
-		return true;
+		if (!ball) return false;
+		const on = Boolean(enabled);
+		ball.jump = on;
+		if (on) ball.recycle = false;
+		return ball.jump;
 	}
 
-	// ---- contacts ---------------------------------------------------------
+	function toggleJump(world) {
+		const ball = activeBall(world);
+		if (!ball) return false;
+		return setJump(world, !ball.jump);
+	}
+
+	function setRecycle(world, enabled) {
+		const ball = activeBall(world);
+		if (!ball) return false;
+		const on = Boolean(enabled);
+		ball.recycle = on;
+		if (on) ball.jump = false;
+		return ball.recycle;
+	}
+
+	function toggleRecycle(world) {
+		const ball = activeBall(world);
+		if (!ball) return false;
+		return setRecycle(world, !ball.recycle);
+	}
+
+	// ---- motor, jump actuator & contact friction --------------------------
 
 	function charge(world, ball, dt) {
 		const room = batteryCapacity - ball.battery;
@@ -229,8 +275,6 @@
 		ball.lastCharge = stored;
 	}
 
-	// D5's curvature half: the normal across one ball diameter. A convex corner
-	// tighter than the radius turns further than the limit and is a wall.
 	function curvatureExceeds(cave, x, y, nx, ny, r) {
 		const tx = ny;
 		const ty = -nx;
@@ -243,83 +287,111 @@
 		return turn > curvatureLimit;
 	}
 
-	// D4: no-slip in one step without billing the ledger. The pair (v_t, omega)
-	// shares its kinetic energy; solving v_t = omega r with the same total gives
-	// the split below, so a slide becomes a roll for free and the drawn spin is
-	// always the roll the ball is really in.
-	function settleRoll(ball, nx, ny) {
-		const r = radiusOf(ball);
-		let tx = ny;
-		let ty = -nx;
-		if (tx < 0) { tx = -tx; ty = -ty; }
-		const vt = ball.vx * tx + ball.vy * ty;
-		const share = inertiaShare(ball);
-		const omega = Math.sqrt((vt * vt + share * ball.omega * ball.omega) / (r * r + share));
-		let sign;
-		if (vt > 1e-9) sign = 1;
-		else if (vt < -1e-9) sign = -1;
-		else sign = ball.omega >= 0 ? 1 : -1;
-		ball.omega = sign * omega;
-		const delta = ball.omega * r - vt;
-		ball.vx += delta * tx;
-		ball.vy += delta * ty;
-	}
-
-	function rollResistance(world, ball, nx, ny, dt) {
-		let tx = ny;
-		let ty = -nx;
-		if (tx < 0) { tx = -tx; ty = -ty; }
-		const vt = ball.vx * tx + ball.vy * ty;
-		const speed = Math.abs(vt);
-		if (!(speed > 0)) return;
-		const keep = speed - Math.min(speed, rollingResistance * dt);
-		world.heat += 0.5 * massOf(ball) * (speed * speed - keep * keep);
-		const delta = -Math.sign(vt) * (speed - keep);
-		ball.vx += delta * tx;
-		ball.vy += delta * ty;
-	}
-
-	// Torque from the battery: an acceleration along the contact tangent, priced
-	// by the exact change in the tangential kinetic energy it buys.
-	function driveMotor(world, ball, nx, ny, dt) {
+	// Internal motor applies spin torque directly to omega. Opposing existing
+	// spin brakes into heat with no battery draw; accelerating spin draws battery
+	// at motorEfficiency. Without surface contact, I alone carries the torque, so
+	// omega climbs 3.5x faster than on flat rock and reaches motorFreeSpeed / r.
+	function stepSpinMotor(world, ball, dt) {
 		const direction = ball.motor;
-		if (!direction || !(ball.battery > 0)) return;
-		let tx = ny;
-		let ty = -nx;
-		if (tx < 0) { tx = -tx; ty = -ty; }
-		const vt = ball.vx * tx + ball.vy * ty;
-		if (vt * direction >= motorTopSpeed) return;
+		if (!direction || !(dt > 0)) return;
+		const r = radiusOf();
 		const m = massOf(ball);
-		let accel = motorAcceleration;
-		if (vt * direction + accel * dt > motorTopSpeed) accel = (motorTopSpeed - vt * direction) / dt;
-		let delta = accel * dt * direction;
-		let useful = 0.5 * m * ((vt + delta) * (vt + delta) - vt * vt);
-		if (useful > 0) {
-			const cost = useful / motorEfficiency;
-			if (cost > ball.battery) {
-				delta *= ball.battery / cost;
-				useful = 0.5 * m * ((vt + delta) * (vt + delta) - vt * vt);
-			}
-			if (useful > 0) {
-				const paid = useful / motorEfficiency;
-				ball.battery -= paid;
-				world.heat += paid - useful;
-			}
+		const inertia = inertiaFactor * m * r * r;
+		const baseAlpha = (rollMassFactor / inertiaFactor) * (motorAcceleration / r);
+		let remaining = dt;
+		if (ball.omega * direction < 0) {
+			const stopTime = Math.min(remaining, Math.abs(ball.omega) / baseAlpha);
+			const before = 0.5 * inertia * ball.omega * ball.omega;
+			const next = ball.omega + direction * baseAlpha * stopTime;
+			ball.omega = next * direction >= 0 ? 0 : next;
+			world.heat += before - 0.5 * inertia * ball.omega * ball.omega;
+			remaining -= stopTime;
 		}
-		ball.vx += delta * tx;
-		ball.vy += delta * ty;
-	}
-
-	function jumpImpulse(world, ball, nx, ny) {
-		if (!(ball.battery > 0)) return false;
-		const useful = 0.5 * massOf(ball) * jumpSpeed * jumpSpeed;
-		const cost = useful / jumpEfficiency;
-		if (cost > ball.battery) return false;
+		if (!(remaining > 0) || !(ball.battery > 0)) return;
+		const rimSpeed = ball.omega * direction * r;
+		if (rimSpeed >= motorFreeSpeed) return;
+		const taper = rimSpeed <= motorTopSpeed ? 1 : (motorFreeSpeed - rimSpeed) / (motorFreeSpeed - motorTopSpeed);
+		const alpha = baseAlpha * taper;
+		const maxOmega = motorFreeSpeed / r;
+		let target = ball.omega + direction * alpha * remaining;
+		if (target * direction > maxOmega) target = direction * maxOmega;
+		const before = 0.5 * inertia * ball.omega * ball.omega;
+		const wanted = 0.5 * inertia * target * target - before;
+		if (!(wanted > 0)) return;
+		const available = ball.battery * motorEfficiency;
+		const useful = wanted > available ? available : wanted;
+		const cost = Math.min(ball.battery, useful / motorEfficiency);
 		ball.battery -= cost;
 		world.heat += cost - useful;
-		ball.vx += jumpSpeed * nx;
-		ball.vy += jumpSpeed * ny;
-		return true;
+		ball.omega = direction * Math.sqrt((2 * (before + useful)) / inertia);
+	}
+
+	function clampImpulse(impulse, limit) {
+		if (impulse > limit) return limit;
+		if (impulse < -limit) return -limit;
+		return impulse;
+	}
+
+	// Coulomb friction at contact point x - r*n along oriented tangent t = (ny, -nx).
+	// Positive omega is clockwise, so contact slip relative to the surface is
+	// (v - v_surface)·t - omega*r. Clamping by mu*Jn lets fast spin skid and keep
+	// leftover spin for the next bounce while booking exact kinetic loss as heat.
+	function applyRockFriction(world, ball, nx, ny, normalImpulse) {
+		if (!(normalImpulse > 0)) return;
+		const r = radiusOf();
+		const m = massOf(ball);
+		const tx = ny;
+		const ty = -nx;
+		const slip = ball.vx * tx + ball.vy * ty - ball.omega * r;
+		if (Math.abs(slip) <= 1e-12) return;
+		const jt = clampImpulse(-tangentMassFactor * m * slip, surfaceFriction * normalImpulse);
+		const before = kineticEnergy(ball);
+		ball.vx += (jt / m) * tx;
+		ball.vy += (jt / m) * ty;
+		ball.omega -= jt / (inertiaFactor * m * r);
+		bookMech(world, before, kineticEnergy(ball));
+	}
+
+	function applyDeckFriction(world, ball, nx, ny, surfaceVx, surfaceVy, normalImpulse) {
+		if (!(normalImpulse > 0)) return;
+		const r = radiusOf();
+		const m = massOf(ball);
+		const tx = ny;
+		const ty = -nx;
+		const vt = (ball.vx - surfaceVx) * tx + (ball.vy - surfaceVy) * ty;
+		const slip = vt - ball.omega * r;
+		if (Math.abs(slip) <= 1e-12) return;
+		const jt = clampImpulse(-tangentMassFactor * m * slip, surfaceFriction * normalImpulse);
+		const before = mechanicalEnergy(ball);
+		ball.vx += (jt / m) * tx;
+		ball.vy += (jt / m) * ty;
+		ball.omega -= jt / (inertiaFactor * m * r);
+		bookMech(world, before, mechanicalEnergy(ball));
+	}
+
+	// Piston-like jump actuator: when switched on, each rock contact receives a
+	// normal energy pulse from the battery (v_n' = sqrt(v_n^2 + 2*push/m)),
+	// leaving tangential velocity and spin untouched. Returns added normal impulse.
+	function applyJumpPulse(world, ball, nx, ny) {
+		if (!ball.jump || ball.recycle || !(ball.battery > 0)) return 0;
+		const m = massOf(ball);
+		const pulse = 0.5 * m * jumpSpeed * jumpSpeed;
+		const available = ball.battery * jumpEfficiency;
+		const useful = pulse > available ? available : pulse;
+		if (!(useful > 0)) return 0;
+		const cost = Math.min(ball.battery, useful / jumpEfficiency);
+		ball.battery -= cost;
+		world.heat += cost - useful;
+		const vn = Math.max(0, ball.vx * nx + ball.vy * ny);
+		const before = kineticEnergy(ball);
+		const boosted = Math.sqrt(vn * vn + (2 * useful) / m);
+		const deltaVn = boosted - vn;
+		ball.vx += deltaVn * nx;
+		ball.vy += deltaVn * ny;
+		bookMech(world, before + useful, kineticEnergy(ball));
+		ball.jumps++;
+		ball.lastJump = useful;
+		return m * deltaVn;
 	}
 
 	// ---- ball step --------------------------------------------------------
@@ -329,40 +401,59 @@
 		const nx = rockNormal.nx;
 		const ny = rockNormal.ny;
 		const vn = ball.vx * nx + ball.vy * ny;
-		if (vn > leaveSpeed) {
+		if (vn > leaveSpeed || ny <= 0) {
 			ball.contact = CONTACT_NONE;
 			airStep(world, cave, ball, r, dt);
 			return;
 		}
+		if (-vn > bounceFloor) {
+			resolveContact(world, cave, ball, nx, ny, r);
+			if (ball.contact !== CONTACT_ROCK) return;
+		}
 		ball.contact = CONTACT_ROCK;
-		if (vn !== 0) {
-			// The surface holds the ball: the normal part of the step's motion is
-			// absorbed by the contact, and the energy it carried is heat.
-			world.heat += 0.5 * massOf(ball) * vn * vn;
-			ball.vx -= vn * nx;
-			ball.vy -= vn * ny;
+		const normalSpeed = ball.vx * nx + ball.vy * ny;
+		if (normalSpeed !== 0) {
+			const before = kineticEnergy(ball);
+			ball.vx -= normalSpeed * nx;
+			ball.vy -= normalSpeed * ny;
+			const dropped = before - kineticEnergy(ball);
+			if (ball.recycle && normalSpeed < 0 && dropped > 0) recycleEnergy(world, ball, dropped);
+			else bookMech(world, before, before - dropped);
 		}
-		if (ball.jump) {
-			ball.jump = false;
-			// The impulse is instantaneous: the rest of this step belongs to the
-			// flight, so the next step is a projectile and books its own gravity.
-			if (jumpImpulse(world, ball, nx, ny)) {
-				ball.contact = CONTACT_NONE;
-				return;
-			}
+		const jumpImpulse = applyJumpPulse(world, ball, nx, ny);
+		if (jumpImpulse > 0) {
+			applyRockFriction(world, ball, nx, ny, jumpImpulse);
+			ball.contact = CONTACT_NONE;
+			return;
 		}
+		const m = massOf(ball);
+		const gravity = phys().config.ballGravity;
+		const startOmega = ball.omega;
+		stepSpinMotor(world, ball, dt);
+		const mechBefore = mechanicalEnergy(ball);
 		const startVx = ball.vx;
 		const startVy = ball.vy;
-		const gravity = phys().config.ballGravity;
-		ball.vx += gravity * ny * nx * dt;
-		ball.vy -= gravity * nx * nx * dt;
-		driveMotor(world, ball, nx, ny, dt);
-		rollResistance(world, ball, nx, ny, dt);
-		settleRoll(ball, nx, ny);
-		// Trapezoidal travel: the gravity work over the step then matches the
-		// potential change exactly instead of drifting with Euler's error.
+		const tx = ny;
+		const ty = -nx;
+		let vt = startVx * tx + startVy * ty + gravity * nx * dt;
+		const slip = vt - ball.omega * r;
+		if (Math.abs(slip) > 1e-12) {
+			const jt = clampImpulse(-tangentMassFactor * m * slip, surfaceFriction * m * gravity * ny * dt);
+			vt += jt / m;
+			ball.omega -= jt / (inertiaFactor * m * r);
+		}
+		const speed = Math.abs(vt);
+		if (speed > 0 && Math.abs(vt - ball.omega * r) <= 1e-4) {
+			const keep = Math.max(0, speed - rollingResistance * ny * dt);
+			vt = vt < 0 ? -keep : keep;
+			ball.omega = vt / r;
+		}
+		ball.vx = vt * tx;
+		ball.vy = vt * ty;
+		// Trapezoidal travel matches slope gravity work to the height change.
 		ball.x += 0.5 * (startVx + ball.vx) * dt;
 		ball.y += 0.5 * (startVy + ball.vy) * dt;
+		bookMech(world, mechBefore, mechanicalEnergy(ball));
 		const distance = cave.sdfAt(ball.x, ball.y);
 		if (distance < r) {
 			cave.normalAt(ball.x, ball.y, rockNormal);
@@ -371,14 +462,9 @@
 			ball.y += push * rockNormal.ny;
 			bookLift(world, ball, push * rockNormal.ny);
 		}
-		ball.spin += ball.omega * dt;
+		ball.spin += 0.5 * (startOmega + ball.omega) * dt;
 	}
 
-	// One response for a traced hit and for a contact that is already touching at
-	// the start of the step. A slow (or flat) touch rolls; anything faster is a
-	// hit whose lost normal energy is the fracture budget, booked against what the
-	// rock really gave up with the rest as heat. The caller places the ball on the
-	// contact point first.
 	function resolveContact(world, cave, ball, nx, ny, r) {
 		ball.contact = CONTACT_NONE;
 		const vn = ball.vx * nx + ball.vy * ny;
@@ -386,17 +472,24 @@
 		const impact = -vn;
 		ball.lastImpact = impact;
 		const m = massOf(ball);
-		if (impact <= bounceFloor && !curvatureExceeds(cave, ball.x, ball.y, nx, ny, r)) {
-			// A roll: the surface takes the normal motion, no fracture energy.
-			world.heat += 0.5 * m * vn * vn;
+		const smooth = !curvatureExceeds(cave, ball.x, ball.y, nx, ny, r);
+		if (impact <= bounceFloor && smooth) {
+			const before = kineticEnergy(ball);
 			ball.vx -= vn * nx;
 			ball.vy -= vn * ny;
-			ball.contact = CONTACT_ROCK;
-			settleRoll(ball, nx, ny);
+			const dropped = before - kineticEnergy(ball);
+			if (ball.recycle && dropped > 0) recycleEnergy(world, ball, dropped);
+			else bookMech(world, before, before - dropped);
+			const normalImpulse = m * impact + applyJumpPulse(world, ball, nx, ny);
+			applyRockFriction(world, ball, nx, ny, normalImpulse);
+			const outVn = ball.vx * nx + ball.vy * ny;
+			ball.contact = outVn <= leaveSpeed && ny > 0 ? CONTACT_ROCK : CONTACT_NONE;
 			return;
 		}
-		// D3: the impact's lost normal energy is the fracture budget.
-		const budget = 0.5 * m * vn * vn * (1 - restitution * restitution);
+		// D3: the passive bounce's 10% normal loss is always the fracture budget.
+		const before = kineticEnergy(ball);
+		const inboundEnergy = 0.5 * m * vn * vn;
+		const budget = inboundEnergy * (1 - restitution * restitution);
 		const removed = weakenRock(world, cave, ball.x - nx * r, ball.y - ny * r, budget);
 		const spent = Math.min(budget, removed);
 		world.fractureEnergy += spent;
@@ -404,10 +497,35 @@
 		ball.lastFracture = spent;
 		ball.hits++;
 		spawnRemoved(cave);
-		ball.vx -= (1 + restitution) * vn * nx;
-		ball.vy -= (1 + restitution) * vn * ny;
-		settleRoll(ball, nx, ny);
-		ball.contact = ball.vx * nx + ball.vy * ny < bounceFloor ? CONTACT_ROCK : CONTACT_NONE;
+		let outVn = restitution * impact;
+		if (ball.recycle) {
+			const dampedVn = outVn * Math.sqrt(1 - recycleDamping);
+			outVn = dampedVn < bounceFloor && smooth && ny > 0 ? 0 : dampedVn;
+			ball.vx += (outVn - vn) * nx;
+			ball.vy += (outVn - vn) * ny;
+			const dampedEnergy = (before - budget) - kineticEnergy(ball);
+			if (dampedEnergy > 0) recycleEnergy(world, ball, dampedEnergy);
+			else bookMech(world, before - budget, kineticEnergy(ball));
+		} else {
+			ball.vx += (outVn - vn) * nx;
+			ball.vy += (outVn - vn) * ny;
+			bookMech(world, before - budget, kineticEnergy(ball));
+		}
+		let normalImpulse = m * (outVn - vn);
+		const jumpImpulse = applyJumpPulse(world, ball, nx, ny);
+		if (jumpImpulse > 0) {
+			normalImpulse += jumpImpulse;
+			outVn = ball.vx * nx + ball.vy * ny;
+		}
+		applyRockFriction(world, ball, nx, ny, normalImpulse);
+		ball.contact = outVn < bounceFloor && ny > 0 ? CONTACT_ROCK : CONTACT_NONE;
+	}
+
+	function advanceAirSpin(world, ball, duration) {
+		if (!(duration > 0)) return;
+		const startOmega = ball.omega;
+		stepSpinMotor(world, ball, duration);
+		ball.spin += 0.5 * (startOmega + ball.omega) * duration;
 	}
 
 	function airStep(world, cave, ball, r, dt) {
@@ -418,34 +536,32 @@
 			ball.x += ball.vx * dt;
 			ball.y += ball.vy * dt - 0.5 * gravity * dt * dt;
 			ball.vy -= gravity * dt;
-			ball.spin += ball.omega * dt;
+			advanceAirSpin(world, ball, dt);
 			return;
 		}
 		if (contact.time > 0) {
-			// The contact lands inside the step: fly to it, then respond. The ball
-			// is lifted from the ballistic flight line to the contact centre, so
-			// that lift is booked like any other change of height.
 			const flightY = ball.y + ball.vy * contact.time - 0.5 * gravity * contact.time * contact.time;
 			ball.x = contact.x;
 			ball.y = contact.y;
 			ball.vy -= gravity * contact.time;
 			bookLift(world, ball, ball.y - flightY);
-			ball.spin += ball.omega * contact.time;
+			advanceAirSpin(world, ball, contact.time);
 			resolveContact(world, cave, ball, contact.nx, contact.ny, r);
+			if (ball.contact === CONTACT_NONE) advanceAirSpin(world, ball, dt - contact.time);
 			return;
 		}
-		// Touching or overlapping at the start of the step: the query hands back
-		// the separated centre. Resolve the contact there (a deep overlap still
-		// has to punch rock) and fly the rest of the step from it, so a crevice
-		// narrower than the ball cannot pump the normal speed up.
 		bookLift(world, ball, contact.y - ball.y);
 		ball.x = contact.x;
 		ball.y = contact.y;
 		resolveContact(world, cave, ball, contact.nx, contact.ny, r);
+		if (ball.contact === CONTACT_ROCK) {
+			rollStep(world, cave, ball, r, dt);
+			return;
+		}
 		ball.x += ball.vx * dt;
 		ball.y += ball.vy * dt - 0.5 * gravity * dt * dt;
 		ball.vy -= gravity * dt;
-		ball.spin += ball.omega * dt;
+		advanceAirSpin(world, ball, dt);
 	}
 
 	function deckStep(world, ball, r, dt) {
@@ -461,8 +577,6 @@
 		bookLift(world, ball, hit.push * hit.ny);
 		ball.deckContact = hit.lny > 0.5;
 		ball.contact = CONTACT_DECK;
-		// The contact point rides the machine: its velocity is the plate's drive
-		// plus its pitch rate about the plate centre.
 		const cosine = Math.cos(plate.angle);
 		const sine = Math.sin(plate.angle);
 		const deck = phys().config.deck;
@@ -473,16 +587,29 @@
 		const relativeVx = ball.vx - surfaceVx;
 		const relativeVy = ball.vy - surfaceVy;
 		const vn = relativeVx * hit.nx + relativeVy * hit.ny;
+		const m = massOf(ball);
+		let normalImpulse = m * phys().config.ballGravity * Math.max(0, hit.ny) * dt;
 		if (vn < 0) {
 			const before = mechanicalEnergy(ball);
-			ball.vx -= (1 + restitution) * vn * hit.nx;
-			ball.vy -= (1 + restitution) * vn * hit.ny;
-			bookMech(world, before, mechanicalEnergy(ball));
+			const passiveOut = -restitution * vn;
+			ball.vx += (passiveOut - vn) * hit.nx;
+			ball.vy += (passiveOut - vn) * hit.ny;
+			const passiveAfter = mechanicalEnergy(ball);
+			bookMech(world, before, passiveAfter);
+			let outVn = passiveOut;
+			if (ball.recycle) {
+				const dampedVn = passiveOut * Math.sqrt(1 - recycleDamping);
+				outVn = dampedVn < bounceFloor && hit.lny > 0.5 ? 0 : dampedVn;
+				ball.vx += (outVn - passiveOut) * hit.nx;
+				ball.vy += (outVn - passiveOut) * hit.ny;
+				const dampedAfter = mechanicalEnergy(ball);
+				if (passiveAfter > dampedAfter) recycleEnergy(world, ball, passiveAfter - dampedAfter);
+				else bookMech(world, passiveAfter, dampedAfter);
+			}
+			normalImpulse += m * (outVn - vn);
 			ball.bounces++;
 		}
-		// The deck's tangential motion spins the ball; settleRoll does that at
-		// fixed energy, so a deck contact can never mint rotation.
-		settleRoll(ball, hit.nx, hit.ny);
+		applyDeckFriction(world, ball, hit.nx, hit.ny, surfaceVx, surfaceVy, normalImpulse);
 		if (!ball.deckContact) return;
 		charge(world, ball, dt);
 		if (!(ball.releaseCooldown > 0)) capture(world, ball);
@@ -514,21 +641,21 @@
 		const ball = activeBall(world);
 		if (!ball) return;
 		if (ball.releaseCooldown > 0) {
-			ball.releaseCooldown -= dt;
-			if (ball.releaseCooldown < 0) ball.releaseCooldown = 0;
+			ball.releaseCooldown = ball.releaseCooldown - dt < dt * 0.5 ? 0 : ball.releaseCooldown - dt;
 		}
+		ball.lastCharge = 0;
+		ball.lastJump = 0;
+		ball.lastRecycle = 0;
 		if (ball.state === 'held') {
 			phys().setHeldBallPose(world, ball);
 			ball.omega = 0;
 			ball.spin = 0;
 			ball.contact = CONTACT_NONE;
 			ball.deckContact = true;
-			ball.lastCharge = 0;
 			charge(world, ball, dt);
 			return;
 		}
-		ball.lastCharge = 0;
-		const r = radiusOf(ball);
+		const r = radiusOf();
 		const touching = ball.contact === CONTACT_ROCK && cave.sdfAt(ball.x, ball.y) <= r + contactSlop;
 		if (touching) rollStep(world, cave, ball, r, dt);
 		else airStep(world, cave, ball, r, dt);
@@ -545,8 +672,6 @@
 		return Boolean(machine && phys().machineDrive(machine));
 	}
 
-	// The release places the ball on the reflector face and lets the ball's own
-	// engine kick it along the face normal; the tilt therefore aims the shot.
 	function launch(world, target, machine) {
 		const ball = target || activeBall(world);
 		if (!canLaunch(world, ball)) return false;
@@ -555,10 +680,7 @@
 		const plate = p.machineBody(holder);
 		const baseAngle = plate.angle;
 		const faceAngle = baseAngle + p.machinePistonAngle(holder);
-		const r = radiusOf(ball);
-		// The ball leaves the deck at the reflector's own station, so every tilt
-		// releases from above the machine and aims the kick instead of starting
-		// the shot inside the hull.
+		const r = radiusOf();
 		const cosine = Math.cos(baseAngle);
 		const sine = Math.sin(baseAngle);
 		const seatY = p.config.deck + r;
@@ -573,7 +695,6 @@
 		ball.contact = CONTACT_NONE;
 		ball.deckContact = false;
 		ball.releaseCooldown = releaseCooldownTime;
-		ball.jump = false;
 		let useful = 0;
 		const m = massOf(ball);
 		const cost = 0.5 * m * launchSpeed * launchSpeed / launchEfficiency;
@@ -584,8 +705,6 @@
 			ball.vx += -Math.sin(faceAngle) * launchSpeed;
 			ball.vy += Math.cos(faceAngle) * launchSpeed;
 		}
-		// The lift onto the face is work by the deck, so it is imported energy;
-		// the kick itself came from the battery and is already booked.
 		world.importedEnergy += Math.max(0, mechanicalEnergy(ball) - useful);
 		holder.pistonOffset = p.config.pistonTravel * 0.6;
 		holder.pistonVelocity = 0;
@@ -643,7 +762,6 @@
 			debrisVx[i] *= debrisFriction;
 			debrisVy[i] *= debrisFriction;
 			if (Math.abs(nx) > debrisSteep) {
-				// Too steep to hold: the fragment keeps sliding down the face.
 				debrisVx[i] += gravity * ny * nx * dt;
 				debrisVy[i] -= gravity * nx * nx * dt;
 				continue;
@@ -658,6 +776,7 @@
 
 	const state = {
 		battery: 0, speed: 0, omega: 0, contact: CONTACT_NONE,
+		jump: false, recycle: false, recycled: 0,
 		hits: 0, debris: 0, restingDebris: 0
 	};
 
@@ -672,6 +791,9 @@
 			state.speed = 0;
 			state.omega = 0;
 			state.contact = CONTACT_NONE;
+			state.jump = false;
+			state.recycle = false;
+			state.recycled = 0;
 			state.hits = 0;
 			return state;
 		}
@@ -679,18 +801,24 @@
 		state.speed = Math.hypot(ball.vx, ball.vy);
 		state.omega = ball.omega || 0;
 		state.contact = ball.state === 'held' || ball.deckContact ? CONTACT_DECK : ball.contact;
+		state.jump = Boolean(ball.jump);
+		state.recycle = Boolean(ball.recycle);
+		state.recycled = ball.recycled || 0;
 		state.hits = ball.hits || 0;
 		return state;
 	}
 
 	const api = {
 		CONTACT_NONE, CONTACT_ROCK, CONTACT_DECK,
-		curvatureLimit, bounceFloor, restitution,
-		batteryCapacity, chargePower, chargeEfficiency, motorAcceleration, motorTopSpeed,
-		jumpSpeed, launchSpeed, rollingResistance, maxDebris,
-		debrisRestingShare: debrisRadiusShare, debrisFriction, debrisSteep,
-		init, step, setMotor, requestJump, canLaunch, launch, readouts, state,
-		mechanicalEnergy,
+		inertiaFactor, curvatureLimit, bounceFloor, restitution,
+		surfaceFriction, rollingResistance,
+		batteryCapacity, chargePower, chargeEfficiency,
+		motorAcceleration, motorTopSpeed, motorFreeSpeed, motorEfficiency,
+		jumpSpeed, jumpEfficiency, launchSpeed, launchEfficiency,
+		recycleDamping, recycleRecovery, recycleEfficiency,
+		maxDebris, debrisRestingShare: debrisRadiusShare, debrisFriction, debrisSteep,
+		init, step, setMotor, setJump, toggleJump, setRecycle, toggleRecycle,
+		canLaunch, launch, readouts, state, mechanicalEnergy,
 		debrisX, debrisY, debrisSize, debrisRed, debrisGreen, debrisBlue, debrisActive, debrisResting,
 		get debrisCount() { return debrisCount; }
 	};
