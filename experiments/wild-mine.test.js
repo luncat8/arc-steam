@@ -468,6 +468,74 @@ test('M3 small holes: a spun ball wedged on a pit rim sleeps instead of spinning
 	}
 });
 
+test('M3 small holes: a ball resting in the clear beside a rim never freezes mid-air', () => {
+	try {
+		const dt = physics.config.step;
+		const { world, ball } = wildWorld(1);
+		// The start room's right shelf rim: the ball lands in the clear within a
+		// ball radius of the drop-off. There the one-band field answers every
+		// trace with a contact a hair in the future while the ball still reads
+		// clear, and the old airStep moved onto that point and returned - gravity
+		// was never integrated and the ball hung at y = 33.057 for ever. That is
+		// the reported "stuck in the geometry of a small hole".
+		world.platform.x = -24.5;
+		ball.state = 'flying';
+		ball.holder = null;
+		ball.x = -4.5;
+		ball.y = 33;
+		ball.vx = 0;
+		ball.vy = 0;
+		ball.omega = 0;
+		ball.spin = 0;
+		ball.contact = wildBall.CONTACT_NONE;
+		ball.releaseCooldown = 0;
+		world.initialEnergy = physics.totalEnergy(world);
+		for (let i = 0; i < 240 * 2; i++) physics.step(world, dt);
+		assert.ok(ball.y < 32.9, `gravity kept acting on the ball (y = ${ball.y})`);
+		assert.ok(Math.hypot(ball.vx, ball.vy) > 0.5, 'the ball is falling, not pinned at the rim');
+		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
+	} finally {
+		resetClassic();
+	}
+});
+
+test('M3 small holes: a coasting ball carries rim friction into a pit and settles in it', () => {
+	try {
+		const dt = physics.config.step;
+		const r = physics.config.radius;
+		const { world, cave, ball } = wildWorld(1);
+		const cell = cave.state.cell;
+		const shelfRow = cave.state.shelfRow;
+		const column = cave.columnAt(0);
+		for (let c = column; c < column + 3; c++) for (let row = shelfRow - 2; row < shelfRow; row++) cave.dig(c, row);
+		const shelfTop = shelfRow * cell;
+		ball.state = 'flying';
+		ball.holder = null;
+		ball.x = (column - 2) * cell;
+		ball.y = shelfTop + r;
+		ball.vx = 1.2;
+		ball.vy = 0;
+		ball.omega = 0;
+		ball.spin = 0;
+		ball.contact = wildBall.CONTACT_NONE;
+		ball.releaseCooldown = 0;
+		world.initialEnergy = physics.totalEnergy(world);
+		let settledAt = -1;
+		for (let i = 0; i < 240 * 12; i++) {
+			physics.step(world, dt);
+			const asleep = Math.hypot(ball.vx, ball.vy) < wildBall.restSpeed
+				&& Math.abs(ball.omega * r) < wildBall.restSpeed
+				&& ball.contact === wildBall.CONTACT_ROCK;
+			if (settledAt < 0 && asleep) settledAt = i;
+		}
+		assert.ok(settledAt > 0 && settledAt < 240 * 10, 'ball comes to rest inside the pit');
+		assert.ok(Math.abs(ball.omega * r) < wildBall.restSpeed, 'rim friction killed the leftover spin');
+		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
+	} finally {
+		resetClassic();
+	}
+});
+
 test('M3 jump actuator: piston-style on/off energy toggle launches from roll and boosts repeated bounces', () => {
 	try {
 		const { world, cave, ball } = wildWorld(1);

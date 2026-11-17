@@ -81,6 +81,21 @@
 	// dissipates orders of magnitude too slowly. Keep rolling resistance alive
 	// between contacts for this long so a ball stops in a small hole.
 	const groundMemoryTime = 0.5;
+	// A trace is a root of `sdf - r` sampled at half-cell steps, and the field
+	// clamps to one band (0.9 m), so a trace can also land on the band edge or on
+	// a plateau with the ball still clear. A contact this early in the frame is
+	// not worth resolving blind: the frame is walked in `airSlices` ballistic
+	// slices instead, and each contact is judged by the clearance the field
+	// reports there (js/wild-ball.js land/airSlicesStep).
+	const instantContactTime = 1e-4;
+	const airSlices = 4;
+	// Share of the rolling-resistance and rim-friction law that acts on a frame
+	// the ball spends in the clear against a rim.
+	const faintNibble = 0.05;
+	// A contact resolution may hand the frame to the other driver (a landing
+	// rolls, a roll that leaves the ground flies); two hand-offs must be enough,
+	// a third would be the two drivers bouncing the same frame between them.
+	const handOffLimit = 2;
 
 	// Debris is outside the ball's ledger: a removed cell's potential energy was
 	// never counted for the cave, exactly as a platform's own height is not.
@@ -431,36 +446,58 @@
 		ball.groundTimer = groundMemoryTime;
 	}
 
-	// Rolling resistance carried across the micro-bounces of a rough-floor
-	// rattle. Without it a ball skipping over cell corners never re-enters the
-	// supported resolution, so neither the 0.35 m/s^2 coast nor the restSpeed
-	// sleep ever acts and the ball spins/slides essentially forever. Applies as
-	// a plain deceleration along the cached ground tangent; gravity and the
+	// Rolling resistance and rim friction carried across the micro-bounces of a
+	// rough floor. Without them a ball skipping over cell corners never re-enters
+	// the supported resolution, so neither the 0.35 m/s^2 coast nor the restSpeed
+	// sleep ever acts and the ball spins/slides essentially forever - and a ball
+	// sitting in the clear beside a rim keeps whatever spin it arrived with, the
+	// missing friction on the edges of a small hole.
+	//
+	// `share` scales the whole law: 1 is the full carried roll, `faintNibble` is
+	// the rim dither of a frame with no surface to resolve a contact on. The law
+	// is the supported one with the step's own weight as the load: rolling
+	// resistance on the coast, then a Coulomb impulse that drags contact slip
+	// (`v_t - omega r`) to zero and books the slip work as heat. Gravity and the
 	// bounce are already integrated by the caller.
-	function carryGround(world, ball, r, dt) {
-		if (!(ball.groundTimer > 0)) return;
-		ball.groundTimer -= dt;
+	function groundDrag(world, ball, r, dt, share) {
+		if (!(dt > 0)) return;
 		const ny = ball.groundNy;
 		if (!(ny > 0)) return;
-		const loss = rollingResistance * ny * dt;
 		const tx = ball.groundTx;
 		const ty = ball.groundTy;
+		const gravity = phys().config.ballGravity;
+		const m = massOf(ball);
 		const before = kineticEnergy(ball);
-		const vt = ball.vx * tx + ball.vy * ty;
-		const keep = Math.max(0, Math.abs(vt) - loss);
-		const next = vt < 0 ? -keep : keep;
-		const delta = next - vt;
-		if (delta !== 0) {
-			const noSlip = Math.abs(vt - ball.omega * r) <= 1e-3;
-			ball.vx += delta * tx;
-			ball.vy += delta * ty;
-			if (noSlip) ball.omega = next / r;
-		}
+		let vt = ball.vx * tx + ball.vy * ty;
+		const keep = Math.max(0, Math.abs(vt) - rollingResistance * share * ny * dt);
+		vt = vt < 0 ? -keep : keep;
+		const slip = vt - ball.omega * r;
+		const limit = surfaceFriction * share * m * gravity * ny * dt;
+		const jt = Math.abs(slip) > 1e-9 ? clampImpulse(-tangentMassFactor * m * slip, limit) : 0;
+		vt += jt / m;
+		ball.omega -= jt / (inertiaFactor * m * r);
+		ball.vx += (vt - ball.vx * tx - ball.vy * ty) * tx;
+		ball.vy += (vt - ball.vx * tx - ball.vy * ty) * ty;
 		const afterDrag = kineticEnergy(ball);
 		if (afterDrag !== before) bookMech(world, before, afterDrag);
 	}
 
-	function rollStep(world, cave, ball, r, dt) {
+	function carryGround(world, ball, r, dt) {
+		if (!(ball.groundTimer > 0)) return;
+		ball.groundTimer -= dt;
+		groundDrag(world, ball, r, dt, 1);
+	}
+
+	// A frame the rim holds in the clear: no surface to resolve a contact on, but
+	// the ball is far from flying either. It is a rim sliding under the ball, so
+	// the faintNibble share of the same law drains the coast and any dithering
+	// spin - enough to stop a ball at a hole's edge, far too little to feel in
+	// free flight.
+	function nibbleGround(world, ball, r, dt) {
+		groundDrag(world, ball, r, dt, faintNibble);
+	}
+
+	function rollStep(world, cave, ball, r, dt, depth) {
 		cave.normalAt(ball.x, ball.y, rockNormal);
 		let nx = rockNormal.nx;
 		let ny = rockNormal.ny;
@@ -473,7 +510,7 @@
 			const gap = floorGap(cave, ball.x, ball.y, r);
 			if (!(gap <= contactSlop)) {
 				ball.contact = CONTACT_NONE;
-				airStep(world, cave, ball, r, dt);
+				airStep(world, cave, ball, r, dt, depth + 1);
 				return;
 			}
 			if (sdfVn < 0) resolveContact(world, cave, ball, nx, ny, r);
@@ -489,7 +526,7 @@
 		const vn = ball.vx * nx + ball.vy * ny;
 		if (vn > leaveSpeed) {
 			ball.contact = CONTACT_NONE;
-			airStep(world, cave, ball, r, dt);
+			airStep(world, cave, ball, r, dt, depth + 1);
 			return;
 		}
 		if (-vn > bounceFloor) {
@@ -622,42 +659,120 @@
 		ball.spin += 0.5 * (startOmega + ball.omega) * duration;
 	}
 
-	function airStep(world, cave, ball, r, dt) {
+	// Pure ballistic travel for `duration`: no contact anywhere inside it. Drag is
+	// left off on the frames right after a resolved contact, which owns its own
+	// impulses - restitution and friction already accounted for that step.
+	function flyFree(world, ball, r, duration, drag) {
 		const gravity = phys().config.ballGravity;
-		const contact = cave.traceCircle(ball.x, ball.y, ball.vx, ball.vy, dt, r, gravity, trace);
+		ball.x += ball.vx * duration;
+		ball.y += ball.vy * duration - 0.5 * gravity * duration * duration;
+		ball.vy -= gravity * duration;
+		advanceAirSpin(world, ball, duration);
+		if (drag !== false) carryGround(world, ball, r, duration);
+	}
+
+	// Move to a traced contact `time` into the frame, then act on what the field
+	// actually says there. A trace is a root of `sdf - r` sampled at half-cell
+	// steps, and the field clamps to one band (0.9 m), so a trace can land on the
+	// band edge beside a cliff and cannot tell a surface from a hole's edge. The
+	// clearance the field reports at the traced point is the ground truth; the
+	// trace only says where to look.
+	//  - clear: nothing to hit, fly on (the corner is still charged its share of
+	//    rim friction, see below);
+	//  - touching: bounce or roll there;
+	//  - inside: the field's curve cuts the chord the trace walked, so separate
+	//    first and resolve at the separated centre.
+	// Returns true when the contact took the rest of the frame.
+	function land(world, cave, ball, r, dt, time, depth) {
+		const gravity = phys().config.ballGravity;
+		const flightY = ball.y + ball.vy * time - 0.5 * gravity * time * time;
+		ball.x = trace.x;
+		ball.y = trace.y;
+		ball.vy -= gravity * time;
+		bookLift(world, ball, ball.y - flightY);
+		advanceAirSpin(world, ball, time);
+		const distance = cave.sdfAt(ball.x, ball.y);
+		if (distance > r + contactSlop) {
+			nibbleGround(world, ball, r, time);
+			return false;
+		}
+		if (distance < r - contactSlop) {
+			const push = r - distance;
+			ball.x += push * trace.nx;
+			ball.y += push * trace.ny;
+			bookLift(world, ball, push * trace.ny);
+		}
+		resolveContact(world, cave, ball, trace.nx, trace.ny, r);
+		if (ball.contact !== CONTACT_ROCK) return false;
+		if (depth > handOffLimit) return true;
+		// Only the rest of the frame is left: the contact happened `time` in.
+		rollStep(world, cave, ball, r, dt - time, depth + 1);
+		return true;
+	}
+
+	// A contact at (almost) zero time is the field's plateau: a ball radius is
+	// only 1.44 cells and the bilinear field is flat across a cell, so a ball
+	// resting against a corner reads "touching" for ever with no closing speed,
+	// as does one hanging in the clear a band-edge artefact away from the corner.
+	// Either way the frame must still integrate gravity and travel - the old code
+	// stopped on the traced point every frame, which pinned the ball in mid-air
+	// beside a hole. Walk the frame in slices so a real corner can still be met
+	// inside it; a slice the field calls clear flies on and is charged the faint
+	// nibble of rim friction, which is how a ball dies at a hole's edge instead
+	// of skating along it.
+	function airSlicesStep(world, cave, ball, r, dt, depth) {
+		const gravity = phys().config.ballGravity;
+		let used = 0;
+		for (let index = 0; index < airSlices; index++) {
+			const span = (dt - used) / (airSlices - index);
+			const contact = cave.traceCircle(ball.x, ball.y, ball.vx, ball.vy, span, r, gravity, trace);
+			if (contact.time <= span && contact.time > instantContactTime) {
+				land(world, cave, ball, r, dt, contact.time, depth);
+				used += contact.time;
+				if (ball.contact === CONTACT_ROCK) return;
+				flyFree(world, ball, r, dt - used, false);
+				return;
+			}
+			if (contact.time <= instantContactTime) {
+				const distance = cave.sdfAt(ball.x, ball.y);
+				const closing = ball.vx * contact.nx + ball.vy * contact.ny < 0;
+				const inside = distance <= r + contactSlop;
+				if (inside) {
+					if (distance < r) {
+						const push = r - distance;
+						ball.x += push * contact.nx;
+						ball.y += push * contact.ny;
+						bookLift(world, ball, push * contact.ny);
+					}
+					resolveContact(world, cave, ball, contact.nx, contact.ny, r);
+				} else if (closing) {
+					resolveContact(world, cave, ball, contact.nx, contact.ny, r);
+				}
+				if (ball.contact === CONTACT_ROCK) {
+					if (depth > handOffLimit) return;
+					rollStep(world, cave, ball, r, dt - used, depth + 1);
+					return;
+				}
+				if (!inside) nibbleGround(world, ball, r, span);
+			}
+			flyFree(world, ball, r, span, false);
+			used += span;
+		}
+	}
+
+	function airStep(world, cave, ball, r, dt, depth) {
 		ball.contact = CONTACT_NONE;
+		const contact = cave.traceCircle(ball.x, ball.y, ball.vx, ball.vy, dt, r, phys().config.ballGravity, trace);
 		if (!(contact.time <= dt)) {
-			ball.x += ball.vx * dt;
-			ball.y += ball.vy * dt - 0.5 * gravity * dt * dt;
-			ball.vy -= gravity * dt;
-			advanceAirSpin(world, ball, dt);
-			carryGround(world, ball, r, dt);
+			flyFree(world, ball, r, dt);
 			return;
 		}
-		if (contact.time > 0) {
-			const flightY = ball.y + ball.vy * contact.time - 0.5 * gravity * contact.time * contact.time;
-			ball.x = contact.x;
-			ball.y = contact.y;
-			ball.vy -= gravity * contact.time;
-			bookLift(world, ball, ball.y - flightY);
-			advanceAirSpin(world, ball, contact.time);
-			resolveContact(world, cave, ball, contact.nx, contact.ny, r);
-			if (ball.contact === CONTACT_NONE) advanceAirSpin(world, ball, dt - contact.time);
+		if (contact.time <= instantContactTime) {
+			airSlicesStep(world, cave, ball, r, dt, depth);
 			return;
 		}
-		bookLift(world, ball, contact.y - ball.y);
-		ball.x = contact.x;
-		ball.y = contact.y;
-		const resolved = resolveContact(world, cave, ball, contact.nx, contact.ny, r);
-		if (ball.contact === CONTACT_ROCK) {
-			rollStep(world, cave, ball, r, dt);
-			return;
-		}
-		ball.x += ball.vx * dt;
-		ball.y += ball.vy * dt - 0.5 * gravity * dt * dt;
-		ball.vy -= gravity * dt;
-		advanceAirSpin(world, ball, dt);
-		if (!resolved) carryGround(world, ball, r, dt);
+		if (land(world, cave, ball, r, dt, contact.time, depth)) return;
+		flyFree(world, ball, r, dt - contact.time, false);
 	}
 
 	function deckStep(world, ball, r, dt) {
@@ -753,10 +868,13 @@
 		}
 		const r = radiusOf();
 		const sdf = cave.sdfAt(ball.x, ball.y);
+		// The signed field is the only surface: a stair-stepped occupancy scan
+		// (`floorBelow`) reports a shelf floor under a pocket the ball has fallen
+		// into, and would seat it in mid-air there.
 		const touching = ball.contact === CONTACT_ROCK && sdf <= r + contactSlop;
-		const seated = floorGap(cave, ball.x, ball.y, r) <= contactSlop && Math.abs(ball.vy) <= leaveSpeed;
-		if (touching || seated) rollStep(world, cave, ball, r, dt);
-		else airStep(world, cave, ball, r, dt);
+		const seated = sdf <= r + contactSlop && Math.abs(ball.vy) <= leaveSpeed;
+		if (touching || seated) rollStep(world, cave, ball, r, dt, 0);
+		else airStep(world, cave, ball, r, dt, 0);
 		deckStep(world, ball, r, dt);
 		if (ball.contact === CONTACT_ROCK && cave.sdfAt(ball.x, ball.y) > r + contactSlop) ball.contact = CONTACT_NONE;
 	}
@@ -913,7 +1031,7 @@
 	const api = {
 		CONTACT_NONE, CONTACT_ROCK, CONTACT_DECK,
 		inertiaFactor, curvatureLimit, bounceFloor, restitution,
-		surfaceFriction, rollingResistance, restSpeed, groundMemoryTime,
+		surfaceFriction, rollingResistance, restSpeed, groundMemoryTime, faintNibble, handOffLimit,
 		batteryCapacity, chargePower, chargeEfficiency,
 		motorAcceleration, motorTopSpeed, motorFreeSpeed, motorEfficiency,
 		jumpSpeed, jumpEfficiency, launchSpeed, launchEfficiency,
