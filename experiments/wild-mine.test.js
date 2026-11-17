@@ -428,6 +428,46 @@ test('M3 friction: motor-off spin on land and against a wall dies instead of fre
 	}
 });
 
+test('M3 small holes: a spun ball wedged on a pit rim sleeps instead of spinning forever', () => {
+	try {
+		const dt = physics.config.step;
+		const r = physics.config.radius;
+		const { world, cave, ball } = wildWorld(1);
+		const cell = cave.state.cell;
+		const shelfRow = cave.state.shelfRow;
+		const column = cave.columnAt(0);
+		for (let c = column; c < column + 2; c++) for (let row = shelfRow - 1; row < shelfRow; row++) cave.dig(c, row);
+		const shelfTop = shelfRow * cell;
+		// A one-cell-deep, two-cell-wide pit carved into the shelf floor: the
+		// ball wedges on the two rim corners with the motor off and a full
+		// spin. Below the rim there is no floor to lean on, so the old contact
+		// rules left the spin frozen in the air.
+		ball.state = 'flying';
+		ball.holder = null;
+		ball.x = (column + 1) * cell;
+		ball.y = shelfTop + Math.sqrt(r * r - (cell * 0.5) * (cell * 0.5));
+		ball.vx = 0;
+		ball.vy = 0;
+		ball.omega = 6;
+		ball.spin = 0;
+		ball.contact = wildBall.CONTACT_NONE;
+		ball.releaseCooldown = 0;
+		world.initialEnergy = physics.totalEnergy(world);
+		let settledAt = -1;
+		for (let i = 0; i < 240 * 10; i++) {
+			physics.step(world, dt);
+			const speed = Math.hypot(ball.vx, ball.vy);
+			const settled = speed < wildBall.restSpeed && Math.abs(ball.omega * r) < wildBall.restSpeed
+				&& ball.contact === wildBall.CONTACT_ROCK;
+			if (settledAt < 0 && settled) settledAt = i;
+		}
+		assert.ok(settledAt > 0 && settledAt < 240 * 5, 'ball sleeps on the pit rim');
+		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
+	} finally {
+		resetClassic();
+	}
+});
+
 test('M3 jump actuator: piston-style on/off energy toggle launches from roll and boosts repeated bounces', () => {
 	try {
 		const { world, cave, ball } = wildWorld(1);
@@ -495,7 +535,9 @@ test('M3 bounce energy recycling: actively stops bouncing, returns energy to bat
 		passive.ball.battery = 150;
 		freeBall(passive.world, passive.cave, 2.5, floor + 1.5, 0, 0);
 		let passiveSettle = -1;
-		for (let i = 0; i < 240 * 30; i++) {
+		// A motor-off passive superball needs ~25 s of bouncing before its
+		// rebound height collapses under one radius; watch well past that.
+		for (let i = 0; i < 240 * 45; i++) {
 			physics.step(passive.world, dt);
 			if (passiveSettle < 0 && i > 10 && passive.ball.contact === wildBall.CONTACT_ROCK) passiveSettle = i;
 		}
@@ -523,7 +565,10 @@ test('M3 bounce energy recycling: actively stops bouncing, returns energy to bat
 		assert.ok(settleHits <= 3 && passive.ball.hits > 15, 'recycling cuts dozens of bounces down to a cushioned stop');
 		assert.ok(recycled.ball.battery > 155, 'recycling returns damped bounce energy to the battery');
 		assert.ok(Math.abs((recycled.ball.battery - 150) - recycled.ball.recycled) < 1e-9);
-		assert.ok(settleVx < -0.7, 'recycling stops normal rebound while preserving tangential roll');
+		// Rolling resistance bleeds the coat speed in both modes now, so a
+		// recycled ball keeps the sign and most of the roll rather than every
+		// unit of it; the normal rebound, not the tangent, is what dies.
+		assert.ok(settleVx < -0.55, 'recycling stops normal rebound while preserving tangential roll');
 		assert.ok(Math.abs(ledgerDrift(recycled.world)) < 1e-8);
 
 		// Full battery: still stops bouncing, caps at batteryCapacity, vents rest as heat.

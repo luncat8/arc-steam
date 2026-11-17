@@ -75,6 +75,12 @@
 	// Below this rim/centre speed a supported, motor-off ball is asleep: leftover
 	// micro-spin is booked as heat instead of freewheeling on a wall or settle.
 	const restSpeed = 0.04;
+	// A ball that touched rock this recently is ground-rattling, not flying: the
+	// rough cave floor breaks a roll into micro-bounces that skip the supported
+	// resolution entirely, and the coasting speed (and any no-slip spin) then
+	// dissipates orders of magnitude too slowly. Keep rolling resistance alive
+	// between contacts for this long so a ball stops in a small hole.
+	const groundMemoryTime = 0.5;
 
 	// Debris is outside the ball's ledger: a removed cell's potential energy was
 	// never counted for the cave, exactly as a platform's own height is not.
@@ -215,6 +221,10 @@
 		ball.releaseCooldown = 0;
 		ball.contact = CONTACT_NONE;
 		ball.deckContact = false;
+		ball.groundTimer = 0;
+		ball.groundTx = 1;
+		ball.groundTy = 0;
+		ball.groundNy = 0;
 		ball.hits = 0;
 		ball.bounces = 0;
 		ball.jumps = 0;
@@ -406,6 +416,50 @@
 
 	// ---- ball step --------------------------------------------------------
 
+	// Refresh the ground memory: the last rock contact, its tangent and the
+	// load-bearing (upward) share of its normal. A ceiling or sideways face
+	// carries no floor load; once a floor-like contact enters the memory window,
+	// a sideways touch must not poison its authority — so the window keeps the
+	// strongest support it has seen until it expires.
+	function touchGround(ball, nx, ny) {
+		const up = ny > 0 ? ny : 0;
+		if (!(ball.groundTimer > 0) || up >= ball.groundNy) {
+			ball.groundTx = ny;
+			ball.groundTy = -nx;
+			ball.groundNy = up;
+		}
+		ball.groundTimer = groundMemoryTime;
+	}
+
+	// Rolling resistance carried across the micro-bounces of a rough-floor
+	// rattle. Without it a ball skipping over cell corners never re-enters the
+	// supported resolution, so neither the 0.35 m/s^2 coast nor the restSpeed
+	// sleep ever acts and the ball spins/slides essentially forever. Applies as
+	// a plain deceleration along the cached ground tangent; gravity and the
+	// bounce are already integrated by the caller.
+	function carryGround(world, ball, r, dt) {
+		if (!(ball.groundTimer > 0)) return;
+		ball.groundTimer -= dt;
+		const ny = ball.groundNy;
+		if (!(ny > 0)) return;
+		const loss = rollingResistance * ny * dt;
+		const tx = ball.groundTx;
+		const ty = ball.groundTy;
+		const before = kineticEnergy(ball);
+		const vt = ball.vx * tx + ball.vy * ty;
+		const keep = Math.max(0, Math.abs(vt) - loss);
+		const next = vt < 0 ? -keep : keep;
+		const delta = next - vt;
+		if (delta !== 0) {
+			const noSlip = Math.abs(vt - ball.omega * r) <= 1e-3;
+			ball.vx += delta * tx;
+			ball.vy += delta * ty;
+			if (noSlip) ball.omega = next / r;
+		}
+		const afterDrag = kineticEnergy(ball);
+		if (afterDrag !== before) bookMech(world, before, afterDrag);
+	}
+
 	function rollStep(world, cave, ball, r, dt) {
 		cave.normalAt(ball.x, ball.y, rockNormal);
 		let nx = rockNormal.nx;
@@ -431,6 +485,7 @@
 				ny = 1;
 			}
 		}
+		touchGround(ball, nx, ny);
 		const vn = ball.vx * nx + ball.vy * ny;
 		if (vn > leaveSpeed) {
 			ball.contact = CONTACT_NONE;
@@ -499,10 +554,14 @@
 		ball.spin += 0.5 * (startOmega + ball.omega) * dt;
 	}
 
+	// Returns true when a contact impulse was resolved (vn < 0); the caller uses
+	// it to keep rolling resistance off the bounce frame, which owns those
+	// impulses outright.
 	function resolveContact(world, cave, ball, nx, ny, r) {
 		ball.contact = CONTACT_NONE;
 		const vn = ball.vx * nx + ball.vy * ny;
-		if (!(vn < 0)) return;
+		if (!(vn < 0)) return false;
+		touchGround(ball, nx, ny);
 		const impact = -vn;
 		ball.lastImpact = impact;
 		const m = massOf(ball);
@@ -518,7 +577,7 @@
 			applyRockFriction(world, ball, nx, ny, normalImpulse);
 			const outVn = ball.vx * nx + ball.vy * ny;
 			ball.contact = outVn <= leaveSpeed && ny > 0 ? CONTACT_ROCK : CONTACT_NONE;
-			return;
+			return true;
 		}
 		// D3: the passive bounce's 10% normal loss is always the fracture budget.
 		const before = kineticEnergy(ball);
@@ -553,6 +612,7 @@
 		}
 		applyRockFriction(world, ball, nx, ny, normalImpulse);
 		ball.contact = outVn < bounceFloor && ny > 0 ? CONTACT_ROCK : CONTACT_NONE;
+		return true;
 	}
 
 	function advanceAirSpin(world, ball, duration) {
@@ -571,6 +631,7 @@
 			ball.y += ball.vy * dt - 0.5 * gravity * dt * dt;
 			ball.vy -= gravity * dt;
 			advanceAirSpin(world, ball, dt);
+			carryGround(world, ball, r, dt);
 			return;
 		}
 		if (contact.time > 0) {
@@ -587,7 +648,7 @@
 		bookLift(world, ball, contact.y - ball.y);
 		ball.x = contact.x;
 		ball.y = contact.y;
-		resolveContact(world, cave, ball, contact.nx, contact.ny, r);
+		const resolved = resolveContact(world, cave, ball, contact.nx, contact.ny, r);
 		if (ball.contact === CONTACT_ROCK) {
 			rollStep(world, cave, ball, r, dt);
 			return;
@@ -596,6 +657,7 @@
 		ball.y += ball.vy * dt - 0.5 * gravity * dt * dt;
 		ball.vy -= gravity * dt;
 		advanceAirSpin(world, ball, dt);
+		if (!resolved) carryGround(world, ball, r, dt);
 	}
 
 	function deckStep(world, ball, r, dt) {
@@ -730,6 +792,10 @@
 		ball.spin = 0;
 		ball.contact = CONTACT_NONE;
 		ball.deckContact = false;
+		ball.groundTimer = 0;
+		ball.groundTx = 1;
+		ball.groundTy = 0;
+		ball.groundNy = 0;
 		ball.releaseCooldown = releaseCooldownTime;
 		let useful = 0;
 		const m = massOf(ball);
@@ -847,7 +913,7 @@
 	const api = {
 		CONTACT_NONE, CONTACT_ROCK, CONTACT_DECK,
 		inertiaFactor, curvatureLimit, bounceFloor, restitution,
-		surfaceFriction, rollingResistance, restSpeed,
+		surfaceFriction, rollingResistance, restSpeed, groundMemoryTime,
 		batteryCapacity, chargePower, chargeEfficiency,
 		motorAcceleration, motorTopSpeed, motorFreeSpeed, motorEfficiency,
 		jumpSpeed, jumpEfficiency, launchSpeed, launchEfficiency,
