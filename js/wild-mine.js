@@ -270,8 +270,20 @@
 		p.cool(world, dt);
 		world.time += dt;
 		stepCamera(world, dt);
+		// Stream the union of the camera and both players so a ball that sprints
+		// ahead of the follow still has rock, at 1 fresh chunk per frame.
 		const halfSpan = viewWidth * 0.75;
-		cave.stream(camera.x - halfSpan, camera.x + halfSpan, 1);
+		let minX = camera.x - halfSpan;
+		let maxX = camera.x + halfSpan;
+		const plateX = world.platform.x;
+		if (plateX - halfSpan < minX) minX = plateX - halfSpan;
+		if (plateX + halfSpan > maxX) maxX = plateX + halfSpan;
+		const flying = activeBall(world);
+		if (flying) {
+			if (flying.x - halfSpan < minX) minX = flying.x - halfSpan;
+			if (flying.x + halfSpan > maxX) maxX = flying.x + halfSpan;
+		}
+		cave.stream(minX, maxX, 1);
 	}
 
 	function inspectCell(column, row, materials, prices) {

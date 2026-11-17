@@ -385,6 +385,49 @@ test('M3 Coulomb bounce friction: spinning bounces transfer spin by normal impul
 	}
 });
 
+test('M3 friction: motor-off spin on land and against a wall dies instead of freewheeling', () => {
+	try {
+		const dt = physics.config.step;
+		const r = physics.config.radius;
+
+		// Open shelf: leftover spin couples into a roll, then rolling resistance
+		// and restSpeed sleep stop both translation and omega.
+		const coast = wildWorld(1);
+		const floor = shelfRest(coast.world, coast.cave, 0);
+		freeBall(coast.world, coast.cave, 0, floor, 0, 0);
+		coast.ball.omega = 8;
+		coast.ball.contact = wildBall.CONTACT_ROCK;
+		coast.world.initialEnergy = physics.totalEnergy(coast.world);
+		for (let i = 0; i < 240 * 4; i++) physics.step(coast.world, dt);
+		assert.ok(Math.abs(coast.ball.vx) < wildBall.restSpeed, 'coasting translation stops on the shelf');
+		assert.ok(Math.abs(coast.ball.omega * r) < wildBall.restSpeed, 'coasting spin stops on the shelf');
+		assert.equal(coast.ball.contact, wildBall.CONTACT_ROCK);
+		assert.ok(Math.abs(ledgerDrift(coast.world)) < 1e-8);
+
+		// Sit against the start-room wall with leftover spin and no motor: the
+		// wall used to steal the floor contact (ny = 0) and freeze omega in air.
+		const wallRun = wildWorld(1);
+		wallRun.world.platform.x = -8;
+		let wall = NaN;
+		for (let x = 2.5; x < 6; x += 0.02) {
+			if (wallRun.cave.solidAt(x, 31.5)) { wall = x; break; }
+		}
+		assert.ok(Number.isFinite(wall), 'the start room has a right wall');
+		const wallFloor = shelfRest(wallRun.world, wallRun.cave, wall - r - 0.01);
+		freeBall(wallRun.world, wallRun.cave, wall - r - 0.01, wallFloor, 0, 0);
+		wallRun.ball.omega = 12;
+		wallRun.ball.contact = wildBall.CONTACT_ROCK;
+		wallRun.ball.releaseCooldown = 1;
+		wallRun.world.initialEnergy = physics.totalEnergy(wallRun.world);
+		for (let i = 0; i < 240 * 3; i++) physics.step(wallRun.world, dt);
+		assert.ok(Math.abs(wallRun.ball.omega) < 0.4, 'wall-pinned leftover spin dies by floor friction');
+		assert.ok(Math.abs(wallRun.ball.vx) < 0.08, 'and translation sleeps with it');
+		assert.ok(Math.abs(ledgerDrift(wallRun.world)) < 1e-8);
+	} finally {
+		resetClassic();
+	}
+});
+
 test('M3 jump actuator: piston-style on/off energy toggle launches from roll and boosts repeated bounces', () => {
 	try {
 		const { world, cave, ball } = wildWorld(1);
@@ -633,6 +676,61 @@ test('M3 energy: ball kinetic + rotational + potential + battery + heat + fractu
 		assert.ok(world.fractureEnergy > 0);
 		assert.ok(world.heat > 0);
 		assert.ok(Math.abs(ledgerDrift(world)) < 1e-6, 'ledger drift ' + ledgerDrift(world));
+	} finally {
+		resetClassic();
+	}
+});
+
+test('M4 streaming: a 12 m/s window stays in budget, evicts clean chunks, and restores edits', () => {
+	try {
+		const { world, cave, ball } = wildWorld(1);
+		const cell = cave.state.cell;
+		const dt = physics.config.step;
+		const half = wildMine.viewWidth * 0.75;
+		let editCol = 8;
+		let editRow = -1;
+		for (let r = 200; r < 300; r++) {
+			if (cave.solidAt((editCol + 0.5) * cell, (r + 0.5) * cell)) {
+				editRow = r;
+				break;
+			}
+		}
+		assert.ok(editRow > 0, 'found rock to edit in the start window');
+		assert.equal(cave.dig(editCol, editRow), true);
+
+		let x = 0;
+		let maxLive = cave.state.liveChunks;
+		for (let i = 0; i < 240 * 8; i++) {
+			x += 12 * dt;
+			cave.stream(x - half, x + half, 1);
+			if (cave.state.liveChunks > maxLive) maxLive = cave.state.liveChunks;
+			assert.ok(Number.isFinite(cave.sdfAt(x, 32)), 'sdf stays defined at the 12 m/s centre');
+		}
+		assert.ok(maxLive <= 12, 'liveChunks stay within chunkLimit at 12 m/s: ' + maxLive);
+		assert.ok(x > 90, 'the window travelled past several chunks');
+		assert.ok(cave.state.storedChunks >= 1, 'the edited start chunk was evicted to stored');
+
+		cave.stream(-half, half, 99);
+		assert.equal(cave.solidAt((editCol + 0.5) * cell, (editRow + 0.5) * cell), false, 'edits survive the 12 m/s round trip');
+
+		world.drive = true;
+		world.forceSetting = 1;
+		world.direction = 1;
+		ball.state = 'flying';
+		ball.holder = null;
+		ball.x = world.platform.x + 2;
+		ball.y = world.platform.y + 2;
+		ball.vx = 8;
+		ball.vy = 1;
+		ball.contact = wildBall.CONTACT_NONE;
+		maxLive = cave.state.liveChunks;
+		for (let i = 0; i < 240 * 3; i++) {
+			physics.step(world, dt);
+			if (cave.state.liveChunks > maxLive) maxLive = cave.state.liveChunks;
+		}
+		assert.ok(maxLive <= 12, 'player motion keeps liveChunks bounded: ' + maxLive);
+		assert.ok(Number.isFinite(cave.sdfAt(world.platform.x, world.platform.y)), 'rock stays under the platform');
+		assert.ok(Number.isFinite(cave.sdfAt(ball.x, ball.y)), 'and under the ball');
 	} finally {
 		resetClassic();
 	}

@@ -42,7 +42,8 @@
 	// D2: a passive hit keeps 90% of its normal energy.
 	const restitution = Math.sqrt(0.9);
 	// D4: Coulomb friction couples spin and tangential velocity on bounce and roll;
-	// rolling resistance settles a coasting roll into heat.
+	// rolling resistance settles a coasting roll into heat; restSpeed sleeps a
+	// motor-off ball once both centre and rim speeds have died.
 	const surfaceFriction = 0.85;
 	const rollingResistance = 0.35;
 
@@ -71,6 +72,9 @@
 	const releaseCooldownTime = 0.5;
 	const contactSlop = 0.012;
 	const leaveSpeed = 0.02;
+	// Below this rim/centre speed a supported, motor-off ball is asleep: leftover
+	// micro-spin is booked as heat instead of freewheeling on a wall or settle.
+	const restSpeed = 0.04;
 
 	// Debris is outside the ball's ledger: a removed cell's potential energy was
 	// never counted for the cave, exactly as a platform's own height is not.
@@ -275,6 +279,12 @@
 		ball.lastCharge = stored;
 	}
 
+	function floorGap(cave, x, y, r) {
+		const floor = cave.floorBelow(x, y);
+		if (!Number.isFinite(floor)) return Infinity;
+		return y - r - floor;
+	}
+
 	function curvatureExceeds(cave, x, y, nx, ny, r) {
 		const tx = ny;
 		const ty = -nx;
@@ -398,10 +408,31 @@
 
 	function rollStep(world, cave, ball, r, dt) {
 		cave.normalAt(ball.x, ball.y, rockNormal);
-		const nx = rockNormal.nx;
-		const ny = rockNormal.ny;
+		let nx = rockNormal.nx;
+		let ny = rockNormal.ny;
+		const sdfVn = ball.vx * nx + ball.vy * ny;
+		// A wall or overhang must not steal a supported floor roll: that path
+		// used to freeze omega in airStep while the ball sat still against the
+		// face. Resolve the wall hit, then keep Coulomb + rolling resistance on
+		// the floor so leftover spin dies by friction.
+		if (ny <= 0) {
+			const gap = floorGap(cave, ball.x, ball.y, r);
+			if (!(gap <= contactSlop)) {
+				ball.contact = CONTACT_NONE;
+				airStep(world, cave, ball, r, dt);
+				return;
+			}
+			if (sdfVn < 0) resolveContact(world, cave, ball, nx, ny, r);
+			cave.normalAt(ball.x, ball.y - gap, rockNormal);
+			nx = rockNormal.nx;
+			ny = rockNormal.ny;
+			if (ny <= 0) {
+				nx = 0;
+				ny = 1;
+			}
+		}
 		const vn = ball.vx * nx + ball.vy * ny;
-		if (vn > leaveSpeed || ny <= 0) {
+		if (vn > leaveSpeed) {
 			ball.contact = CONTACT_NONE;
 			airStep(world, cave, ball, r, dt);
 			return;
@@ -438,15 +469,18 @@
 		let vt = startVx * tx + startVy * ty + gravity * nx * dt;
 		const slip = vt - ball.omega * r;
 		if (Math.abs(slip) > 1e-12) {
-			const jt = clampImpulse(-tangentMassFactor * m * slip, surfaceFriction * m * gravity * ny * dt);
+			const jt = clampImpulse(-tangentMassFactor * m * slip, surfaceFriction * m * gravity * Math.max(0, ny) * dt);
 			vt += jt / m;
 			ball.omega -= jt / (inertiaFactor * m * r);
 		}
-		const speed = Math.abs(vt);
-		if (speed > 0 && Math.abs(vt - ball.omega * r) <= 1e-4) {
-			const keep = Math.max(0, speed - rollingResistance * ny * dt);
+		if (Math.abs(vt - ball.omega * r) <= 1e-4) {
+			const keep = Math.max(0, Math.abs(vt) - rollingResistance * Math.max(0, ny) * dt);
 			vt = vt < 0 ? -keep : keep;
-			ball.omega = vt / r;
+			ball.omega = keep === 0 ? 0 : vt / r;
+		}
+		if (!ball.motor && ny > 0 && Math.abs(vt) < restSpeed && Math.abs(ball.omega * r) < restSpeed) {
+			vt = 0;
+			ball.omega = 0;
 		}
 		ball.vx = vt * tx;
 		ball.vy = vt * ty;
@@ -656,8 +690,10 @@
 			return;
 		}
 		const r = radiusOf();
-		const touching = ball.contact === CONTACT_ROCK && cave.sdfAt(ball.x, ball.y) <= r + contactSlop;
-		if (touching) rollStep(world, cave, ball, r, dt);
+		const sdf = cave.sdfAt(ball.x, ball.y);
+		const touching = ball.contact === CONTACT_ROCK && sdf <= r + contactSlop;
+		const seated = floorGap(cave, ball.x, ball.y, r) <= contactSlop && Math.abs(ball.vy) <= leaveSpeed;
+		if (touching || seated) rollStep(world, cave, ball, r, dt);
 		else airStep(world, cave, ball, r, dt);
 		deckStep(world, ball, r, dt);
 		if (ball.contact === CONTACT_ROCK && cave.sdfAt(ball.x, ball.y) > r + contactSlop) ball.contact = CONTACT_NONE;
@@ -811,7 +847,7 @@
 	const api = {
 		CONTACT_NONE, CONTACT_ROCK, CONTACT_DECK,
 		inertiaFactor, curvatureLimit, bounceFloor, restitution,
-		surfaceFriction, rollingResistance,
+		surfaceFriction, rollingResistance, restSpeed,
 		batteryCapacity, chargePower, chargeEfficiency,
 		motorAcceleration, motorTopSpeed, motorFreeSpeed, motorEfficiency,
 		jumpSpeed, jumpEfficiency, launchSpeed, launchEfficiency,
