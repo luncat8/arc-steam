@@ -196,7 +196,7 @@ function shelfRest(world, cave, x) {
 	return cave.floorBelow(x, 31.5) + physics.config.radius;
 }
 
-test('M3 release: Wild Mine launches from the deck, D5 aims it, and only the ball battery pays', () => {
+test('M3 release: platform piston powers and aims the ball', () => {
 	try {
 		const { world, ball } = wildWorld(1);
 		assert.equal(physics.wildMode(), true);
@@ -204,12 +204,15 @@ test('M3 release: Wild Mine launches from the deck, D5 aims it, and only the bal
 		assert.equal(physics.canLaunch(world, ball), true);
 		world.initialEnergy = physics.totalEnergy(world);
 		const before = ball.battery;
+		const reserve = world.battery;
 		assert.equal(physics.launch(world, ball), true);
 		assert.equal(ball.state, 'flying');
 		assert.equal(ball.holder, null);
 		assert.ok(ball.vy > 3 && Math.abs(ball.vx) < 1e-9, 'a level piston releases straight up');
-		const useful = 0.5 * physics.ballMassFor(ball) * wildBall.launchSpeed * wildBall.launchSpeed;
-		assert.ok(Math.abs((before - ball.battery) - useful / 0.8) < 1e-9, 'the kick is priced at the motor efficiency');
+		const useful = 0.5 * physics.ballMassFor(ball) * ball.vy * ball.vy;
+		assert.equal(ball.battery, before, 'launch does not drain the ball battery');
+		assert.ok(Math.abs(useful - physics.pulseNow()) < 1e-9);
+		assert.ok(Math.abs(reserve - world.battery - useful / physics.engineNow().efficiency) < 1e-9);
 		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8, 'the lift onto the deck is booked as imported energy');
 
 		const aimed = wildWorld(1);
@@ -217,6 +220,69 @@ test('M3 release: Wild Mine launches from the deck, D5 aims it, and only the bal
 		physics.launch(aimed.world, aimed.ball);
 		assert.ok(aimed.ball.vx > 2, 'a right-tilted piston aims the release right');
 		assert.ok(aimed.ball.vy > 1, 'and keeps the upward component');
+	} finally {
+		resetClassic();
+	}
+});
+
+test('piston reflects and powers a returning ball; collector alone captures it', () => {
+	try {
+		const run = wildWorld(1);
+		const { world, cave, ball } = run;
+		const plate = world.platform;
+		const r = physics.config.radius;
+		freeBall(world, cave, plate.x + physics.config.pistonCentre, plate.y + physics.config.deck + r - 0.01, 0, -2);
+		const reserve = world.battery;
+		wildBall.step(world, cave, physics.config.step);
+		assert.equal(ball.state, 'flying');
+		assert.ok(ball.vy > 4, 'powered piston bounces the ball');
+		assert.ok(world.battery < reserve);
+		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
+
+		freeBall(world, cave, plate.x - 1.2, plate.y + physics.config.deck + r - 0.01, 0, -2);
+		wildBall.step(world, cave, physics.config.step);
+		assert.equal(ball.state, 'held', 'collector catches the ball');
+		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
+	} finally {
+		resetClassic();
+	}
+});
+
+test('tilted piston reflects on its actual face and an empty reserve gives no free pulse', () => {
+	try {
+		const { world, cave, ball } = wildWorld(1);
+		const plate = world.platform;
+		world.pistonAngle = Math.PI / 2;
+		world.battery = 0;
+		const r = physics.config.radius;
+		const cx = plate.x + physics.config.pistonCentre;
+		const cy = plate.y + physics.config.deck;
+		freeBall(world, cave, cx - r + 0.01, cy + 0.6, 2, 0);
+		wildBall.step(world, cave, physics.config.step);
+		assert.equal(ball.state, 'flying');
+		assert.ok(ball.vx < -1, 'vertical piston reflects horizontally');
+		assert.equal(world.battery, 0);
+		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
+	} finally {
+		resetClassic();
+	}
+});
+
+test('stock piston pulse delivers substantially more rock fracture than the old launch', () => {
+	function hit(speed) {
+		const { world, cave, ball } = wildWorld(1);
+		const x = 2.8;
+		freeBall(world, cave, x, shelfRest(world, cave, x) + 0.05, 0, -speed);
+		for (let i = 0; i < 120 && !ball.hits; i++) physics.step(world, physics.config.step);
+		assert.ok(ball.hits > 0);
+		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
+		return ball.lastFracture;
+	}
+	try {
+		const oldFracture = hit(3.2);
+		const newFracture = hit(Math.sqrt(2 * physics.config.pulse / physics.config.ballMass));
+		assert.ok(oldFracture > 0);
+		assert.ok(newFracture > oldFracture * 2, 'stronger pulse increases actual fracture work');
 	} finally {
 		resetClassic();
 	}
@@ -736,7 +802,7 @@ test('M3 rubble: broken cells rain down, land on the rock face, and stand as a c
 		// Stock-speed blows open the shelf without having to halve the same
 		// cell's strength all the way down to floating-point dust.
 		for (let drop = 0; drop < 6 && wildRubble.state().depositedCells === 0; drop++) {
-			freeBall(world, cave, x, rest + 0.05, 0, -wildBall.launchSpeed);
+			freeBall(world, cave, x, rest + 0.05, 0, -3.2);
 			for (let i = 0; i < 120; i++) physics.step(world, physics.config.step);
 		}
 		assert.ok(ball.hits > 0, 'the drops broke rock');
@@ -779,7 +845,7 @@ test('M3 collector: a grain that drops through the collector span is caught into
 		// Break cells until at least one grain is airborne, then aim it through
 		// the deck: the collector is the window at the left end of the deck.
 		for (let drop = 0; drop < 6 && wildBall.debrisCount === 0; drop++) {
-			freeBall(world, cave, x, rest + 0.05, 0, -wildBall.launchSpeed);
+			freeBall(world, cave, x, rest + 0.05, 0, -3.2);
 			for (let i = 0; i < 120 && wildBall.debrisCount === 0; i++) physics.step(world, physics.config.step);
 		}
 		assert.ok(wildBall.debrisCount > 0, 'a strong hit breaks cells into grains');

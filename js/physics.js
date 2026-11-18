@@ -103,8 +103,7 @@
 	function groundRestitutionNow() { return Math.sqrt(groundRetention); }
 
 	function wildMode() { return Boolean(root.SteamWildMine && root.SteamWildMine.isWild()); }
-	// The Wild Mine ball player owns the ball's release and its battery, so the
-	// two entry points the page already calls (canLaunch, launch) delegate there.
+	// Wild Mine has its own ball dynamics and release geometry.
 	function wildBall() { return root.SteamWildBall || null; }
 	function pistonMaxAngleNow() { return wildMode() ? root.SteamWildMine.pistonMaxAngle : config.pistonMaxAngle; }
 

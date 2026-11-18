@@ -62,8 +62,7 @@
 	const motorEfficiency = 0.8;
 	const jumpSpeed = 2.6;
 	const jumpEfficiency = 0.8;
-	const launchSpeed = 3.2;
-	const launchEfficiency = 0.8;
+
 
 	// Bounce recuperation mirrors the platform's brake flywheel (55% recovery at
 	// 90% efficiency): active damping removes most of each rebound, stores the
@@ -186,27 +185,46 @@
 
 	function probeDeck(world, x, y, r) {
 		const plate = world.platform;
+		const config = phys().config;
 		const cosine = Math.cos(plate.angle);
 		const sine = Math.sin(plate.angle);
 		const dx = x - plate.x;
 		const dy = y - plate.y;
 		const lx = dx * cosine + dy * sine;
 		const ly = -dx * sine + dy * cosine;
-		const half = phys().config.platformWidth * 0.5;
-		const deck = phys().config.deck;
-		const clampedX = lx < -half ? -half : lx > half ? half : lx;
-		const ex = lx - clampedX;
-		const ey = ly - deck;
-		const distance = Math.hypot(ex, ey);
-		deckHit.clampedX = clampedX;
-		deckHit.distance = distance;
+		const boundary = -config.platformWidth * 0.5 + config.platformWidth * config.collectorFraction;
+		const cx = Math.max(-config.platformWidth * 0.5, Math.min(boundary, lx));
+		const ex = lx - cx;
+		const ey = ly - config.deck;
+		let distance = Math.hypot(ex, ey);
+		let nx = distance > 1e-6 ? ex / distance : 0;
+		let ny = distance > 1e-6 ? ey / distance : 1;
+		let pointX = cx;
+		let pointY = config.deck;
+		let piston = false;
+		const angle = world.pistonAngle || 0;
+		const pc = Math.cos(angle), ps = Math.sin(angle);
+		const px = lx - config.pistonCentre, py = ly - config.deck;
+		const along = Math.max(-config.pistonHalf, Math.min(config.pistonHalf, px * pc + py * ps));
+		const fx = config.pistonCentre + along * pc, fy = config.deck + along * ps;
+		const fxDelta = lx - fx, fyDelta = ly - fy;
+		const faceDistance = Math.hypot(fxDelta, fyDelta);
+		if (faceDistance < distance) {
+			distance = faceDistance;
+			nx = distance > 1e-6 ? fxDelta / distance : -ps;
+			ny = distance > 1e-6 ? fyDelta / distance : pc;
+			pointX = fx;
+			pointY = fy;
+			piston = true;
+		}
 		deckHit.hit = distance < r;
-		if (!deckHit.hit) return deckHit;
-		const lnx = distance > 1e-6 ? ex / distance : 0;
-		const lny = distance > 1e-6 ? ey / distance : 1;
-		deckHit.nx = lnx * cosine - lny * sine;
-		deckHit.ny = lnx * sine + lny * cosine;
-		deckHit.lny = lny;
+		deckHit.distance = distance;
+		deckHit.piston = piston;
+		deckHit.pointX = pointX;
+		deckHit.pointY = pointY;
+		deckHit.nx = nx * cosine - ny * sine;
+		deckHit.ny = nx * sine + ny * cosine;
+		deckHit.lny = ny;
 		deckHit.push = r - distance;
 		return deckHit;
 	}
@@ -845,9 +863,8 @@
 		ball.contact = CONTACT_DECK;
 		const cosine = Math.cos(plate.angle);
 		const sine = Math.sin(plate.angle);
-		const deck = phys().config.deck;
-		const rx = hit.clampedX * cosine - deck * sine;
-		const ry = hit.clampedX * sine + deck * cosine;
+		const rx = hit.pointX * cosine - hit.pointY * sine;
+		const ry = hit.pointX * sine + hit.pointY * cosine;
 		const surfaceVx = plate.stepVx - plate.stepOmega * ry;
 		const surfaceVy = plate.stepVy + plate.stepOmega * rx;
 		const relativeVx = ball.vx - surfaceVx;
@@ -872,13 +889,25 @@
 				if (passiveAfter > dampedAfter) recycleEnergy(world, ball, passiveAfter - dampedAfter);
 				else bookMech(world, passiveAfter, dampedAfter);
 			}
+			if (hit.piston && hit.nx * -Math.sin(plate.angle + world.pistonAngle) + hit.ny * Math.cos(plate.angle + world.pistonAngle) > 0.5 && phys().machineDrive(world)) {
+				const p = phys();
+				const useful = p.spend(world, p.pulseNow() * p.thermalFactor(world));
+				const boosted = Math.sqrt(outVn * outVn + 2 * useful / m);
+				const beforePush = mechanicalEnergy(ball);
+				ball.vx += (boosted - outVn) * hit.nx;
+				ball.vy += (boosted - outVn) * hit.ny;
+				bookMech(world, beforePush + useful, mechanicalEnergy(ball));
+				outVn = boosted;
+				world.lastPush = useful;
+				world.pushes++;
+			}
 			normalImpulse += m * (outVn - vn);
 			ball.bounces++;
 		}
 		applyDeckFriction(world, ball, hit.nx, hit.ny, surfaceVx, surfaceVy, normalImpulse);
 		if (!ball.deckContact) return;
 		charge(world, ball, dt);
-		if (!(ball.releaseCooldown > 0)) capture(world, ball);
+		if (!hit.piston && !(ball.releaseCooldown > 0)) capture(world, ball);
 	}
 
 	function capture(world, ball) {
@@ -965,9 +994,8 @@
 		const r = radiusOf();
 		const cosine = Math.cos(baseAngle);
 		const sine = Math.sin(baseAngle);
-		const seatY = p.config.deck + r;
-		ball.x = plate.x + cosine * p.config.pistonCentre - sine * seatY;
-		ball.y = plate.y + sine * p.config.pistonCentre + cosine * seatY;
+		ball.x = plate.x + cosine * p.config.pistonCentre - sine * p.config.deck - Math.sin(faceAngle) * r;
+		ball.y = plate.y + sine * p.config.pistonCentre + cosine * p.config.deck + Math.cos(faceAngle) * r;
 		ball.holder = null;
 		ball.state = 'flying';
 		ball.vx = plate.stepVx;
@@ -981,17 +1009,12 @@
 		ball.groundTy = 0;
 		ball.groundNy = 0;
 		ball.releaseCooldown = releaseCooldownTime;
-		let useful = 0;
 		const m = massOf(ball);
-		const cost = 0.5 * m * launchSpeed * launchSpeed / launchEfficiency;
-		if (ball.battery >= cost) {
-			useful = cost * launchEfficiency;
-			ball.battery -= cost;
-			world.heat += cost - useful;
-			ball.vx += -Math.sin(faceAngle) * launchSpeed;
-			ball.vy += Math.cos(faceAngle) * launchSpeed;
-		}
-		world.importedEnergy += Math.max(0, mechanicalEnergy(ball) - useful);
+		const useful = p.spend(world, p.pulseNow() * p.thermalFactor(world));
+		const speed = Math.sqrt(2 * useful / m);
+		ball.vx += -Math.sin(faceAngle) * speed;
+		ball.vy += Math.cos(faceAngle) * speed;
+		bookMech(world, useful, mechanicalEnergy(ball));
 		holder.pistonOffset = p.config.pistonTravel * 0.6;
 		holder.pistonVelocity = 0;
 		world.pushes++;
@@ -1141,7 +1164,7 @@
 		surfaceFriction, rollingResistance, restSpeed, groundMemoryTime, faintNibble, handOffLimit,
 		batteryCapacity, chargePower, chargeEfficiency,
 		motorAcceleration, motorTopSpeed, motorFreeSpeed, motorEfficiency,
-		jumpSpeed, jumpEfficiency, launchSpeed, launchEfficiency,
+		jumpSpeed, jumpEfficiency,
 		recycleDamping, recycleRecovery, recycleEfficiency,
 		maxDebris,
 		init, step, setMotor, setJump, toggleJump, setRecycle, toggleRecycle,

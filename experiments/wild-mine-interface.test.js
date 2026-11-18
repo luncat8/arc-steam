@@ -120,11 +120,13 @@ test('M3 ball controls: motor buttons/keys, piston-style jump actuator toggle an
 	const ball = world.balls[0];
 	assert.equal(ball.state, 'held');
 
-	// D1: the chamber's launch button releases the ball and the battery pays.
+	// The platform reserve powers the release, not the ball battery.
 	const battery = ball.battery;
+	const reserve = world.battery;
 	dom.element('launch').dispatch('click');
 	assert.equal(ball.state, 'flying');
-	assert.ok(ball.battery < battery, 'the release draws the ball battery');
+	assert.equal(ball.battery, battery);
+	assert.ok(world.battery < reserve, 'the release draws the platform reserve');
 
 	// Motor spins up mid-air while ArrowRight is held.
 	dom.key('ArrowRight');
