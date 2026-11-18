@@ -369,3 +369,27 @@ test('traceCircle pushes out shallow overlaps and lets separating bounces exit c
 	const bounce = cave.traceCircle(0, surface + radius - 1e-5, 0, 2, 1, radius, 9.81, {});
 	assert.ok(bounce.time > 0.3, 'upward bounce leaves surface before falling back: ' + bounce.time);
 });
+
+test('a finite blow applies gain once; loose interior cells wait for a free face on a later blow', () => {
+	const cave = makeCave(4);
+	const c = -1, r = cave.state.shelfRow - 1;
+	const x = cave.worldX(c), y = cave.worldY(r);
+	const start = cave.strengthAt(c, r);
+	const spent = cave.weaken(x, y, 0.1, 2, 0.75);
+	assert.ok(Math.abs(start - cave.strengthAt(c, r) - 0.2) < 1e-6);
+	assert.ok(Math.abs(spent - 0.1) < 1e-9);
+	assert.ok(cave.damageAt(c, r) > 0);
+	const behind = cave.worldY(r - 1);
+	for (let i = 0; i < 5; i++) cave.weaken(x, behind, 3, 2, 0.75);
+	const held = cave.strengthAt(c, r - 1);
+	assert.ok(held > 0 && held < require('../js/rock-materials.js').debrisLimit);
+	assert.equal(cave.solidAt(x, behind), true);
+	for (let i = 0; i < 5 && cave.solidAt(x, y); i++) cave.weaken(x, y, 3, 2, 2);
+	assert.equal(cave.solidAt(x, y), false, 'a few ordinary blows release the exposed shelf');
+	assert.equal(cave.strengthAt(c, r - 1), held, 'the same blow did not peel the newly exposed layer');
+	cave.weaken(x, behind, 1, 2, 0.75);
+	assert.equal(cave.removedCount, 1);
+	assert.equal(cave.solidAt(x, behind), false);
+	assert.equal(cave.weaken(x, behind, 0, 2, 1), 0);
+	assert.equal(cave.removedCount, 0, 'a no-op cannot replay the last removal');
+});

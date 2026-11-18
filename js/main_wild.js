@@ -43,41 +43,36 @@ function wildIsActive() {
 	return Boolean(window.SteamWildMine && window.SteamWildMine.isWild());
 }
 
-// Rubble is the debris (the fallen cells): a heightmap of soil layers that can
-// stand on any up-facing rock cell, a ledge as happily as the bottom of the
-// section. Drawn as one column quad per pile standing on the same face, with
-// the top at the binomial-smoothed crest — the exact surface the ball rests
-// on — so the eye never sees more pile than physics allows and the barrow of
-// scree follows the 1-3-3-1 profile the chamber uses. DEBRIS compression
-// re-lays the same material over fewer or more rows; nothing is added here.
-function wildDrawRubble(wild, anchorY, minCol, maxCol) {
+// Batch the filled cross-sections, including both taper columns of an
+// isolated pile. The two top vertices are the actual collision segment.
+function wildPileFill(column, strip) {
+	const wild = window.SteamWildMine;
+	const cell = wild.cave.state.cell;
+	const x = column * cell, bottom = wild.drawnY(strip.base);
+	context.moveTo(x, bottom);
+	context.lineTo(x, wild.drawnY(strip.left));
+	context.lineTo(x + cell, wild.drawnY(strip.right));
+	context.lineTo(x + cell, bottom);
+	context.closePath();
+}
+
+function wildPileEdge(column, strip) {
+	const wild = window.SteamWildMine;
+	const cell = wild.cave.state.cell;
+	context.moveTo(column * cell, wild.drawnY(strip.left));
+	context.lineTo((column + 1) * cell, wild.drawnY(strip.right));
+}
+
+function wildDrawRubble(first, last) {
 	const rubble = window.SteamWildRubble;
-	const cave = wild.cave;
-	if (!rubble || !cave) return;
-	const cell = cave.state.cell;
-	rubble.eachColumn(minCol, maxCol, (column, segments) => {
-		const x0 = column * cell;
-		const cx = x0 + cell * 0.5;
-		for (let i = 0; i < segments.length; i++) {
-			const seg = segments[i];
-			const height = rubble.heightOnFace(cx, seg.base);
-			if (!(height > 1e-6)) continue;
-			const yBottom = wild.drawnY(seg.base, anchorY);
-			const yTop = wild.drawnY(seg.base + height, anchorY);
-			context.fillStyle = '#6a5d51';
-			context.fillRect(x0, yBottom, cell, yTop - yBottom);
-			// The crest line the physics sees, drawn along the smoothed profile.
-			const left = wild.drawnY(seg.base + rubble.heightOnFace(x0, seg.base), anchorY);
-			const right = wild.drawnY(seg.base + rubble.heightOnFace(x0 + cell, seg.base), anchorY);
-			context.strokeStyle = '#8a7a6b';
-			context.lineWidth = 1.2 / scale;
-			context.beginPath();
-			context.moveTo(x0, left);
-			context.lineTo(x0 + cell, right);
-			context.stroke();
-			context.lineWidth = 1 / scale;
-		}
-	});
+	context.fillStyle = '#79644f';
+	context.beginPath();
+	rubble.eachStrip(first, last, wildPileFill);
+	context.fill();
+	context.strokeStyle = '#b29a77';
+	context.beginPath();
+	rubble.eachStrip(first, last, wildPileEdge);
+	context.stroke();
 }
 
 // Debris in flight rides the same draw map as the rock: a grain is one cell,
@@ -130,12 +125,7 @@ function wildSyncPriceRange() {
 function wildCellRgba(cave, chunk, localIndex, column, row, mode) {
 	const materials = window.SteamRockMaterials;
 	if (mode === 'damage') {
-		if (!chunk.sampled[localIndex]) return wildDamageRgba[0];
-		cave.mixAt(column, row, wildMixScratch, wildElementsScratch);
-		const initial = materials.strengthInto(wildMixScratch, 0);
-		const remaining = chunk.strength[localIndex];
-		const slot = Math.round(materials.clamp01((initial - remaining) / materials.maxStrength) * 100);
-		return wildDamageRgba[slot];
+		return wildDamageRgba[Math.round(chunk.damage[localIndex] * 100)];
 	}
 	if (mode === 'elements') {
 		const el = cave.elementsAt(column, row, wildElementsScratch);
@@ -404,9 +394,10 @@ function wildDraw() {
 	wildDrawGrid(wild, minX, maxX, minRow * cell, (maxRow + 1) * cell);
 	wildDrawCave(cave, minX, maxX, minRow, maxRow);
 	wildDrawWater(wild, cave, anchorY, minX, maxX, minRow, maxRow);
-	const cellNow = cave.state.cell;
-	wildDrawRubble(wild, anchorY, Math.floor(minX / cellNow) - 1, Math.floor(maxX / cellNow) + 1);
+	wildDrawRubble(cave.columnAt(minX), cave.columnAt(maxX));
 	wildDrawDebris(wild, anchorY, minRow * cell, (maxRow + 1) * cell);
+	window.SteamRockets.draw(context, wild.drawnY, wild.scaleAt);
+	context.lineWidth = 1 / scale;
 
 	if (wildSelectedRow >= minRow && wildSelectedRow <= maxRow && wildSelectedColumn >= cave.columnAt(minX) - 1 && wildSelectedColumn <= cave.columnAt(maxX) + 1) {
 		const y0 = wildDrawnRowY[wildSelectedRow];
@@ -657,8 +648,14 @@ function wildDrawCart(wild) {
 	cart.setBounds({ x: sx - portalW * 0.5, y: archTop - 6, w: portalW, h: syBase - archTop + 22 });
 }
 
+const wildCompressionChoices = { classic: '4', wild: '1.5' };
 function wildSyncMode(nextMode) {
 	if (!window.SteamWildMine) return;
+	const previous = window.SteamWildMine.getMode();
+	if (previous !== nextMode) {
+		wildCompressionChoices[previous] = ui['debris-compression'].value;
+		ui['debris-compression'].value = wildCompressionChoices[nextMode];
+	}
 	window.SteamWildMine.setMode(nextMode);
 	const wild = window.SteamWildMine.isWild();
 	if (ui['chamber-title']) {
@@ -683,7 +680,7 @@ function wildSyncMode(nextMode) {
 
 function wildResetRun(targetWorld) {
 	wildTiles.clear();
-	window.SteamWildMine.init(targetWorld, { seed: 1 });
+	window.SteamWildMine.init(targetWorld, { seed: 1, compression: ui['debris-compression'].value });
 	const cave = window.SteamWildMine.cave;
 	wildSelectedColumn = cave.columnAt(cave.state.spawnX);
 	wildSelectedRow = Math.max(0, cave.state.shelfRow - 1);

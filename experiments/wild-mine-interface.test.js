@@ -351,3 +351,66 @@ test('service cart: autosell checkbox drives the cart service, a docked cart sel
 	autosell.dispatch('change');
 	assert.equal(window.SteamWildCart.autosell, false, 'the switch survives the trip back');
 });
+
+test('Wild Mine uses its selected compression on screen and reports its own mined and falling material', () => {
+	const mode = dom.element('game-mode'), compression = dom.element('debris-compression');
+	compression.value = '6';
+	compression.dispatch('change');
+	mode.value = 'wild';
+	mode.dispatch('change');
+	assert.equal(compression.value, '1.5');
+	assert.equal(ceiling.state.floorCompression, 1.5);
+	compression.value = '8';
+	compression.dispatch('change');
+	dom.element('reset').dispatch('click');
+	assert.equal(ceiling.state.floorCompression, 8, 'New game keeps the current mode’s choice');
+	const cave = wildMine.cave, r = cave.state.shelfRow - 1;
+	const x = cave.worldX(20), y = cave.worldY(r);
+	for (let hit = 0; hit < 6 && cave.solidAt(x, y); hit++) cave.weaken(x, y, 2, 2, 0.75);
+	globalThis.miningReadout();
+	assert.equal(dom.element('extracted').textContent, '1 cells');
+	assert.equal(dom.element('falling').textContent, '1 cells');
+	advance(25);
+	assert.equal(dom.element('falling').textContent, '0 cells');
+	assert.equal(window.SteamWildRubble.state().cells, 1);
+	mode.value = 'classic';
+	mode.dispatch('change');
+	assert.equal(dom.element('extracted').textContent, '0 cells');
+	assert.equal(compression.value, '6');
+	assert.equal(ceiling.state.floorCompression, 6);
+});
+
+test('the cave renderer fills from each rock face to both projected crest vertices, including the shoulders', () => {
+	const mode = dom.element('game-mode');
+	mode.value = 'wild';
+	mode.dispatch('change');
+	const cave = wildMine.cave, c = -3, cell = cave.state.cell;
+	window.SteamWildRubble.deposit(cave.worldX(c), 32, 7, 30);
+	const ctx = dom.element('c').getContext('2d');
+	const paths = [], crests = [];
+	const saved = { moveTo: ctx.moveTo, lineTo: ctx.lineTo, fill: ctx.fill };
+	let drawingFill = true, path;
+	try {
+		ctx.moveTo = (x, y) => {
+			path = [[x, y]];
+			(drawingFill ? paths : crests).push(path);
+		};
+		ctx.lineTo = (x, y) => path.push([x, y]);
+		ctx.fill = () => { drawingFill = false; };
+		globalThis.wildDrawRubble(c - 2, c + 2);
+	} finally {
+		Object.assign(ctx, saved);
+	}
+	assert.equal(paths.length, 5);
+	assert.equal(crests.length, paths.length);
+	const base = cave.floorBelow(cave.worldX(c), 32);
+	for (let i = 0; i < paths.length; i++) {
+		const x = (c - 2 + i) * cell;
+		const left = [x, wildMine.drawnY(wildMine.groundAt(x, 32))];
+		const right = [x + cell, wildMine.drawnY(wildMine.groundAt(x + cell, 32))];
+		assert.deepEqual(paths[i], [[x, wildMine.drawnY(base)], left, right, [x + cell, wildMine.drawnY(base)]]);
+		assert.deepEqual(crests[i], [left, right]);
+	}
+	mode.value = 'classic';
+	mode.dispatch('change');
+});

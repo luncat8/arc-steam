@@ -7,7 +7,7 @@
 // price is an abundance curve over the measured mix. Collapse growth is a third
 // rule again and lives with the fall mechanics, not here.
 // Depends on: js/minerals.js
-// Provides: economy, maxStrength, debrisLimit, strengthInto,
+// Provides: economy, maxStrength, debrisLimit, collapseLooseFloor, strengthInto,
 // colorInto, valueInto, basePricesInto, priceColorInto, strengthColorInto,
 // desaturateInto
 (function (root) {
@@ -41,6 +41,7 @@
 	// carry both rock that always holds here and materials that form below it
 	// and are loose by nature.
 	const debrisLimit = 0.8;
+	const collapseLooseFloor = 0.3;
 
 	// Mineral-weighted impact resistance in J/cell.
 	function strengthInto(mix, offset) {
@@ -162,7 +163,7 @@
 	}
 
 	const api = {
-		economy, minimumShare, maxStrength, debrisLimit,
+		economy, minimumShare, maxStrength, debrisLimit, collapseLooseFloor,
 		goldMassFraction, liberatedGoldQuote, liberatedPricesInto,
 		strengthInto, colorInto, valueInto, basePricesInto, clamp01,
 		priceColorInto, strengthColorInto, desaturateInto

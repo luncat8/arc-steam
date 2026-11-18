@@ -26,6 +26,8 @@
 	const flashLife = 0.22;
 	const drawnSize = 1.6;
 	const launchPoint = { x: 0, y: 0, angle: 0 };
+	const shardRadiusMeters = 0.015;
+	const shardSoil = { time: Infinity };
 	const shardContact = { time: Infinity, x: 0, y: 0, nx: 0, ny: 1 };
 	const maxPlayers = 5;
 	const maxRocketsPerRack = 8;
@@ -284,6 +286,10 @@ function load(count, owner) {
 		return root.SteamPhysics.collectorX(world, ownerId(owner));
 	}
 
+	function roofAt(x, y) {
+		return root.SteamPhysics.wildMode() ? root.SteamWildMine.cave.roofAbove(x, y) : root.SteamCeiling.surfaceAt(x);
+	}
+
 	function fire(world, owner) {
 		const id = ownerId(owner);
 		if (!world || !canFire(id)) return false;
@@ -294,7 +300,7 @@ function load(count, owner) {
 		physics.collectorPointAt(world, id, 0.5, 0, launchPoint);
 		const x = launchPoint.x;
 		const y = launchPoint.y;
-		const gap = Math.max(0, root.SteamCeiling.surfaceAt(x) - noseReach - y);
+		const gap = Math.max(0, roofAt(x, y) - noseReach - y);
 		rocketState[slot] = BURNING;
 		rocketOwner[slot] = index;
 		rocketX[slot] = x;
@@ -339,19 +345,19 @@ function load(count, owner) {
 	}
 
 	// The ground a falling body meets at x: rubble, or the deck of any platform.
-	function groundAt(world, x) {
+	function groundAt(world, x, refY) {
 		const physics = root.SteamPhysics;
 		// In the Wild Mine the ground is the cave's rock-and-rubble surface.
 		const wildMine = root.SteamWildMine;
 		const wild = wildMine && typeof wildMine.isWild === 'function' && wildMine.isWild();
-		let ground = wild ? wildMine.groundAt(x) : root.SteamCeiling.floorAt(x);
+		let ground = wild ? wildMine.groundAt(x, refY) : root.SteamCeiling.floorAt(x);
 		const half = physics.config.platformWidth * 0.5;
 		const machines = physics.machinesOf(world);
 		for (let i = 0; i < machines.length; i++) {
 			const body = physics.machineBody(machines[i]);
 			if (Math.abs(x - body.x) > half) continue;
 			const deck = body.y + physics.config.deck;
-			if (deck > ground) ground = deck;
+			if (deck > ground && (!wild || deck <= refY)) ground = deck;
 		}
 		return ground;
 	}
@@ -361,7 +367,7 @@ function load(count, owner) {
 		const x = rocketX[i];
 		const index = rocketOwner[i];
 		const profile = profileForIndex(index);
-		const face = root.SteamCeiling.surfaceAt(x) - noseReach;
+		const face = roofAt(x, rocketY[i]) - noseReach;
 		if (rocketState[i] === BURNING) {
 			rocketVy[i] += thrust * dt;
 			rocketY[i] += rocketVy[i] * dt;
@@ -376,16 +382,45 @@ function load(count, owner) {
 			rocketState[i] = FALLING;
 			profile.duds++;
 		}
+		const previousY = rocketY[i];
 		rocketVy[i] -= gravity * dt;
 		rocketY[i] += rocketVy[i] * dt;
 		if (rocketY[i] >= face && rocketVy[i] > 0) {
 			rocketY[i] = face;
 			rocketVy[i] = -rocketVy[i] * dudRebound;
 		}
-		const ground = groundAt(world, x);
+		const ground = groundAt(world, x, previousY);
 		if (rocketY[i] > ground) return;
 		rocketState[i] = FREE;
 		burst(x, ground, index);
+	}
+
+	function stepWildShard(i, dt) {
+		if (shardState[i] === SPENT) return;
+		const mine = root.SteamWildMine, cave = mine.cave;
+		const x = shardX[i], y = shardY[i], vx = shardVx[i], vy = shardVy[i];
+		cave.traceCircle(x, y, vx, vy, dt, shardRadiusMeters, gravity, shardContact);
+		const span = shardContact.time > 0 ? Math.min(shardContact.time, dt) : dt;
+		root.SteamWildRubble.traceCrest(x, y, vx, vy, span, shardRadiusMeters, gravity, shardSoil);
+		const throughSoil = shardSoil.time < shardContact.time || (shardSoil.time === shardContact.time && shardSoil.time <= dt && shardContact.ny > 0);
+		const hit = throughSoil ? shardSoil : shardContact;
+		if (!Number.isFinite(hit.time)) {
+			shardX[i] += vx * dt;
+			shardY[i] += (vy - 0.5 * gravity * dt) * dt;
+			shardVy[i] -= gravity * dt;
+			return;
+		}
+		const impactVy = vy - gravity * hit.time;
+		const energy = 0.5 * shardMass * (vx * vx + impactVy * impactVy);
+		const profile = profileForIndex(shardOwner[i]);
+		const inset = cave.state.cell * 0.5;
+		const px = throughSoil ? hit.x : hit.x - hit.nx * (shardRadiusMeters + inset);
+		const py = throughSoil ? hit.face - inset : hit.y - hit.ny * (shardRadiusMeters + inset);
+		profile.fracture += mine.strike(px, py, energy * 5, profile.id, throughSoil);
+		profile.shardHits++;
+		shardState[i] = SPENT;
+		shardX[i] = hit.x;
+		shardY[i] = hit.y;
 	}
 
 	function stepShard(world, i, dt) {
@@ -394,66 +429,26 @@ function load(count, owner) {
 			shardState[i] = FREE;
 			return;
 		}
-		const wild = root.SteamPhysics.wildMode();
-		const oldX = shardX[i];
-		const oldY = shardY[i];
-		const oldVy = shardVy[i];
-		const nextVy = oldVy - gravity * dt;
-		const nextX = oldX + shardVx[i] * dt;
-		const nextY = oldY + nextVy * dt;
-		if (!wild) {
-			const width = root.SteamPhysics.config.width;
-			shardVy[i] = nextVy;
-			shardX[i] = nextX;
-			shardY[i] = nextY;
-			if (shardX[i] < 0 || shardX[i] > width) {
-				shardX[i] = shardX[i] < 0 ? 0 : width;
-				shardVx[i] = -shardVx[i] * wallKeep;
-			}
-			if (shardVy[i] < 0 && shardY[i] <= groundAt(world, shardX[i])) {
-				shardState[i] = FREE;
-				return;
-			}
-		} else {
-			const cave = root.SteamWildMine && root.SteamWildMine.cave;
-			if (!cave) {
-				shardX[i] = nextX;
-				shardY[i] = nextY;
-				shardVy[i] = nextVy;
-				return;
-			}
-			cave.traceCircle(oldX, oldY, shardVx[i], oldVy, dt, 0.015, gravity, shardContact);
-			if (!Number.isFinite(shardContact.time)) {
-				shardX[i] = nextX;
-				shardY[i] = nextY;
-				shardVy[i] = nextVy;
-				return;
-			}
-			shardX[i] = shardContact.x;
-			shardY[i] = shardContact.y;
-			shardVy[i] = nextVy;
+		if (root.SteamPhysics.wildMode()) return stepWildShard(i, dt);
+		const width = root.SteamPhysics.config.width;
+		shardVy[i] -= gravity * dt;
+		shardX[i] += shardVx[i] * dt;
+		shardY[i] += shardVy[i] * dt;
+		if (shardX[i] < 0 || shardX[i] > width) {
+			shardX[i] = shardX[i] < 0 ? 0 : width;
+			shardVx[i] = -shardVx[i] * wallKeep;
+		}
+		if (shardVy[i] < 0 && shardY[i] <= groundAt(world, shardX[i])) {
+			shardState[i] = FREE;
+			return;
 		}
 		if (shardState[i] === SPENT) return;
 		const x = shardX[i];
-		const y = shardY[i];
-		let face = root.SteamCeiling.surfaceAt(x);
-		if (wild) {
-			// Query the active cave instance; the global SteamCave is its factory.
-			face = y;
-		} else if (y < face) {
-			return;
-		}
+		const face = root.SteamCeiling.surfaceAt(x);
+		if (shardY[i] < face) return;
 		const energy = 0.5 * shardMass * (shardVx[i] * shardVx[i] + shardVy[i] * shardVy[i]);
-		const index = shardOwner[i];
-		const profile = profileForIndex(index);
-		if (wild) {
-			const cave = root.SteamWildMine.cave;
-			const gain = root.SteamCeiling.damageMultiplierNow(index);
-			const radius = root.SteamCeiling.damageRadiusNow(index);
-			profile.fracture += cave.weaken(x, face, energy * 5 * gain, gain, radius);
-		} else {
-			profile.fracture += root.SteamCeiling.chip(x, face, energy, shardRadius[i]);
-		}
+		const profile = profileForIndex(shardOwner[i]);
+		profile.fracture += root.SteamCeiling.chip(x, face, energy, shardRadius[i]);
 		profile.shardHits++;
 		shardState[i] = SPENT;
 		shardY[i] = face;
@@ -479,22 +474,21 @@ function load(count, owner) {
 		for (let i = 0; i < maxRockets; i++) if (flashAge[i] < flashLife) flashAge[i] += dt;
 	}
 
-	function draw(context) {
-		const rock = root.SteamCeiling;
+	function draw(context, drawnY = root.SteamCeiling.rockDrawnY, scaleAt = root.SteamCeiling.perspectiveScale) {
 		for (let i = 0; i < maxRockets; i++) {
 			if (flashAge[i] >= flashLife) continue;
 			const grow = flashAge[i] / flashLife;
-			const scale = rock.perspectiveScale(flashY[i]);
+			const scale = scaleAt(flashY[i]);
 			context.globalAlpha = (1 - grow) * 0.85;
 			context.fillStyle = '#fff3c4';
 			context.beginPath();
-			context.arc(flashX[i], rock.rockDrawnY(flashY[i]), (0.25 + grow * 0.9) * scale, 0, Math.PI * 2);
+			context.arc(flashX[i], drawnY(flashY[i]), (0.25 + grow * 0.9) * scale, 0, Math.PI * 2);
 			context.fill();
 		}
 		context.lineCap = 'round';
 		for (let i = 0; i < maxShards; i++) {
 			if (shardState[i] === FREE) continue;
-			const y = rock.rockDrawnY(shardY[i]);
+			const y = drawnY(shardY[i]);
 			const fade = 1 - shardAge[i] / shardLife;
 			if (shardState[i] === SPENT) {
 				context.globalAlpha = 0.35 + fade * 0.45;
@@ -507,17 +501,17 @@ function load(count, owner) {
 			context.strokeStyle = tints[shardTint[i]];
 			context.lineWidth = 0.05;
 			context.beginPath();
-			context.moveTo(shardX[i] - shardVx[i] * trail, rock.rockDrawnY(shardY[i] - shardVy[i] * trail));
+			context.moveTo(shardX[i] - shardVx[i] * trail, drawnY(shardY[i] - shardVy[i] * trail));
 			context.lineTo(shardX[i], y);
 			context.stroke();
 		}
 		context.globalAlpha = 1;
 		for (let i = 0; i < maxRockets; i++) {
 			if (rocketState[i] === FREE) continue;
-			const scale = rock.perspectiveScale(rocketY[i]);
+			const scale = scaleAt(rocketY[i]);
 			const burning = rocketState[i] === BURNING;
 			context.save();
-			context.translate(rocketX[i], rock.rockDrawnY(rocketY[i]));
+			context.translate(rocketX[i], drawnY(rocketY[i]));
 			context.scale(scale * drawnSize, scale * drawnSize);
 			if (!burning) context.rotate(rocketAge[i] * 7);
 			if (burning) {

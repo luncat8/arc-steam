@@ -96,7 +96,8 @@
 			text: [
 				'Fallen rubble is a heightmap of soil layers under every column. DEBRIS in the system bar says how many times wider than tall one layer is drawn. The layer thickness is the cell width divided by that number: 4 gives the classic 4:1 tile, 0.125 m by 0.03125 m; 1 gives square rubble, 8 a layer four times thinner still, so the same material stands twice as tall at 2 as at 4 and half as tall at 8.',
 				'The number is not just a picture. Changing it re-lays the rubble already on the floor at the new thickness, so a pile that was four thin layers deep becomes one square tile and the surface the ball and the platform ride moves with it — the ground never lags behind what is drawn. A pile may stand as high as the roof: the chamber’s ceiling is the only level a column cannot pass, so with enough rock brought down the rubble can bury the whole flight room. A setting that would push a column through the roof keeps what fits and books the rest as lost, exactly like a deposit at that limit.',
-				'What never changes is the material itself: a pile holds the same cells, the same minerals and the same value at every setting, and the ledger, cargo and funds do not notice the switch.'
+				'Wild Mine starts at 1.5:1. Each exposed ledge has its own soil layer; the ball and wheels ride its crest. Mine out the rock under a pile and the soil drops to the next ledge. Rock overhead caps the layer. Hitting soil spreads a fifth of the normal fracture budget into the rock below it instead of destroying the soil.',
+				'Except for material that cannot fit below a roof, compression changes height, not cells or value. Each mode remembers its own setting.'
 			],
 			keys: [
 				['1', 'Square rubble: 0.125 m of height per cell'],

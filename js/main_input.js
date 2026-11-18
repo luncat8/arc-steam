@@ -411,7 +411,7 @@ function resetRun(withTestRock) {
 	window.SteamCeiling.setShape(ui.shape.value);
 	// The two view-and-shape rules are chamber settings: New game keeps them.
 	physics.setBallPerspective(ui['ball-perspective'].value !== 'flat');
-	window.SteamCeiling.setFloorCompression(ui['debris-compression'].value);
+	if (!wildOn) window.SteamCeiling.setFloorCompression(ui['debris-compression'].value);
 	ui.balls.value = playerApi.state.ballMode;
 	physics.setGroundBounce(ui['ground-bounce'].value);
 	selectedLayer = 0;

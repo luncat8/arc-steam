@@ -227,8 +227,8 @@ test('wild mine rocket shards trace the active cave and spend five times base-ga
 
 		// 5x energy at the same gain and radius removes 5x the strength.
 		const energy = 0.03;
-		const removed1 = cave.weaken(cells[0].x, cells[0].y, energy * gain, gain, radius);
-		const removed5 = cave.weaken(cells[1].x, cells[1].y, energy * 5 * gain, gain, radius);
+		const removed1 = cave.weaken(cells[0].x, cells[0].y, energy, gain, radius);
+		const removed5 = cave.weaken(cells[1].x, cells[1].y, energy * 5, gain, radius);
 		assert.ok(removed1 > 0 && removed5 > 0);
 		assert.ok(Math.abs(removed5 / 5 - removed1) < 1e-9,
 			'5x energy removes 5x strength: ' + removed1 + ' vs ' + removed5);
@@ -276,4 +276,35 @@ test('a Classic rival fabricates from its own hopper without touching the rig re
 	assert.equal(ceiling.state.cargoCells, 1);
 	assert.equal(world.battery, 0);
 	assert.equal(physics.totalEnergy(world), world.initialEnergy);
+});
+
+test('a launched Wild Mine round bursts in its own cave and every opened cell becomes cargo or soil', () => {
+	try {
+		const world = freshWorld(true);
+		const cave = wildMine.cave;
+		const rack = rockets.stateFor('rig');
+		equipment.grant('rocket-rack', world);
+		rockets.fill('rig');
+		world.initialEnergy = physics.totalEnergy(world);
+		assert.equal(rockets.fire(world, 'rig'), true);
+		const launchY = rack.rocketY[0];
+		const roof = cave.roofAbove(rack.rocketX[0], launchY);
+		run(world, 3);
+		assert.ok(rack.lastBurstY > launchY && rack.lastBurstY <= roof);
+		assert.ok(rack.shardHits > 0 && rack.fracture > 0);
+		let dug = 0;
+		for (const chunk of cave.eachChunk()) {
+			for (let r = 0; r < cave.state.rows; r++) {
+				const start = r * cave.state.stride + cave.state.pad;
+				for (let c = 0; c < cave.state.chunkColumns; c++) dug += chunk.dug[start + c];
+			}
+		}
+		const soil = require('../js/wild-rubble.js').state();
+		assert.ok(dug > 0 && soil.cells > 0 && ceiling.state.cargoCells > 0);
+		assert.equal(require('../js/wild-ball.js').debrisCount, 0, 'all grains have settled');
+		assert.ok(Math.abs(dug - soil.cells - soil.lostCells - ceiling.state.cargoCells) < 1e-6);
+		assert.ok(Math.abs(physics.totalEnergy(world) - world.initialEnergy) < 1e-6);
+	} finally {
+		wildMine.setMode('classic');
+	}
 });

@@ -21,10 +21,9 @@
 	const ceilingRef = node ? require('./ceiling.js') : root.SteamCeiling;
 	const rockTable = node ? require('./minerals.js') : root.SteamMinerals;
 	const materialsRef = node ? require('./rock-materials.js') : root.SteamRockMaterials;
-	const rubbleRef = node ? require('./wild-rubble.js') : root.SteamWildRubble;
+	const rubble = node ? require('./wild-rubble.js') : root.SteamWildRubble;
 
 	function phys() { return physicsRef || root.SteamPhysics; }
-	function rubble() { return rubbleRef || root.SteamWildRubble || null; }
 	function chamber() { return ceilingRef || root.SteamCeiling; }
 	function materials() { return materialsRef || root.SteamRockMaterials; }
 
@@ -121,6 +120,7 @@
 	const debrisBlue = new Uint8Array(maxDebris);
 	const debrisActive = new Uint8Array(maxDebris);
 	let debrisCount = 0;
+	let extractedCells = 0, caughtCells = 0;
 	let debrisCursor = 0;
 
 	const rockNormal = { nx: 0, ny: 1 };
@@ -128,7 +128,7 @@
 	const pileTrace = { time: Infinity, x: 0, y: 0, nx: 0, ny: 1, face: NaN, crest: NaN, height: 0, hasPile: false, row: -1 };
 	const pileSupport = { face: NaN, crest: NaN, height: 0, nx: 0, ny: 1, hasPile: false, row: -1 };
 	const deckHit = { hit: false, nx: 0, ny: 1, lny: 0, distance: 0, clampedX: 0, push: 0 };
-	const mixScratch = new Float32Array(rockTable.mineralCount);
+	const mixScratch = new Float64Array(rockTable.mineralCount);
 	const elementScratch = new Float32Array(3);
 	const rgbScratch = new Float64Array(3);
 
@@ -216,19 +216,12 @@
 		return world.balls[0];
 	}
 
-	function weakenRock(world, cave, x, y, budget) {
-		if (!(budget > 0)) return 0;
-		const ceiling = chamber();
-		const gain = ceiling ? ceiling.damageMultiplierNow('rig') : 2;
-		const radius = ceiling ? ceiling.damageRadiusNow('rig') : 8.775;
-		return Math.min(budget, cave.weaken(x, y, budget * gain, gain, radius));
-	}
-
 	// ---- ball state & commands --------------------------------------------
 
 	function init(world) {
 		debrisActive.fill(0);
 		debrisCount = 0;
+		extractedCells = caughtCells = 0;
 		debrisCursor = 0;
 		const ball = activeBall(world);
 		if (!ball) return null;
@@ -505,9 +498,8 @@
 	}
 
 	function rollStep(world, cave, ball, r, dt, depth) {
-		const pile = rubble();
-		const support = pile ? pile.surfaceAt(ball.x, ball.y, pileSupport) : null;
-		const onPile = Boolean(support && support.hasPile && ball.y - r <= support.crest + contactSlop);
+		const support = rubble.surfaceAt(ball.x, ball.y, pileSupport);
+		const onPile = support.hasPile && ball.y - r <= support.crest + contactSlop;
 		if (onPile) {
 			// The smoothed crest is the surface under the ball: its gentle slope
 			// normal feeds the same supported-roll law the rock face uses.
@@ -548,8 +540,7 @@
 			return;
 		}
 		if (-vn > bounceFloor) {
-			if (onPile) resolvePileContact(world, ball, nx, ny);
-			else resolveContact(world, cave, ball, nx, ny, r);
+			resolveContact(world, cave, ball, nx, ny, r, onPile ? support.face : NaN);
 			if (ball.contact !== CONTACT_ROCK) return;
 		}
 		ball.contact = CONTACT_ROCK;
@@ -600,21 +591,23 @@
 		ball.y += 0.5 * (startVy + ball.vy) * dt;
 		bookMech(world, mechBefore, mechanicalEnergy(ball));
 		if (onPile) {
-			const after = pile.surfaceAt(ball.x, ball.y, pileSupport);
-			if (after && after.hasPile && ball.y < after.crest + r) {
+			const after = rubble.surfaceAt(ball.x, ball.y, pileSupport);
+			if (after.hasPile && ball.y < after.crest + r) {
 				const push = after.crest + r - ball.y;
 				ball.y = after.crest + r;
 				bookLift(world, ball, push);
 			}
-		} else {
-			const distance = cave.sdfAt(ball.x, ball.y);
-			if (distance < r) {
-				cave.normalAt(ball.x, ball.y, rockNormal);
-				const push = r - distance;
-				ball.x += push * rockNormal.nx;
-				ball.y += push * rockNormal.ny;
-				bookLift(world, ball, push * rockNormal.ny);
-			}
+		}
+		// A soil crest supports the roll, but does not switch off the adjacent
+		// rock wall. Resolve the wall if the supported travel reached it.
+		const distance = cave.sdfAt(ball.x, ball.y);
+		if (distance < r) {
+			cave.normalAt(ball.x, ball.y, rockNormal);
+			const push = r - distance;
+			ball.x += push * rockNormal.nx;
+			ball.y += push * rockNormal.ny;
+			bookLift(world, ball, push * rockNormal.ny);
+			if (onPile && rockNormal.ny <= 0) resolveContact(world, cave, ball, rockNormal.nx, rockNormal.ny, r);
 		}
 		ball.spin += 0.5 * (startOmega + ball.omega) * dt;
 	}
@@ -622,7 +615,7 @@
 	// Returns true when a contact impulse was resolved (vn < 0); the caller uses
 	// it to keep rolling resistance off the bounce frame, which owns those
 	// impulses outright.
-	function resolveContact(world, cave, ball, nx, ny, r) {
+	function resolveContact(world, cave, ball, nx, ny, r, soilFace = NaN) {
 		ball.contact = CONTACT_NONE;
 		const vn = ball.vx * nx + ball.vy * ny;
 		if (!(vn < 0)) return false;
@@ -630,7 +623,8 @@
 		const impact = -vn;
 		ball.lastImpact = impact;
 		const m = massOf(ball);
-		const smooth = !curvatureExceeds(cave, ball.x, ball.y, nx, ny, r);
+		const throughSoil = Number.isFinite(soilFace);
+		const smooth = throughSoil || !curvatureExceeds(cave, ball.x, ball.y, nx, ny, r);
 		if (impact <= bounceFloor && smooth) {
 			const before = kineticEnergy(ball);
 			ball.vx -= vn * nx;
@@ -648,13 +642,15 @@
 		const before = kineticEnergy(ball);
 		const inboundEnergy = 0.5 * m * vn * vn;
 		const budget = inboundEnergy * (1 - restitution * restitution);
-		const removed = weakenRock(world, cave, ball.x - nx * r, ball.y - ny * r, budget);
-		const spent = Math.min(budget, removed);
+		// Aim into the struck cell, not the void side of a grid-aligned face.
+		const inset = cave.state.cell * 0.5;
+		const x = throughSoil ? ball.x : ball.x - nx * (r + inset);
+		const y = throughSoil ? soilFace - inset : ball.y - ny * (r + inset);
+		const spent = root.SteamWildMine.strike(x, y, budget, ball.owner, throughSoil);
 		world.fractureEnergy += spent;
 		world.heat += budget - spent;
 		ball.lastFracture = spent;
 		ball.hits++;
-		spawnRemoved(cave);
 		let outVn = restitution * impact;
 		if (ball.recycle) {
 			const dampedVn = outVn * Math.sqrt(1 - recycleDamping);
@@ -680,64 +676,6 @@
 		return true;
 	}
 
-	// A hit on loose soil: indestructible, so no fracture budget, no hits
-	// counter — but the same restitution law, 10% normal loss booked as heat,
-	// Coulomb spin friction, optional jump pulse and bounce recycle. The
-	// heightfield normal is gentle by construction, so every pile rolls.
-	function resolvePileContact(world, ball, nx, ny) {
-		ball.contact = CONTACT_NONE;
-		const vn = ball.vx * nx + ball.vy * ny;
-		if (!(vn < 0)) return false;
-		touchGround(ball, nx, ny);
-		const impact = -vn;
-		ball.lastImpact = impact;
-		ball.lastFracture = 0;
-		const m = massOf(ball);
-		if (impact <= bounceFloor) {
-			const before = kineticEnergy(ball);
-			ball.vx -= vn * nx;
-			ball.vy -= vn * ny;
-			const dropped = before - kineticEnergy(ball);
-			if (ball.recycle && dropped > 0) recycleEnergy(world, ball, dropped);
-			else bookMech(world, before, before - dropped);
-			const normalImpulse = m * impact + applyJumpPulse(world, ball, nx, ny);
-			applyRockFriction(world, ball, nx, ny, normalImpulse);
-			const outVn = ball.vx * nx + ball.vy * ny;
-			ball.contact = outVn <= leaveSpeed ? CONTACT_ROCK : CONTACT_NONE;
-			return true;
-		}
-		const before = kineticEnergy(ball);
-		const inboundEnergy = 0.5 * m * vn * vn;
-		const budget = inboundEnergy * (1 - restitution * restitution);
-		world.heat += budget;
-		let outVn = restitution * impact;
-		if (ball.recycle) {
-			const dampedVn = outVn * Math.sqrt(1 - recycleDamping);
-			outVn = dampedVn < bounceFloor ? 0 : dampedVn;
-			ball.vx += (outVn - vn) * nx;
-			ball.vy += (outVn - vn) * ny;
-			const dampedEnergy = (before - budget) - kineticEnergy(ball);
-			if (dampedEnergy > 0) recycleEnergy(world, ball, dampedEnergy);
-			else bookMech(world, before - budget, kineticEnergy(ball));
-		} else {
-			ball.vx += (outVn - vn) * nx;
-			ball.vy += (outVn - vn) * ny;
-			bookMech(world, before - budget, kineticEnergy(ball));
-		}
-		let normalImpulse = m * (outVn - vn);
-		const jumpImpulse = applyJumpPulse(world, ball, nx, ny);
-		if (jumpImpulse > 0) {
-			normalImpulse += jumpImpulse;
-			outVn = ball.vx * nx + ball.vy * ny;
-		}
-		applyRockFriction(world, ball, nx, ny, normalImpulse);
-		ball.contact = outVn < bounceFloor ? CONTACT_ROCK : CONTACT_NONE;
-		return true;
-	}
-
-	// Move to the traced crest crossing `time` into the frame and act on it.
-	// Mirrors land(), but piles break nothing: the contact is a soil bounce and
-	// hands the rest of the frame to the roll driver as usual.
 	function pileLand(world, cave, ball, r, dt, time, depth) {
 		const gravity = phys().config.ballGravity;
 		const flightY = ball.y + ball.vy * time - 0.5 * gravity * time * time;
@@ -746,21 +684,12 @@
 		ball.vy -= gravity * time;
 		bookLift(world, ball, ball.y - flightY);
 		advanceAirSpin(world, ball, time);
-		const pile = rubble();
-		const s = pile ? pile.surfaceAt(ball.x, ball.y, pileSupport) : null;
-		if (!s || !s.hasPile || ball.y - r > s.crest + contactSlop) {
-			// The pile vanished under the arc mid-frame (its supporting cell was
-			// mined this same tick) — fly on instead of resolving a contact with
-			// nothing.
-			flyFree(world, ball, r, Math.max(0, dt - time), false);
-			return true;
-		}
-		if (ball.y - r < s.crest) {
-			const push = s.crest + r - ball.y;
-			ball.y = s.crest + r;
+		if (ball.y < pileTrace.crest + r) {
+			const push = pileTrace.crest + r - ball.y;
+			ball.y += push;
 			bookLift(world, ball, push);
 		}
-		resolvePileContact(world, ball, s.nx, s.ny);
+		resolveContact(world, cave, ball, pileTrace.nx, pileTrace.ny, r, pileTrace.face);
 		if (ball.contact !== CONTACT_ROCK) return false;
 		if (depth > handOffLimit) return true;
 		rollStep(world, cave, ball, r, dt - time, depth + 1);
@@ -879,12 +808,12 @@
 		ball.contact = CONTACT_NONE;
 		const gravity = phys().config.ballGravity;
 		const contact = cave.traceCircle(ball.x, ball.y, ball.vx, ball.vy, dt, r, gravity, trace);
-		const pile = rubble();
-		const pileHit = Boolean(pile) && pile.traceCrest(ball.x, ball.y, ball.vx, ball.vy, dt, r, gravity, pileTrace).time <= dt;
 		const rockHit = contact.time <= dt;
-		// Whichever surface the ball reaches first this frame owns the contact.
-		// The pile crest rides the rock face, so it is always met no later.
-		if (pileHit && (!rockHit || pileTrace.time < contact.time)) {
+		const span = contact.time > 0 ? Math.min(contact.time, dt) : dt;
+		const soil = rubble.traceCrest(ball.x, ball.y, ball.vx, ball.vy, span, r, gravity, pileTrace);
+		// At a simultaneous overlap the coating owns an upward-facing hit;
+		// a rock wall or an overhang still resolves its own contact.
+		if (soil.time <= dt && (soil.time < contact.time || (soil.time === contact.time && contact.ny > 0))) {
 			if (pileLand(world, cave, ball, r, dt, pileTrace.time, depth)) return;
 			flyFree(world, ball, r, dt - pileTrace.time, false);
 			return;
@@ -974,7 +903,7 @@
 
 	function step(world, cave, dt) {
 		if (!world || !cave || !(dt > 0)) return;
-		stepDebris(world, cave, dt);
+		stepDebris(world, dt);
 		const ball = activeBall(world);
 		if (!ball) return;
 		if (ball.releaseCooldown > 0) {
@@ -994,17 +923,15 @@
 		}
 		const r = radiusOf();
 		const sdf = cave.sdfAt(ball.x, ball.y);
-		const pile = rubble();
-		const support = pile ? pile.surfaceAt(ball.x, ball.y, pileSupport) : null;
-		const pileTouch = Boolean(support && support.hasPile && ball.y - r <= support.crest + contactSlop);
+		const support = rubble.surfaceAt(ball.x, ball.y, pileSupport);
+		const pileTouch = support.hasPile && ball.y - r <= support.crest + contactSlop;
 		// The signed field is the surface for rock; a rubble crest seats the
 		// ball the same way above the face it stands on. A stair-stepped
 		// occupancy scan (`floorBelow`) reports a shelf floor under a pocket the
 		// ball has fallen into, and would seat it in mid-air there — the SDF and
 		// the crest decide, never the stair-step.
-		const touching = (ball.contact === CONTACT_ROCK && sdf <= r + contactSlop) || (ball.contact === CONTACT_ROCK && pileTouch);
-		const seated = (sdf <= r + contactSlop && Math.abs(ball.vy) <= leaveSpeed) || (pileTouch && Math.abs(ball.vy) <= leaveSpeed);
-		if (touching || seated) rollStep(world, cave, ball, r, dt, 0);
+		const supported = sdf <= r + contactSlop || pileTouch;
+		if (supported && (ball.contact === CONTACT_ROCK || Math.abs(ball.vy) <= leaveSpeed)) rollStep(world, cave, ball, r, dt, 0);
 		else airStep(world, cave, ball, r, dt, 0);
 		deckStep(world, ball, r, dt);
 		if (ball.contact === CONTACT_ROCK) {
@@ -1012,8 +939,8 @@
 			// a rubble crest standing above it. Only a contact supported by
 			// neither loses its support.
 			const nearRock = cave.sdfAt(ball.x, ball.y) <= r + contactSlop;
-			const after = pile ? pile.surfaceAt(ball.x, ball.y, pileSupport) : null;
-			const onCrest = Boolean(after && after.hasPile && ball.y - r <= after.crest + contactSlop);
+			const after = rubble.surfaceAt(ball.x, ball.y, pileSupport);
+			const onCrest = after.hasPile && ball.y - r <= after.crest + contactSlop;
 			if (!nearRock && !onCrest) ball.contact = CONTACT_NONE;
 		}
 	}
@@ -1075,9 +1002,17 @@
 	// ---- debris -----------------------------------------------------------
 
 	function spawnFragment(cave, column, row) {
-		const index = debrisCursor;
-		debrisCursor = (debrisCursor + 1) % maxDebris;
-		if (!debrisActive[index]) debrisCount++;
+		extractedCells++;
+		let index = debrisCursor;
+		if (debrisCount === maxDebris) {
+			// The flight pool is bounded; settle its oldest grain rather than
+			// silently overwriting its mass and break-time value.
+			rubble.deposit(debrisX[index], debrisY[index], 1, debrisValue[index]);
+		} else {
+			while (debrisActive[index]) index = (index + 1) % maxDebris;
+			debrisCount++;
+		}
+		debrisCursor = (index + 1) % maxDebris;
 		debrisActive[index] = 1;
 		debrisX[index] = cave.worldX(column);
 		debrisY[index] = cave.worldY(row);
@@ -1093,23 +1028,13 @@
 		// the rock, so a later catch or a pile deposit hands back exactly what
 		// came down — like the chamber's falling cells do.
 		const mOffset = index * mineralCountTotal;
-		const ceil = chamber();
-		const cellMassNow = ceil && ceil.state ? ceil.state.cellMass : 0.6;
-		for (let m = 0; m < mineralCountTotal; m++) debrisMinerals[mOffset + m] = cellMassNow * mixScratch[m];
-		debrisValue[index] = ceil && ceil.state ? materials().valueInto(mixScratch, 0, ceil.state.mineralPrices) : 0;
+		const storage = chamber().state;
+		for (let m = 0; m < mineralCountTotal; m++) debrisMinerals[mOffset + m] = storage.cellMass * mixScratch[m];
+		debrisValue[index] = materials().valueInto(mixScratch, 0, storage.mineralPrices);
 	}
 
-	function spawnRemoved(cave) {
-		const count = cave.removedCount;
-		for (let i = 0; i < count; i++) spawnFragment(cave, cave.removedColumn[i], cave.removedRow[i]);
-	}
-
-	// One grain crosses the deck plane inside this frame's ballistic arc? The
-	// deck's collector span is the 1.26 m window at the 1.8 m-left end of the
-	// deck, in the plate's own frame; the platform is the only collector in the
-	// section. Whole grains are caught; the momentum exchange books like the
-	// chamber's catch: the platform's velocity absorbs the grain and the
-	// speed-difference share becomes heat.
+	// Test the crossing in the deck's own frame. A full hopper lets the
+	// entire grain through to the supporting face rather than splitting it.
 	function tryCatchGrain(world, i, oldX, oldY, newY) {
 		const plate = world.platform;
 		const deck = phys().config.deck;
@@ -1125,57 +1050,37 @@
 		const collectorRight = collectorLeft + phys().config.platformWidth * phys().config.collectorFraction;
 		if (lx < collectorLeft || lx > collectorRight) return false;
 		const ceil = chamber();
-		if (!ceil || !ceil.loadCargo) return false;
-		const ceilingState = ceil.state;
-		if (ceilingState.cargoCells + 1 > ceilingState.storageLimit + 1e-9) return false;
 		const carried = phys().platformMass(world);
-		const mOffset = i * mineralCountTotal;
-		// Mass actually carried into the cargo: whatever the mix sums to, so
-		// the books balance even if the geology underweights a cell.
-		let grainMass = 0;
-		for (let m = 0; m < mineralCountTotal; m++) grainMass += debrisMinerals[mOffset + m];
-		const beforeTracked = 0.5 * carried * plate.vx * plate.vx;
-		if (grainMass > 0) plate.vx = (carried * plate.vx + grainMass * debrisVx[i]) / (carried + grainMass);
-		const value = debrisValue[i];
-		let lumped = false;
-		for (let m = 0; m < mineralCountTotal; m++) {
-			const mass = debrisMinerals[mOffset + m];
-			if (!(mass > 0)) continue;
-			ceil.loadCargo(m, mass, lumped ? 0 : value);
-			lumped = true;
-		}
-		// A cell whose mix sums to zero pounds of mineral cannot exist; keep
-		// the value out of limbo anyway.
-		if (!lumped) ceil.loadCargo(0, 0, value);
-		// The grain arrived from outside the books — cave rock is outside the
-		// ledger, exactly like the chamber's floor rubble — so the tracked
-		// gains this catch creates (the absorbed momentum and the added cargo
-		// on the shelf) are discounted as terrain-contributed energy rather
-		// than booked as heat. Signed, so a sideways grain that slows the
-		// platform un-discounts the same way.
-		const afterTracked = 0.5 * (carried + grainMass) * plate.vx * plate.vx + grainMass * phys().config.gravity * ceilingState.cargoHeight;
-		world.terrainWork += afterTracked - beforeTracked;
+		if (!ceil.loadWholeCell(debrisMinerals, i * mineralCountTotal, debrisValue[i])) return false;
+		const grainMass = ceil.state.cellMass;
+		const before = 0.5 * carried * plate.vx * plate.vx;
+		plate.vx = (carried * plate.vx + grainMass * debrisVx[i]) / (carried + grainMass);
+		// Rock potential is outside the ledger; book only the tracked change
+		// in platform kinetic energy and the new cargo's potential energy.
+		const after = 0.5 * (carried + grainMass) * plate.vx * plate.vx + grainMass * phys().config.gravity * ceil.state.cargoHeight;
+		world.terrainWork += after - before;
 		debrisActive[i] = 0;
 		debrisCount--;
+		caughtCells++;
 		return true;
 	}
 
-	function stepDebris(world, cave, dt) {
+	function stepDebris(world, dt) {
 		if (!debrisCount) return;
 		const gravity = phys().config.gravity;
-		const pile = rubble();
 		for (let i = 0; i < maxDebris; i++) {
 			if (!debrisActive[i]) continue;
 			const oldX = debrisX[i];
 			const oldY = debrisY[i];
 			const oldVy = debrisVy[i];
 			const newY = oldY + oldVy * dt - 0.5 * gravity * dt * dt;
-			if (world && tryCatchGrain(world, i, oldX, oldY, newY)) continue;
-			const crest = pile ? pile.crestAt(oldX, oldY) : NaN;
+			const crest = rubble.crestAt(oldX, oldY);
+			const endY = Number.isFinite(crest) ? Math.max(crest, newY) : newY;
+			if (tryCatchGrain(world, i, oldX, oldY, endY)) continue;
 			if (Number.isFinite(crest) && newY <= crest) {
 				// The grain has reached whatever holds the face below — bare rock
 				// or a pile already standing there — and becomes part of a pile.
-				pile.deposit(oldX, oldY, 1, debrisValue[i]);
+				rubble.deposit(oldX, oldY, 1, debrisValue[i]);
 				debrisActive[i] = 0;
 				debrisCount--;
 				continue;
@@ -1183,7 +1088,7 @@
 			if (newY < 0) {
 				// Fell out of the bottom of the section: the material is lost for
 				// good, exactly like a chamber grain that hits the world edge.
-				if (pile) pile.bookLost(1, debrisValue[i]);
+				rubble.bookLost(1, debrisValue[i]);
 				debrisActive[i] = 0;
 				debrisCount--;
 				continue;
@@ -1198,7 +1103,11 @@
 	const state = {
 		battery: 0, speed: 0, omega: 0, contact: CONTACT_NONE,
 		jump: false, recycle: false, recycled: 0,
-		hits: 0, debris: 0
+		hits: 0, debris: 0,
+		get extractedCells() { return extractedCells; },
+		get airborneCells() { return debrisCount; },
+		get caughtCells() { return caughtCells; },
+		get lostCells() { return rubble.lostCells; }
 	};
 
 	function readouts(world) {
@@ -1238,7 +1147,7 @@
 		init, step, setMotor, setJump, toggleJump, setRecycle, toggleRecycle,
 		canLaunch, launch, readouts, state, mechanicalEnergy,
 		debrisX, debrisY, debrisVx, debrisVy, debrisSize, debrisRed, debrisGreen, debrisBlue, debrisActive,
-		tryCatchGrain,
+		tryCatchGrain, spawnFragment,
 		get debrisCount() { return debrisCount; }
 	};
 	root.SteamWildBall = api;

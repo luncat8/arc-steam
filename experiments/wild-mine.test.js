@@ -598,11 +598,16 @@ test('M3 bounce energy recycling: actively stops bouncing, returns energy to bat
 		const dt = physics.config.step;
 		const r = physics.config.radius;
 
-		// Passive reference drop.
+		// Compare actuators on the same flat bed. Repeated direct impacts can
+		// excavate bare rock and turn a vertical bounce into a sideways roll.
+		function layBed(cave) {
+			for (let c = -12; c < 32; c++) wildRubble.deposit(cave.worldX(c), 31.5, 1, 3);
+			return wildMine.groundAt(2.5, 31.5) + r;
+		}
 		const passive = wildWorld(1);
 		const floor = shelfRest(passive.world, passive.cave, 2.5);
 		passive.ball.battery = 150;
-		freeBall(passive.world, passive.cave, 2.5, floor + 1.5, 0, 0);
+		freeBall(passive.world, passive.cave, 2.5, layBed(passive.cave) + 1.5, 0, 0);
 		let passiveSettle = -1;
 		// A motor-off passive superball needs ~25 s of bouncing before its
 		// rebound height collapses under one radius; watch well past that.
@@ -616,7 +621,7 @@ test('M3 bounce energy recycling: actively stops bouncing, returns energy to bat
 		recycled.world.platform.x = -3;
 		recycled.ball.battery = 150;
 		wildBall.setRecycle(recycled.world, true);
-		freeBall(recycled.world, recycled.cave, 2.5, floor + 1.5, -0.8, 0);
+		freeBall(recycled.world, recycled.cave, 2.5, layBed(recycled.cave) + 1.5, -0.8, 0);
 		recycled.ball.omega = -0.8 / r;
 		recycled.world.initialEnergy = physics.totalEnergy(recycled.world);
 		let recycleSettle = -1;
@@ -728,13 +733,10 @@ test('M3 rubble: broken cells rain down, land on the rock face, and stand as a c
 		const { world, cave, ball } = wildWorld(1);
 		const x = 2.8;
 		const rest = shelfRest(world, cave, x);
-		// The cave's rule lets a blow take at most half a cell's remaining
-		// strength, so one hole takes a run of hits on the same spot. Once the
-		// pile fills the pit the ball cushions on soil and stops breaking rock;
-		// that is the pile doing its job, not a failed drop — so only the run's
-		// totals are asserted, never any single drop.
-		for (let drop = 0; drop < 40 && wildRubble.state().depositedCells === 0; drop++) {
-			freeBall(world, cave, x, rest + 0.05, 0, -8);
+		// Stock-speed blows open the shelf without having to halve the same
+		// cell's strength all the way down to floating-point dust.
+		for (let drop = 0; drop < 6 && wildRubble.state().depositedCells === 0; drop++) {
+			freeBall(world, cave, x, rest + 0.05, 0, -wildBall.launchSpeed);
 			for (let i = 0; i < 120; i++) physics.step(world, physics.config.step);
 		}
 		assert.ok(ball.hits > 0, 'the drops broke rock');
@@ -776,8 +778,8 @@ test('M3 collector: a grain that drops through the collector span is caught into
 		const rest = shelfRest(world, cave, x);
 		// Break cells until at least one grain is airborne, then aim it through
 		// the deck: the collector is the window at the left end of the deck.
-		for (let drop = 0; drop < 40 && wildBall.debrisCount === 0; drop++) {
-			freeBall(world, cave, x, rest + 0.05, 0, -8);
+		for (let drop = 0; drop < 6 && wildBall.debrisCount === 0; drop++) {
+			freeBall(world, cave, x, rest + 0.05, 0, -wildBall.launchSpeed);
 			for (let i = 0; i < 120 && wildBall.debrisCount === 0; i++) physics.step(world, physics.config.step);
 		}
 		assert.ok(wildBall.debrisCount > 0, 'a strong hit breaks cells into grains');
@@ -803,6 +805,62 @@ test('M3 collector: a grain that drops through the collector span is caught into
 		assert.ok(ceiling.state.cargoCells > beforeCells, 'the collector scooped the grain');
 		assert.ok(ceiling.state.cargoValue > beforeValue, 'the grain brought its value with it');
 		assert.ok(Math.abs(ledgerDrift(world)) < 1e-6, 'the catch is ledger-exact: ' + ledgerDrift(world));
+	} finally {
+		resetClassic();
+	}
+});
+
+test('saturating the flight pool settles displaced grains instead of losing their cells or value', () => {
+	try {
+		const { world, cave } = wildWorld(1);
+		const c = cave.columnAt(2.8), r = cave.rowAt(cave.roofAbove(cave.worldX(c), 32));
+		cave.dig(c, r);
+		// Stress just the release queue with identical, known-value grains.
+		const n = wildBall.maxDebris + 5;
+		for (let i = 0; i < n; i++) wildBall.spawnFragment(cave, c, r);
+		const overflow = wildRubble.state();
+		assert.equal(wildBall.debrisCount, wildBall.maxDebris);
+		assert.equal(overflow.cells, 5);
+		for (let step = 0; wildBall.debrisCount && step < 480; step++) wildBall.step(world, cave, physics.config.step);
+		const settled = wildRubble.state();
+		assert.equal(wildBall.debrisCount, 0);
+		assert.equal(settled.depositedCells, n);
+		assert.ok(Math.abs(settled.cells + settled.lostCells - n) < 1e-8);
+		assert.ok(Math.abs(settled.value + settled.lostValue - n * overflow.value / 5) < 1e-7);
+	} finally {
+		resetClassic();
+	}
+});
+
+test('the last hopper slot takes a whole mixed grain; the next grain settles intact', () => {
+	try {
+		const { world, cave } = wildWorld(1);
+		const s = ceiling.state, m = s.cellMass;
+		assert.equal(ceiling.loadCargo(0, (s.storageLimit - 1) * m, 0), true);
+		const before = s.cargoMinerals.slice();
+		world.initialEnergy = physics.totalEnergy(world);
+		// Both faces are at the same height above the amber collector; -7
+		// releases first. Its Float32 shares used to total more than one.
+		const values = [], mix = new Float64Array(rockTable.mineralCount);
+		let firstMix;
+		for (const col of [-7, -6]) {
+			const x = cave.worldX(col), row = cave.rowAt(cave.roofAbove(x, 32)), y = cave.worldY(row);
+			cave.mixAt(col, row, mix);
+			if (!firstMix) firstMix = mix.slice();
+			values.push(mix.reduce((value, share, i) => value + share * s.mineralPrices[i], 0));
+			for (let hit = 0; cave.solidAt(x, y) && hit < 8; hit++) cave.weaken(x, y, 10, 1, 0.75);
+		}
+		assert.equal(wildBall.debrisCount, 2);
+		for (let step = 0; wildBall.debrisCount && step < 480; step++) physics.step(world, physics.config.step);
+		assert.equal(wildBall.debrisCount, 0);
+		assert.equal(wildBall.state.caughtCells, 1);
+		assert.equal(s.cargoCells, s.storageLimit);
+		for (let i = 0; i < mix.length; i++) assert.ok(Math.abs(s.cargoMinerals[i] - before[i] - firstMix[i] * m) < 1e-10);
+		assert.ok(Math.abs(s.cargoValue - values[0]) < 1e-9);
+		const soil = wildRubble.state();
+		assert.equal(soil.cells, 1);
+		assert.ok(Math.abs(soil.value - values[1]) < 1e-9);
+		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
 	} finally {
 		resetClassic();
 	}
@@ -898,6 +956,31 @@ test('M4 streaming: a 12 m/s window stays in budget, evicts clean chunks, and re
 		assert.ok(maxLive <= 12, 'player motion keeps liveChunks bounded: ' + maxLive);
 		assert.ok(Number.isFinite(cave.sdfAt(world.platform.x, world.platform.y)), 'rock stays under the platform');
 		assert.ok(Number.isFinite(cave.sdfAt(ball.x, ball.y)), 'and under the ball');
+	} finally {
+		resetClassic();
+	}
+});
+
+test('a hit on a settled bed transmits only a diffuse share to its backing rock, even starting in contact', () => {
+	try {
+		const { world, cave, ball } = wildWorld(1);
+		const c = 18, x = cave.worldX(c), row = cave.state.shelfRow - 1;
+		for (let i = c - 3; i <= c + 3; i++) wildRubble.deposit(cave.worldX(i), 32, 15, 30);
+		const crest = wildMine.groundAt(x, 32);
+		const center = cave.strengthAt(c, row), far = cave.strengthAt(c - 12, row);
+		const roofRow = cave.rowAt(cave.roofAbove(x, 32)), roof = cave.strengthAt(c, roofRow);
+		const material = wildRubble.state();
+		freeBall(world, cave, x, crest + physics.config.radius - 0.001, 0, -5);
+		physics.step(world, physics.config.step);
+		assert.ok(ball.vy > 0 && ball.y >= crest + physics.config.radius, 'the crest, not buried rock, owns the bounce');
+		const budget = 0.5 * physics.ballMassFor(ball) * 25 * (1 - wildBall.restitution ** 2);
+		assert.ok(ball.lastFracture > 0 && ball.lastFracture <= budget * 0.2 + 1e-10);
+		assert.ok(cave.strengthAt(c, row) < center);
+		assert.ok(cave.strengthAt(c - 12, row) < far, 'transmitted damage reaches beyond the bare strike radius');
+		assert.equal(cave.strengthAt(c, roofRow), roof, 'soil does not transmit a floor strike upward through the gallery');
+		assert.equal(wildRubble.state().cells, material.cells);
+		assert.equal(wildRubble.state().value, material.value);
+		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
 	} finally {
 		resetClassic();
 	}

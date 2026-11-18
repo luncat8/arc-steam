@@ -27,7 +27,7 @@
 	// material in it: every cells-to-metres conversion below reads this value.
 	const floorCompressionMin = 1;
 	const floorCompressionMax = 8;
-	// 1.5: the debris Y compression default in every mode (0.4.0 draft).
+	// Wild Mine chooses its own 1.5:1 default at run setup.
 	const floorCompressionDefault = 4;
 	let floorCompression = floorCompressionDefault;
 	function floorCellHeightNow() { return cell / floorCompression; }
@@ -45,7 +45,7 @@
 		floorCompression = factor;
 		// The Wild Mine keeps its own heightmap on the cave faces; re-lay it by
 		// the same ratio so both modes honour DEBRIS identically.
-		if (root.SteamWildRubble && root.SteamWildRubble.rescale) root.SteamWildRubble.rescale(ratio);
+		if (root.SteamWildRubble && root.SteamWildRubble.rescale) root.SteamWildRubble.rescale();
 		for (let column = 0; column < columns; column++) {
 			const height = floorPiles[column] * ratio;
 			if (height <= pileLimit) {
@@ -136,7 +136,7 @@
 	// impact never finishes a cell: the contact cells stay standing and the ring
 	// around them is left loose, to fall later in a collapse burst.
 	const hitLooseCap = 0.5;
-	const collapseLooseFloor = 0.3;
+	const collapseLooseFloor = materials.collapseLooseFloor;
 	// The absolute limit below which a cell is rubble, shared with the strength
 	// view so the grey cells and the cells that may fall are the same ones.
 	const collapseStrengthLimit = materials.debrisLimit;
@@ -2256,12 +2256,26 @@
 		return value;
 	}
 
-	function loadCargo(mineral, mass, value) {
-		const cells = cargoCells + mass / cellMass;
+	function reserveCargoCells(added) {
+		const cells = cargoCells + added;
 		if (cells > storageLimit + cargoSnap) return false;
 		const whole = Math.round(cells);
 		cargoCells = Math.abs(cells - whole) < cargoSnap ? whole : cells;
+		return true;
+	}
+
+	function loadCargo(mineral, mass, value) {
+		if (!reserveCargoCells(mass / cellMass)) return false;
 		cargoMinerals[mineral] += mass;
+		cargoValue += value;
+		return true;
+	}
+
+	// A falling Wild Mine grain is indivisible. Reserve its single slot once,
+	// not a sequence of independently rounded mineral loads at the full line.
+	function loadWholeCell(masses, offset, value) {
+		if (!reserveCargoCells(1)) return false;
+		for (let m = 0; m < mineralCount; m++) cargoMinerals[m] += masses[offset + m];
 		cargoValue += value;
 		return true;
 	}
@@ -2669,7 +2683,7 @@
 
 	const api = {
 		hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, chip, surfaceAt, damageRadiusNow, damageMultiplierNow,
-		trace, step, harvest, spill, sellCargo, sellCargoKeeping, unloadCargo, loadCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, settleGraderBlade,
+		trace, step, harvest, spill, sellCargo, sellCargoKeeping, unloadCargo, loadCargo, loadWholeCell, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, settleGraderBlade,
 		state, setShape, setFloorCompression, setDepthScale, setMineralClusterGrowth, generateTestRock, rockDrawnY, rockWorldY, rockScale, collapse, advanceMarket,
 		applyGeology, exportGeology, applyGeologyExport, sampleCell, perspectiveScale,
 		queueGrowth, watchBoundary, grow,

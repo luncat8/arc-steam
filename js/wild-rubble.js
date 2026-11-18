@@ -1,632 +1,381 @@
-// Wild Mine rubble ("improve debris", 0.4.0 draft): fallen cells are a heightmap
-// of soil layers like the chamber's rubble floor, but the cave is
-// two-dimensional — a pile can rest on ANY upward-facing rock cell, a ledge as
-// happily as the bottom of the section.
-//
-// One pile per (absolute column, supporting face). A segment remembers the row
-// of the solid cell it stands on, the metres it rises above that face, and the
-// material it holds (cells + value). The crest presented to physics and to the
-// renderer is the chamber's binomial-smoothed heightmap, restricted to piles on
-// the same face run so a shelf pile never leaks into the cavern floor beneath
-// it. The stencil drops a foreign-face column instead of averaging it in, so a
-// crest never claims material that is not there.
-//
-// Mining can take the supporting cell with a pile on it: a segment whose
-// supporting cell is gone collapses to the next face below (or is lost through
-// the bottom of the section), so rubble never floats on nothing. Mass and
-// value are conserved by the move.
-//
-// Piles are loose soil, not rock: they are indestructible, they never feed the
-// cave's fracture ledger, and the ball rests and bounces on their smoothed
-// crest exactly like it would on the rock's own free face.
-//
-// Depends on: js/cave.js (the only surface query of record), js/ceiling.js
-// (the one market, the DEBRIS compression setting and the grader's rules).
+// Loose soil on the exposed top faces of the cave. Only (column, support row,
+// cells, value) are material. The chamber's 1-3-3-1 crest is derived from those
+// bins, including its shoulders in empty columns. It follows connected steps,
+// never mixing separate galleries.
 (function (root) {
 	'use strict';
 	const node = typeof module !== 'undefined' && module.exports;
-	const ceilingRef = node ? require('./ceiling.js') : root.SteamCeiling;
-
-	function ceilApi() { return ceilingRef || root.SteamCeiling; }
-	// The live cave instance is owned by the wild mode; resolving it per call
-	// keeps this module mode-agnostic (it is inert in Classic).
-	function cave() {
-		const mine = root.SteamWildMine;
-		return mine && mine.cave ? mine.cave : null;
-	}
-
-	const cell = 0.125;
-	// The same 1-3-3-1 stencil the chamber's rock free face and floor use.
-	const stencil = [0.125, 0.375, 0.375, 0.125];
-	// Same run: a 45° shelf rises exactly one cell per column, so one cell of
-	// base tolerance keeps the smoothing on the slope and drops it at a ledge.
-	const faceTolerance = cell;
-	// Deep overlaps merge onto their face (max 4 piles per column) and the
-	// section never tracks more than this many piles at once.
-	const maxPerColumn = 4;
-	const maxSegments = 2048;
-	const heightEpsilon = 1e-6;
-
-	// piles: Map<absoluteColumn, Segment[]>. A segment is
-	//   { base, row, height, cells, value }
-	// where base = (row + 1) * cell is the top face of the supporting solid
-	// cell, in world metres.
+	const ceiling = node ? require('./ceiling.js') : root.SteamCeiling;
 	const piles = new Map();
-	let depositedCells = 0;
-	let depositedValue = 0;
-	let lostCells = 0;
-	let lostValue = 0;
-	let collapseCount = 0;
-	let pileCells = 0;
-	let pileValue = 0;
-	let segmentCount = 0;
-	let bladeCells = 0;
-
+	const profiles = new Map();
+	let cave = null;
+	let cell = 0;
+	let depositedCells = 0, depositedValue = 0, lostCells = 0, lostValue = 0;
+	let collapseCount = 0, bladeCells = 0;
 	const blade = { value: 0, idle: 0 };
+	const cutScratch = { cells: 0, value: 0 };
 	const bladeSettleDelay = 0.25;
-	// The chamber's grader rules, read live so one setting drives both modes.
-	function graderCut() { const c = ceilApi(); return c && c.state ? c.state.graderCut : 0.03; }
-	function graderSmooth() { const c = ceilApi(); return c && c.state ? c.state.graderSmooth : 0.4; }
-	function graderSwath() { const c = ceilApi(); return c && c.state ? c.state.graderSwath : 1.5; }
-	function floorCellHeight() {
-		const c = ceilApi();
-		return c && c.state ? c.state.floorCellHeight : cell / 4;
+
+	class Bin {
+		constructor(row) {
+			this.row = row;
+			this.base = (row + 1) * cell;
+			this.cells = 0;
+			this.value = 0;
+		}
+		get height() { return this.cells * ceiling.state.floorCellHeight; }
 	}
 
-	function columnAt(x) { return Math.floor(x / cell); }
-
-	function findSegment(list, row) {
-		for (let i = 0; i < list.length; i++) if (list[i].row === row) return list[i];
+	function binAt(column, row) {
+		const list = piles.get(column);
+		if (list) for (let i = 0; i < list.length; i++) if (list[i].row === row) return list[i];
 		return null;
 	}
-	function findRunSegment(list, base) {
-		for (let i = 0; i < list.length; i++) if (Math.abs(list[i].base - base) <= faceTolerance) return list[i];
-		return null;
-	}
-	function removeAt(list, index) {
-		const last = list.length - 1;
-		const seg = list[index];
-		pileCells -= seg.cells;
-		pileValue -= seg.value;
-		list[index] = list[last];
-		list.pop();
-		segmentCount--;
-		return seg;
-	}
-	// A segment whose supporting solid cell is gone drops to the next face
-	// below, keeping the material; with no rock below, it is lost through the
-	// bottom of the section.
-	function collapseSegment(column, index) {
-		const list = piles.get(column);
-		if (!list) return;
-		const seg = list[index];
-		const caveRef = cave();
-		if (!caveRef) return;
-		const face = caveRef.floorBelow((column + 0.5) * cell, seg.base - 1e-6);
-		removeAt(list, index);
-		collapseCount++;
-		if (!Number.isFinite(face)) {
-			lostCells += seg.cells;
-			lostValue += seg.value;
-			if (!list.length) piles.delete(column);
-			return;
-		}
-		const row = Math.round(face / cell - 1);
-		let target = findSegment(list, row);
-		if (!target) {
-			target = { base: face, row, height: 0, cells: 0, value: 0 };
-			list.push(target);
-			segmentCount++;
-		}
-		const cap = caveRef.state.mapTop - face;
-		let keptHeight = seg.height;
-		let keptCells = seg.cells;
-		let keptValue = seg.value;
-		if (keptHeight > cap) {
-			const kept = cap / keptHeight;
-			lostCells += seg.cells * (1 - kept);
-			lostValue += seg.value * (1 - kept);
-			keptCells = seg.cells * kept;
-			keptValue = seg.value * kept;
-			keptHeight = cap;
-		}
-		if (target.height + keptHeight > cap) {
-			const room = Math.max(0, cap - target.height);
-			const kept = keptHeight > 0 ? room / keptHeight : 0;
-			lostCells += keptCells * (1 - kept);
-			lostValue += keptValue * (1 - kept);
-			keptCells *= kept;
-			keptValue *= kept;
-			keptHeight = room;
-		}
-		target.height += keptHeight;
-		target.cells += keptCells;
-		target.value += keptValue;
-		pileCells += keptCells;
-		pileValue += keptValue;
-		if (!list.length) piles.delete(column);
+
+	function nearMaterial(column) {
+		for (let c = column - 2; c <= column + 2; c++) if (piles.has(c)) return true;
+		return false;
 	}
 
-	// Collapse every undermined segment in one column. Cheap: one solidity
-	// probe per segment, and the column is 1-2 segments in practice.
-	function verifyColumn(column) {
-		const list = piles.get(column);
-		if (!list || !list.length) return;
-		const caveRef = cave();
-		if (!caveRef) return;
-		for (let i = list.length - 1; i >= 0; i--) {
-			const seg = list[i];
-			const x = (column + 0.5) * cell;
-			const y = (seg.row + 0.5) * cell;
-			if (!caveRef.solidAt(x, y)) collapseSegment(column, i);
+	// Cache only the footprint of the stencil. Reads (including tracing and
+	// drawing) never settle or otherwise change the material.
+	function invalidate(center) {
+		const occupied = piles.has(center);
+		for (let c = center - 2; c <= center + 2; c++) {
+			const profile = profiles.get(c);
+			if (profile && !occupied && !nearMaterial(c)) profiles.delete(c);
+			else if (profile) profile.dirty = true;
+			else if (occupied) profiles.set(c, { dirty: true, count: 0, strips: [] });
 		}
 	}
 
-	function deposit(x, refY, cells, value) {
-		const caveRef = cave();
-		if (!caveRef || !(cells > 0)) return { added: 0 };
-		const column = columnAt(x);
-		verifyColumn(column);
-		const face = caveRef.floorBelow(x, refY);
-		if (!Number.isFinite(face)) {
-			lostCells += cells;
-			lostValue += value || 0;
-			return { added: 0 };
-		}
-		const row = Math.round(face / cell - 1);
-		let list = piles.get(column);
-		if (!list) {
-			list = [];
-			piles.set(column, list);
-		}
-		let seg = findSegment(list, row);
-		if (!seg) {
-			if (list.length >= maxPerColumn || segmentCount >= maxSegments) {
-				lostCells += cells;
-				lostValue += value || 0;
-				return { added: 0 };
-			}
-			seg = { base: face, row, height: 0, cells: 0, value: 0 };
-			list.push(seg);
-			segmentCount++;
-		}
-		const tile = floorCellHeight();
-		const cap = caveRef.state.mapTop - seg.base;
-		let addedCells = cells;
-		let keptValue = value || 0;
-		let height = cells * tile;
-		const room = Math.max(0, cap - seg.height);
-		if (height > room) {
-			const kept = height > 0 ? room / height : 0;
-			lostCells += cells * (1 - kept);
-			lostValue += keptValue * (1 - kept);
-			addedCells = cells * kept;
-			keptValue *= kept;
-			height = room;
-		}
-		if (!(addedCells > 0)) return { added: 0 };
-		seg.height += height;
-		seg.cells += addedCells;
-		seg.value += keptValue;
-		pileCells += addedCells;
-		pileValue += keptValue;
-		depositedCells += addedCells;
-		depositedValue += keptValue;
-		return { added: addedCells, row };
+	function roomAbove(column, base) {
+		const roof = cave.roofAbove(cave.worldX(column), base);
+		return (Number.isFinite(roof) ? roof : cave.state.mapTop) - base;
 	}
 
-	// ---- the smoothed crest -------------------------------------------------
+	function add(column, row, cells, value) {
+		let bin = binAt(column, row);
+		if (!bin) {
+			bin = new Bin(row);
+			let list = piles.get(column);
+			if (!list) piles.set(column, list = []);
+			list.push(bin);
+		}
+		bin.cells += cells;
+		bin.value += value;
+		invalidate(column);
+	}
 
-	// Smoothed height of the piles standing on the face run `face` at one cell
-	// vertex. A column whose rubble sits only on another face is skipped
-	// outright (its weight is dropped, never averaged in), which keeps the
-	// crest at or below the material actually printed there; an empty column
-	// tapers to nothing exactly like the chamber's floor edge.
-	function vertexHeight(vertex, face) {
-		let sum = 0;
-		for (let i = 0; i < 4; i++) {
-			const column = vertex - 2 + i;
-			const weight = stencil[i];
+	function take(column, bin, cells) {
+		const value = cells === bin.cells ? bin.value : bin.value * (cells / bin.cells);
+		bin.cells -= cells;
+		bin.value -= value;
+		if (bin.cells === 0) {
 			const list = piles.get(column);
-			if (!list || !list.length) continue; // taper: nothing here, weight kept at 0
-			const seg = findRunSegment(list, face);
-			if (seg) sum += weight * seg.height;
-			// foreign-face pile only: drop this column's weight entirely
+			list[list.indexOf(bin)] = list[list.length - 1];
+			list.pop();
+			if (!list.length) piles.delete(column);
 		}
-		return sum;
+		invalidate(column);
+		return value;
 	}
 
-	function heightOnFace(x, face) {
-		const fx = x / cell;
-		const v = Math.floor(fx);
-		const fraction = fx - v;
-		const h0 = vertexHeight(v, face);
-		const h1 = vertexHeight(v + 1, face);
-		return h0 + (h1 - h0) * fraction;
+	function bookLost(cells, value) {
+		lostCells += cells;
+		lostValue += value;
 	}
 
-	// The rubble surface relevant at a point: the face the cave query finds
-	// below (x, y), the smoothed height standing on it, and the slope normal.
-	// Callers that only need the height use `heightAt`; everything else uses
-	// caller-owned scratch (surfaceScratch) or passes its own.
-	const surfaceScratch = { face: NaN, crest: NaN, height: 0, nx: 0, ny: 1, hasPile: false, row: -1 };
-	function surfaceAt(x, y, out) {
-		const target = out || surfaceScratch;
-		target.face = NaN;
-		target.crest = NaN;
-		target.height = 0;
-		target.nx = 0;
-		target.ny = 1;
-		target.hasPile = false;
-		target.row = -1;
-		const caveRef = cave();
-		if (!caveRef) return target;
-		verifyColumn(columnAt(x));
-		const face = caveRef.floorBelow(x, y);
-		if (!Number.isFinite(face)) return target;
-		const h = heightOnFace(x, face);
-		target.face = face;
-		target.row = Math.round(face / cell - 1);
-		target.height = h;
-		target.crest = face + h;
-		target.hasPile = h > heightEpsilon;
-		if (target.hasPile) {
-			const e = cell * 0.75;
-			const hl = heightOnFace(x - e, face);
-			const hr = heightOnFace(x + e, face);
-			const nx = hl - hr;
-			const ny = 2 * e;
-			const inv = 1 / Math.hypot(nx, ny);
-			target.nx = nx * inv;
-			target.ny = ny * inv;
+	function settle(column, face, cells, value) {
+		if (!Number.isFinite(face)) {
+			bookLost(cells, value);
+			return 0;
 		}
-		return target;
+		const row = cave.rowAt(face) - 1;
+		const bin = binAt(column, row);
+		const capacity = roomAbove(column, face) / ceiling.state.floorCellHeight;
+		const kept = Math.min(cells, Math.max(0, capacity - (bin ? bin.cells : 0)));
+		const keptValue = value * (kept / cells);
+		if (kept > 0) add(column, row, kept, keptValue);
+		if (kept < cells) bookLost(cells - kept, value - keptValue);
+		return kept;
 	}
 
-	function heightAt(x, y) {
-		const caveRef = cave();
-		if (!caveRef) return 0;
-		verifyColumn(columnAt(x));
-		const face = caveRef.floorBelow(x, y);
-		if (!Number.isFinite(face)) return 0;
-		return heightOnFace(x, face);
+	function deposit(x, refY, cells, value = 0) {
+		if (!cave || !(cells > 0)) return 0;
+		depositedCells += cells;
+		depositedValue += value;
+		const face = cave.floorBelow(x, refY);
+		return settle(cave.columnAt(x), face <= refY ? face : NaN, cells, value);
 	}
 
-	function crestAt(x, y) {
-		const caveRef = cave();
-		if (!caveRef) return NaN;
-		verifyColumn(columnAt(x));
-		const face = caveRef.floorBelow(x, y);
-		if (!Number.isFinite(face)) return NaN;
-		return face + heightOnFace(x, face);
+	// Called after occupancy edits, even for a direct dig with no fragment.
+	// A removed roof can also uncover a shoulder in a neighbouring column.
+	function rockOpened(column, row) {
+		invalidate(column);
+		const bin = binAt(column, row);
+		if (!bin) return;
+		const cells = bin.cells;
+		const value = take(column, bin, cells);
+		const face = cave.floorBelow(cave.worldX(column), cave.worldY(row));
+		settle(column, face, cells, value);
+		collapseCount++;
 	}
 
-	// Earliest time along a ballistic arc at which a circle of `radius` reaches
-	// a rubble crest, or false when none exists inside the frame (or there is
-	// no rubble in the spanned columns at all). Heightfield walk: half-cell
-	// samples, then a crossing bisection, mirroring cave.traceCircle.
-	const traceScratch = { x: 0, y: 0, nx: 0, ny: 1, face: NaN, crest: NaN, time: Infinity };
-	function traceCrest(x, y, vx, vy, duration, radius, gravity, out) {
-		const target = out || traceScratch;
-		target.time = Infinity;
-		target.x = x;
-		target.y = y;
-		target.nx = 0;
-		target.ny = 1;
-		target.face = NaN;
-		target.crest = NaN;
-		if (!(duration > 0)) return target;
-		const endX = x + vx * duration;
-		const minCol = Math.floor(Math.min(x, endX) / cell) - 1;
-		const maxCol = Math.floor(Math.max(x, endX) / cell) + 1;
-		let any = false;
-		for (let column = minCol; column <= maxCol; column++) if (piles.has(column)) { any = true; break; }
-		if (!any) return target;
-		const caveRef = cave();
-		if (!caveRef) return target;
-		const travel = Math.hypot(vx, vy) * duration + 0.5 * Math.abs(gravity) * duration * duration;
-		const samples = Math.max(4, Math.min(64, Math.ceil(travel / (cell * 0.5)) + 1));
-		const bottomAt = (t) => {
-			const py = y + vy * t - 0.5 * gravity * t * t;
-			return py - radius;
-		};
-		const crestAtT = (t) => {
-			const px = x + vx * t;
-			const py = y + vy * t - 0.5 * gravity * t * t;
-			const face = caveRef.floorBelow(px, py);
-			if (!Number.isFinite(face)) return NaN;
-			const h = heightOnFace(px, face);
-			return h > heightEpsilon ? face + h : NaN;
-		};
-		let previous = 0;
-		let prevBottom = bottomAt(0);
-		let prevCrest = crestAtT(0);
-		for (let i = 1; i <= samples; i++) {
-			const t = duration * i / samples;
-			const px = x + vx * t;
-			const py = y + vy * t - 0.5 * gravity * t * t;
-			// The arc's centre is inside raw rock: the rock owns whatever
-			// follows, and its own trace resolves the contact. floorBelow from
-			// inside a solid row reports that row's top, which is above py.
-			if (py < caveRef.floorBelow(px, py)) {
-				previous = t;
-				continue;
-			}
-			const bottom = py - radius;
-			const crest = crestAtT(t);
-			const prevInside = Number.isFinite(prevCrest) && prevBottom <= prevCrest;
-			if (Number.isFinite(crest) && bottom <= crest && !prevInside) {
-				// Crossing inside (previous, t]: bisect the root.
-				let low = previous;
-				let high = t;
-				for (let step = 0; step < 12; step++) {
-					const mid = (low + high) * 0.5;
-					const midCrest = crestAtT(mid);
-					if (Number.isFinite(midCrest) && bottomAt(mid) <= midCrest) high = mid;
-					else low = mid;
-				}
-				const time = (low + high) * 0.5;
-				const pxAt = x + vx * time;
-				const pyAt = y + vy * time - 0.5 * gravity * time * time;
-				target.time = time;
-				target.x = pxAt;
-				target.y = pyAt;
-				surfaceAt(pxAt, pyAt, target);
-				return target;
-			}
-			previous = t;
-			prevBottom = bottom;
-			prevCrest = crest;
-		}
-		return target;
-	}
-
-	// ---- DEBRIS compression -------------------------------------------------
-
-	// The chamber's floorCompression setting re-lays the piles by the same
-	// ratio: no cell is created or destroyed, and a pile that the new factor
-	// would push through the top of the section keeps what fits, exactly like
-	// the chamber's own roof rule.
-	function rescale(ratio) {
-		if (!(ratio > 0) || ratio === 1) return;
-		const caveRef = cave();
-		const limit = caveRef ? caveRef.state.mapTop : Infinity;
-		pileCells = 0;
-		pileValue = 0;
+	function rescale() {
+		const tile = ceiling.state.floorCellHeight;
 		for (const [column, list] of piles) {
 			for (let i = list.length - 1; i >= 0; i--) {
-				const seg = list[i];
-				let height = seg.height * ratio;
-				const cap = limit - seg.base;
-				if (height > cap) {
-					const kept = height > 0 ? cap / height : 0;
-					lostCells += seg.cells * (1 - kept);
-					lostValue += seg.value * (1 - kept);
-					seg.cells *= kept;
-					seg.value *= kept;
-					height = cap;
-				}
-				seg.height = height;
-				if (seg.height <= heightEpsilon) {
-					lostCells += seg.cells;
-					lostValue += seg.value;
-					removeAt(list, i);
-					continue;
-				}
-				pileCells += seg.cells;
-				pileValue += seg.value;
+				const bin = list[i];
+				const excess = bin.cells - roomAbove(column, bin.base) / tile;
+				if (excess > 0) bookLost(excess, take(column, bin, excess));
 			}
-			if (!list.length) piles.delete(column);
+			invalidate(column);
 		}
 	}
 
-	// ---- collection -----------------------------------------------------------
+	function height(column, row) {
+		const bin = binAt(column, row);
+		return bin ? bin.height : 0;
+	}
 
-	// A harvest blade shaves a thin layer off the piles under a swath, priced at
-	// each pile's own value density so the ground and the purse never disagree.
-	// With `refY`, only the face the body actually rides is shaved — a pile on a
-	// ledge above the blade keeps its material. Without it, every pile in the
-	// swath is fair game (the classic flat-floor call).
-	function harvest(x, halfWidth, cut, maxCells, out, refY) {
-		out.value = 0;
-		out.cells = 0;
-		if (!(cut > 0) || !(maxCells > 0)) return out;
-		const caveRef = cave();
-		const first = columnAt(x - halfWidth);
-		const last = columnAt(x + halfWidth);
-		const tile = floorCellHeight();
-		let cells = 0;
-		let value = 0;
-		const faceFor = (column) => {
-			if (!Number.isFinite(refY) || !caveRef) return NaN;
-			return caveRef.floorBelow((column + 0.5) * cell, refY);
-		};
-		for (let column = first; column <= last; column++) {
-			verifyColumn(column);
-			const list = piles.get(column);
-			if (!list || !list.length) continue;
-			const face = faceFor(column);
-			for (let i = list.length - 1; i >= 0; i--) {
-				const seg = list[i];
-				if (Number.isFinite(face) && Math.abs(seg.base - face) > faceTolerance) continue;
-				const height = seg.height;
-				const amount = Math.min(height, cut);
-				const density = height > 0 ? seg.value / height : 0;
-				let take = amount / tile;
-				if (cells + take > maxCells) {
-					take = maxCells - cells;
-					if (!(take > 0)) return finish(out, cells, value);
-				}
-				const amountTaken = take * tile;
-				const taken = density * amountTaken;
-				seg.height -= amountTaken;
-				seg.cells -= take;
-				seg.value = Math.max(0, seg.value - taken);
-				pileCells -= take;
-				pileValue -= taken;
-				cells += take;
-				value += taken;
-				if (seg.height <= heightEpsilon || seg.cells <= 1e-12) {
-					removeAt(list, i);
-				}
-				if (cells >= maxCells) return finish(out, cells, value);
+	// A stair joins two soil beds only when the lower bin fills to the lip.
+	// Below that it is a real edge: even a thin layer on a one-cell pedestal
+	// stays on its top rather than being averaged into the gallery below.
+	function nextOnBed(column, row, direction) {
+		const next = cave.adjacentFloor(column, row, direction);
+		if (next < 0 || next === row) return next;
+		const lowerHeight = next > row ? height(column, row) : height(column + direction, next);
+		return lowerHeight >= cell ? next : -1;
+	}
+
+	function level(column, row) { return (row + 1) * cell + height(column, row); }
+
+	function roofAt(column, row) {
+		const base = (row + 1) * cell;
+		return base + roomAbove(column, base);
+	}
+
+	function buildStrip(column, row, profile) {
+		const base = (row + 1) * cell, h = level(column, row);
+		const left = nextOnBed(column, row, -1), right = nextOnBed(column, row, 1);
+		const farLeft = left < 0 ? -1 : nextOnBed(column - 1, left, -1);
+		const farRight = right < 0 ? -1 : nextOnBed(column + 1, right, 1);
+		// Smooth absolute top elevations. Clamp the stencil at the end of the
+		// run and clip each shared vertex to the lower overhang on its sides.
+		const l = left < 0 ? h : level(column - 1, left), ll = farLeft < 0 ? l : level(column - 2, farLeft);
+		const r = right < 0 ? h : level(column + 1, right), rr = farRight < 0 ? r : level(column + 2, farRight);
+		const roof = roofAt(column, row);
+		const leftRoof = left < 0 ? roof : Math.min(roof, roofAt(column - 1, left));
+		const rightRoof = right < 0 ? roof : Math.min(roof, roofAt(column + 1, right));
+		const y0 = Math.max(base, Math.min(leftRoof, (ll + 3 * l + 3 * h + r) / 8));
+		const y1 = Math.max(base, Math.min(rightRoof, (l + 3 * h + 3 * r + rr) / 8));
+		if (y0 <= base && y1 <= base) return;
+		let strip = profile.strips[profile.count];
+		if (!strip) profile.strips.push(strip = {});
+		profile.count++;
+		strip.row = row;
+		strip.base = base;
+		strip.left = y0;
+		strip.right = y1;
+	}
+
+	function profileAt(column) {
+		const profile = profiles.get(column);
+		if (!profile || !profile.dirty) return profile;
+		profile.dirty = false;
+		profile.count = 0;
+		for (let c = column - 2; c <= column + 2; c++) {
+			const list = piles.get(c);
+			if (!list) continue;
+			for (let i = 0; i < list.length; i++) {
+				let row = list[i].row;
+				const step = c < column ? 1 : -1;
+				for (let from = c; from !== column && row >= 0; from += step) row = nextOnBed(from, row, step);
+				if (row >= 0 && !stripOn(profile, row)) buildStrip(column, row, profile);
 			}
 		}
-		return finish(out, cells, value);
+		return profile;
 	}
-	function finish(out, cells, value) {
-		out.cells = cells;
-		out.value = value;
-		for (const [column, list] of piles) if (!list.length) piles.delete(column);
+
+	function stripOn(profile, row) {
+		if (profile) for (let i = 0; i < profile.count; i++) if (profile.strips[i].row === row) return profile.strips[i];
+		return null;
+	}
+
+	function eachStrip(first, last, visit) {
+		if (!profiles.size) return;
+		for (let c = first; c <= last; c++) {
+			const profile = profileAt(c);
+			if (!profile) continue;
+			for (let i = 0; i < profile.count; i++) visit(c, profile.strips[i]);
+		}
+	}
+
+	function crestOn(strip, fraction) { return strip.left + (strip.right - strip.left) * fraction; }
+
+	const surfaceScratch = { face: NaN, crest: NaN, height: 0, nx: 0, ny: 1, hasPile: false, row: -1 };
+	function surfaceAt(x, y, out = surfaceScratch) {
+		const face = cave ? cave.floorBelow(x, y) : NaN;
+		const row = Number.isFinite(face) ? cave.rowAt(face) - 1 : -1;
+		const column = Math.floor(x / cell);
+		const strip = face <= y && stripOn(profileAt(column), row);
+		out.face = face;
+		out.row = row;
+		out.crest = strip ? crestOn(strip, x / cell - column) : face;
+		out.height = strip ? out.crest - face : 0;
+		out.hasPile = out.height > 0;
+		const rise = out.hasPile ? (strip.right - strip.left) / cell : 0;
+		out.ny = rise ? 1 / Math.hypot(1, rise) : 1;
+		out.nx = rise ? -rise * out.ny : 0;
 		return out;
 	}
 
-	// The rig's road grader works the ground the platform rides: it moves
-	// height between neighbouring columns on the same face run (material
-	// transport, never creation) and shaves the top of the swath into the
-	// blade. The blade's share settles as one ledger entry when the stint ends,
-	// exactly like the chamber's.
-	const gradeScratch = [null, null, null, null];
+	function crestAt(x, y) { return surfaceAt(x, y).crest; }
+	function heightAt(x, y) { return surfaceAt(x, y).height; }
+
+	function clearance(x, y, radius) {
+		if (!profiles.has(Math.floor(x / cell))) return Infinity;
+		const s = surfaceAt(x, y);
+		return s.hasPile ? y - radius - s.crest : Infinity;
+	}
+
+	const traceScratch = { time: Infinity, x: 0, y: 0, nx: 0, ny: 1 };
+	function traceCrest(x, y, vx, vy, duration, radius, gravity, out = traceScratch) {
+		out.time = Infinity;
+		if (!profiles.size || !(duration > 0)) return out;
+		const end = Math.floor((x + vx * duration) / cell);
+		const start = Math.floor(x / cell);
+		let c = Math.min(start, end);
+		const last = Math.max(start, end);
+		while (c <= last && !profiles.has(c)) c++;
+		if (c > last) return out;
+		const gap = clearance(x, y, radius);
+		if (gap < -1e-5 || (gap <= 0 && vx * surfaceScratch.nx + vy * surfaceScratch.ny <= 0)) {
+			out.time = 0;
+			out.x = x;
+			out.y = y;
+			return surfaceAt(x, y, out);
+		}
+		const travel = Math.hypot(vx, vy) * duration + 0.5 * gravity * duration * duration;
+		const samples = Math.max(4, Math.min(64, Math.ceil(travel / (cell * 0.5)) + 1));
+		let clear = gap > 0;
+		for (let i = 1; i <= samples; i++) {
+			let high = duration * i / samples;
+			const distance = clearance(x + vx * high, y + (vy - 0.5 * gravity * high) * high, radius);
+			if (distance > 0) { clear = true; continue; }
+			if (!clear && distance >= gap) continue;
+			let low = duration * (i - 1) / samples;
+			for (let k = 0; k < 12; k++) {
+				const mid = (low + high) * 0.5;
+				if (clearance(x + vx * mid, y + (vy - 0.5 * gravity * mid) * mid, radius) > 0) low = mid;
+				else high = mid;
+			}
+			out.time = high;
+			out.x = x + vx * high;
+			out.y = y + (vy - 0.5 * gravity * high) * high;
+			return surfaceAt(out.x, out.y, out);
+		}
+		return out;
+	}
+
+	function harvest(x, halfWidth, cut, maxCells, out, refY) {
+		out.value = 0;
+		out.cells = 0;
+		if (!cave || !piles.size || !(cut > 0)) return out;
+		const perBin = cut / ceiling.state.floorCellHeight;
+		const first = cave.columnAt(x - halfWidth), last = cave.columnAt(x + halfWidth);
+		for (let c = first; c <= last && out.cells < maxCells; c++) {
+			const list = piles.get(c);
+			if (!list) continue;
+			const face = Number.isFinite(refY) ? cave.floorBelow(cave.worldX(c), refY) : null;
+			for (let i = list.length - 1; i >= 0 && out.cells < maxCells; i--) {
+				const bin = list[i];
+				if (face !== null && (bin.base !== face || face > refY)) continue;
+				const n = Math.min(bin.cells, perBin, maxCells - out.cells);
+				out.value += take(c, bin, n);
+				out.cells += n;
+			}
+		}
+		return out;
+	}
+
+	function levelEdge(right, leftFace, rightFace, ease) {
+		const left = right - 1, leftRow = cave.rowAt(leftFace) - 1, rightRow = cave.rowAt(rightFace) - 1;
+		const a = binAt(left, leftRow), b = binAt(right, rightRow);
+		if (!a && !b) return;
+		if (leftRow !== rightRow && cave.adjacentFloor(left, leftRow, 1) !== rightRow) return;
+		const difference = leftFace - rightFace + (a ? a.height : 0) - (b ? b.height : 0);
+		if (!difference) return;
+		const source = difference > 0 ? a : b, dest = difference > 0 ? b : a;
+		if (!source) return;
+		const from = difference > 0 ? left : right, to = difference > 0 ? right : left;
+		const destRow = difference > 0 ? rightRow : leftRow;
+		const tile = ceiling.state.floorCellHeight;
+		const room = roomAbove(to, (destRow + 1) * cell) / tile - (dest ? dest.cells : 0);
+		const n = Math.min(source.cells, room, Math.abs(difference) * ease * 0.5 / tile);
+		if (!(n > 0)) return;
+		const value = take(from, source, n);
+		add(to, destRow, n, value);
+	}
+
 	function grade(world, dt) {
 		if (blade.value > 0) {
 			blade.idle += dt;
 			if (blade.idle >= bladeSettleDelay) settleBlade(world);
 		}
-		const platform = world && world.platform;
-		if (!platform) return;
-		const moving = Math.abs(platform.vx) > 0.02 || world.direction !== 0;
-		if (!moving) return;
-		const caveRef = cave();
-		if (!caveRef) return;
-		const refY = platform.y;
-		const half = graderSwath() * 0.5;
-		const left = platform.x - half;
-		const right = platform.x + half;
-		const first = columnAt(Math.min(left, right));
-		const last = columnAt(Math.max(left, right));
-		const ease = Math.min(1, graderSmooth() * dt);
-		const segAt = (column) => {
-			verifyColumn(column);
-			const list = piles.get(column);
-			if (!list || !list.length) return null;
-			const face = caveRef.floorBelow((column + 0.5) * cell, refY);
-			if (!Number.isFinite(face)) return null;
-			return findRunSegment(list, face);
-		};
-		// Redistribution: flow height (and its value) toward the mean across the
-		// same face run only. Boundary columns feed the working swath.
-		let previous = segAt(first - 1);
-		for (let column = first; column <= last + 1; column++) {
-			const current = segAt(column);
-			if (current && previous) {
-				const difference = previous.height - current.height;
-				if (difference && Math.abs(previous.base - current.base) <= faceTolerance) {
-					const source = difference > 0 ? previous : current;
-					const destination = difference > 0 ? current : previous;
-					const amount = Math.abs(difference) * ease * 0.5;
-					const density = source.height > 0 ? source.value / source.height : 0;
-					const value = amount * density;
-					source.height -= amount;
-					destination.height += amount;
-					source.value = Math.max(0, source.value - value);
-					destination.value += value;
-				}
-			}
-			previous = current;
+		const platform = world.platform;
+		if (!piles.size || !(Math.abs(platform.vx) > 0.02 || world.direction !== 0)) return;
+		const half = ceiling.state.graderSwath * 0.5;
+		const first = cave.columnAt(platform.x - half), last = cave.columnAt(platform.x + half);
+		const ease = Math.min(1, ceiling.state.graderSmooth * dt);
+		const y = platform.y;
+		let previous = cave.floorBelow(cave.worldX(first - 1), y);
+		for (let c = first; c <= last + 1; c++) {
+			const face = cave.floorBelow(cave.worldX(c), y);
+			if (previous <= y && face <= y) levelEdge(c, previous, face, ease);
+			previous = face;
 		}
-		// Cut: shave the working columns; the blade keeps the value it removes.
-		const cut = graderCut() * dt;
-		const tile = floorCellHeight();
-		for (let column = first; column <= last; column++) {
-			const seg = segAt(column);
-			if (!seg || seg.height <= 0) continue;
-			const amount = Math.min(seg.height, cut);
-			const density = seg.height > 0 ? seg.value / seg.height : 0;
-			const shaved = amount * density;
-			const cellsOut = amount / tile;
-			seg.height -= amount;
-			seg.value = Math.max(0, seg.value - shaved);
-			seg.cells = Math.max(0, seg.cells - cellsOut);
-			pileCells -= cellsOut;
-			pileValue -= shaved;
-			blade.value += shaved;
-			blade.idle = 0;
-			bladeCells += cellsOut;
-			if (seg.height <= heightEpsilon) removeSeg(column, seg);
-		}
+		harvest(platform.x, half, ceiling.state.graderCut * dt, Infinity, cutScratch, y);
+		if (cutScratch.cells <= 0) return;
+		bladeCells += cutScratch.cells;
+		blade.value += cutScratch.value;
+		blade.idle = 0;
 	}
-	function removeSeg(column, seg) {
-		const list = piles.get(column);
-		if (!list) return;
-		const index = list.indexOf(seg);
-		if (index >= 0) removeAt(list, index);
-		if (!list.length) piles.delete(column);
-	}
+
 	function settleBlade(world) {
-		if (blade.value <= 0) {
-			blade.idle = 0;
-			return;
-		}
-		const value = blade.value;
+		ceiling.settleGraderBlade(world.time, blade.value, 'Road grader blade');
 		blade.value = 0;
 		blade.idle = 0;
-		const c = ceilApi();
-		if (c && c.settleGraderBlade) c.settleGraderBlade(world ? world.time : 0, value, 'Road grader blade');
 	}
 
-	// ---- reset & introspection ------------------------------------------------
-
-	function reset() {
+	function reset(field = cave) {
+		cave = field;
+		if (cave) cell = cave.state.cell;
 		piles.clear();
-		depositedCells = 0;
-		depositedValue = 0;
-		lostCells = 0;
-		lostValue = 0;
-		collapseCount = 0;
-		pileCells = 0;
-		pileValue = 0;
-		segmentCount = 0;
-		bladeCells = 0;
-		blade.value = 0;
-		blade.idle = 0;
+		profiles.clear();
+		depositedCells = depositedValue = lostCells = lostValue = collapseCount = bladeCells = 0;
+		blade.value = blade.idle = 0;
 	}
 
-	// The renderer's window into the map: verify each column of the draw range,
-	// then call fn(column, segments). Iteration order is ascending column.
-	function eachColumn(minCol, maxCol, fn) {
-		for (let column = minCol; column <= maxCol; column++) {
-			verifyColumn(column);
-			const list = piles.get(column);
-			if (list && list.length) fn(column, list);
-		}
-	}
-
-	// Material that fell out of the world (through the bottom of the section):
-	// booked lost, exactly like a chamber grain that left the floor map.
-	function bookLost(cells, value) {
-		lostCells += cells || 0;
-		lostValue += value || 0;
+	function eachColumn(first, last, visit) {
+		for (let c = first; c <= last; c++) if (piles.has(c)) visit(c, piles.get(c));
 	}
 
 	function state() {
-		return {
-			segments: segmentCount,
-			cells: pileCells,
-			value: pileValue,
-			depositedCells, depositedValue,
-			lostCells, lostValue,
-			collapseCount,
-			bladeCells,
-			bladeValue: blade.value
-		};
+		let segments = 0, cells = 0, value = 0;
+		for (const list of piles.values()) for (const bin of list) {
+			segments++;
+			cells += bin.cells;
+			value += bin.value;
+		}
+		return { segments, cells, value, depositedCells, depositedValue, lostCells, lostValue, collapseCount, bladeCells, bladeValue: blade.value };
 	}
 
-	const api = {
-		reset, rescale, deposit,
-		surfaceAt, heightAt, crestAt, vertexHeight, heightOnFace,
-		traceCrest, harvest, grade, settleBlade, eachColumn, bookLost, state,
-		surfaceScratch, traceScratch,
-		get bladeValue() { return blade.value; }
+	const api = { reset, deposit, rockOpened, rescale, surfaceAt, crestAt, heightAt, traceCrest,
+		harvest, grade, settleBlade, eachStrip, eachColumn, bookLost, state,
+		get bladeValue() { return blade.value; },
+		get lostCells() { return lostCells; }
 	};
 	root.SteamWildRubble = api;
 	if (node) module.exports = api;

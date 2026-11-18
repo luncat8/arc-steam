@@ -11,8 +11,8 @@
 //      gas-caves.1-plan.md).
 //   3. The signed distance field is derived from occupancy alone: two exact
 //      squared-Euclidean transforms, clamped to a one-metre band, refreshed in a
-//      local rectangle after every edit. Collision, debris resting, platform
-//      ground and water depth all read this one field.
+//      local rectangle after occupancy edits. Rock contact reads the field;
+//      settled soil is a separate heightmap anchored to exposed floor faces.
 //
 // Depends on: js/minerals.js, js/geology-config.js, js/geology.js,
 // js/rock-materials.js
@@ -44,11 +44,10 @@
 	// stay comparable across the two modes (js/ceiling.js).
 	const damageFalloffPower = 2.8;
 	const hitLooseCap = 0.5;
-	const heldCellShare = 0.12;
 	const loosedPerWeakened = 4;
 	const weakRockSensitivity = 0.5;
 	const maxRemoved = 512;
-	const maxDepleted = 4096;
+	const kernels = new Map();
 	// 64 m: wider than any cave a platform crosses, and a hard bound on the
 	// span walk.
 	const spanLimitCells = 512;
@@ -79,10 +78,7 @@
 		distVoid: new Float32Array(chunkCells),
 		inverse: new Uint8Array(chunkCells),
 		elements: new Float32Array(3),
-		mix: new Float32Array(rockTable.mineralCount),
-		depletedColumns: new Int32Array(maxDepleted),
-		depletedRows: new Int32Array(maxDepleted),
-		releaseMask: new Uint8Array(maxDepleted)
+		mix: new Float32Array(rockTable.mineralCount)
 	};
 
 	// Exact 1D squared distance transform (Felzenszwalb & Huttenlocher): the
@@ -127,6 +123,22 @@
 			distance1d(line, lineOut, rows, v, z);
 			for (let r = 0; r < rows; r++) out[r * stride + c] = lineOut[r];
 		}
+	}
+
+	// Radii come from equipment, not from the impact velocity. Build each radial
+	// stencil once; a blow normalises its halo over just the rock it reaches.
+	function kernelFor(radius) {
+		let weights = kernels.get(radius);
+		if (weights) return weights;
+		const range = Math.ceil(radius);
+		const side = 2 * range + 1;
+		weights = new Float64Array(side * side);
+		for (let dr = -range; dr <= range; dr++) for (let dc = -range; dc <= range; dc++) {
+			const w = Math.max(0, 1 - Math.hypot(dc, dr) / radius);
+			weights[(dr + range) * side + dc + range] = Math.pow(w, damageFalloffPower);
+		}
+		kernels.set(radius, weights);
+		return weights;
 	}
 
 	function create(options) {
@@ -211,7 +223,7 @@
 				editStamp: 0,
 				solid: new Uint8Array(chunkCells),
 				dug: new Uint8Array(chunkCells),
-				damage: new Uint8Array(chunkCells),
+				damage: new Float32Array(chunkCells),
 				sampled: new Uint8Array(chunkCells),
 				strength: new Float32Array(chunkCells),
 				sdf: new Float32Array(chunkCells)
@@ -396,6 +408,20 @@
 			if (row < 0 || row >= rows) return true;
 			const chunk = chunkFor(column);
 			return chunk.solid[row * stride + column - chunk.column0 + pad] === 1;
+		}
+
+		// Follow a top face across flat rock or one stair. Both the rock below
+		// the step and the air above must join: a nearby hanging shelf is not
+		// the next sample of this heightmap. The relation is symmetric.
+		function adjacentFloor(column, row, direction) {
+			const next = column + direction;
+			if (solidCell(next, row)) {
+				if (!solidCell(next, row + 1)) return row;
+				if (!solidCell(next, row + 2) && !solidCell(column, row + 2)) return row + 1;
+			} else if (row > 0 && solidCell(next, row - 1) && solidCell(column, row - 1) && !solidCell(next, row + 1)) {
+				return row - 1;
+			}
+			return -1;
 		}
 
 		function sdfCell(column, row) {
@@ -653,13 +679,6 @@
 			syncNeighborHalos(chunk, column, row, mined);
 		}
 
-		function pushRemoved(column, row) {
-			if (removedCount >= maxRemoved) return;
-			removedColumns[removedCount] = column;
-			removedRows[removedCount] = row;
-			removedCount++;
-		}
-
 		function hasFreeFace(column, row) {
 			if (row <= 0 || row >= rows - 1) return false;
 			return !solidCellNoAlloc(column - 1, row)
@@ -668,79 +687,81 @@
 				|| !solidCellNoAlloc(column, row + 1);
 		}
 
-		// The chamber's weakening rule, over a 2D radius: `energy` joules at the
-		// contact fall to nothing across `radius` cells, each cell spends at most
-		// half its remaining strength, and a depleted cell leaves only when one of
-		// its four cardinal neighbours is already open (measured before any cells
-		// from this blow are removed). Returns the strength removed in joules.
-		function weaken(x, y, energy, gain, radius) {
-			if (!(energy > 0) || !(gain > 0) || !(radius > 0)) return 0;
-			removedCount = 0;
-			const centerColumn = columnAt(x);
-			const centerRow = rowAt(y);
-			const range = Math.ceil(radius);
-			const depletedColumns = scratch.depletedColumns;
-			const depletedRows = scratch.depletedRows;
-			const releaseMask = scratch.releaseMask;
-			let depletedCount = 0;
-			let removed = 0;
-			let minColumn = centerColumn;
-			let maxColumn = centerColumn;
-			let minRow = centerRow;
-			let maxRow = centerRow;
-			let touched = false;
-			for (let dr = -range; dr <= range; dr++) for (let dc = -range; dc <= range; dc++) {
-				const distance = Math.sqrt(dc * dc + dr * dr);
-				if (distance > radius) continue;
-				const row = centerRow + dr;
-				const column = centerColumn + dc;
-				if (row < 0 || row >= rows) continue;
-				const chunk = chunkFor(column);
-				const index = row * stride + column - chunk.column0 + pad;
-				if (!chunk.solid[index]) continue;
-				const before = ensureStrength(chunk, index, column, row);
-				if (!(before > 0)) continue;
-				const weight = Math.pow(Math.max(0, 1 - distance / radius), damageFalloffPower);
-				const amount = Math.min(energy * gain * weight, before * hitLooseCap);
-				if (!(amount > 0)) continue;
-				chunk.strength[index] = before - amount;
+		function loose(chunk, i) {
+			return chunk.strength[i] < materials.debrisLimit && chunk.damage[i] >= materials.collapseLooseFloor;
+		}
+
+		function chipCell(column, row, share) {
+			const chunk = chunkFor(column);
+			const i = row * stride + column - chunk.column0 + pad;
+			if (!chunk.solid[i]) return 0;
+			const before = ensureStrength(chunk, i, column, row);
+			let amount = 0;
+			// Shattered interior rock holds its residual strength until exposed;
+			// hitting it again neither heals it nor spends the same work twice.
+			if (!loose(chunk, i)) {
+				amount = Math.min(share, before * hitLooseCap);
 				const susceptibility = 1 + weakRockSensitivity * (materials.maxStrength / before - 1);
-				const loose = Math.min(1, amount / before * loosedPerWeakened * susceptibility);
-				chunk.damage[index] = Math.min(255, chunk.damage[index] + Math.round(loose * 255));
+				chunk.damage[i] = Math.min(1, chunk.damage[i] + amount / before * loosedPerWeakened * susceptibility);
+				chunk.strength[i] = before - amount;
 				chunk.edited = true;
 				chunk.editStamp++;
-				removed += amount / gain;
-				touched = true;
-				if (column < minColumn) minColumn = column;
-				if (column > maxColumn) maxColumn = column;
-				if (row < minRow) minRow = row;
-				if (row > maxRow) maxRow = row;
-				if (chunk.strength[index] > 0.0001) continue;
-				if (depletedCount < maxDepleted) {
-					depletedColumns[depletedCount] = column;
-					depletedRows[depletedCount] = row;
-					depletedCount++;
-				} else {
-					chunk.strength[index] = startStrength(column, row) * heldCellShare;
+			}
+			if (loose(chunk, i) && removedCount < maxRemoved && hasFreeFace(column, row)) {
+				removedColumns[removedCount] = column;
+				removedRows[removedCount++] = row;
+			}
+			return amount;
+		}
+
+		// Open the snapshot together: this blow cannot tunnel through its own
+		// fresh hole. Only occupancy edits dirty the field or dislodge soil.
+		function releaseFaces() {
+			let left = removedColumns[0], right = left, low = removedRows[0], high = low;
+			for (let i = 0; i < removedCount; i++) {
+				const c = removedColumns[i], r = removedRows[i];
+				openCell(chunkFor(c), c, r, true);
+				left = Math.min(left, c); right = Math.max(right, c);
+				low = Math.min(low, r); high = Math.max(high, r);
+			}
+			refreshAround(left, right, low, high);
+			if (settings.onOpen) for (let i = 0; i < removedCount; i++) settings.onOpen(removedColumns[i], removedRows[i], true);
+		}
+
+		// `energy` is the incoming fracture budget in joules, BEFORE the owner's
+		// gain. A direct hit works the contact cell first (up to half the budget);
+		// the remainder is distributed by falloff. A soil-cushioned hit has no
+		// concentrated component. A wider radius spreads work, never creates it.
+		function weaken(x, y, energy, gain, radius, diffuse = false) {
+			removedCount = 0;
+			if (!(energy > 0 && gain > 0 && radius > 0)) return 0;
+			const col = columnAt(x), row = rowAt(y);
+			const range = Math.ceil(radius), side = 2 * range + 1;
+			const weights = kernelFor(radius);
+			const bottom = Math.max(1, row - range), top = Math.min(rows - 2, diffuse ? row : row + range);
+			const focus = !diffuse && row >= bottom && row <= top && solidCell(col, row);
+			let weight = 0;
+			for (let r = bottom; r <= top; r++) {
+				const base = (r - row + range) * side + range;
+				for (let dc = -range; dc <= range; dc++) {
+					if (focus && r === row && dc === 0) continue;
+					const w = weights[base + dc];
+					if (w && solidCell(col + dc, r)) weight += w;
 				}
 			}
-			for (let i = 0; i < depletedCount; i++) {
-				releaseMask[i] = hasFreeFace(depletedColumns[i], depletedRows[i]) ? 1 : 0;
-			}
-			for (let i = 0; i < depletedCount; i++) {
-				const column = depletedColumns[i];
-				const row = depletedRows[i];
-				const chunk = chunkFor(column);
-				if (releaseMask[i]) {
-					openCell(chunk, column, row, true);
-					pushRemoved(column, row);
-				} else {
-					const index = row * stride + column - chunk.column0 + pad;
-					chunk.strength[index] = startStrength(column, row) * heldCellShare;
+			const work = energy * gain;
+			const direct = focus ? Math.min(work * (weight ? 0.5 : 1), strengthAt(col, row) * hitLooseCap) : 0;
+			const perWeight = weight > 0 ? (work - direct) / weight : 0;
+			let spent = 0;
+			for (let r = bottom; r <= top; r++) {
+				const base = (r - row + range) * side + range;
+				for (let dc = -range; dc <= range; dc++) {
+					const share = focus && !dc && r === row ? direct : perWeight * weights[base + dc];
+					if (share > 0) spent += chipCell(col + dc, r, share);
 				}
 			}
-			if (touched) refreshAround(minColumn, maxColumn, minRow, maxRow);
-			return Math.min(energy, removed);
+			if (removedCount) releaseFaces();
+			return Math.min(energy, spent / gain);
 		}
 
 		// Remove one cell outright: the cart's shelf cut, a test's prepared
@@ -753,13 +774,14 @@
 			if (!chunk.solid[index]) return false;
 			openCell(chunk, column, row, true);
 			refreshAround(column, column, row, row);
+			if (settings.onOpen) settings.onOpen(column, row, false);
 			return true;
 		}
 
 		function damageAt(column, row) {
 			if (row < 0 || row >= rows) return 0;
 			const chunk = chunkFor(column);
-			return chunk.damage[row * stride + column - chunk.column0 + pad] / 255;
+			return chunk.damage[row * stride + column - chunk.column0 + pad];
 		}
 
 		function strengthAt(column, row) {
@@ -785,7 +807,7 @@
 			state,
 			columnAt, rowAt, worldX, worldY,
 			stream, chunkFor, eachChunk,
-			solidAt, sdfAt, normalAt, traceCircle, floorBelow, roofAbove, spanAt,
+			solidAt, sdfAt, normalAt, traceCircle, floorBelow, adjacentFloor, roofAbove, spanAt,
 			weaken, dig, damageAt, strengthAt, elementsAt, mixAt,
 			carveAt,
 			get removedCount() { return removedCount; },

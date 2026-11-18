@@ -256,10 +256,11 @@ function miningReadout() {
 			? groups + ' seeded falls · ' + cells + ' cells fallen'
 			: '10% is the plain loose-face clump');
 	}
-	setText(ui.extracted, ceiling.extractedCells + ' cells');
-	setText(ui.falling, ceiling.airborneCells + ' cells');
-	setText(ui.caught, Math.round(ceiling.caughtCells) + ' cells');
-	setText(ui.lost, Math.round(ceiling.lostCells) + ' cells');
+	const fall = physics.wildMode() ? window.SteamWildBall.state : ceiling;
+	setText(ui.extracted, fall.extractedCells + ' cells');
+	setText(ui.falling, fall.airborneCells + ' cells');
+	setText(ui.caught, Math.round(fall.caughtCells) + ' cells');
+	setText(ui.lost, Math.round(fall.lostCells) + ' cells');
 	setText(ui['cargo-mass'], ceiling.cargoMass.toFixed(1) + ' kg');
 	setText(ui['cargo-value'], ceiling.cargoValue.toFixed(1) + ' cr · ' + cellCount(ceiling.cargoCells) + ' cells');
 	setText(ui['sold-mass'], (ceiling.soldCells * ceiling.cellMass).toFixed(1) + ' kg');
