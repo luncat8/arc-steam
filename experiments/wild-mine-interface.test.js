@@ -7,6 +7,8 @@ const dom = require('./dom.cjs');
 dom.install();
 const physics = require('../js/physics.js');
 const players = require('../js/players.js');
+const ceiling = require('../js/ceiling.js');
+const minerals = require('../js/minerals.js');
 const wildMine = require('../js/wild-mine.js');
 
 let world = null;
@@ -53,6 +55,13 @@ test('switching #game-mode between Classic and Wild Mine reconfigures chamber, p
 	assert.ok(dom.contextCalls.includes('fillRect'), 'Wild Mine draws fallback tiles & HUD in headless shim');
 	assert.ok(reserveNote.textContent.includes('Wild Mine'));
 	assert.ok(statusBall.textContent.includes('Wild Mine'));
+
+	// Cargo fuel reaches the reserve and cargo notes.
+	const stone = minerals.mineralIds.indexOf('stone');
+	ceiling.loadCargo(stone, ceiling.state.cellMass, 10);
+	advance(10);
+	assert.ok(reserveNote.textContent.includes('solid fuel'), reserveNote.textContent);
+	assert.ok(dom.element('cargo-note').textContent.includes('stone'), dom.element('cargo-note').textContent);
 
 	// Exercise all 6 rock view modes in Wild Mine headless draw without error.
 	for (const mode of ['elements', 'price', 'initial-strength', 'strength', 'damage', 'minerals']) {

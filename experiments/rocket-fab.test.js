@@ -236,3 +236,21 @@ test('wild mine rocket shards trace the active cave and spend five times base-ga
 		wildMine.setMode('classic');
 	}
 });
+
+test('a moving fab cycle leaves the energy ledger exact, including cargo potential and kinetic', () => {
+	try {
+		const world = freshWorld(false);
+		assert.equal(equipment.grant('rocket-rack', world), true);
+		assert.equal(equipment.grant('rocket-fab', world), true);
+		feedCells(world, 1);
+		world.platform.vx = 4.5;
+		world.initialEnergy = physics.totalEnergy(world);
+		assert.equal(rocketFab.fab(world, 'rig'), 1);
+		assert.equal(rockets.stateFor('rig').stock, 1);
+		assert.ok(world.exportedProduct > 0, 'the rocket carries its charge and mass out of the ledger');
+		assert.ok(Math.abs(physics.totalEnergy(world) - world.initialEnergy) < 1e-9,
+			'ledger drift ' + (physics.totalEnergy(world) - world.initialEnergy));
+	} finally {
+		wildMine.setMode('classic');
+	}
+});

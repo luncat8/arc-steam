@@ -530,11 +530,27 @@ function wildMineralReadout() {
 	setText(ui['mineral-price'], 'Value ' + info.value.toFixed(2) + ' cr/cell · R ' + (info.elements[0] * 100).toFixed(0) + '% G ' + (info.elements[1] * 100).toFixed(0) + '% B ' + (info.elements[2] * 100).toFixed(0) + '%');
 }
 
+function wildFuelReadout() {
+	return window.SteamFuel ? window.SteamFuel.read('rig') : null;
+}
+
 function wildModeNotes(reserveWarning) {
-	if (reserveWarning === 'EMPTY') setText(ui['reserve-note'], 'Empty · hand-crank crawl · cart dock arrives in M5');
-	else if (reserveWarning) setText(ui['reserve-note'], 'Low reserve · Wild Mine mode');
-	else setText(ui['reserve-note'], 'Wild Mine · deck induction only · P1 platform / P2 ball');
-	setText(ui['cargo-note'], 'Wild Mine · cart economy activates in M5');
+	const fuel = wildFuelReadout();
+	if (fuel && fuel.gradeIndex >= 0) {
+		const stock = fuel.chemical > 0
+			? fuel.cells.toFixed(1) + ' cells · ' + (fuel.chemical / 1000).toFixed(1) + ' kJ'
+			: 'none in cargo';
+		setText(ui['reserve-note'], 'Wild Mine · ' + fuel.engineName + ' burns ' + fuel.grade + ' fuel · ' + stock
+			+ (fuel.chemical > 0 ? ' · refills ' + (fuel.refillPower / 1000).toFixed(1) + ' kW' : ''));
+		setText(ui['cargo-note'], fuel.chemical > 0
+			? 'Cheapest ' + fuel.grade + ' fuel first · ' + fuel.fuelList
+			: fuel.reason);
+	} else {
+		setText(ui['reserve-note'], 'Wild Mine · hand crank · no fuel cycle · reserve drains to a crawl');
+		setText(ui['cargo-note'], 'Fit a powered engine to burn cargo fuel');
+	}
+	if (reserveWarning === 'EMPTY' && fuel && fuel.chemical > 0)
+		setText(ui['reserve-note'], 'Reserve empty · engine refilling from ' + fuel.grade + ' cargo');
 	setText(ui['funds-note'], 'Wild Mine · open cave section');
 }
 
@@ -575,5 +591,16 @@ function wildStatusReadout(reserveWarning, thermalFactor, driveOn) {
 			setMessage(ui['status-ball'], 'Wild Mine · P2 in the air · ' + ball.speed.toFixed(1) + ' m/s · ω ' + ball.omega.toFixed(0) + ' rad/s · ' + energy + actuator, ball.battery < 30 ? 'warn' : 'info');
 		}
 	}
-	setMessage(ui['status-energy'], reserveWarning ? 'Low reserve · hand-crank crawl available' : '', 'danger');
+	const fuel = wildFuelReadout();
+	let energyWarning = '';
+	let energyTone = 'danger';
+	if (reserveWarning && fuel && fuel.chemical > 0) {
+		energyWarning = 'Reserve low · burning ' + fuel.grade + ' cargo at ' + (fuel.refillPower / 1000).toFixed(1) + ' kW';
+		energyTone = 'warn';
+	} else if (reserveWarning && fuel) {
+		energyWarning = fuel.reason;
+	} else if (reserveWarning) {
+		energyWarning = 'Low reserve · hand-crank crawl available';
+	}
+	setMessage(ui['status-energy'], energyWarning, energyTone);
 }

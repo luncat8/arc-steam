@@ -73,21 +73,29 @@
 		const cost = energyPerRocket / phys().engineNow(id).efficiency;
 		if (!(world.battery >= cost)) return 0;
 
-	// Take one cell of minerals from the cargo, in table order.
-	let remaining = mineralsPerRocket;
-	for (let m = 0; m < minerals().mineralCount && remaining > 1e-9; m++) {
-		const take = Math.min(remaining, state.cargoMinerals[m]);
-		if (!(take > 0)) continue;
-		eco.unloadCargo(m, take);
-		profile.consumedMass += take;
-		profile.lastMineral = m;
-		profile.lastMass = take;
-		remaining -= take;
-	}
+		// Take one cell of minerals from the cargo, in table order.
+		const cellsBefore = state.cargoCells;
+		let remaining = mineralsPerRocket;
+		for (let m = 0; m < minerals().mineralCount && remaining > 1e-9; m++) {
+			const take = Math.min(remaining, state.cargoMinerals[m]);
+			if (!(take > 0)) continue;
+			eco.unloadCargo(m, take);
+			profile.consumedMass += take;
+			profile.lastMineral = m;
+			profile.lastMass = take;
+			remaining -= take;
+		}
 
 		// The engine burns the energy at its efficiency; the unspent share
 		// becomes machine heat through the same spend rule every tool uses.
-		phys().spend(world, energyPerRocket);
+		const delivered = phys().spend(world, energyPerRocket);
+		// A rocket carries its charge out of the platform ledger, like a sold
+		// product. The cargo it consumed already carried potential and kinetic
+		// energy, so both leave with it and the balance stays exact.
+		const removedMass = Math.max(0, cellsBefore - state.cargoCells) * state.cellMass;
+		if (id === 'rig') world.exportedProduct += delivered
+			+ removedMass * phys().config.gravity * state.cargoHeight
+			+ 0.5 * removedMass * world.platform.vx * world.platform.vx;
 
 		const loaded = rack.load(1, id);
 		profile.produced += loaded;

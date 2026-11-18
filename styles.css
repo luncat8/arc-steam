@@ -54,6 +54,7 @@ main { padding: 8px; display: grid; gap: 8px; }
 #market-open::after { content: "OPEN MARKET ↗"; }
 #science-open::after { content: "OPEN SCIENCE + SHOP ↗"; }
 .telemetry span { font: 9px ui-monospace, monospace; color: #94a8ac; letter-spacing: 1px; }
+.telemetry-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .telemetry strong { display: block; font: 17px ui-monospace, monospace; margin: 6px 0 4px; }
 .telemetry small { font-size: 10px; color: #71868a; }
 /* Live warnings highlight the telemetry card that needs attention; the tag is

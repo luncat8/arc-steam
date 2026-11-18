@@ -260,6 +260,9 @@
 
 	function step(world, dt) {
 		if (!world || !cave) return;
+		// No charge pad in the cave: the installed engine burns cargo fuel to
+		// keep the reserve up before this frame's work is paid for.
+		if (root.SteamFuel) root.SteamFuel.step(world, dt);
 		const p = phys();
 		p.movePlatform(world, dt);
 		p.updatePlatformTerrain(world, dt);

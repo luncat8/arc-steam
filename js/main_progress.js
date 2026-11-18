@@ -444,7 +444,10 @@ function buildUpgrades() {
 		entryName: function (entry) { return entry.name + ' engine'; },
 		optionText: function (entry, costText) { return entry.name.toUpperCase() + ' ENGINE · ' + costText; },
 		detailText: function (entry) {
-			return entry.mass + ' kg · ' + (entry.density / 1000) + ' kJ/kg · ' + entry.reload + ' s refill · ' + Math.round(entry.efficiency * 100) + '% eff · ×' + entry.force + ' force · ×' + entry.speed + ' speed · left shop';
+			const fuel = window.SteamFuel;
+			const grade = fuel ? fuel.engineGrades[entry.id] : undefined;
+			const wildFuel = grade === undefined ? '' : grade < 0 ? ' · Wild: hand crank' : ' · Wild: ' + fuel.gradeIds[grade] + ' fuel';
+			return entry.mass + ' kg · ' + (entry.density / 1000) + ' kJ/kg · ' + entry.reload + ' s refill · ' + Math.round(entry.efficiency * 100) + '% eff · ×' + entry.force + ' force · ×' + entry.speed + ' speed · left shop' + wildFuel;
 		},
 		install: function (id) { return SteamEquipment.buyEngine(id, world, activePlayerId()); },
 		preview: function (entry) { previewDeltas.engine = entry; },

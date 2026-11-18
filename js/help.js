@@ -192,6 +192,24 @@
 			]
 		},
 		{
+			id: 'fuel',
+			label: 'Wild fuel',
+			title: 'Wild Mine fuel from cargo',
+			text: [
+				'Wild Mine has no charge pad or refuelling wall, so the installed engine burns cargo minerals instead. It keeps the reserve topped up at its own reload rate, in the same seconds-to-full the centre pad would take: oil refills fastest, then electric, nuclear and coal. Tools that draw more power than that run the reserve buffer down, exactly as a pad-fed machine would.',
+				'Coal and electric are solid-fuel engines and burn stone, sand and quartz. Oil burns gas rock, fizzy halite, fluorite, vitriol and halite. Nuclear burns the reactive metals: iron, copper, corundum, silver and gold. Each family has its own chemical energy per kilogram, so a gas-rich hopper is worth far more to the oil engine than the same mass of host rock is to the electric one.',
+				'A burn takes the cheapest loaded cell per joule in its own family first, using the live market quote, so ore stays in the hopper whenever cheaper fuel is beside it. The removed cell loses its sale value, its chemical energy enters the reserve, and the gravitational potential that was already counted is reconciled against the imported share, so the energy-balance readout stays exact.',
+				'When the cargo holds no matching fuel the engine stops and the reserve only falls; the crew hand-crank remains the way home. The movable water tank and the liquid collection cycle are the next Wild Mine slice.'
+			],
+			keys: [
+				['Coal / Electric', 'Solid fuel · stone, sand, quartz'],
+				['Oil', 'Liquid fuel · gas, fizzy halite, fluorite, vitriol, halite'],
+				['Nuclear', 'Fissile fuel · iron, copper, corundum, silver, gold'],
+				['Burns', 'Cheapest fuel cell per joule first, from cargo'],
+				['Hand', 'No fuel cycle · reaching the reserve is the limit']
+			]
+		},
+		{
 			id: 'autopilot',
 			label: 'Autopilot',
 			title: 'Autopilot duties',

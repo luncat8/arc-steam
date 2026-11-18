@@ -1009,8 +1009,9 @@
 		if (root.SteamRockets) root.SteamRockets.reset();
 		if (root.SteamSandblaster) root.SteamSandblaster.reset();
 		if (root.SteamWater) root.SteamWater.reset();
+		if (root.SteamFuel) root.SteamFuel.reset();
 		const world = {
-			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, chargedEnergy: 0, crankEnergy: 0, terrainWork: 0, platformWork: 0,
+			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, exportedProduct: 0, chargedEnergy: 0, crankEnergy: 0, terrainWork: 0, platformWork: 0,
 			initialEnergy: 0,
 			brake: false, drive: true, forceSetting: 0.6, direction: 0, target: NaN,
 			pistonAngle: 0, pistonOffset: 0, pistonVelocity: 0, pistonImpact: 0,
@@ -1069,7 +1070,7 @@
 		const balls = world.balls || [];
 		let ballEnergyTotal = 0;
 		for (let i = 0; i < balls.length; i++) if (isRigBall(balls[i])) ballEnergyTotal += ballEnergy(balls[i]);
-		return world.battery + world.heat + world.cooledEnergy + world.fractureEnergy - world.importedEnergy - world.terrainWork - world.platformWork + ceilingEnergy + ballEnergyTotal + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
+		return world.battery + world.heat + world.cooledEnergy + world.fractureEnergy - world.importedEnergy - world.terrainWork - world.platformWork + world.exportedProduct + ceilingEnergy + ballEnergyTotal + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
 	}
 
 	function temperature(world) {
