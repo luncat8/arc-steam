@@ -4,6 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Arc Steam — physics sandbox</title>
+	<link rel="icon" href="data:,">
 	<link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -70,9 +71,13 @@
 						<div class="autopilot" id="autopilot"><label><input type="checkbox" id="auto-move" autocomplete="off"><span>Chase the predicted landing</span><i>X</i></label><label><input type="checkbox" id="auto-smart" autocomplete="off"><span>Timed intercept · economy brake</span><i>⇧X</i></label><label><input type="checkbox" id="auto-drive" autocomplete="off"><span>Drive keeper · hit the rock hard</span><i>Z</i></label><label><input type="checkbox" id="auto-angle" autocomplete="off"><span>Level bounce · reflect straight up</span><i>C</i></label></div>
 						<p id="autopilot-status" class="hint" role="status" hidden></p>
 						<div class="eyebrow-row"><p class="eyebrow">ROCKETS</p><button id="help-rockets" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: rockets">?</button></div>
-						<div class="rocket-row"><button id="rocket-fire" type="button" aria-keyshortcuts="R" disabled>Fire 0 / 6 <span>R</span></button><button id="rocket-buy" type="button" disabled>Buy</button></div>
-						<div class="autopilot" id="rocket-orders"><label><input type="checkbox" id="rocket-auto" autocomplete="off"><span>Auto-buy up to 3 at each SELL wall</span></label></div>
-						<p id="rocket-status" class="hint" role="status" hidden></p>
+	<div class="rocket-row"><button id="rocket-fire" type="button" aria-keyshortcuts="R" disabled>Fire 0 / 6 <span>R</span></button><button id="rocket-buy" type="button" disabled>Buy</button></div>
+		<div class="autopilot" id="rocket-orders"><label><input type="checkbox" id="rocket-auto" autocomplete="off"><span>Auto-buy up to 3 at each SELL wall</span></label></div>
+		<p id="rocket-status" class="hint" role="status" hidden></p>
+		<div class="eyebrow-row"><p class="eyebrow">ROCKET FAB</p></div>
+		<div class="rocket-row"><button id="rocket-fab" type="button">Fab 1 rocket</button></div>
+		<div class="autopilot" id="rocket-fab-orders"><label><input type="checkbox" id="rocket-fab-auto" autocomplete="off"><span>Auto-fab while cargo holds minerals</span></label></div>
+		<p id="rocket-fab-status" class="hint" role="status" hidden></p>
 						<div class="eyebrow-row"><p class="eyebrow">SANDBLASTER</p><button id="help-sandblaster" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: sandblaster">?</button></div>
 						<div class="rocket-row"><button id="sandblast-fire" type="button" aria-keyshortcuts="F" disabled>Blast 0 <span>F</span></button></div>
 						<div class="autopilot" id="sandblast-orders"><label><input type="checkbox" id="sandblast-auto" autocomplete="off"><span>Auto-fire while the hopper holds sand or stone</span></label></div>
@@ -189,6 +194,7 @@
 	<script src="js/rockets.js"></script>
 	<script src="js/sandblaster.js"></script>
 	<script src="js/water.js"></script>
+	<script src="js/rocket-fab.js"></script>
 	<script src="js/prediction.js"></script>
 	<script src="js/autopilot.js"></script>
 	<script src="js/players.js"></script>

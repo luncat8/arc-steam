@@ -388,6 +388,7 @@ function readout() {
 	const canLaunch = physics.canLaunch(world, watched);
 	setDisabled(ui.launch, !canLaunch);
 	rocketReadout();
+	rocketFabReadout();
 	sandblastReadout();
 	waterReadout();
 	toolYieldReadout(driveOn);
@@ -416,6 +417,26 @@ function rocketReadout() {
 		: '';
 	setHidden(ui['rocket-status'], !reason);
 	if (reason) setText(ui['rocket-status'], reason);
+}
+
+// The fabricator loads the rack from the cargo: stock and tubes, the auto
+// order, and one reason line while the cycle waits on the rack, the cargo or
+// the reserve. A manual press always tries one cycle.
+function rocketFabReadout() {
+	const owner = activePlayerId();
+	const fabInstalled = SteamEquipment.isInstalled('rocket-fab', owner);
+	const rackInstalled = SteamEquipment.isInstalled('rocket-rack', owner);
+	const stock = rackInstalled ? SteamRockets.stateFor(owner).stock : 0;
+	if (ui['rocket-fab']) {
+		setText(ui['rocket-fab'], rackInstalled ? 'Fab 1 rocket · ' + stock + ' / ' + SteamRocketFab.rackSize : 'Fab 1 rocket');
+		setDisabled(ui['rocket-fab'], !fabInstalled || !rackInstalled);
+	}
+	if (ui['rocket-fab-auto']) setChecked(ui['rocket-fab-auto'], SteamRocketFab ? SteamRocketFab.isAuto(owner) : false);
+	const reason = SteamRocketFab ? SteamRocketFab.reason(world, owner) : '';
+	if (ui['rocket-fab-status']) {
+		setHidden(ui['rocket-fab-status'], !reason);
+		if (reason) setText(ui['rocket-fab-status'], reason);
+	}
 }
 
 // The nozzle takes grains out of the hopper, so cargo is not always whole cells.

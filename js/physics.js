@@ -1840,6 +1840,11 @@
 	function step(world, dt) {
 		if (wildMode()) {
 			root.SteamWildMine.step(world, dt);
+			// Rockets still fly and burst in the section (the chamber ceiling
+			// and walls stand in for the open cave until a dedicated flight
+			// model lands in a later slice); the fabricator loads the rack.
+			if (root.SteamRockets) root.SteamRockets.step(world, dt);
+			if (root.SteamRocketFab) root.SteamRocketFab.step(world, dt);
 			return;
 		}
 		movePlatform(world, dt);
@@ -1863,6 +1868,7 @@
 		if (root.SteamRockets) root.SteamRockets.step(world, dt);
 		if (root.SteamSandblaster) root.SteamSandblaster.step(world, dt);
 		if (root.SteamWater) root.SteamWater.step(world, dt);
+		if (root.SteamRocketFab) root.SteamRocketFab.step(world, dt);
 		cool(world, dt);
 		world.time += dt;
 	}

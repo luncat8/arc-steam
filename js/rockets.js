@@ -26,6 +26,7 @@
 	const flashLife = 0.22;
 	const drawnSize = 1.6;
 	const launchPoint = { x: 0, y: 0, angle: 0 };
+	const shardContact = { time: Infinity, x: 0, y: 0, nx: 0, ny: 1 };
 	const maxPlayers = 5;
 	const maxRocketsPerRack = 8;
 	const maxRockets = maxPlayers * maxRocketsPerRack;
@@ -213,16 +214,29 @@
 		return count;
 	}
 
-	function visit(world, owner) {
-		const id = ownerId(owner);
-		const profile = profileFor(id);
-		if (!root.SteamPhysics.atSellWall(world, id)) {
-			profile.visitBought = 0;
-			return;
-		}
-		if (!profile.autoBuy || profile.visitBought >= visitLimit || !hasRack(id)) return;
-		profile.visitBought += buy(world, visitLimit - profile.visitBought, id);
+function visit(world, owner) {
+	const id = ownerId(owner);
+	const profile = profileFor(id);
+	if (!root.SteamPhysics.atSellWall(world, id)) {
+		profile.visitBought = 0;
+		return;
 	}
+	if (!profile.autoBuy || profile.visitBought >= visitLimit || !hasRack(id)) return;
+	profile.visitBought += buy(world, visitLimit - profile.visitBought, id);
+}
+
+// The fabricator loads the rack directly: no sell wall, no funds, just cargo
+// and energy already spent by js/rocket-fab.js. Capped by the tube count.
+function load(count, owner) {
+	if (!(count > 0)) return 0;
+	const id = ownerId(owner);
+	if (!hasRack(id)) return 0;
+	const profile = profileFor(id);
+	const space = rackSize - profile.stock;
+	const added = Math.min(count, space);
+	profile.stock += added;
+	return added;
+}
 
 	function aloftBy(index) {
 		if (index < 0) return 0;
@@ -377,25 +391,66 @@
 			shardState[i] = FREE;
 			return;
 		}
-		const width = root.SteamPhysics.config.width;
-		shardVy[i] -= gravity * dt;
-		shardX[i] += shardVx[i] * dt;
-		shardY[i] += shardVy[i] * dt;
-		if (shardX[i] < 0 || shardX[i] > width) {
-			shardX[i] = shardX[i] < 0 ? 0 : width;
-			shardVx[i] = -shardVx[i] * wallKeep;
-		}
-		if (shardVy[i] < 0 && shardY[i] <= groundAt(world, shardX[i])) {
-			shardState[i] = FREE;
-			return;
+		const wild = root.SteamPhysics.wildMode();
+		const oldX = shardX[i];
+		const oldY = shardY[i];
+		const oldVy = shardVy[i];
+		const nextVy = oldVy - gravity * dt;
+		const nextX = oldX + shardVx[i] * dt;
+		const nextY = oldY + nextVy * dt;
+		if (!wild) {
+			const width = root.SteamPhysics.config.width;
+			shardVy[i] = nextVy;
+			shardX[i] = nextX;
+			shardY[i] = nextY;
+			if (shardX[i] < 0 || shardX[i] > width) {
+				shardX[i] = shardX[i] < 0 ? 0 : width;
+				shardVx[i] = -shardVx[i] * wallKeep;
+			}
+			if (shardVy[i] < 0 && shardY[i] <= groundAt(world, shardX[i])) {
+				shardState[i] = FREE;
+				return;
+			}
+		} else {
+			const cave = root.SteamWildMine && root.SteamWildMine.cave;
+			if (!cave) {
+				shardX[i] = nextX;
+				shardY[i] = nextY;
+				shardVy[i] = nextVy;
+				return;
+			}
+			cave.traceCircle(oldX, oldY, shardVx[i], oldVy, dt, 0.015, gravity, shardContact);
+			if (!Number.isFinite(shardContact.time)) {
+				shardX[i] = nextX;
+				shardY[i] = nextY;
+				shardVy[i] = nextVy;
+				return;
+			}
+			shardX[i] = shardContact.x;
+			shardY[i] = shardContact.y;
+			shardVy[i] = nextVy;
 		}
 		if (shardState[i] === SPENT) return;
-		const face = root.SteamCeiling.surfaceAt(shardX[i]);
-		if (shardY[i] < face) return;
+		const x = shardX[i];
+		const y = shardY[i];
+		let face = root.SteamCeiling.surfaceAt(x);
+		if (wild) {
+			// Query the active cave instance; the global SteamCave is its factory.
+			face = y;
+		} else if (y < face) {
+			return;
+		}
 		const energy = 0.5 * shardMass * (shardVx[i] * shardVx[i] + shardVy[i] * shardVy[i]);
 		const index = shardOwner[i];
 		const profile = profileForIndex(index);
-		profile.fracture += root.SteamCeiling.chip(shardX[i], face, energy, shardRadius[i]);
+		if (wild) {
+			const cave = root.SteamWildMine.cave;
+			const gain = root.SteamCeiling.damageMultiplierNow(index);
+			const radius = root.SteamCeiling.damageRadiusNow(index);
+			profile.fracture += cave.weaken(x, face, energy * 5 * gain, gain, radius);
+		} else {
+			profile.fracture += root.SteamCeiling.chip(x, face, energy, shardRadius[i]);
+		}
 		profile.shardHits++;
 		shardState[i] = SPENT;
 		shardY[i] = face;
@@ -489,7 +544,7 @@
 
 	function stateFor(owner) { return profileFor(owner).view; }
 	const state = stateFor('rig');
-	const api = { state, stateFor, reset, setAutoBuy, buy, fill, canFire, fire, launcherX, step, draw };
+	const api = { state, stateFor, reset, setAutoBuy, buy, fill, load, canFire, fire, launcherX, step, draw };
 	root.SteamRockets = api;
 	if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

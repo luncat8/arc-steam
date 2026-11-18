@@ -45,10 +45,14 @@
 			recoveryFraction: 0.55,
 			effect: 'Returns 55% of braking energy to reserve at 90% efficiency (wall stops unrecovered).'
 		}),
-		Object.freeze({
-			id: 'rocket-rack', name: 'Rocket rack', cost: 480, mass: 8, requires: 'impact',
-			effect: 'Installs a 6-round collector tube; rockets cost 14 cr each at either SELL wall, +8 kg.'
-		}),
+	Object.freeze({
+		id: 'rocket-rack', name: 'Rocket rack', cost: 480, mass: 8, requires: 'impact',
+		effect: 'Installs a 6-round collector tube; rockets cost 14 cr each at either SELL wall, +8 kg.'
+	}),
+	Object.freeze({
+		id: 'rocket-fab', name: 'Rocket fab', cost: 700, mass: 12, requires: 'impact',
+		effect: 'Turns cargo minerals into rockets and loads the rack: one cell of ore and 2 kJ of reserve energy per rocket, one every three seconds while auto-fab is on. The rack still fires them.'
+	}),
 		Object.freeze({
 			id: 'sandblaster', name: 'Sandblaster', cost: 520, mass: 7, requires: 'impact',
 			effect: 'Mounts an abrasive nozzle in the collector; hold F or set auto-fire to throw up to 20 grains a second at the ceiling. Each grain puts 135 J into 20 g of hopper sand or stone (charged from the reserve at engine efficiency, 169 J on stock electric) and falls back to be caught again.'
