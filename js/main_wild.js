@@ -1,7 +1,7 @@
 // Wild Mine canvas renderer, tile cache and mode-aware UI helpers.
 // Shares lexical scope with js/main*.js; all top-level bindings use a wild* prefix.
-// provides: wildIsActive, wildDraw, wildResize, wildSyncMode, wildResetRun, wildInspectRockAtPointer, wildPointerDown, wildWorldYOf, wildMineralReadout, wildStatusReadout, wildModeNotes, wildPistonLimitDegrees
-// depends: main.js bindings, SteamCave, SteamWildMine, SteamWildBall, SteamRockMaterials, SteamCeiling
+// provides: wildIsActive, wildDraw, wildResize, wildSyncMode, wildResetRun, wildInspectRockAtPointer, wildPointerDown, wildWorldYOf, wildMineralReadout, wildStatusReadout, wildModeNotes, wildWaterReadout, wildPistonLimitDegrees
+// depends: main.js bindings, SteamCave, SteamWildMine, SteamWildBall, SteamWildWater, SteamWater, SteamRockMaterials, SteamCeiling
 
 'use strict';
 
@@ -262,6 +262,41 @@ function wildDrawCave(cave, minX, maxX, minRow, maxRow) {
 	context.imageSmoothingEnabled = prevSmooth;
 }
 
+function wildDrawWater(wild, cave, anchorY, minX, maxX, minRow, maxRow) {
+	const tank = world.wildWater;
+	const cell = cave.state.cell;
+	const cols = cave.state.chunkColumns;
+	const minCol = cave.columnAt(minX);
+	const maxCol = cave.columnAt(maxX);
+	for (const chunk of cave.eachChunk()) {
+		if (chunk.column0 > maxCol || chunk.column0 + cols <= minCol) continue;
+		for (const liquid of tank.field.cellsFor(chunk).values()) {
+			const row = Math.floor(liquid.key / cols);
+			if (row < minRow || row > maxRow) continue;
+			const column = chunk.column0 + liquid.key % cols;
+			if (column < minCol || column > maxCol) continue;
+			const fill = Math.min(1, (liquid.water + liquid.condensate) / SteamWildWater.cellCapacity);
+			const bottom = wildDrawnRowY[row];
+			const top = fill === 1 ? wildDrawnRowY[row + 1] : wild.drawnY((row + fill) * cell, anchorY);
+			context.fillStyle = liquid.condensate > 0 ? '#368ba8' : '#43b5c5';
+			context.fillRect(column * cell, bottom, cell, top - bottom);
+		}
+	}
+	if (!tank.airborneDrops) return;
+	const jet = SteamWater.state;
+	context.fillStyle = '#a2e6ed';
+	context.beginPath();
+	for (let i = 0; i < jet.maxDroplets; i++) {
+		if (jet.dropState[i] !== jet.FLYING) continue;
+		const x = jet.dropX[i];
+		const y = wild.drawnY(jet.dropY[i], anchorY);
+		const radius = 0.045 * wild.scaleAt(jet.dropY[i], anchorY);
+		context.moveTo(x + radius, y);
+		context.arc(x, y, radius, 0, Math.PI * 2);
+	}
+	context.fill();
+}
+
 function wildResize() {
 	const wild = window.SteamWildMine;
 	const bounds = canvas.getBoundingClientRect();
@@ -331,6 +366,7 @@ function wildDraw() {
 
 	wildDrawGrid(wild, minX, maxX, minRow * cell, (maxRow + 1) * cell);
 	wildDrawCave(cave, minX, maxX, minRow, maxRow);
+	wildDrawWater(wild, cave, anchorY, minX, maxX, minRow, maxRow);
 	wildDrawDebris(wild, anchorY, minRow * cell, (maxRow + 1) * cell);
 
 	if (wildSelectedRow >= minRow && wildSelectedRow <= maxRow && wildSelectedColumn >= cave.columnAt(minX) - 1 && wildSelectedColumn <= cave.columnAt(maxX) + 1) {
@@ -437,6 +473,12 @@ function wildSyncMode(nextMode) {
 		setText(ui['chamber-title'], wild ? 'ARC STEAM · WILD MINE / CAVE SECTION' : 'ARC STEAM · TEST CHAMBER / 24 × 15 M');
 	}
 	setHidden(ui['ball-controls'], !wild);
+	setHidden(ui['wild-water-controls'], !wild);
+	setHidden(ui['classic-pump-order'], wild);
+	setHidden(ui['classic-solute-order'], wild);
+	setHidden(ui['pad-key'], wild);
+	setHidden(ui['seep-key'], !wild);
+	setText(ui['platform-mass-note'], wild ? 'Dry chassis + cargo + held ball + tank liquid' : 'Dry chassis + cargo + held ball');
 	const limitDeg = wildPistonLimitDegrees();
 	if (ui['piston-angle']) {
 		ui['piston-angle'].min = String(-limitDeg);
@@ -531,27 +573,57 @@ function wildMineralReadout() {
 }
 
 function wildFuelReadout() {
-	return window.SteamFuel ? window.SteamFuel.read('rig') : null;
+	return SteamFuel.read(world, world.platform.id);
+}
+
+function wildFuelSource(fuel) {
+	return fuel.tankFuel > 0 ? 'tank condensate' : fuel.grade + ' cargo';
 }
 
 function wildModeNotes(reserveWarning) {
 	const fuel = wildFuelReadout();
-	if (fuel && fuel.gradeIndex >= 0) {
-		const stock = fuel.chemical > 0
-			? fuel.cells.toFixed(1) + ' cells · ' + (fuel.chemical / 1000).toFixed(1) + ' kJ'
-			: 'none in cargo';
-		setText(ui['reserve-note'], 'Wild Mine · ' + fuel.engineName + ' burns ' + fuel.grade + ' fuel · ' + stock
-			+ (fuel.chemical > 0 ? ' · refills ' + (fuel.refillPower / 1000).toFixed(1) + ' kW' : ''));
-		setText(ui['cargo-note'], fuel.chemical > 0
-			? 'Cheapest ' + fuel.grade + ' fuel first · ' + fuel.fuelList
-			: fuel.reason);
+	if (fuel.gradeIndex >= 0) {
+		const liquid = fuel.tankFuel > 0 ? fuel.tankFuel.toFixed(2) + ' kg condensate · ' : '';
+		const cargo = fuel.cells > 0 ? fuel.cells.toFixed(1) + ' cells · ' : '';
+		const stock = fuel.chemical > 0 ? liquid + cargo + (fuel.chemical / 1000).toFixed(1) + ' kJ' : 'no fuel';
+		setText(ui['reserve-note'], reserveWarning === 'EMPTY' && fuel.chemical > 0
+			? 'Reserve empty · engine refilling from ' + wildFuelSource(fuel)
+			: 'Wild Mine · ' + fuel.engineName + ' burns ' + fuel.grade + ' fuel · ' + stock
+				+ (fuel.chemical > 0 ? ' · refills ' + (fuel.refillPower / 1000).toFixed(1) + ' kW' : ''));
+		setText(ui['cargo-note'], fuel.reason || (fuel.grade === 'liquid'
+			? 'Tank condensate first · then cheapest liquid cargo'
+			: 'Cheapest ' + fuel.grade + ' fuel first · ' + fuel.fuelList));
 	} else {
 		setText(ui['reserve-note'], 'Wild Mine · hand crank · no fuel cycle · reserve drains to a crawl');
 		setText(ui['cargo-note'], 'Fit a powered engine to burn cargo fuel');
 	}
-	if (reserveWarning === 'EMPTY' && fuel && fuel.chemical > 0)
-		setText(ui['reserve-note'], 'Reserve empty · engine refilling from ' + fuel.grade + ' cargo');
 	setText(ui['funds-note'], 'Wild Mine · open cave section');
+}
+
+const wildIntakeNotes = Object.freeze({
+	dry: 'Park over a blue seep to fill the tank.', full: 'Tank full · intake paused.',
+	pumping: 'Collecting liquid below the hull.', hand: 'Hand pump · priming an empty reserve.',
+	hot: 'Intake paused · machinery too hot.'
+});
+
+function wildWaterReadout(installed) {
+	const tank = world.wildWater;
+	const capacity = SteamWildWater.capacity;
+	const meter = ui['wild-tank-meter'];
+	const fill = Math.min(1, tank.mass / capacity);
+	if (Number(meter.value) !== fill) meter.value = fill;
+	setText(ui['wild-tank-level'], tank.mass.toFixed(1) + ' / ' + capacity + ' kg');
+	setText(ui['wild-tank-mix'], tank.water.toFixed(2) + ' kg spray water · ' + tank.condensate.toFixed(2) + ' kg oil condensate');
+	setChecked(ui['wild-intake'], tank.intakeOn);
+	setDisabled(ui['wild-tank-drain'], tank.water <= 0);
+	setText(ui['wild-intake-note'], !tank.intakeOn ? 'Intake off.' : wildIntakeNotes[tank.intakeStatus] || wildIntakeNotes.dry);
+	setText(ui['water-fire'].firstChild, 'Spray ');
+	const reason = !installed ? 'No water gun installed · fit one in Science + Shop'
+		: tank.water < SteamWater.state.dropletWater ? 'Not enough spray water · collect liquid below the hull'
+		: physics.thermalFactor(world) <= 0 ? 'Thermal cutoff · wait for the machine to cool'
+		: world.battery < physics.reserveCost(SteamWater.state.shotEnergy) ? 'Reserve too low to pressurize a droplet'
+		: '';
+	setMessage(ui['water-status'], reason, '');
 }
 
 function wildSyncBallControls(ball) {
@@ -594,13 +666,11 @@ function wildStatusReadout(reserveWarning, thermalFactor, driveOn) {
 	const fuel = wildFuelReadout();
 	let energyWarning = '';
 	let energyTone = 'danger';
-	if (reserveWarning && fuel && fuel.chemical > 0) {
-		energyWarning = 'Reserve low · burning ' + fuel.grade + ' cargo at ' + (fuel.refillPower / 1000).toFixed(1) + ' kW';
+	if (reserveWarning && fuel.chemical > 0) {
+		energyWarning = 'Reserve low · burning ' + wildFuelSource(fuel) + ' at ' + (fuel.refillPower / 1000).toFixed(1) + ' kW';
 		energyTone = 'warn';
-	} else if (reserveWarning && fuel) {
-		energyWarning = fuel.reason;
 	} else if (reserveWarning) {
-		energyWarning = 'Low reserve · hand-crank crawl available';
+		energyWarning = fuel.reason;
 	}
 	setMessage(ui['status-energy'], energyWarning, energyTone);
 }

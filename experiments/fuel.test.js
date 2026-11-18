@@ -44,7 +44,7 @@ test('engine families map to solid, liquid and fissile fuel, and hand has none',
 		const expected = [['coal', 'solid'], ['electric', 'solid'], ['oil', 'liquid'], ['nuclear', 'fissile'], ['hand', '']];
 		for (const [engineId, grade] of expected) {
 			const world = freshWorld(engineId);
-			const info = fuel.read('rig');
+			const info = fuel.read(world, 'rig');
 			assert.equal(info.engineId, engineId);
 			assert.equal(info.grade, grade, engineId + ' grade');
 			assert.equal(info.gradeIndex >= 0, grade !== '', engineId + ' grade index');
@@ -145,7 +145,7 @@ test('no matching fuel in cargo leaves the engine idle with a reason', () => {
 		const goldBefore = ceiling.state.cargoMinerals[gold];
 		assert.equal(fuel.step(world, 1), 0);
 		assert.equal(ceiling.state.cargoMinerals[gold], goldBefore, 'gold is not solid fuel');
-		assert.equal(fuel.reason('rig'), 'No solid fuel in cargo · mine stone, sand or quartz');
+		assert.equal(fuel.read(world, 'rig').reason, 'No solid fuel in cargo · mine stone, sand or quartz');
 		assert.ok(Math.abs(drift(world)) < 1e-9);
 	} finally {
 		wildMine.setMode('classic');
@@ -160,7 +160,7 @@ test('the hand engine never burns, even with fuel in the hopper', () => {
 		sync(world);
 		assert.equal(fuel.step(world, 1), 0);
 		assert.equal(fuel.burn(world, 1000, 'rig'), 0);
-		assert.equal(fuel.reason('rig'), 'Hand engine · no fuel burn · hand-crank only');
+		assert.equal(fuel.read(world, 'rig').reason, 'Hand engine · no fuel burn · hand-crank only');
 		assert.equal(ceiling.state.cargoMinerals[stone], cellMass, 'stone untouched');
 		assert.ok(Math.abs(drift(world)) < 1e-9);
 	} finally {
@@ -200,7 +200,7 @@ test('all three families burn their own minerals and keep the ledger exact', () 
 			assert.ok(burned > 0, engineId + ' burns ' + mineralId);
 			assert.ok(ceiling.state.cargoMinerals[index] < before, engineId + ' removed ' + mineralId);
 			assert.ok(Math.abs(drift(world)) < 1e-9, engineId + ' drift ' + drift(world));
-			assert.equal(fuel.read('rig').gradeIndex, grade);
+			assert.equal(fuel.read(world, 'rig').gradeIndex, grade);
 		}
 	} finally {
 		wildMine.setMode('classic');
@@ -237,13 +237,13 @@ test('readout reports family mass, chemical energy and the per-run burn totals',
 		fuel.reset();
 		world.battery = 0;
 		sync(world);
-		let info = fuel.read('rig');
+		let info = fuel.read(world, 'rig');
 		assert.equal(info.grade, 'liquid');
 		assert.ok(Math.abs(info.mass - cellMass) < 1e-12, 'only gas is liquid fuel');
 		assert.ok(Math.abs(info.chemical - cellMass * fuel.yieldOf(1, gas)) < 1e-9);
 		assert.ok(Math.abs(info.cells - 1) < 1e-9);
 		fuel.burn(world, 500, 'rig');
-		info = fuel.read('rig');
+		info = fuel.read(world, 'rig');
 		assert.ok(info.burnedMass > 0);
 		assert.ok(info.burnedChemical > 0);
 		assert.ok(info.burnedValue > 0, 'the lost sale value is recorded');

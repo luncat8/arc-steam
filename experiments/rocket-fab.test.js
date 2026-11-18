@@ -254,3 +254,26 @@ test('a moving fab cycle leaves the energy ledger exact, including cargo potenti
 		wildMine.setMode('classic');
 	}
 });
+
+test('a Classic rival fabricates from its own hopper without touching the rig reserve', () => {
+	const world = freshWorld(false);
+	const rival = players.machineOf(players.state.players[1]);
+	const owner = rival.id;
+	assert.equal(equipment.grant('rocket-rack', world, owner), true);
+	assert.equal(equipment.grant('rocket-fab', world, owner), true);
+	feedCells(world, 1);
+	world.battery = 0;
+	world.initialEnergy = physics.totalEnergy(world);
+	assert.match(rocketFab.reason(world, owner), /Cargo empty/);
+	assert.equal(rocketFab.fab(world, owner), 0);
+
+	assert.equal(players.loadCargo(rival, iron, cellMass, ironPrice), true);
+	assert.equal(rocketFab.reason(world, owner), '');
+	assert.equal(rocketFab.fab(world, owner), 1);
+	assert.equal(rockets.stateFor(owner).stock, 1);
+	assert.equal(rockets.stateFor('rig').stock, 0);
+	assert.equal(rival.cargoCells, 0);
+	assert.equal(ceiling.state.cargoCells, 1);
+	assert.equal(world.battery, 0);
+	assert.equal(physics.totalEnergy(world), world.initialEnergy);
+});

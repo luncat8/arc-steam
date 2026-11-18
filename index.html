@@ -27,7 +27,7 @@
 				<button id="help-keys" class="help-open" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-keyshortcuts="H">HELP <span>H</span></button>
 			</div>
 		</header>
-		<section class="telemetry panel" aria-label="System telemetry"><article id="reserve-telemetry"><div class="telemetry-head"><span>ENERGY RESERVE</span><button id="help-fuel" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: Wild Mine fuel">?</button></div><strong id="battery">—</strong><small id="reserve-note">Centre pad refills free at the source’s reload rate · emergency import in the market</small></article><article id="cargo-telemetry"><button id="market-open" class="telemetry-action" type="button" aria-controls="market-drawer" aria-expanded="false" aria-label="Open Market and Ledger"><span>CARGO STORAGE</span><strong id="cargo">—</strong><small id="cargo-note">100 cells maximum · cargo adds mass · open market</small></button></article><article><span>PLATFORM MASS</span><strong id="platform-mass">—</strong><small>Dry chassis + cargo + held ball</small></article><article><button id="science-open" class="telemetry-action" type="button" aria-controls="science-drawer" aria-expanded="false" aria-label="Open Science and Shop"><span>FUNDS / SOLD</span><strong id="funds">—</strong><small id="funds-note">Automatic sale · open science and shop</small></button></article><article><span>BALL ENERGY</span><strong id="ball-energy">—</strong><small>Kinetic + gravitational</small></article><article><span>STORED THERMAL ENERGY</span><strong id="heat">—</strong><small>Cooling exported <span id="cooled">—</span></small></article><article id="thermal-telemetry"><span>MACHINERY TEMPERATURE</span><strong id="temperature">—</strong><small id="thermal-status">Drive output 100% · cooling normally</small></article><article><span>ENERGY BALANCE ERROR</span><strong id="error">—</strong><small>Includes heat, cooling, rock & cargo</small></article></section>
+		<section class="telemetry panel" aria-label="System telemetry"><article id="reserve-telemetry"><div class="telemetry-head"><span>ENERGY RESERVE</span><button id="help-fuel" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: Wild Mine fuel">?</button></div><strong id="battery">—</strong><small id="reserve-note">Centre pad refills free at the source’s reload rate · emergency import in the market</small></article><article id="cargo-telemetry"><button id="market-open" class="telemetry-action" type="button" aria-controls="market-drawer" aria-expanded="false" aria-label="Open Market and Ledger"><span>CARGO STORAGE</span><strong id="cargo">—</strong><small id="cargo-note">100 cells maximum · cargo adds mass · open market</small></button></article><article><span>PLATFORM MASS</span><strong id="platform-mass">—</strong><small id="platform-mass-note">Dry chassis + cargo + held ball</small></article><article><button id="science-open" class="telemetry-action" type="button" aria-controls="science-drawer" aria-expanded="false" aria-label="Open Science and Shop"><span>FUNDS / SOLD</span><strong id="funds">—</strong><small id="funds-note">Automatic sale · open science and shop</small></button></article><article><span>BALL ENERGY</span><strong id="ball-energy">—</strong><small>Kinetic + gravitational</small></article><article><span>STORED THERMAL ENERGY</span><strong id="heat">—</strong><small>Cooling exported <span id="cooled">—</span></small></article><article id="thermal-telemetry"><span>MACHINERY TEMPERATURE</span><strong id="temperature">—</strong><small id="thermal-status">Drive output 100% · cooling normally</small></article><article><span>ENERGY BALANCE ERROR</span><strong id="error">—</strong><small>Includes heat, cooling, rock & cargo</small></article></section>
 		<section class="workspace">
 			<section class="mine-panel panel" aria-label="Chamber view" data-topic="chamber">
 				<div class="canvas-wrap"><canvas id="c" tabindex="0" aria-label="Side view of a bouncing ball and movable mining platform"></canvas>
@@ -41,7 +41,8 @@
 				<div class="mine-footer">
 					<span><i class="key-color collector"></i> COLLECTOR · CATCH & STORE</span>
 					<span><i class="key-color reflector"></i> REFLECTOR PISTON · POWERED BOUNCE</span>
-					<span><i class="key-color pad"></i> CHARGE PAD · 3 kW</span>
+					<span id="pad-key"><i class="key-color pad"></i> CHARGE PAD · 3 kW</span>
+					<span id="seep-key" hidden><i class="key-color seep"></i> CAVE SEEPS · COLLECT UNDER HULL</span>
 					<div class="view-switch"><span id="view-label">ROCK VIEW</span><div id="view-modes" class="view-modes" role="radiogroup" aria-labelledby="view-label"><label><input type="radio" name="rock-view" value="minerals" autocomplete="off" checked>Minerals</label><label><input type="radio" name="rock-view" value="elements" autocomplete="off">Elements R/G/B</label><label><input type="radio" name="rock-view" value="price" autocomplete="off">Price</label><label><input type="radio" name="rock-view" value="initial-strength" autocomplete="off">Initial strength</label><label><input type="radio" name="rock-view" value="strength" autocomplete="off">Remaining strength</label><label><input id="rock-damage-view" type="radio" name="rock-view" value="damage" autocomplete="off">Damage</label></div><button id="help-chamber" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: the chamber and its markers">?</button></div>
 				</div>
 			</section>
@@ -71,21 +72,29 @@
 						<div class="autopilot" id="autopilot"><label><input type="checkbox" id="auto-move" autocomplete="off"><span>Chase the predicted landing</span><i>X</i></label><label><input type="checkbox" id="auto-smart" autocomplete="off"><span>Timed intercept · economy brake</span><i>⇧X</i></label><label><input type="checkbox" id="auto-drive" autocomplete="off"><span>Drive keeper · hit the rock hard</span><i>Z</i></label><label><input type="checkbox" id="auto-angle" autocomplete="off"><span>Level bounce · reflect straight up</span><i>C</i></label></div>
 						<p id="autopilot-status" class="hint" role="status" hidden></p>
 						<div class="eyebrow-row"><p class="eyebrow">ROCKETS</p><button id="help-rockets" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: rockets">?</button></div>
-	<div class="rocket-row"><button id="rocket-fire" type="button" aria-keyshortcuts="R" disabled>Fire 0 / 6 <span>R</span></button><button id="rocket-buy" type="button" disabled>Buy</button></div>
-		<div class="autopilot" id="rocket-orders"><label><input type="checkbox" id="rocket-auto" autocomplete="off"><span>Auto-buy up to 3 at each SELL wall</span></label></div>
-		<p id="rocket-status" class="hint" role="status" hidden></p>
-		<div class="eyebrow-row"><p class="eyebrow">ROCKET FAB</p></div>
-		<div class="rocket-row"><button id="rocket-fab" type="button">Fab 1 rocket</button></div>
-		<div class="autopilot" id="rocket-fab-orders"><label><input type="checkbox" id="rocket-fab-auto" autocomplete="off"><span>Auto-fab while cargo holds minerals</span></label></div>
-		<p id="rocket-fab-status" class="hint" role="status" hidden></p>
+						<div class="rocket-row"><button id="rocket-fire" type="button" aria-keyshortcuts="R" disabled>Fire 0 / 6 <span>R</span></button><button id="rocket-buy" type="button" disabled>Buy</button></div>
+						<div class="autopilot" id="rocket-orders"><label><input type="checkbox" id="rocket-auto" autocomplete="off"><span>Auto-buy up to 3 at each SELL wall</span></label></div>
+						<p id="rocket-status" class="hint" role="status" hidden></p>
+						<div class="eyebrow-row"><p class="eyebrow">ROCKET FAB</p></div>
+						<div class="rocket-row"><button id="rocket-fab" type="button">Fab 1 rocket</button></div>
+						<div class="autopilot" id="rocket-fab-orders"><label><input type="checkbox" id="rocket-fab-auto" autocomplete="off"><span>Auto-fab while cargo holds minerals</span></label></div>
+						<p id="rocket-fab-status" class="hint" role="status" hidden></p>
 						<div class="eyebrow-row"><p class="eyebrow">SANDBLASTER</p><button id="help-sandblaster" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: sandblaster">?</button></div>
 						<div class="rocket-row"><button id="sandblast-fire" type="button" aria-keyshortcuts="F" disabled>Blast 0 <span>F</span></button></div>
 						<div class="autopilot" id="sandblast-orders"><label><input type="checkbox" id="sandblast-auto" autocomplete="off"><span>Auto-fire while the hopper holds sand or stone</span></label></div>
 						<p id="sandblast-status" class="hint" role="status" hidden></p>
 						<p id="sandblast-yield" class="hint tool-yield" hidden></p>
+						<div id="wild-water-controls" class="tank-panel" data-topic="water" hidden>
+							<div class="tank-heading"><span class="eyebrow">WILD WATER TANK</span><strong id="wild-tank-level">—</strong></div>
+							<progress id="wild-tank-meter" max="1" value="0" aria-label="Wild Mine water tank" aria-describedby="wild-tank-mix"></progress>
+							<p id="wild-tank-mix" class="hint">—</p>
+							<div class="autopilot"><label><input type="checkbox" id="wild-intake" autocomplete="off"><span>Collect liquid under the hull</span></label></div>
+							<p id="wild-intake-note" class="hint" role="status">—</p>
+							<button id="wild-tank-drain" class="quiet" type="button" disabled>Drain spray water</button>
+						</div>
 						<div class="eyebrow-row"><p class="eyebrow">WATER GUN</p><button id="help-water" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: water gun and the pump">?</button></div>
 						<div class="rocket-row"><button id="water-fire" type="button" aria-keyshortcuts="G" disabled>Spray <span>G</span></button><button id="water-aim" type="button" disabled>Aim at cursor</button></div>
-						<div class="autopilot" id="water-orders"><label><input type="checkbox" id="water-auto" autocomplete="off"><span>Auto-fire the jet</span></label><label><input type="checkbox" id="water-pump" autocomplete="off"><span>Pump the brine back under the hull</span></label><label><input type="checkbox" id="water-pump-solute" autocomplete="off"><span>Idle pump on shallow fresh water</span></label></div>
+						<div class="autopilot" id="water-orders"><label><input type="checkbox" id="water-auto" autocomplete="off"><span>Auto-fire the jet</span></label><label id="classic-pump-order"><input type="checkbox" id="water-pump" autocomplete="off"><span>Pump the brine back under the hull</span></label><label id="classic-solute-order"><input type="checkbox" id="water-pump-solute" autocomplete="off"><span>Idle pump on shallow fresh water</span></label></div>
 						<p id="water-status" class="hint" role="status" hidden></p>
 						<p id="water-yield" class="hint tool-yield" hidden></p>
 					</div>
@@ -189,6 +198,7 @@
 	<script src="js/research.js"></script>
 	<script src="js/water-chemistry.js"></script>
 	<script src="js/physics.js"></script>
+	<script src="js/wild-water.js"></script>
 	<script src="js/wild-mine.js"></script>
 	<script src="js/wild-ball.js"></script>
 	<script src="js/rockets.js"></script>

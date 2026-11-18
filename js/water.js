@@ -18,12 +18,13 @@
 //      game does not play.
 //
 // Depends on (at call time): js/ceiling.js, js/physics.js, js/equipment.js,
-// js/players.js, js/water-chemistry.js, js/minerals.js
+// js/players.js, js/water-chemistry.js, js/minerals.js, js/wild-water.js
 (function (root) {
 	'use strict';
 	const node = typeof module !== 'undefined' && module.exports;
 	const chemistry = node ? require('./water-chemistry.js') : root.SteamWaterChemistry;
 	const minerals = node ? require('./minerals.js') : root.SteamMinerals;
+	const wildWater = node ? require('./wild-water.js') : root.SteamWildWater;
 
 	const count = minerals.mineralCount;
 	const gravity = 9.81;
@@ -143,6 +144,9 @@
 
 	const nozzle = { x: 0, y: 0, angle: 0, dx: 0, dy: 1 };
 	const aim = { x: 12, y: 11 };
+	const caveAim = { x: NaN, y: NaN };
+	const caveHit = { time: Infinity, x: 0, y: 0, nx: 0, ny: 0 };
+	const caveDropRadius = 0.02;
 	const estimateNozzle = { x: 0, y: 0, angle: 0, dx: 0, dy: 1 };
 	const estimateWet = { mass: 0, value: 0, leached: 0, residueMass: 0 };
 	const split = chemistry.createSplit();
@@ -403,9 +407,11 @@
 	// its full chassis pose before measuring the world-space aim.
 	function nozzleOf(world, owner) {
 		const physics = root.SteamPhysics;
-		physics.collectorPointAt(world, ownerIdOf(owner), physics.config.waterNozzleFraction, 0, nozzle);
-		let dx = aim.x - nozzle.x;
-		let dy = aim.y - nozzle.y;
+		const inCave = Boolean(world.wildWater);
+		const target = inCave ? caveAim : aim;
+		physics.collectorPointAt(world, ownerIdOf(owner), physics.config.waterNozzleFraction, 0, nozzle, inCave);
+		const dx = target.x - nozzle.x;
+		let dy = target.y - nozzle.y;
 		// A nozzle cannot fire into its own deck.
 		if (dy < -0.35) dy = -0.35;
 		const length = Math.hypot(dx, dy);
@@ -419,6 +425,7 @@
 		if (!target || !hasTool(id)) return false;
 		if (profileFor(id).fireBudget > 0) return false;
 		const physics = root.SteamPhysics;
+		if (physics.wildMode() && (id !== target.platform.id || !target.wildWater || target.wildWater.water < dropletWater)) return false;
 		const machine = physics.machineById(target, id);
 		if (machine === target) {
 			if (physics.thermalFactor(target) <= 0) return false;
@@ -452,20 +459,23 @@
 		dropOwner[slot] = 0;
 		const offset = slot * count;
 		for (let m = 0; m < count; m++) { dropLoad[offset + m] = 0; dropLoadValue[offset + m] = 0; }
-		const rig = machine === target;
-		if (rig) {
+		const inCave = Boolean(target.wildWater);
+		if (inCave) wildWater.spray(target, dropletWater);
+		if (machine === target) {
 			const before = target.battery;
 			const delivered = physics.spend(target, shotEnergy);
 			target.heat += delivered;
-			totals.shotJoules += before - target.battery;
+			if (!inCave) totals.shotJoules += before - target.battery;
 		} else {
 			// A rival's pack is outside the rig's ledger: its throw is imported work.
 			target.importedEnergy += shotEnergy;
 		}
 		profileFor(id).shots++;
 		profileFor(id).fireBudget = 1 / dropletsPerSecond;
-		totals.flooded += dropletWater;
-		totals.droplets++;
+		if (!inCave) {
+			totals.flooded += dropletWater;
+			totals.droplets++;
+		}
 		return true;
 	}
 
@@ -1282,7 +1292,7 @@
 	function step(target, dt) {
 		if (!target || !root.SteamCeiling) return;
 		world = target;
-		stepOwners(dt);
+		stepOwners(target, dt);
 		// A dry chamber skips the 5760-parcel solid-mask rebuild and fluid sweeps
 		// without changing a single wet step.
 		if (chamberWet()) {
@@ -1298,24 +1308,43 @@
 		world = null;
 	}
 
-	function stepOwners(dt) {
-		const roster = root.SteamPlayers && root.SteamPlayers.state.players;
-		if (roster && roster.length) {
-			for (let i = 0; i < roster.length; i++) stepOwner(dt, roster[i].id);
-		} else stepOwner(dt, 'rig');
+	function stepWild(target, cave, dt) {
+		stepOwner(target, dt, target.platform.id);
+		const tank = target.wildWater;
+		if (!tank.airborneDrops) return;
+		for (let i = 0; i < maxDroplets; i++) {
+			if (dropState[i] !== FLYING) continue;
+			const x = dropX[i];
+			const y = dropY[i];
+			const hit = cave.traceCircle(x, y, dropVx[i], dropVy[i], dt, caveDropRadius, gravity, caveHit);
+			if (hit.time === Infinity) {
+				dropX[i] += dropVx[i] * dt;
+				dropY[i] += (dropVy[i] - gravity * dt * 0.5) * dt;
+				dropVy[i] -= gravity * dt;
+				continue;
+			}
+			const splashX = hit.x + hit.nx * caveDropRadius;
+			const splashY = hit.y + hit.ny * caveDropRadius;
+			const blocked = cave.solidAt(splashX, splashY);
+			wildWater.settle(tank, blocked ? x : splashX, blocked ? y : splashY, dropletWater);
+			dropState[i] = FREE;
+		}
 	}
 
-	function stepOwner(dt, owner) {
+	function stepOwners(target, dt) {
+		const roster = root.SteamPlayers && root.SteamPlayers.state.players;
+		if (roster && roster.length) {
+			for (let i = 0; i < roster.length; i++) stepOwner(target, dt, roster[i].id);
+		} else stepOwner(target, dt, 'rig');
+	}
+
+	function stepOwner(target, dt, owner) {
 		const profile = profileFor(owner);
 		const left = profile.fireBudget - dt;
 		profile.fireBudget = left > dt * 0.5 ? left : 0;
 		if (!profile.autoFire && !profile.botFire) return;
-		if (!autoFireAllowed(owner)) return;
-		fire(world, owner);
-	}
-
-	function autoFireAllowed(owner) {
-		return owner !== world.platform.id || world.battery >= root.SteamPhysics.config.battery * autoFireReserve;
+		if (owner === target.platform.id && target.battery < root.SteamPhysics.config.battery * autoFireReserve) return;
+		fire(target, owner);
 	}
 
 	function streamPower(owner) {
@@ -1452,10 +1481,15 @@
 
 	// AIM is not a travel order: a click that sets the aim must never move the
 	// platform's destination.
+	function activeAim() {
+		return root.SteamPhysics.wildMode() ? caveAim : aim;
+	}
+
 	function setAim(x, y) {
-		if (Number.isFinite(x)) aim.x = clamp(x, 0, 24);
-		if (Number.isFinite(y)) aim.y = clamp(y, 0, 15);
-		return aim;
+		const target = activeAim();
+		if (Number.isFinite(x)) target.x = target === caveAim ? x : clamp(x, 0, 24);
+		if (Number.isFinite(y)) target.y = target === caveAim ? y : clamp(y, 0, 15);
+		return target;
 	}
 
 	// Match the sandblaster's standing-order rules: turning BOT off clears its
@@ -1776,8 +1810,8 @@
 		get pumpOn() { return settings.pumpOn; },
 		get pumpMode() { return settings.pumpMode; },
 		get erosion() { return settings.erosion; },
-		get aimX() { return aim.x; },
-		get aimY() { return aim.y; },
+		get aimX() { return activeAim().x; },
+		get aimY() { return activeAim().y; },
 		get nozzleX() { return nozzle.x; },
 		get nozzleY() { return nozzle.y; },
 		water, load, loadValue, loadTotal, flowU, solidMask,
@@ -1792,7 +1826,7 @@
 	});
 
 	const api = {
-		state, stateFor, reset, step, measureMetrics, createMetrics, estimateYield, depthAt, fill,
+		state, stateFor, reset, step, stepWild, measureMetrics, createMetrics, estimateYield, depthAt, fill,
 		fire, canFire, setAim, setAutoFire, setBotFire, clearBotFire,
 		setSaturationCap, setDissolveRate, setModel, setPump, setPumpMode, setErosion,
 		nozzleOf, cellIndexAt, settings, totals, draw, streamPower, streamReady,

@@ -2,13 +2,14 @@
 // cave-grounded platform motion (M2) and the P1/P2 step owner. Lives behind a
 // mode guard so Classic mode remains untouched.
 //
-// Depends on: js/cave.js, js/physics.js, js/wild-ball.js
+// Depends on: js/cave.js, js/physics.js, js/wild-ball.js, js/wild-water.js, js/water.js
 (function (root) {
 	'use strict';
 	const node = typeof module !== 'undefined' && module.exports;
 	const caveApi = node ? require('./cave.js') : root.SteamCave;
 	const physicsRef = node ? require('./physics.js') : root.SteamPhysics;
 	const ballRef = node ? require('./wild-ball.js') : null;
+	const water = node ? require('./wild-water.js') : root.SteamWildWater;
 
 	function phys() { return physicsRef || root.SteamPhysics; }
 	// Loaded after this file in the page, so the ball is resolved at call time.
@@ -214,6 +215,7 @@
 		const startX = cave.state.spawnX;
 		cave.stream(startX - viewWidth, startX + viewWidth, Infinity);
 		if (world) {
+			world.wildWater = water.create(cave, seed);
 			const p = phys();
 			const platform = world.platform;
 			const startFloor = cave.floorBelow(startX, cave.state.spawnY + 1);
@@ -267,6 +269,8 @@
 		p.movePlatform(world, dt);
 		p.updatePlatformTerrain(world, dt);
 		protectHull(world, dt);
+		water.stepIntake(world, dt);
+		if (root.SteamWater) root.SteamWater.stepWild(world, cave, dt);
 		p.advancePiston(world, dt);
 		const ballModule = ballApi();
 		if (ballModule) ballModule.step(world, cave, dt);

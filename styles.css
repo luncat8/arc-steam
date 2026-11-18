@@ -126,6 +126,7 @@ canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 .collector { background: var(--amber); }
 .reflector { background: var(--accent); }
 .pad { background: var(--power); }
+.seep { background: #43b5c5; }
 .view-switch { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .view-modes { display: flex; flex-wrap: wrap; border: 1px solid var(--control-line); border-radius: 4px; overflow: hidden; }
 .view-modes label { position: relative; padding: 6px 10px; font: 9px ui-monospace, monospace; letter-spacing: 1px; color: #94a8ac; cursor: pointer; user-select: none; }
@@ -160,6 +161,7 @@ canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 /* Autopilot switches: the label is the control, the shortcut sits on the right. */
 .autopilot { display: grid; margin: 8px 0 2px; border-top: 1px solid var(--line); padding-top: 6px; }
 .autopilot label { display: flex; align-items: center; gap: 7px; padding: 5px 0; font-size: 11px; color: #a7b8ba; cursor: pointer; user-select: none; }
+.autopilot label[hidden] { display: none; }
 .autopilot label:hover { color: #dce6e4; }
 .autopilot label:has(:checked) { color: var(--accent); }
 .autopilot label:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -178,6 +180,15 @@ canvas { width: 100%; height: 100%; display: block; cursor: crosshair; }
 .eyebrow-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 16px 0 3px; }
 .eyebrow-row .eyebrow { margin: 0; }
 .controls > .eyebrow-row:first-child { margin-top: 0; }
+
+.tank-panel { margin-top: 16px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 4px; background: #0c161a; }
+.tank-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 8px; }
+.tank-heading .eyebrow { color: #81c9d3; }
+.tank-heading strong { font: 11px ui-monospace, monospace; }
+.tank-panel progress { accent-color: #43b5c5; }
+.tank-panel .hint { margin: 3px 0 0; }
+.tank-panel .autopilot { margin-top: 5px; padding-top: 2px; }
+.tank-panel .quiet { margin-top: 7px; padding: 5px 8px; font-size: 11px; }
 
 #mineral-cell { display: block; margin-bottom: 8px; font: 11px ui-monospace, monospace; letter-spacing: 0.4px; color: var(--accent); }
 #mineral-strength { display: block; font: 13px ui-monospace, monospace; line-height: 1.5; }

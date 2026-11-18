@@ -464,20 +464,14 @@ function bindInput() {
 		SteamRockets.setAutoBuy(ui['rocket-auto'].checked, activePlayerId());
 		refresh();
 	});
-	// The fabricator loads the rack from the cargo: one manual cycle per
-	// press, or one every cycleTime while auto-fab is held. The controls
-	// only exist when the ROCKET FAB row is rendered, so guard for tests
-	// that run without the full page.
-	if (typeof SteamRocketFab !== 'undefined' && ui['rocket-fab']) {
-		ui['rocket-fab'].addEventListener('click', function () {
-			SteamRocketFab.fab(world, activePlayerId());
-			refresh();
-		});
-		ui['rocket-fab-auto'].addEventListener('change', function () {
-			SteamRocketFab.setAuto(ui['rocket-fab-auto'].checked, activePlayerId());
-			refresh();
-		});
-	}
+	ui['rocket-fab'].addEventListener('click', function () {
+		SteamRocketFab.fab(world, activePlayerId());
+		refresh();
+	});
+	ui['rocket-fab-auto'].addEventListener('change', function () {
+		SteamRocketFab.setAuto(ui['rocket-fab-auto'].checked, activePlayerId());
+		refresh();
+	});
 	ui['sandblast-fire'].addEventListener('pointerdown', function (event) {
 		ui['sandblast-fire'].setPointerCapture(event.pointerId);
 		blastHeld = true;
@@ -506,6 +500,14 @@ function bindInput() {
 	});
 	ui['water-auto'].addEventListener('change', function () {
 		SteamWater.setAutoFire(ui['water-auto'].checked, activePlayerId());
+		refresh();
+	});
+	ui['wild-tank-drain'].addEventListener('click', function () {
+		SteamWildWater.drain(world);
+		refresh();
+	});
+	ui['wild-intake'].addEventListener('change', function () {
+		if (world.wildWater) world.wildWater.intakeOn = ui['wild-intake'].checked;
 		refresh();
 	});
 	ui['water-pump'].addEventListener('change', function () {

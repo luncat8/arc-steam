@@ -850,13 +850,13 @@
 	// Collector mounts use the same chassis pose as the drawing. Fraction runs
 	// along the collector; height is the muzzle's local height above the deck.
 	const collectorPoint = { x: 0, y: 0, angle: 0 };
-	function collectorPointAt(world, owner, fraction, height, out) {
+	function collectorPointAt(world, owner, fraction, height, out, openSection) {
 		const body = machineBody(machineById(world, ownerId(owner)));
 		const f = fraction === undefined || fraction === null ? 0.5 : fraction;
 		const localX = config.platformWidth * (config.collectorFraction * f - 0.5);
 		platformPointAt(body.x, body.y, body.angle, localX, config.deck + height, 0, out);
-		// The collector can enter the wall pocket; launches stay in the chamber.
-		out.x = Math.max(0, Math.min(config.width, out.x));
+		// Launches into the chamber stay outside its wall pocket.
+		if (!openSection) out.x = Math.max(0, Math.min(config.width, out.x));
 		return out;
 	}
 	function collectorX(world, owner, fraction) {
@@ -1016,7 +1016,7 @@
 			brake: false, drive: true, forceSetting: 0.6, direction: 0, target: NaN,
 			pistonAngle: 0, pistonOffset: 0, pistonVelocity: 0, pistonImpact: 0,
 			platform: { id: 'rig', x: 12, y: 0, vx: 0, vy: 0, angle: 0, omega: 0, spin: 0, previousX: 12, previousY: 0, previousAngle: 0, stepVx: 0, stepVy: 0, stepOmega: 0, brakeImpulse: 0, brakeHeld: false, collisionMass: 0, collisionX: 0, wheelDrop: [0, 0] },
-			balls: [], ballMode: 'shared1', focus: null,
+			balls: [], ballMode: 'shared1', focus: null, wildWater: null,
 			bounces: 0, pushes: 0, lastPush: 0, groundings: 0, sales: 0, lastSale: 0
 		};
 		setBallMode(world, 'shared1', []);
@@ -1045,7 +1045,7 @@
 	}
 
 	function platformMass(world) {
-		return dryMass() + cargoMass() + heldBallMass(world);
+		return dryMass() + cargoMass() + heldBallMass(world) + (world.wildWater ? world.wildWater.mass : 0);
 	}
 
 	// Carried mass for collision and drive calculations on any platform. The
@@ -1070,7 +1070,8 @@
 		const balls = world.balls || [];
 		let ballEnergyTotal = 0;
 		for (let i = 0; i < balls.length; i++) if (isRigBall(balls[i])) ballEnergyTotal += ballEnergy(balls[i]);
-		return world.battery + world.heat + world.cooledEnergy + world.fractureEnergy - world.importedEnergy - world.terrainWork - world.platformWork + world.exportedProduct + ceilingEnergy + ballEnergyTotal + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
+		const tankPotential = world.wildWater ? world.wildWater.potential : 0;
+		return world.battery + world.heat + world.cooledEnergy + world.fractureEnergy - world.importedEnergy - world.terrainWork - world.platformWork + world.exportedProduct + ceilingEnergy + ballEnergyTotal + tankPotential + 0.5 * platformMass(world) * world.platform.vx * world.platform.vx;
 	}
 
 	function temperature(world) {

@@ -457,6 +457,14 @@ async function main() {
 		await page.locator('#game-mode').selectOption('wild');
 		await page.waitForFunction(() => SteamWildMine.isWild() === true);
 		assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Wild Mine mobile fits viewport');
+		assert.equal(await page.locator('#wild-water-controls').isVisible(), true);
+		assert.equal(await page.locator('#classic-pump-order').isVisible(), false);
+		assert.equal(await page.locator('#seep-key').isVisible(), true);
+		await page.waitForFunction(() => document.getElementById('wild-tank-meter').value > 0);
+		assert.match(await page.locator('#wild-tank-mix').textContent(), /kg spray water · .* kg oil condensate/);
+		await page.locator('#wild-intake').scrollIntoViewIfNeeded();
+		await page.locator('#wild-intake').uncheck();
+		assert.equal(await page.locator('#wild-intake-note').textContent(), 'Intake off.');
 		await page.setViewportSize({ width: 1440, height: 1000 });
 		await page.locator('#c').scrollIntoViewIfNeeded();
 		await page.waitForTimeout(80);
@@ -475,6 +483,8 @@ async function main() {
 		assert.equal(await page.locator('#chamber-title').textContent(), 'ARC STEAM · TEST CHAMBER / 24 × 15 M');
 		assert.equal(await page.locator('#piston-angle').getAttribute('max'), '10');
 		assert.equal(await page.locator('.player-row').nth(1).evaluate(el => getComputedStyle(el).display), 'flex', 'rival row restored in Classic');
+		assert.equal(await page.locator('#wild-water-controls').isVisible(), false);
+		assert.equal(await page.locator('#classic-pump-order').isVisible(), true);
 		assert.deepEqual(errors, []);
 		// Touch-only devices keep the view menu click-only. The touch page must be in
 		// front: a background page throttles its animation frames, and an unthrottled

@@ -1,18 +1,16 @@
 // Wild Mine fuel: the cave has no charge pad, so the installed engine burns
-// cargo minerals to keep the reserve full. Every engine family owns one fuel
-// grade; a burn takes the cheapest cell per joule inside that family first,
-// adds the chemical energy to the reserve, and books the cargo's already
-// counted gravitational potential against the imported share, so the one
-// energy ledger stays exact. Classic mode never burns: its charge pad is
-// unchanged.
+// cargo minerals to keep the reserve full. Oil draws tank condensate first,
+// then follows the same cheapest-cargo-per-joule rule as the other engines.
+// The cargo's already counted potential offsets the imported chemical energy.
 //
-// Depends on: js/ceiling.js, js/physics.js, js/minerals.js
+// Depends on: js/ceiling.js, js/physics.js, js/minerals.js, js/wild-water.js
 (function (root) {
 	'use strict';
 	const node = typeof module !== 'undefined' && module.exports;
 	const physicsRef = node ? require('./physics.js') : root.SteamPhysics;
 	const ceilingRef = node ? require('./ceiling.js') : root.SteamCeiling;
 	const mineralsRef = node ? require('./minerals.js') : root.SteamMinerals;
+	const wildWater = node ? require('./wild-water.js') : root.SteamWildWater;
 
 	function phys() { return physicsRef || root.SteamPhysics; }
 	function ceiling() { return ceilingRef || root.SteamCeiling; }
@@ -27,7 +25,8 @@
 		'gas rock, fizzy halite, fluorite, vitriol or halite',
 		'iron, copper, corundum, silver or gold'
 	]);
-	const engineGrades = Object.freeze({ hand: -1, coal: 0, electric: 0, oil: 1, nuclear: 2 });
+	const liquidGrade = 1;
+	const engineGrades = Object.freeze({ hand: -1, coal: 0, electric: 0, oil: liquidGrade, nuclear: 2 });
 	// Chemical energy per kg of each fuel mineral. A cargo cell is cellMass kg,
 	// so a stone cell is 1.8 kJ of solid fuel and a gold cell 48 kJ of fissile
 	// fuel before engine efficiency. Fuels are families rather than single
@@ -73,10 +72,10 @@
 	// and the tests read the same numbers from the same rule.
 	const readout = {
 		engineId: '', engineName: '', grade: '', gradeIndex: -1, gradeName: '', fuelList: '',
-		mass: 0, chemical: 0, cells: 0, refillPower: 0, usefulPower: 0,
+		mass: 0, chemical: 0, cells: 0, tankFuel: 0, refillPower: 0, usefulPower: 0, reason: '',
 		burnedMass: 0, burnedChemical: 0, burnedValue: 0
 	};
-	function read(owner) {
+	function read(world, owner) {
 		const physics = phys();
 		const engine = physics ? physics.engineNow(owner) : null;
 		const state = ceiling() ? ceiling().state : null;
@@ -100,22 +99,21 @@
 		}
 		const capacity = physics ? physics.config.battery : 0;
 		const profile = profileFor(owner);
-		readout.mass = mass;
-		readout.chemical = chemical;
+		const tank = grade === liquidGrade && world && ownerId(owner) === world.platform.id ? world.wildWater : null;
+		readout.tankFuel = tank ? tank.condensate : 0;
+		readout.mass = mass + readout.tankFuel;
+		readout.chemical = chemical + readout.tankFuel * wildWater.condensateYield;
 		readout.cells = state ? mass / state.cellMass : 0;
 		readout.refillPower = grade >= 0 && engine.reload > 0 ? capacity / engine.reload : 0;
 		readout.usefulPower = engine ? readout.refillPower * engine.efficiency : 0;
 		readout.burnedMass = profile.burnedMass;
 		readout.burnedChemical = profile.burnedChemical;
 		readout.burnedValue = profile.burnedValue;
+		readout.reason = grade < 0 ? 'Hand engine · no fuel burn · hand-crank only'
+			: readout.chemical > 0 ? ''
+			: grade === liquidGrade ? 'No liquid fuel · collect cave condensate or mine ' + readout.fuelList
+			: 'No ' + readout.grade + ' fuel in cargo · mine ' + readout.fuelList;
 		return readout;
-	}
-
-	function reason(owner) {
-		const info = read(owner);
-		if (info.gradeIndex < 0) return 'Hand engine · no fuel burn · hand-crank only';
-		if (!(info.chemical > 0)) return 'No ' + info.grade + ' fuel in cargo · mine ' + info.fuelList;
-		return '';
 	}
 
 	function yieldOf(grade, mineral) {
@@ -129,7 +127,7 @@
 	// was already in the ledger, so only the chemical remainder is imported.
 	function burn(world, chemical, owner) {
 		const physics = phys();
-		if (!world || !physics || !(chemical > 0) || !physics.wildMode()) return 0;
+		if (!world || !physics || !(chemical > 0) || !physics.wildMode() || ownerId(owner) !== world.platform.id) return 0;
 		const engine = physics.engineNow(owner);
 		const grade = gradeForEngine(engine.id);
 		if (grade < 0) return 0;
@@ -139,9 +137,10 @@
 		const yields = gradeYields[grade];
 		const cellMass = state.cellMass;
 		const beforeCells = state.cargoCells;
-		let remaining = chemical;
-		let burnedMass = 0;
-		let burnedChemical = 0;
+		const tankFuel = grade === liquidGrade ? wildWater.takeFuel(world, chemical) : 0;
+		let remaining = chemical - tankFuel;
+		let burnedMass = tankFuel / wildWater.condensateYield;
+		let burnedChemical = tankFuel;
 		let burnedValue = 0;
 		while (remaining > 1e-12) {
 			let best = -1;
@@ -211,7 +210,7 @@
 
 	const api = {
 		gradeIds, gradeNames, gradeLists, engineGrades, yieldsById,
-		reset, read, reason, yieldOf, burn, step,
+		reset, read, yieldOf, burn, step,
 		// Exported for probes and tests; the page uses read().
 		profileFor
 	};

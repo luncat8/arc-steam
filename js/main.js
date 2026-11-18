@@ -11,7 +11,7 @@ const config = physics.config;
 const canvas = document.getElementById('c');
 const context = canvas.getContext('2d');
 const ids = ['chamber-title', 'game-mode', 'clock', 'drive', 'launch', 'status-bar', 'status-ball', 'status-energy', 'fact-reserve', 'fact-cargo', 'fact-temp', 'prediction-status', 'drive-yield', 'force', 'force-value', 'piston-angle', 'piston-value',
-	'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'balls', 'ground-bounce', 'ball-perspective', 'debris-compression', 'commune', 'test-mode', 'view-modes',
+	'autopilot', 'auto-move', 'auto-smart', 'auto-drive', 'auto-angle', 'autopilot-status', 'battery', 'cargo', 'platform-mass', 'platform-mass-note', 'funds', 'funds-note', 'ball-energy', 'heat', 'temperature', 'thermal-status', 'cooled', 'error', 'motion', 'pause', 'speed', 'shape', 'balls', 'ground-bounce', 'ball-perspective', 'debris-compression', 'commune', 'test-mode', 'view-modes',
 	'platform-spec', 'spec-card', 'progression-tree', 'tree-links', 'progression-status', 'research-progress', 'science-funds', 'science-title',
 	'mineral-cell', 'mineral-strength', 'strength-meter', 'mineral-composition', 'mineral-price', 'rock-damage-view',
 	'cluster-settings', 'generate-test-rock', 'fall-test-status',
@@ -21,9 +21,11 @@ const ids = ['chamber-title', 'game-mode', 'clock', 'drive', 'launch', 'status-b
 	'reserve-telemetry', 'cargo-telemetry', 'thermal-telemetry', 'mineral-tooltip', 'science-drawer', 'market-drawer', 'science-open', 'science-close', 'market-open', 'market-close',
 	'telemetry', 'player-list', 'control-title', 'rig-drive',
 	'ball-controls', 'ball-left', 'ball-right', 'ball-jump', 'ball-orders', 'ball-recycle',
-	'rocket-fire', 'rocket-buy', 'rocket-auto', 'rocket-status',
+	'rocket-fire', 'rocket-buy', 'rocket-auto', 'rocket-status', 'rocket-fab', 'rocket-fab-auto', 'rocket-fab-status',
 	'sandblast-fire', 'sandblast-auto', 'sandblast-status', 'sandblast-yield',
-	'water-fire', 'water-aim', 'water-auto', 'water-pump', 'water-pump-solute', 'water-status', 'water-yield'];
+	'water-fire', 'water-aim', 'water-auto', 'water-pump', 'water-pump-solute', 'water-status', 'water-yield',
+	'classic-pump-order', 'classic-solute-order', 'pad-key', 'seep-key',
+	'wild-water-controls', 'wild-tank-level', 'wild-tank-meter', 'wild-tank-mix', 'wild-tank-drain', 'wild-intake', 'wild-intake-note'];
 // One mark per help topic, plus the drawer it feeds.
 for (const topic of window.SteamHelp.topics) ids.push('help-' + topic.id);
 ids.push('help-drawer', 'help-close', 'help-head', 'help-title', 'help-body', 'help-index');

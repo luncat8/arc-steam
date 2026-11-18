@@ -3,8 +3,9 @@
 // at, so this is how a section keeps its tubes filled. One cycle makes one
 // rocket from one cargo cell of minerals plus 2 kJ of useful energy burned
 // by the installed engine at its efficiency; physics.spend books the waste
-// share into machine heat, so the one energy ledger stays exact.
-// Depends on (at call time): js/ceiling.js, js/physics.js, js/equipment.js, js/rockets.js
+// share into machine heat for the rig. Competitors use their own hopper
+// and powertrain, outside the rig reserve.
+// Depends on: js/ceiling.js, js/physics.js, js/equipment.js, js/rockets.js and js/players.js at call time
 (function (root) {
 	'use strict';
 	const node = typeof module !== 'undefined' && module.exports;
@@ -58,46 +59,43 @@
 	}
 	function isAuto(owner) { return profileFor(owner).autoFab; }
 
-	// One atomic cycle: nothing happens unless the rack has a free tube, the
-	// cargo holds a full cell of minerals and the reserve can pay the energy.
+	function cargoFor(world, id) {
+		if (id === world.platform.id) return ceiling().state;
+		const machine = phys().machineById(world, id);
+		return machine === world ? null : machine;
+	}
+
+	// One atomic cycle: nothing happens without a free tube, a full cell and
+	// enough charge if the rig is making the rocket.
 	function fabCycle(world, owner) {
 		const id = ownerId(owner);
+		const state = cargoFor(world, id);
+		if (waitReason(world, id, state)) return 0;
+		const rig = id === world.platform.id;
 		const profile = profileFor(id);
-		const rack = rockets();
-		if (!rack || !hasRack(owner) || !hasFab(owner)) return 0;
-		const stock = rack.stateFor(id).stock;
-		if (!(stock < rackSize)) return 0;
-		const eco = ceiling();
-		const state = eco.state;
-		if (!(state.cargoCells >= 1)) return 0;
-		const cost = energyPerRocket / phys().engineNow(id).efficiency;
-		if (!(world.battery >= cost)) return 0;
-
-		// Take one cell of minerals from the cargo, in table order.
 		const cellsBefore = state.cargoCells;
 		let remaining = mineralsPerRocket;
 		for (let m = 0; m < minerals().mineralCount && remaining > 1e-9; m++) {
 			const take = Math.min(remaining, state.cargoMinerals[m]);
 			if (!(take > 0)) continue;
-			eco.unloadCargo(m, take);
+			if (rig) ceiling().unloadCargo(m, take);
+			else root.SteamPlayers.unloadCargo(state, m, take);
 			profile.consumedMass += take;
 			profile.lastMineral = m;
 			profile.lastMass = take;
 			remaining -= take;
 		}
 
-		// The engine burns the energy at its efficiency; the unspent share
-		// becomes machine heat through the same spend rule every tool uses.
-		const delivered = phys().spend(world, energyPerRocket);
-		// A rocket carries its charge out of the platform ledger, like a sold
-		// product. The cargo it consumed already carried potential and kinetic
-		// energy, so both leave with it and the balance stays exact.
-		const removedMass = Math.max(0, cellsBefore - state.cargoCells) * state.cellMass;
-		if (id === 'rig') world.exportedProduct += delivered
-			+ removedMass * phys().config.gravity * state.cargoHeight
-			+ 0.5 * removedMass * world.platform.vx * world.platform.vx;
+		if (rig) {
+			// The rocket carries the press work and its material's potential and
+			// kinetic energy out of the platform ledger, like a sold product.
+			const delivered = phys().spend(world, energyPerRocket);
+			const removedMass = Math.max(0, cellsBefore - state.cargoCells) * cellMass;
+			world.exportedProduct += delivered + removedMass * phys().config.gravity * state.cargoHeight
+				+ 0.5 * removedMass * world.platform.vx * world.platform.vx;
+		}
 
-		const loaded = rack.load(1, id);
+		const loaded = rockets().load(1, id);
 		profile.produced += loaded;
 		profile.energySpent += energyPerRocket;
 		return loaded;
@@ -135,21 +133,19 @@
 		}
 	}
 
-	// One line only while the press or the auto duty waits: the rack, the
-	// cargo cell or the reserve is what stops the line.
-	function reason(world, owner) {
-		if (!equipment() || !equipment().isInstalled('rocket-fab', owner))
-			return 'No rocket fab installed · fit one in Science + Shop';
-		if (!equipment().isInstalled('rocket-rack', owner))
-			return 'No rocket rack · the fab loads the rack';
-		const stock = rockets().stateFor(owner).stock;
-		if (stock >= rackSize) return 'Rack full';
-		const state = ceiling().state;
-		if (!(state.cargoCells >= 1)) return 'Cargo empty · mine minerals to feed the fab';
-		const cost = energyPerRocket / phys().engineNow(owner).efficiency;
-		if (!(world.battery >= cost))
+	function waitReason(world, id, cargo) {
+		if (!hasFab(id)) return 'No rocket fab installed · fit one in Science + Shop';
+		if (!hasRack(id)) return 'No rocket rack · the fab loads the rack';
+		if (rockets().stateFor(id).stock >= rackSize) return 'Rack full';
+		if (!cargo || cargo.cargoCells < 1) return 'Cargo empty · mine minerals to feed the fab';
+		if (id === world.platform.id && world.battery < phys().reserveCost(energyPerRocket, id))
 			return 'Reserve too low · the engine burns ' + (energyPerRocket / 1000).toFixed(1) + ' kJ per rocket';
 		return '';
+	}
+
+	function reason(world, owner) {
+		const id = ownerId(owner);
+		return waitReason(world, id, cargoFor(world, id));
 	}
 
 	const api = {

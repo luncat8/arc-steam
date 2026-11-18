@@ -352,14 +352,13 @@ function readout() {
 		else if (reserveWarning) setText(ui['reserve-note'], 'Low reserve · park on the centre pad');
 		else setText(ui['reserve-note'], 'Centre pad refills free in ' + config.chargeSeconds + ' s · emergency import in the market');
 	}
-	const heldMass = physics.heldBallMass(world);
 	const cargoFull = ceiling.cargoCells >= ceiling.storageLimit;
 	setWarning('cargo-telemetry', cargoFull ? 'FULL' : '');
 	if (!(typeof wildIsActive === 'function' && wildIsActive())) {
 		setText(ui['cargo-note'], cargoFull ? 'Full · extra fragments are refused until you sell at a wall' : '100 cells maximum · cargo adds mass');
 	}
 	ui.cargo.textContent = cellCount(ceiling.cargoCells) + ' / ' + ceiling.storageLimit;
-	ui['platform-mass'].textContent = (physics.dryMass() + ceiling.cargoMass + heldMass).toFixed(1) + ' kg';
+	ui['platform-mass'].textContent = physics.platformMass(world).toFixed(1) + ' kg';
 	ui.funds.textContent = ceiling.commune ? 'commons' : ceiling.funds.toFixed(1) + ' cr';
 	if (!(typeof wildIsActive === 'function' && wildIsActive())) {
 		setText(ui['funds-note'], ceiling.commune ? 'Nothing costs · sales still measured' : 'Automatic sale at either wall');
@@ -424,19 +423,13 @@ function rocketReadout() {
 // the reserve. A manual press always tries one cycle.
 function rocketFabReadout() {
 	const owner = activePlayerId();
-	const fabInstalled = SteamEquipment.isInstalled('rocket-fab', owner);
 	const rackInstalled = SteamEquipment.isInstalled('rocket-rack', owner);
 	const stock = rackInstalled ? SteamRockets.stateFor(owner).stock : 0;
-	if (ui['rocket-fab']) {
-		setText(ui['rocket-fab'], rackInstalled ? 'Fab 1 rocket · ' + stock + ' / ' + SteamRocketFab.rackSize : 'Fab 1 rocket');
-		setDisabled(ui['rocket-fab'], !fabInstalled || !rackInstalled);
-	}
-	if (ui['rocket-fab-auto']) setChecked(ui['rocket-fab-auto'], SteamRocketFab ? SteamRocketFab.isAuto(owner) : false);
-	const reason = SteamRocketFab ? SteamRocketFab.reason(world, owner) : '';
-	if (ui['rocket-fab-status']) {
-		setHidden(ui['rocket-fab-status'], !reason);
-		if (reason) setText(ui['rocket-fab-status'], reason);
-	}
+	const reason = SteamRocketFab.reason(world, owner);
+	setText(ui['rocket-fab'], rackInstalled ? 'Fab 1 rocket · ' + stock + ' / ' + SteamRocketFab.rackSize : 'Fab 1 rocket');
+	setDisabled(ui['rocket-fab'], Boolean(reason));
+	setChecked(ui['rocket-fab-auto'], SteamRocketFab.isAuto(owner));
+	setMessage(ui['rocket-fab-status'], reason, '');
 }
 
 // The nozzle takes grains out of the hopper, so cargo is not always whole cells.
@@ -476,14 +469,18 @@ function waterReadout() {
 	const owner = activePlayerId();
 	const gun = SteamWater.stateFor(owner);
 	const installed = SteamEquipment.isInstalled('watergun', owner);
+	setDisabled(ui['water-fire'], !SteamWater.canFire(world, owner));
+	setDisabled(ui['water-aim'], !installed);
+	setChecked(ui['water-auto'], gun.autoFire);
+	if (world.wildWater) {
+		wildWaterReadout(installed);
+		return;
+	}
 	const bot = playerApi.state.players[playerApi.state.active].bot;
 	const engine = bot ? physics.engineNow(owner) : null;
 	const stream = installed ? SteamWater.streamPower(owner) : 0;
 	const underpowered = bot && physics.reserveNow(owner) / engine.reload < stream;
 	const metrics = SteamWater.measureMetrics(waterMetrics);
-	setDisabled(ui['water-fire'], !installed || !SteamWater.canFire(world, owner));
-	setDisabled(ui['water-aim'], !installed);
-	setChecked(ui['water-auto'], gun.autoFire);
 	setChecked(ui['water-pump'], SteamWater.state.pumpOn);
 	setChecked(ui['water-pump-solute'], SteamWater.state.pumpMode === 'solute');
 	setDisabled(ui['water-pump-solute'], !SteamWater.state.pumpOn);
