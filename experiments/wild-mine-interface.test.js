@@ -105,6 +105,40 @@ test('switching #game-mode between Classic and Wild Mine reconfigures chamber, p
 	assert.equal(playerList.children[1].hidden, false);
 });
 
+test('Wild Bounce Assist shows available pulse work and measured fracture, not Classic sale estimates', () => {
+	const mode = dom.element('game-mode');
+	const note = dom.element('drive-yield');
+	mode.value = 'wild';
+	mode.dispatch('change');
+	advance(8);
+	assert.equal(note.hidden, false);
+	assert.equal(note.textContent, 'Next pulse 42.0 J');
+	dom.element('drive').dispatch('click');
+	assert.match(note.textContent, /Drive off/);
+	dom.element('drive').dispatch('click');
+	SteamEquipment.grant('coil', world);
+	world.battery = 10;
+	globalThis.readout();
+	assert.equal(note.textContent, 'Next pulse 8.0 J');
+	world.battery = 0;
+	globalThis.readout();
+	assert.match(note.textContent, /No pulse · reserve empty/);
+	world.battery = physics.config.battery;
+	world.heat = (physics.config.thermalCutoff - physics.config.ambientTemperature) * physics.config.heatCapacity;
+	globalThis.readout();
+	assert.match(note.textContent, /No pulse · thermal cutoff/);
+	world.heat = 0;
+	dom.element('launch').dispatch('click');
+	advance(48);
+	const ball = world.balls[0];
+	assert.ok(ball.hits && ball.lastFracture > 0);
+	globalThis.readout();
+	assert.equal(note.textContent, 'Next pulse 54.0 J · Last fracture ' + ball.lastFracture.toFixed(2) + ' J');
+	mode.value = 'classic';
+	mode.dispatch('change');
+	assert.match(note.textContent, /cr\/kJ/);
+});
+
 test('M3 ball controls: motor buttons/keys, piston-style jump actuator toggle and bounce recycle checkbox', () => {
 	const modeSelect = dom.element('game-mode');
 	modeSelect.value = 'wild';

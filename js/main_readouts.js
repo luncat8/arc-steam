@@ -515,7 +515,7 @@ function yieldTone(entry) {
 
 function toolYieldReadout(driveOn) {
 	if (typeof wildIsActive === 'function' && wildIsActive()) {
-		setMessage(ui['drive-yield'], '', '');
+		wildPistonReadout(driveOn);
 		setMessage(ui['sandblast-yield'], '', '');
 		setMessage(ui['water-yield'], '', '');
 		setMessage(ui['grader-yield'], '', '');

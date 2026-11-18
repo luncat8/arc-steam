@@ -1,6 +1,6 @@
 // Wild Mine canvas renderer, tile cache and mode-aware UI helpers.
 // Shares lexical scope with js/main*.js; all top-level bindings use a wild* prefix.
-// provides: wildIsActive, wildDraw, wildResize, wildSyncMode, wildResetRun, wildInspectRockAtPointer, wildPointerDown, wildWorldYOf, wildMineralReadout, wildStatusReadout, wildModeNotes, wildWaterReadout, wildPistonLimitDegrees, wildDrawCart
+// provides: wildIsActive, wildDraw, wildResize, wildSyncMode, wildResetRun, wildInspectRockAtPointer, wildPointerDown, wildWorldYOf, wildMineralReadout, wildStatusReadout, wildModeNotes, wildWaterReadout, wildPistonReadout, wildPistonLimitDegrees, wildDrawCart
 // depends: main.js bindings, SteamCave, SteamWildMine, SteamWildBall, SteamWildWater, SteamWater, SteamRockMaterials, SteamCeiling, SteamWildCart
 
 'use strict';
@@ -825,6 +825,16 @@ function wildWaterReadout(installed) {
 		: world.battery < physics.reserveCost(SteamWater.state.shotEnergy) ? 'Reserve too low to pressurize a droplet'
 		: '';
 	setMessage(ui['water-status'], reason, '');
+}
+
+function wildPistonReadout(driveOn) {
+	const available = driveOn ? physics.launchCapacity(world) : 0;
+	let note = 'Drive off · passive piston';
+	if (available > 0) note = 'Next pulse ' + available.toFixed(1) + ' J';
+	else if (driveOn) note = world.battery > 0 ? 'No pulse · thermal cutoff' : 'No pulse · reserve empty';
+	const ball = world.balls[0];
+	if (ball && ball.hits) note += ' · Last fracture ' + ball.lastFracture.toFixed(2) + ' J';
+	setMessage(ui['drive-yield'], note, driveOn && !available ? 'warn' : '');
 }
 
 function wildSyncBallControls(ball) {

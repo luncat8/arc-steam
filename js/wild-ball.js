@@ -42,8 +42,6 @@
 	// ball diameter and the normal closing speed stays under 0.35 m/s.
 	const curvatureLimit = Math.PI / 6;
 	const bounceFloor = 0.35;
-	// D2: a passive hit keeps 90% of its normal energy.
-	const restitution = Math.sqrt(0.9);
 	// D4: Coulomb friction couples spin and tangential velocity on bounce and roll;
 	// rolling resistance settles a coasting roll into heat; restSpeed sleeps a
 	// motor-off ball once both centre and rim speeds have died.
@@ -126,7 +124,7 @@
 	const trace = { time: Infinity, x: 0, y: 0, nx: 0, ny: 1 };
 	const pileTrace = { time: Infinity, x: 0, y: 0, nx: 0, ny: 1, face: NaN, crest: NaN, height: 0, hasPile: false, row: -1 };
 	const pileSupport = { face: NaN, crest: NaN, height: 0, nx: 0, ny: 1, hasPile: false, row: -1 };
-	const deckHit = { hit: false, nx: 0, ny: 1, lny: 0, distance: 0, clampedX: 0, push: 0 };
+	const deckHit = { hit: false, piston: false, front: false, nx: 0, ny: 1, lny: 0, pointX: 0, pointY: 0, push: 0 };
 	const mixScratch = new Float64Array(rockTable.mineralCount);
 	const elementScratch = new Float32Array(3);
 	const rgbScratch = new Float64Array(3);
@@ -218,8 +216,8 @@
 			piston = true;
 		}
 		deckHit.hit = distance < r;
-		deckHit.distance = distance;
 		deckHit.piston = piston;
+		deckHit.front = ny * pc - nx * ps > 0.5;
 		deckHit.pointX = pointX;
 		deckHit.pointY = pointY;
 		deckHit.nx = nx * cosine - ny * sine;
@@ -656,10 +654,11 @@
 			ball.contact = outVn <= leaveSpeed && ny > 0 ? CONTACT_ROCK : CONTACT_NONE;
 			return true;
 		}
-		// D3: the passive bounce's 10% normal loss is always the fracture budget.
+		// Only the normal energy lost by this strike head is available to weaken rock.
+		const retention = phys().rockRetentionNow(ball.owner);
 		const before = kineticEnergy(ball);
 		const inboundEnergy = 0.5 * m * vn * vn;
-		const budget = inboundEnergy * (1 - restitution * restitution);
+		const budget = inboundEnergy * (1 - retention);
 		// Aim into the struck cell, not the void side of a grid-aligned face.
 		const inset = cave.state.cell * 0.5;
 		const x = throughSoil ? ball.x : ball.x - nx * (r + inset);
@@ -669,7 +668,7 @@
 		world.heat += budget - spent;
 		ball.lastFracture = spent;
 		ball.hits++;
-		let outVn = restitution * impact;
+		let outVn = Math.sqrt(retention) * impact;
 		if (ball.recycle) {
 			const dampedVn = outVn * Math.sqrt(1 - recycleDamping);
 			outVn = dampedVn < bounceFloor && smooth && ny > 0 ? 0 : dampedVn;
@@ -848,6 +847,14 @@
 		flyFree(world, ball, r, dt - contact.time, false);
 	}
 
+	function takePistonPulse(world, armed) {
+		const p = phys();
+		const useful = armed ? p.spend(world, p.launchCapacity(world)) : 0;
+		world.lastPush = useful;
+		if (useful > 0) world.pushes++;
+		return useful;
+	}
+
 	function deckStep(world, ball, r, dt) {
 		const plate = world.platform;
 		if (!probeDeck(world, ball.x, ball.y, r).hit) {
@@ -874,7 +881,7 @@
 		let normalImpulse = m * phys().config.ballGravity * Math.max(0, hit.ny) * dt;
 		if (vn < 0) {
 			const before = mechanicalEnergy(ball);
-			const passiveOut = -restitution * vn;
+			const passiveOut = -Math.sqrt(phys().retentionNow(plate.id)) * vn;
 			ball.vx += (passiveOut - vn) * hit.nx;
 			ball.vy += (passiveOut - vn) * hit.ny;
 			const passiveAfter = mechanicalEnergy(ball);
@@ -889,17 +896,14 @@
 				if (passiveAfter > dampedAfter) recycleEnergy(world, ball, passiveAfter - dampedAfter);
 				else bookMech(world, passiveAfter, dampedAfter);
 			}
-			if (hit.piston && hit.nx * -Math.sin(plate.angle + world.pistonAngle) + hit.ny * Math.cos(plate.angle + world.pistonAngle) > 0.5 && phys().machineDrive(world)) {
-				const p = phys();
-				const useful = p.spend(world, p.pulseNow() * p.thermalFactor(world));
+			const useful = hit.piston ? takePistonPulse(world, hit.front && phys().machineDrive(world)) : 0;
+			if (useful > 0) {
 				const boosted = Math.sqrt(outVn * outVn + 2 * useful / m);
 				const beforePush = mechanicalEnergy(ball);
 				ball.vx += (boosted - outVn) * hit.nx;
 				ball.vy += (boosted - outVn) * hit.ny;
 				bookMech(world, beforePush + useful, mechanicalEnergy(ball));
 				outVn = boosted;
-				world.lastPush = useful;
-				world.pushes++;
 			}
 			normalImpulse += m * (outVn - vn);
 			ball.bounces++;
@@ -1010,15 +1014,15 @@
 		ball.groundNy = 0;
 		ball.releaseCooldown = releaseCooldownTime;
 		const m = massOf(ball);
-		const useful = p.spend(world, p.pulseNow() * p.thermalFactor(world));
+		const useful = takePistonPulse(world, true);
 		const speed = Math.sqrt(2 * useful / m);
 		ball.vx += -Math.sin(faceAngle) * speed;
 		ball.vy += Math.cos(faceAngle) * speed;
-		bookMech(world, useful, mechanicalEnergy(ball));
+		// Before release this mass already carried horizontal energy in platformMass.
+		const carried = 0.5 * m * plate.vx * plate.vx;
+		bookMech(world, carried + useful, mechanicalEnergy(ball));
 		holder.pistonOffset = p.config.pistonTravel * 0.6;
 		holder.pistonVelocity = 0;
-		world.pushes++;
-		world.lastPush = useful;
 		return true;
 	}
 
@@ -1160,7 +1164,7 @@
 
 	const api = {
 		CONTACT_NONE, CONTACT_ROCK, CONTACT_DECK,
-		inertiaFactor, curvatureLimit, bounceFloor, restitution,
+		inertiaFactor, curvatureLimit, bounceFloor,
 		surfaceFriction, rollingResistance, restSpeed, groundMemoryTime, faintNibble, handOffLimit,
 		batteryCapacity, chargePower, chargeEfficiency,
 		motorAcceleration, motorTopSpeed, motorFreeSpeed, motorEfficiency,

@@ -248,7 +248,7 @@ test('piston reflects and powers a returning ball; collector alone captures it',
 	}
 });
 
-test('tilted piston reflects on its actual face and an empty reserve gives no free pulse', () => {
+test('a vertical piston reflects on both sides but powers only a funded front-face hit', () => {
 	try {
 		const { world, cave, ball } = wildWorld(1);
 		const plate = world.platform;
@@ -262,6 +262,21 @@ test('tilted piston reflects on its actual face and an empty reserve gives no fr
 		assert.equal(ball.state, 'flying');
 		assert.ok(ball.vx < -1, 'vertical piston reflects horizontally');
 		assert.equal(world.battery, 0);
+		assert.equal(world.pushes, 0);
+		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
+
+		world.battery = 100;
+		freeBall(world, cave, cx + r - 0.01, cy + 0.6, -2, 0);
+		wildBall.step(world, cave, physics.config.step);
+		assert.ok(ball.vx > 1, 'the back face reflects passively');
+		assert.equal(world.battery, 100);
+		assert.equal(world.pushes, 0);
+		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
+
+		freeBall(world, cave, cx - r + 0.01, cy + 0.6, 2, 0);
+		wildBall.step(world, cave, physics.config.step);
+		assert.ok(ball.vx < -4, 'the charged front face adds a horizontal push');
+		assert.equal(world.pushes, 1);
 		assert.ok(Math.abs(ledgerDrift(world)) < 1e-8);
 	} finally {
 		resetClassic();
@@ -766,7 +781,7 @@ test('M3 D5 classification: a slow contact is a roll, a fast one is a hit that w
 		assert.equal(fast.ball.hits, 1, 'the fast contact is one hit');
 		assert.ok(fast.world.fractureEnergy > 5, 'the hit books fracture energy');
 		assert.ok(fast.ball.vy > 3, 'the hit keeps sqrt(0.9) of the normal speed');
-		const budget = 0.5 * physics.ballMassFor(fast.ball) * 36 * (1 - wildBall.restitution * wildBall.restitution);
+		const budget = 0.5 * physics.ballMassFor(fast.ball) * 36 * (1 - physics.rockRetentionNow(fast.ball.owner));
 		assert.ok(Math.abs(fast.world.fractureEnergy - budget) < budget * 0.02, 'E = half m v_n^2 (1 - e^2) reaches weaken');
 		assert.ok(Math.abs(ledgerDrift(fast.world)) < 1e-8);
 	} finally {
@@ -1039,7 +1054,7 @@ test('a hit on a settled bed transmits only a diffuse share to its backing rock,
 		freeBall(world, cave, x, crest + physics.config.radius - 0.001, 0, -5);
 		physics.step(world, physics.config.step);
 		assert.ok(ball.vy > 0 && ball.y >= crest + physics.config.radius, 'the crest, not buried rock, owns the bounce');
-		const budget = 0.5 * physics.ballMassFor(ball) * 25 * (1 - wildBall.restitution ** 2);
+		const budget = 0.5 * physics.ballMassFor(ball) * 25 * (1 - physics.rockRetentionNow(ball.owner));
 		assert.ok(ball.lastFracture > 0 && ball.lastFracture <= budget * 0.2 + 1e-10);
 		assert.ok(cave.strengthAt(c, row) < center);
 		assert.ok(cave.strengthAt(c - 12, row) < far, 'transmitted damage reaches beyond the bare strike radius');

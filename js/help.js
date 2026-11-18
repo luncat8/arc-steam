@@ -131,10 +131,10 @@
 			label: 'Drive',
 			title: 'Bounce drive',
 			text: [
-				'The drive is on by default. Each powered contact adds the pulse shown in the installed specification — 42 J at base tuning, drawn from the 12 kJ reserve at about 80% efficiency, so one powered bounce costs up to 52.5 J.',
-				'Three powered bounces from a release reach the ceiling, and the drive only pulses on contact, so it never fights the passive bounce.',
+				'The drive is on by default. The stock piston delivers 42 J per pulse, drawing 52.5 J from the electric reserve at 80% efficiency. The drive coil and piston ram increase the pulse.',
+				'In the classic chamber, three powered bounces from a stock release reach the ceiling, and the drive only pulses on contact, so it never fights the passive bounce.',
 				'The drive heats with work. A hot drive is derated and a cut-off drive produces nothing until it cools; the temperature card tags HOT and CUTOFF.',
-				'The expected-return line below the drive button prices each strike in cr/kJ against the emergency fuel rate at the predicted or overhead rock column.'
+				'In Classic, the line below Release estimates credits per kJ. In Wild Mine it shows the next available pulse after heat and reserve limits. Last fracture is work actually spent weakening rock on the last hit, even if no cell came loose.'
 			],
 			keys: [
 				['Space / Q', 'Toggle the drive without pressing a focused control'],
@@ -163,13 +163,13 @@
 			label: 'Tilt',
 			title: 'Reflector tilt',
 			text: [
-				'The reflector is a sprung piston whose face tilts ±10°. A positive angle raises the right edge and sends a falling ball left, so drag towards where the ball should go — left or up raises the angle.',
+				'The reflector is a sprung piston whose face tilts ±10° in Classic or ±90° in Wild Mine. A positive angle raises the right edge and sends a falling ball left, so drag towards where the ball should go — left or up raises the angle.',
 				'Each contact compresses the piston in proportion to normal impact speed (0.024 m per m/s, capped at 0.16 m) and a damped spring pushes it back out. Compression is drawn only; the collision plane stays at its rest position.',
 				'The tilt is the machine’s own: the wheel, the slider and a drag steer the selected platform’s reflector, every platform’s reflector answers a ball off its own tilt, and the ballistic computer draws the flight against it.',
 				'The slider covers the whole range, and a wheel notch over the chamber steps about 4°.'
 			],
 			keys: [
-				['Slider', '−10° to +10°'],
+				['Slider', '±10° in Classic · ±90° in Wild Mine'],
 				['Wheel over chamber', 'About 4° a notch'],
 				['Drag in open air', 'Follows the pointer; left or up raises the angle']
 			]
@@ -182,14 +182,14 @@
 				'In Wild Mine the ball is the second player: a rigid sphere with moment of inertia 2/5 m r² and its own onboard battery. It rests in the collector until E releases it, then ← and → apply spin torque in either direction. On rock, surface friction turns that spin into rolling; release the motor and rolling resistance plus a rest snap stop both the roll and leftover spin, even when the ball is sitting against a wall. In mid-air there is no friction and no translational mass to push, so the motor winds spin up 3.5× faster and to a higher free speed. When a spinning ball hits a floor, wall, ceiling or deck, Coulomb friction bites in proportion to the normal impact force — kicking topspin forward, checking backspin, climbing walls or skidding and carrying leftover spin into the next bounce.',
 				'The jump actuator works like the platform’s bounce drive: switching it on (the Jump actuator button or ↑) feeds battery energy into the actuator, kicking off from a roll along the contact normal while keeping tangential speed and spin, and boosting every subsequent rock bounce until switched off or drained.',
 				'Recycle bounce energy (the checkbox or ↓) acts like the platform’s regenerative brake flywheel: it actively damps rebounds to stop bouncing quickly and returns 55% of the damped energy to the ball battery at 90% efficiency, venting the rest as heat while leaving the roll intact. Engaging jump switches recycling off, and engaging recycling switches jump off.',
-				'The battery recharges cleanly by induction while the ball is held or resting on the platform deck (drawn from the platform’s reserve, loss as heat), and a landing on the deck catches the ball back into the collector. Smooth contacts below 0.35 m/s roll without damage; faster impacts and sharp corners lose 10% of their normal energy into rock fracture and heat on any cave face.'
+				'The rig’s reserve powers releases and front-face piston pushes. Only the collector catches the ball. The ball battery recharges by induction while held or resting on the deck. Smooth contacts below 0.35 m/s roll without damage. On a hard hit the stock ball loses 10% of its normal energy to fracture and heat. Strike heads trade rebound height for more fracture on rock; they do not change deck retention.'
 			],
 			keys: [
 				['← / →', 'Spin motor left or right — rolls on rock, winds up fast in mid-air'],
 				['↑', 'Toggle jump actuator on or off (powered bounce pulses)'],
 				['↓', 'Toggle bounce energy recycling (active damper + battery recovery)'],
 				['E', 'Release the held ball along the tilted reflector face'],
-				['Deck', 'Catches the ball and recharges its battery by induction']
+				['Deck', 'Amber collector catches · green piston reflects']
 			]
 		},
 		{
