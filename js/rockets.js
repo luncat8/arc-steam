@@ -341,7 +341,10 @@ function load(count, owner) {
 	// The ground a falling body meets at x: rubble, or the deck of any platform.
 	function groundAt(world, x) {
 		const physics = root.SteamPhysics;
-		let ground = root.SteamCeiling.floorAt(x);
+		// In the Wild Mine the ground is the cave's rock-and-rubble surface.
+		const wildMine = root.SteamWildMine;
+		const wild = wildMine && typeof wildMine.isWild === 'function' && wildMine.isWild();
+		let ground = wild ? wildMine.groundAt(x) : root.SteamCeiling.floorAt(x);
 		const half = physics.config.platformWidth * 0.5;
 		const machines = physics.machinesOf(world);
 		for (let i = 0; i < machines.length; i++) {

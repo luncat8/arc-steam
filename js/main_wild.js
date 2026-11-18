@@ -1,7 +1,7 @@
 // Wild Mine canvas renderer, tile cache and mode-aware UI helpers.
 // Shares lexical scope with js/main*.js; all top-level bindings use a wild* prefix.
-// provides: wildIsActive, wildDraw, wildResize, wildSyncMode, wildResetRun, wildInspectRockAtPointer, wildPointerDown, wildWorldYOf, wildMineralReadout, wildStatusReadout, wildModeNotes, wildWaterReadout, wildPistonLimitDegrees
-// depends: main.js bindings, SteamCave, SteamWildMine, SteamWildBall, SteamWildWater, SteamWater, SteamRockMaterials, SteamCeiling
+// provides: wildIsActive, wildDraw, wildResize, wildSyncMode, wildResetRun, wildInspectRockAtPointer, wildPointerDown, wildWorldYOf, wildMineralReadout, wildStatusReadout, wildModeNotes, wildWaterReadout, wildPistonLimitDegrees, wildDrawCart
+// depends: main.js bindings, SteamCave, SteamWildMine, SteamWildBall, SteamWildWater, SteamWater, SteamRockMaterials, SteamCeiling, SteamWildCart
 
 'use strict';
 
@@ -43,8 +43,45 @@ function wildIsActive() {
 	return Boolean(window.SteamWildMine && window.SteamWildMine.isWild());
 }
 
-// Debris rides the same draw map as the rock: a fragment is one cell, so it is
-// drawn at the vertical scale of its own height and stays square in the world.
+// Rubble is the debris (the fallen cells): a heightmap of soil layers that can
+// stand on any up-facing rock cell, a ledge as happily as the bottom of the
+// section. Drawn as one column quad per pile standing on the same face, with
+// the top at the binomial-smoothed crest — the exact surface the ball rests
+// on — so the eye never sees more pile than physics allows and the barrow of
+// scree follows the 1-3-3-1 profile the chamber uses. DEBRIS compression
+// re-lays the same material over fewer or more rows; nothing is added here.
+function wildDrawRubble(wild, anchorY, minCol, maxCol) {
+	const rubble = window.SteamWildRubble;
+	const cave = wild.cave;
+	if (!rubble || !cave) return;
+	const cell = cave.state.cell;
+	rubble.eachColumn(minCol, maxCol, (column, segments) => {
+		const x0 = column * cell;
+		const cx = x0 + cell * 0.5;
+		for (let i = 0; i < segments.length; i++) {
+			const seg = segments[i];
+			const height = rubble.heightOnFace(cx, seg.base);
+			if (!(height > 1e-6)) continue;
+			const yBottom = wild.drawnY(seg.base, anchorY);
+			const yTop = wild.drawnY(seg.base + height, anchorY);
+			context.fillStyle = '#6a5d51';
+			context.fillRect(x0, yBottom, cell, yTop - yBottom);
+			// The crest line the physics sees, drawn along the smoothed profile.
+			const left = wild.drawnY(seg.base + rubble.heightOnFace(x0, seg.base), anchorY);
+			const right = wild.drawnY(seg.base + rubble.heightOnFace(x0 + cell, seg.base), anchorY);
+			context.strokeStyle = '#8a7a6b';
+			context.lineWidth = 1.2 / scale;
+			context.beginPath();
+			context.moveTo(x0, left);
+			context.lineTo(x0 + cell, right);
+			context.stroke();
+			context.lineWidth = 1 / scale;
+		}
+	});
+}
+
+// Debris in flight rides the same draw map as the rock: a grain is one cell,
+// so it is drawn at the vertical scale of its own height and stays square.
 function wildDrawDebris(wild, anchorY, minWorldY, maxWorldY) {
 	const ball = window.SteamWildBall;
 	if (!ball || !ball.debrisCount) return;
@@ -367,6 +404,8 @@ function wildDraw() {
 	wildDrawGrid(wild, minX, maxX, minRow * cell, (maxRow + 1) * cell);
 	wildDrawCave(cave, minX, maxX, minRow, maxRow);
 	wildDrawWater(wild, cave, anchorY, minX, maxX, minRow, maxRow);
+	const cellNow = cave.state.cell;
+	wildDrawRubble(wild, anchorY, Math.floor(minX / cellNow) - 1, Math.floor(maxX / cellNow) + 1);
 	wildDrawDebris(wild, anchorY, minRow * cell, (maxRow + 1) * cell);
 
 	if (wildSelectedRow >= minRow && wildSelectedRow <= maxRow && wildSelectedColumn >= cave.columnAt(minX) - 1 && wildSelectedColumn <= cave.columnAt(maxX) + 1) {
@@ -455,6 +494,7 @@ function wildDraw() {
 			+ (ballState.contact === window.SteamWildBall.CONTACT_DECK ? 'DECK' : ballState.contact === window.SteamWildBall.CONTACT_ROCK ? 'ROLL' : 'AIR')
 			+ actuatorNote
 		: '';
+	wildDrawCart(wild);
 	const hudText = 'WILD MINE · X ' + world.platform.x.toFixed(1) + ' m · Y ' + world.platform.y.toFixed(1) + ' m' + ballNote + ' · SCALE 1.00× @ P2';
 	context.font = '600 10px ui-monospace, monospace';
 	const textW = typeof context.measureText === 'function' ? context.measureText(hudText).width : hudText.length * 6;
@@ -463,6 +503,158 @@ function wildDraw() {
 	context.fillStyle = '#b9c9cd';
 	context.textAlign = 'left';
 	context.fillText(hudText, 15, 18);
+}
+
+
+// The service cart: a storyline cut-in, drawn in screen space over the cave.
+// A dark portal (the depot tunnel near the start, clamped to the view
+// whenever the rig has driven away from it) exhales the cart z-axis style —
+// small and dim when it appears, full size once it docks — and inhales it
+// again when it leaves. Screen space keeps it clickable no matter where the
+// camera is; nothing about the cart collides with the cave.
+function wildDrawCart(wild) {
+	const cart = window.SteamWildCart;
+	const cave = wild.cave;
+	if (!cart || !cave) { if (cart) cart.setBounds(null); return; }
+	const snapshot = cart.state();
+	if (snapshot.state === 'hidden') { cart.setBounds(null); return; }
+	const cam = wild.camera;
+	const anchorY = cam.anchorY;
+	// The depot is the spawn shelf: project its mouth to the screen and clamp
+	// it into view, so the storyline stays visible (and clickable) after the
+	// rig has driven beyond it.
+	const spawnX = cave.state.spawnX;
+	const startFloor = cave.floorBelow(spawnX, cave.state.spawnY + 1);
+	const baseY = Number.isFinite(startFloor) ? startFloor : wild.drawnY(cam.y, anchorY);
+	let sx = offsetX + spawnX * scale;
+	let syBase = floorY - wild.drawnY(baseY, anchorY) * scale;
+	sx = Math.max(96, Math.min(width - 96, sx));
+	syBase = Math.max(height * 0.38, Math.min(height - 84, syBase));
+	const t = snapshot.anim;
+	const eased = 1 - Math.pow(1 - t, 3);
+	const zoom = 0.12 + 0.88 * eased;
+	const alpha = 0.3 + 0.7 * eased;
+	context.save();
+	context.globalAlpha = alpha;
+	// Dust at the portal mouth while it comes through.
+	if (snapshot.state === 'arriving') {
+		for (let i = 0; i < 3; i++) {
+			const phase = (t * 1.6 + i * 0.33) % 1;
+			context.fillStyle = 'rgba(146, 128, 108, ' + (0.35 * (1 - phase)).toFixed(3) + ')';
+			context.beginPath();
+			context.ellipse(sx - (30 + i * 26) * zoom - phase * 30, syBase - (6 + i * 4) * zoom, (18 + phase * 26) * zoom, (7 + phase * 9) * zoom, 0, 0, Math.PI * 2);
+			context.fill();
+		}
+	}
+	// The portal: a timber-framed arch in the hillside.
+	const portalW = 168 * zoom;
+	const portalH = 108 * zoom;
+	const archTop = syBase - portalH;
+	context.fillStyle = '#090f13';
+	context.beginPath();
+	context.moveTo(sx - portalW * 0.5, syBase);
+	context.lineTo(sx - portalW * 0.5, archTop + portalW * 0.36);
+	context.arc(sx, archTop + portalW * 0.36, portalW * 0.5, Math.PI, 0);
+	context.lineTo(sx + portalW * 0.5, syBase);
+	context.closePath();
+	context.fill();
+	context.strokeStyle = '#2c3a41';
+	context.lineWidth = 3 * zoom + 0.6;
+	context.stroke();
+	// Timber lintel and posts.
+	context.strokeStyle = '#4a3b2c';
+	context.lineWidth = 5 * zoom + 0.8;
+	context.beginPath();
+	context.moveTo(sx - portalW * 0.5, syBase - portalH * 0.34);
+	context.lineTo(sx + portalW * 0.5, syBase - portalH * 0.34);
+	context.moveTo(sx - portalW * 0.5 + 4 * zoom, syBase);
+	context.lineTo(sx - portalW * 0.5 + 4 * zoom, syBase - portalH * 0.34);
+	context.moveTo(sx + portalW * 0.5 - 4 * zoom, syBase);
+	context.lineTo(sx + portalW * 0.5 - 4 * zoom, syBase - portalH * 0.34);
+	context.stroke();
+	// The cart itself, bottom-anchored at the portal mouth.
+	const bodyW = 108 * zoom;
+	const bodyH = 34 * zoom;
+	const deckY = syBase - 12 * zoom;
+	const wheelR = 9 * zoom;
+	// Headlamp cone while it is here.
+	const lampGlow = snapshot.state === 'departing' ? eased : 1;
+	if (lampGlow > 0.05) {
+		const gradient = context.createLinearGradient(sx, deckY - bodyH, sx + 240 * zoom, deckY + 26 * zoom);
+		gradient.addColorStop(0, 'rgba(236, 226, 178, ' + (0.34 * lampGlow).toFixed(3) + ')');
+		gradient.addColorStop(1, 'rgba(236, 226, 178, 0)');
+		context.fillStyle = gradient;
+		context.beginPath();
+		context.moveTo(sx + bodyW * 0.42, deckY - bodyH * 0.72);
+		context.lineTo(sx + 250 * zoom, deckY - bodyH * 2.1);
+		context.lineTo(sx + 250 * zoom, deckY + 30 * zoom);
+		context.closePath();
+		context.fill();
+	}
+	// Hopper tub with a heaped load of ore.
+	context.fillStyle = '#2f3b43';
+	context.beginPath();
+	context.moveTo(sx - bodyW * 0.5, deckY - bodyH);
+	context.lineTo(sx - bodyW * 0.38, deckY);
+	context.lineTo(sx + bodyW * 0.38, deckY);
+	context.lineTo(sx + bodyW * 0.5, deckY - bodyH);
+	context.closePath();
+	context.fill();
+	context.strokeStyle = '#141d22';
+	context.lineWidth = 1.4 * zoom + 0.4;
+	context.stroke();
+	context.fillStyle = '#55483a';
+	context.beginPath();
+	context.ellipse(sx, deckY - bodyH, bodyW * 0.4, 8 * zoom, 0, Math.PI, 0);
+	context.fill();
+	context.fillStyle = '#6a5d51';
+	context.beginPath();
+	context.ellipse(sx - bodyW * 0.14, deckY - bodyH - 3 * zoom, bodyW * 0.16, 5 * zoom, -0.2, Math.PI, 0);
+	context.ellipse(sx + bodyW * 0.16, deckY - bodyH - 2.4 * zoom, bodyW * 0.14, 4.6 * zoom, 0.24, Math.PI, 0);
+	context.fill();
+	// Beacon: blinks while docked awaiting the sale.
+	const blink = Math.sin(performance.now() / 260) > 0 ? 1 : 0.25;
+	context.fillStyle = 'rgba(230, 182, 110, ' + (snapshot.state === 'docked' ? blink : 0.85) + ')';
+	context.beginPath();
+	context.arc(sx, deckY - bodyH - 12 * zoom, 3.4 * zoom + 0.6, 0, Math.PI * 2);
+	context.fill();
+	// Wheels with spokes.
+	for (const side of [-1, 1]) {
+		const wheelX = sx + side * bodyW * 0.27;
+		const wheelY = deckY + wheelR * 0.55;
+		context.fillStyle = '#141d22';
+		context.beginPath();
+		context.arc(wheelX, wheelY, wheelR, 0, Math.PI * 2);
+		context.fill();
+		context.strokeStyle = '#54646e';
+		context.lineWidth = 1.6 * zoom + 0.4;
+		context.beginPath();
+		context.arc(wheelX, wheelY, wheelR * 0.62, 0, Math.PI * 2);
+		context.moveTo(wheelX - wheelR * 0.62, wheelY);
+		context.lineTo(wheelX + wheelR * 0.62, wheelY);
+		context.moveTo(wheelX, wheelY - wheelR * 0.62);
+		context.lineTo(wheelX, wheelY + wheelR * 0.62);
+		context.stroke();
+	}
+	context.restore();
+	// Plate below the portal: what this thing wants from the clicker.
+	context.save();
+	context.globalAlpha = Math.min(1, alpha + 0.15);
+	context.font = '600 11px ui-monospace, monospace';
+	context.textAlign = 'center';
+	const tag = snapshot.state === 'docked'
+		? (snapshot.lastSale ? 'SOLD · +' + snapshot.lastSale.credits.toFixed(0) + ' cr'
+			: snapshot.autosell ? 'SERVICE CART · AUTOSELL' : 'SERVICE CART · CLICK TO SELL')
+		: 'SERVICE CART';
+	const tagW = (typeof context.measureText === 'function' ? context.measureText(tag).width : tag.length * 6.2) + 18;
+	const tagY = syBase + 8;
+	context.fillStyle = 'rgba(11, 18, 22, 0.88)';
+	context.fillRect(sx - tagW * 0.5, tagY, tagW, 18);
+	context.fillStyle = snapshot.lastSale && snapshot.state === 'docked' ? '#9ddba8' : '#e6b66e';
+	context.fillText(tag, sx, tagY + 13);
+	context.restore();
+	// Publish the click target (CSS pixels): the portal and cart body.
+	cart.setBounds({ x: sx - portalW * 0.5, y: archTop - 6, w: portalW, h: syBase - archTop + 22 });
 }
 
 function wildSyncMode(nextMode) {
@@ -531,6 +723,18 @@ function wildPointerDown(event) {
 	const cave = window.SteamWildMine.cave;
 	if (!cave) return;
 	const bounds = canvas.getBoundingClientRect();
+	// The service cart is a storyline overlay, not cave geometry: a click on
+	// it sells the hopper (everything except the fuel reservation) and never
+	// reaches the rock underneath.
+	const cart = window.SteamWildCart;
+	if (cart && cart.hitTest(event.clientX - bounds.left, event.clientY - bounds.top)) {
+		const cartState = cart.state().state;
+		if (cartState === 'arriving' || cartState === 'docked') {
+			cart.sell(world);
+			canvas.focus();
+			return;
+		}
+	}
 	const worldX = (event.clientX - bounds.left - offsetX) / scale;
 	const worldY = wildWorldYOf(event);
 	if (cave.solidAt(worldX, worldY)) {
@@ -637,6 +841,19 @@ function wildSyncBallControls(ball) {
 }
 
 function wildStatusReadout(reserveWarning, thermalFactor, driveOn) {
+	const cart = window.SteamWildCart;
+	if (cart && ui['cart-status']) {
+		const snapshot = cart.state();
+		let note = '';
+		if (snapshot.state === 'arriving') note = 'Service cart en route from the depot…';
+		else if (snapshot.state === 'docked') {
+			note = snapshot.lastSale
+				? 'Service cart · sold for ' + snapshot.lastSale.credits.toFixed(0) + ' cr · kept 20% of fuel minerals'
+				: snapshot.autosell ? 'Service cart here · autosell' : 'Service cart here · click it to sell';
+		}
+		setHidden(ui['cart-status'], !note);
+		if (note) setText(ui['cart-status'], note);
+	}
 	const ceiling = window.SteamCeiling.state;
 	const temperature = physics.temperature(world);
 	setText(ui['fact-reserve'], (world.battery / 1000).toFixed(2) + ' kJ');

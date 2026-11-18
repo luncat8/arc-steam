@@ -58,6 +58,7 @@
 						<div class="control-row"><button id="ball-left" type="button" aria-label="Roll ball left">← Roll</button><button id="ball-right" type="button" aria-label="Roll ball right">Roll →</button></div>
 						<button id="ball-jump" class="drive" type="button" aria-pressed="false" aria-keyshortcuts="ArrowUp">Jump actuator off <span>↑</span></button>
 						<div class="autopilot" id="ball-orders"><label><input type="checkbox" id="ball-recycle" autocomplete="off"><span>Recycle bounce energy</span><i>↓</i></label></div>
+					<div class="autopilot" id="cart-orders"><label><input type="checkbox" id="cart-autosell" autocomplete="off"><span>Service cart: autosell on arrival</span></label><button id="help-cart" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: service cart">?</button><p id="cart-status" class="hint" hidden>cart en route…</p></div>
 					</div>
 					<div id="rig-drive">
 						<div class="eyebrow-row"><p class="eyebrow">BOUNCE ASSIST</p><button id="help-drive" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: bounce drive">?</button></div>
@@ -199,6 +200,8 @@
 	<script src="js/water-chemistry.js"></script>
 	<script src="js/physics.js"></script>
 	<script src="js/wild-water.js"></script>
+	<script src="js/wild-rubble.js"></script>
+	<script src="js/wild-cart.js"></script>
 	<script src="js/wild-mine.js"></script>
 	<script src="js/wild-ball.js"></script>
 	<script src="js/rockets.js"></script>

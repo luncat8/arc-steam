@@ -510,6 +510,10 @@ function bindInput() {
 		if (world.wildWater) world.wildWater.intakeOn = ui['wild-intake'].checked;
 		refresh();
 	});
+	ui['cart-autosell'].addEventListener('change', function () {
+		if (window.SteamWildCart && window.SteamWildCart.setAutosell) window.SteamWildCart.setAutosell(ui['cart-autosell'].checked);
+		refresh();
+	});
 	ui['water-pump'].addEventListener('change', function () {
 		SteamWater.setPump(ui['water-pump'].checked);
 		refresh();

@@ -119,6 +119,11 @@ function createContext() {
 	const commands = ['clearRect', 'save', 'restore', 'translate', 'scale', 'setTransform', 'beginPath', 'moveTo',
 		'lineTo', 'stroke', 'fill', 'fillRect', 'strokeRect', 'arc', 'ellipse', 'closePath', 'clip', 'setLineDash', 'fillText', 'rotate'];
 	for (const command of commands) context[command] = function () { contextCalls.push(command); };
+	context.createLinearGradient = function () {
+		contextCalls.push('createLinearGradient');
+		return { addColorStop() {} };
+	};
+	context.measureText = function (text) { return { width: String(text).length * 6.2 }; };
 	return context;
 }
 

@@ -167,29 +167,29 @@ test('an empty oil rig can hand-prime, then the regular Wild Mine step takes ove
 
 test('oil burns tank condensate before cargo volatiles and does not burn the spray water', t => {
 	const { world, tank } = newRun(t, 'oil');
-	const gas = mineralIds.indexOf('gas');
+	const fizzy = mineralIds.indexOf('fizzy'); // oil's legal cargo fuel (minimal fuel tables)
 	const load = ceiling.state.cellMass;
-	assert.equal(ceiling.loadCargo(gas, load, 20), true);
+	assert.equal(ceiling.loadCargo(fizzy, load, 20), true);
 	tankApi.stepIntake(world, 1);
 	const reserveWater = tank.water;
 	const available = tank.condensate * tankApi.condensateYield;
 	let info = fuel.read(world, 'rig');
 	near(info.tankFuel, tank.condensate);
-	near(info.chemical, available + load * fuel.yieldOf(1, gas));
+	near(info.chemical, available + load * fuel.yieldOf(1, fizzy));
 	world.platform.vx = 4;
 	world.battery = 0;
 	sync(world);
 	const spent = fuel.burn(world, 500, 'rig');
 	assert.equal(spent, 500);
 	near(tank.burnedCondensate, spent / tankApi.condensateYield);
-	assert.equal(ceiling.state.cargoMinerals[gas], load);
+	assert.equal(ceiling.state.cargoMinerals[fizzy], load);
 	assert.equal(tank.water, reserveWater);
 	near(world.importedEnergy, spent, 1e-9);
 	balanced(world);
 	near(fuel.burn(world, available - spent + 1200, 'rig'), available - spent + 1200, 1e-9);
 	assert.equal(tank.condensate, 0);
 	assert.equal(tank.water, reserveWater);
-	near(ceiling.state.cargoMinerals[gas], load - 1200 / fuel.yieldOf(1, gas));
+	near(ceiling.state.cargoMinerals[fizzy], load - 1200 / fuel.yieldOf(1, fizzy));
 	info = fuel.read(world, 'rig');
 	assert.equal(info.tankFuel, 0);
 	near(info.burnedChemical, available + 1200);

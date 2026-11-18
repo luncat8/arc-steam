@@ -27,7 +27,9 @@
 	// material in it: every cells-to-metres conversion below reads this value.
 	const floorCompressionMin = 1;
 	const floorCompressionMax = 8;
-	let floorCompression = 4;
+	// 1.5: the debris Y compression default in every mode (0.4.0 draft).
+	const floorCompressionDefault = 4;
+	let floorCompression = floorCompressionDefault;
 	function floorCellHeightNow() { return cell / floorCompression; }
 	// A pile is stored in metres, so the same material is a different height at a
 	// different factor. Changing the factor therefore re-lays every column by the
@@ -37,10 +39,13 @@
 	// books the rest as lost, exactly like a deposit at the cap.
 	function setFloorCompression(value) {
 		const next = Math.round(Number(value) * 2) / 2;
-		const factor = Number.isFinite(next) ? Math.max(floorCompressionMin, Math.min(floorCompressionMax, next)) : 4;
+		const factor = Number.isFinite(next) ? Math.max(floorCompressionMin, Math.min(floorCompressionMax, next)) : floorCompressionDefault;
 		if (factor === floorCompression) return floorCompression;
 		const ratio = floorCompression / factor;
 		floorCompression = factor;
+		// The Wild Mine keeps its own heightmap on the cave faces; re-lay it by
+		// the same ratio so both modes honour DEBRIS identically.
+		if (root.SteamWildRubble && root.SteamWildRubble.rescale) root.SteamWildRubble.rescale(ratio);
 		for (let column = 0; column < columns; column++) {
 			const height = floorPiles[column] * ratio;
 			if (height <= pileLimit) {
@@ -2044,6 +2049,17 @@
 		updateFloor();
 	}
 
+	// One settled stint of a road grader working anywhere: the same share of the
+	// shaved value, the same ledger entry. The Wild Mine's blade on the cave
+	// calls this too, so the 50% rule and the 'blade' entry live exactly once.
+	function settleGraderBlade(time, value, label) {
+		const credits = price(Math.max(0, value || 0) * graderShare);
+		if (!(credits > 0)) return 0;
+		funds += credits;
+		ledger.push(Object.freeze({ id: ledger.length + 1, type: 'blade', time: typeof time === 'number' ? time : 0, label: label || 'Road grader blade', credits }));
+		return credits;
+	}
+
 	// One settled stint per working pause: the blade's share of the shaved
 	// material enters the owner's purse as a single frozen entry, exactly like a
 	// garage-grader settlement. Under Communism the material is free, so the
@@ -2053,12 +2069,10 @@
 			blade.idle = 0;
 			return;
 		}
-		const credits = price(blade.value * graderShare);
+		const value = blade.value;
 		blade.value = 0;
 		blade.idle = 0;
-		if (credits <= 0) return;
-		funds += credits;
-		ledger.push(Object.freeze({ id: ledger.length + 1, type: 'blade', time: world.time, label: 'Road grader blade', credits }));
+		settleGraderBlade(world.time, value, 'Road grader blade');
 	}
 
 	// A competitor blade shaves a thin layer from the rubble under its body and
@@ -2250,6 +2264,56 @@
 		cargoMinerals[mineral] += mass;
 		cargoValue += value;
 		return true;
+	}
+
+	// The cart's sale: exactly sellCargo, except the caller keeps an absolute
+	// per-mineral mass reserve in the hopper (the cart's 20% fuel reservation
+	// rides on this). The sold share books one frozen 'sell' entry and the
+	// value leaves pro rata by mass, so the kept cargo keeps the same share of
+	// the locked cargoValue it came in with — no market drift, no rounding
+	// homes. Selling with an all-zero reserve is sellCargo.
+	function sellCargoKeeping(keepMass, platformVelocity, time) {
+		if (!cargoCells) return 0;
+		let totalMass = 0;
+		let keptMass = 0;
+		for (let m = 0; m < mineralCount; m++) {
+			totalMass += cargoMinerals[m];
+			const keep = Math.max(0, Math.min(cargoMinerals[m], Number(keepMass && keepMass[m]) || 0));
+			keptMass += keep;
+		}
+		const sellMass = totalMass - keptMass;
+		if (!(sellMass > 1e-12)) return 0;
+		const share = sellMass / totalMass;
+		const value = cargoValue * share;
+		const cells = sellMass / cellMass;
+		exportedEnergy += cells * cellMass * (gravity * cargoHeight + 0.5 * platformVelocity * platformVelocity);
+		soldCells += cells;
+		soldValue += value;
+		funds += value;
+		const kept = new Float64Array(mineralCount);
+		const quantities = new Float64Array(mineralCount);
+		for (let m = 0; m < mineralCount; m++) {
+			const keep = Math.max(0, Math.min(cargoMinerals[m], Number(keepMass && keepMass[m]) || 0));
+			const sold = cargoMinerals[m] - keep;
+			quantities[m] = sold;
+			soldMinerals[m] += sold;
+			kept[m] = keep;
+			cargoMinerals[m] = keep;
+		}
+		cargoCells -= cells;
+		cargoValue -= value;
+		if (Math.abs(cargoCells) < cargoSnap) cargoCells = 0;
+		if (Math.abs(cargoValue) < 1e-9) cargoValue = 0;
+		ledger.push(Object.freeze({
+			id: ledger.length + 1,
+			type: 'sell',
+			time: typeof time === 'number' ? time : 0,
+			cells,
+			mass: sellMass,
+			credits: value,
+			quantities: Object.freeze(Array.from(quantities))
+		}));
+		return value;
 	}
 
 	function sellCargo(platformVelocity, time) {
@@ -2605,7 +2669,7 @@
 
 	const api = {
 		hireGrader, dismissGrader, toggleGrader, botSurfaceAt, drawGraderBot, reset, damage, chip, surfaceAt, damageRadiusNow, damageMultiplierNow,
-		trace, step, harvest, spill, sellCargo, unloadCargo, loadCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt,
+		trace, step, harvest, spill, sellCargo, sellCargoKeeping, unloadCargo, loadCargo, purchase, grant, recharge, rechargeCost, price, setCommune, draw, drawFloor, floorAt, settleGraderBlade,
 		state, setShape, setFloorCompression, setDepthScale, setMineralClusterGrowth, generateTestRock, rockDrawnY, rockWorldY, rockScale, collapse, advanceMarket,
 		applyGeology, exportGeology, applyGeologyExport, sampleCell, perspectiveScale,
 		queueGrowth, watchBoundary, grow,

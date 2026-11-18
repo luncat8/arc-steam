@@ -15,10 +15,11 @@ const fuel = require('../js/fuel.js');
 
 const cellMass = ceiling.state.cellMass;
 const stone = minerals.mineralIds.indexOf('stone');
-const quartz = minerals.mineralIds.indexOf('quartz');
+const sand = minerals.mineralIds.indexOf('sand');
 const iron = minerals.mineralIds.indexOf('iron');
 const gold = minerals.mineralIds.indexOf('gold');
 const gas = minerals.mineralIds.indexOf('gas');
+const fizzy = minerals.mineralIds.indexOf('fizzy');
 
 function freshWorld(engineId) {
 	wildMine.setMode('wild');
@@ -91,14 +92,14 @@ test('a burn takes the cheapest loaded cell per joule first', () => {
 	try {
 		const world = freshWorld('electric');
 		load('stone', 1);
-		load('quartz', 1);
+		load('sand', 1);
 		world.battery = 0;
 		sync(world);
 		const prices = ceiling.state.mineralPrices;
 		const stoneCost = prices[stone] / (fuel.yieldOf(0, stone) * cellMass);
-		const quartzCost = prices[quartz] / (fuel.yieldOf(0, quartz) * cellMass);
-		const cheaper = stoneCost <= quartzCost ? stone : quartz;
-		const dearer = cheaper === stone ? quartz : stone;
+		const sandCost = prices[sand] / (fuel.yieldOf(0, sand) * cellMass);
+		const cheaper = stoneCost <= sandCost ? stone : sand;
+		const dearer = cheaper === stone ? sand : stone;
 		const cheapBefore = ceiling.state.cargoMinerals[cheaper];
 		const dearBefore = ceiling.state.cargoMinerals[dearer];
 
@@ -145,7 +146,7 @@ test('no matching fuel in cargo leaves the engine idle with a reason', () => {
 		const goldBefore = ceiling.state.cargoMinerals[gold];
 		assert.equal(fuel.step(world, 1), 0);
 		assert.equal(ceiling.state.cargoMinerals[gold], goldBefore, 'gold is not solid fuel');
-		assert.equal(fuel.read(world, 'rig').reason, 'No solid fuel in cargo · mine stone, sand or quartz');
+		assert.equal(fuel.read(world, 'rig').reason, 'No solid fuel in cargo · mine stone or sand');
 		assert.ok(Math.abs(drift(world)) < 1e-9);
 	} finally {
 		wildMine.setMode('classic');
@@ -188,7 +189,7 @@ test('Classic mode never burns cargo', () => {
 
 test('all three families burn their own minerals and keep the ledger exact', () => {
 	try {
-		const cases = [['oil', 'gas', 1], ['nuclear', 'gold', 2], ['electric', 'quartz', 0]];
+		const cases = [['oil', 'fizzy', 1], ['nuclear', 'gas', 2], ['electric', 'sand', 0]];
 		for (const [engineId, mineralId, grade] of cases) {
 			const world = freshWorld(engineId);
 			load(mineralId, 1);
@@ -232,15 +233,15 @@ test('driving in Wild Mine draws from the right cargo family with no energy drif
 test('readout reports family mass, chemical energy and the per-run burn totals', () => {
 	try {
 		const world = freshWorld('oil');
-		load('gas', 1);
+		load('fizzy', 1);
 		load('stone', 1);
 		fuel.reset();
 		world.battery = 0;
 		sync(world);
 		let info = fuel.read(world, 'rig');
 		assert.equal(info.grade, 'liquid');
-		assert.ok(Math.abs(info.mass - cellMass) < 1e-12, 'only gas is liquid fuel');
-		assert.ok(Math.abs(info.chemical - cellMass * fuel.yieldOf(1, gas)) < 1e-9);
+		assert.ok(Math.abs(info.mass - cellMass) < 1e-12, 'only the volatile liquid fuel counts');
+		assert.ok(Math.abs(info.chemical - cellMass * fuel.yieldOf(1, fizzy)) < 1e-9);
 		assert.ok(Math.abs(info.cells - 1) < 1e-9);
 		fuel.burn(world, 500, 'rig');
 		info = fuel.read(world, 'rig');

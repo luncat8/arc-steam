@@ -19,23 +19,24 @@
 	// One grade per engine family. `hand` has none: the crew crank is the
 	// fallback with no fuel cycle at all.
 	const gradeIds = Object.freeze(['solid', 'liquid', 'fissile']);
-	const gradeNames = Object.freeze(['Solid', 'Liquid', 'Fissile']);
+	const gradeNames = Object.freeze(['Coal', 'Liquid', 'Nuclear gas']);
 	const gradeLists = Object.freeze([
-		'stone, sand or quartz',
-		'gas rock, fizzy halite, fluorite, vitriol or halite',
-		'iron, copper, corundum, silver or gold'
+		'stone or sand',
+		'fizzy halite or vitriol',
+		'gas rock'
 	]);
 	const liquidGrade = 1;
 	const engineGrades = Object.freeze({ hand: -1, coal: 0, electric: 0, oil: liquidGrade, nuclear: 2 });
-	// Chemical energy per kg of each fuel mineral. A cargo cell is cellMass kg,
-	// so a stone cell is 1.8 kJ of solid fuel and a gold cell 48 kJ of fissile
-	// fuel before engine efficiency. Fuels are families rather than single
-	// ores: the host bed feeds the solid engines, volatiles feed the oil
-	// engine, and reactive metals feed the reactor.
+	// Chemical energy per kg of each fuel mineral. A cargo cell is cellMass kg.
+	// Only one or two ores per family burn — the common rock trades as coal
+	// (the host bed and the loose sand), the volatiles feed the oil engine
+	// (the gas-salt and the sulfate solution), and the reactor runs on the
+	// CH4/H2 gas rock. Everything else in the hopper is ore, not fuel, and is
+	// sold at full price.
 	const yieldsById = Object.freeze([
-		Object.freeze({ stone: 3000, sand: 2000, quartz: 2500 }),
-		Object.freeze({ gas: 40000, fizzy: 20000, fluorite: 14000, vitriol: 10000, halite: 5000 }),
-		Object.freeze({ iron: 20000, copper: 25000, corundum: 30000, silver: 60000, gold: 80000, pure_gold: 100000 })
+		Object.freeze({ stone: 3000, sand: 2000 }),
+		Object.freeze({ fizzy: 20000, vitriol: 10000 }),
+		Object.freeze({ gas: 40000 })
 	]);
 	const count = minerals().mineralCount;
 	const ids = minerals().mineralIds;

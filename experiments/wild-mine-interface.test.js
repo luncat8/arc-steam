@@ -297,3 +297,57 @@ test('rocket fabrication controls report their gates and wire manual and auto pr
 	mode.value = 'classic';
 	mode.dispatch('change');
 });
+
+test('service cart: autosell checkbox drives the cart service, a docked cart sells on click and books one ledger entry', () => {
+	const mode = dom.element('game-mode');
+	const autosell = dom.element('cart-autosell');
+	const status = dom.element('cart-status');
+	mode.value = 'wild';
+	mode.dispatch('change');
+	advance(8);
+	assert.equal(autosell.checked, false);
+	assert.equal(window.SteamWildCart.autosell, false);
+	autosell.checked = true;
+	autosell.dispatch('change');
+	assert.equal(window.SteamWildCart.autosell, true, 'the checkbox drives the cart service');
+	autosell.checked = false;
+	autosell.dispatch('change');
+	assert.equal(window.SteamWildCart.autosell, false);
+
+	// Fill the hopper and let the cart call on it (full hopper dispatches at once).
+	const iron = minerals.mineralIds.indexOf('iron');
+	while (ceiling.loadCargo(iron, ceiling.state.cellMass, 10)) { /* fill to the brim */ }
+	assert.equal(ceiling.state.cargoCells, ceiling.state.storageLimit);
+	advance(260); // arrival takes 2.4 s of world time; the shim steps 1/240 per physics substep
+	assert.equal(status.hidden, false, 'the cart announces itself while it is here');
+	assert.match(status.textContent, /Service cart/);
+
+	// Click where the cart is drawn: the hopper empties and one sale is booked.
+	const bounds = window.SteamWildCart.bounds();
+	assert.ok(bounds && bounds.w > 4 && bounds.h > 4, 'the renderer published the cart click target');
+	const before = ceiling.state.ledger.length;
+	const canvas = dom.element('c');
+	canvas.dispatch('pointerdown', { clientX: bounds.x + bounds.w * 0.5, clientY: bounds.y + bounds.h * 0.5, pointerId: 1 });
+	advance(2);
+	assert.equal(ceiling.state.cargoCells, 0, 'clicking the cart sells the load');
+	const entries = ceiling.state.ledger.slice(before).filter((entry) => entry.type === 'sell');
+	assert.equal(entries.length, 1, 'one frozen sell entry per cart call');
+
+	// Autosell path: refill, tick the box, and the cart sells itself on arrival.
+	autosell.checked = true;
+	autosell.dispatch('change');
+	while (ceiling.loadCargo(iron, ceiling.state.cellMass, 10)) { /* refill */ }
+	const beforeAuto = ceiling.state.ledger.length;
+	advance(400);
+	assert.equal(ceiling.state.cargoCells, 0, 'autosell clears the hopper without a click');
+	assert.equal(ceiling.state.ledger.slice(beforeAuto).filter((entry) => entry.type === 'sell').length, 1);
+
+	// Classic isolates the service: the panel hides and clicking does not sell.
+	mode.value = 'classic';
+	mode.dispatch('change');
+	advance(4);
+	assert.equal(dom.element('ball-controls').hidden, true, 'the cart order hides in Classic');
+	autosell.checked = false;
+	autosell.dispatch('change');
+	assert.equal(window.SteamWildCart.autosell, false, 'the switch survives the trip back');
+});

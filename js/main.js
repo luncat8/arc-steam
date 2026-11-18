@@ -25,7 +25,8 @@ const ids = ['chamber-title', 'game-mode', 'clock', 'drive', 'launch', 'status-b
 	'sandblast-fire', 'sandblast-auto', 'sandblast-status', 'sandblast-yield',
 	'water-fire', 'water-aim', 'water-auto', 'water-pump', 'water-pump-solute', 'water-status', 'water-yield',
 	'classic-pump-order', 'classic-solute-order', 'pad-key', 'seep-key',
-	'wild-water-controls', 'wild-tank-level', 'wild-tank-meter', 'wild-tank-mix', 'wild-tank-drain', 'wild-intake', 'wild-intake-note'];
+	'wild-water-controls', 'wild-tank-level', 'wild-tank-meter', 'wild-tank-mix', 'wild-tank-drain', 'wild-intake', 'wild-intake-note',
+	'cart-orders', 'cart-autosell', 'cart-status'];
 // One mark per help topic, plus the drawer it feeds.
 for (const topic of window.SteamHelp.topics) ids.push('help-' + topic.id);
 ids.push('help-drawer', 'help-close', 'help-head', 'help-title', 'help-body', 'help-index');

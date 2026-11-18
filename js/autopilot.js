@@ -377,7 +377,9 @@
 		if (path.kind === kinds.GROUND) {
 			// A ground mark means nothing is under the ball yet; the save happens at
 			// the platform's terrain-following deck height above the rubble surface.
-			const pile = root.SteamCeiling ? root.SteamCeiling.floorAt(path.endX) : 0;
+			const wildMine = root.SteamWildMine;
+			const wild = wildMine && typeof wildMine.isWild === 'function' && wildMine.isWild();
+			const pile = wild ? wildMine.groundAt(path.endX) : (root.SteamCeiling ? root.SteamCeiling.floorAt(path.endX) : 0);
 			const deckAngle = physics.platformPitchAt(out.interceptX);
 			const deckBase = physics.platformBaseAt(out.interceptX, deckAngle);
 			const deckHeight = deckBase + Math.sin(deckAngle) * config.pistonCentre + Math.cos(deckAngle) * config.deck;

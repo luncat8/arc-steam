@@ -161,6 +161,7 @@ test('held ball stays locked to angled piston up to ±90° and cave cell inspect
 // ---- M3: the ball player (D1-D5) -----------------------------------------
 
 const wildBall = require('../js/wild-ball.js');
+const wildRubble = require('../js/wild-rubble.js');
 
 function wildWorld(seed) {
 	wildMine.setMode('wild');
@@ -722,33 +723,86 @@ test('M3 damage on any surface: a wall hit weakens the cave and reflects, not on
 	}
 });
 
-test('M3 debris: broken cells become fragments that settle on the SDF face at any orientation', () => {
+test('M3 rubble: broken cells rain down, land on the rock face, and stand as a collectable pile', () => {
 	try {
 		const { world, cave, ball } = wildWorld(1);
 		const x = 2.8;
 		const rest = shelfRest(world, cave, x);
 		// The cave's rule lets a blow take at most half a cell's remaining
-		// strength, so one hole takes a run of hits on the same spot.
+		// strength, so one hole takes a run of hits on the same spot. Once the
+		// pile fills the pit the ball cushions on soil and stops breaking rock;
+		// that is the pile doing its job, not a failed drop — so only the run's
+		// totals are asserted, never any single drop.
+		for (let drop = 0; drop < 40 && wildRubble.state().depositedCells === 0; drop++) {
+			freeBall(world, cave, x, rest + 0.05, 0, -8);
+			for (let i = 0; i < 120; i++) physics.step(world, physics.config.step);
+		}
+		assert.ok(ball.hits > 0, 'the drops broke rock');
+		for (let i = 0; i < 240 * 8; i++) physics.step(world, physics.config.step);
+		const pile = wildRubble.state();
+		assert.ok(pile.depositedCells > 0, 'broken cells landed as rubble: ' + JSON.stringify(pile));
+		// Nothing else consumed material in this test: every cell that left the
+		// rock either stands in a pile or was booked lost, never both, never neither.
+		assert.ok(Math.abs(pile.depositedCells - pile.cells - pile.lostCells - (pile.bladeCells || 0)) < 1e-9,
+			'all deposited cells are accounted for: ' + JSON.stringify(pile));
+		// A pile may stand on ANY upward-facing rock cell — a ledge as happily as
+		// the floor — so every segment must remember the solid cell it rides on.
+		const columns = [];
+		const cellSize = cave.state.cell;
+		wildRubble.eachColumn(Math.floor((x - 10) / cellSize), Math.ceil((x + 10) / cellSize), (column, segments) => {
+			for (const seg of segments) columns.push({ column, seg });
+		});
+		assert.ok(columns.length > 0, 'the rubble field exposes columns to render and harvest');
+		for (const { column, seg } of columns) {
+			assert.ok(cave.solidAt((column + 0.5) * cave.state.cell, (seg.row + 0.5) * cave.state.cell),
+				'every pile segment rides on a supporting solid cell');
+			assert.ok(seg.height > 0 && seg.cells > 0);
+			const face = cave.floorBelow((column + 0.5) * cave.state.cell, (seg.row + 1) * cave.state.cell + 1e-6);
+			assert.ok(Math.abs(face - seg.base) < 1e-9, 'the segment base matches the face it stands on');
+		}
+		// This run is deliberately destructive: the ball may still be in the
+		// air when the settle window ends, so the ledger is the invariant that
+		// matters here — the pile accounting above covers the material.
+		assert.ok(Math.abs(ledgerDrift(world)) < 1e-6);
+	} finally {
+		resetClassic();
+	}
+});
+
+test('M3 collector: a grain that drops through the collector span is caught into the hopper', () => {
+	try {
+		const { world, cave, ball } = wildWorld(1);
+		const x = 2.8;
+		const rest = shelfRest(world, cave, x);
+		// Break cells until at least one grain is airborne, then aim it through
+		// the deck: the collector is the window at the left end of the deck.
 		for (let drop = 0; drop < 40 && wildBall.debrisCount === 0; drop++) {
 			freeBall(world, cave, x, rest + 0.05, 0, -8);
-			const before = ball.hits;
-			for (let i = 0; i < 20 && ball.hits === before; i++) physics.step(world, physics.config.step);
-			assert.ok(ball.hits > before, 'drop ' + drop + ' reaches the floor');
+			for (let i = 0; i < 120 && wildBall.debrisCount === 0; i++) physics.step(world, physics.config.step);
 		}
-		for (let i = 0; i < 240 * 8; i++) physics.step(world, physics.config.step);
-		assert.ok(wildBall.debrisCount > 0, 'a strong hit breaks cells into debris');
-		const readout = wildBall.readouts(world);
-		assert.equal(readout.restingDebris, wildBall.debrisCount, 'every fragment is resting after settling');
-		let checked = 0;
+		assert.ok(wildBall.debrisCount > 0, 'a strong hit breaks cells into grains');
+		// Let the cave and the ball settle so nothing else is in flight, then drop
+		// one grain through the collector span by hand.
+		world.platform.vx = 0;
+		const plate = world.platform;
+		const deck = physics.config.deck;
+		let grain = -1;
 		for (let i = 0; i < wildBall.debrisActive.length; i++) {
 			if (!wildBall.debrisActive[i]) continue;
-			checked++;
-			const half = wildBall.debrisSize[i] * wildBall.debrisRestingShare;
-			assert.ok(cave.sdfAt(wildBall.debrisX[i], wildBall.debrisY[i]) >= half - 1e-3, 'fragment centre sits half a cell off the face');
-			assert.equal(cave.solidAt(wildBall.debrisX[i], wildBall.debrisY[i]), false, 'no fragment rests inside rock');
+			grain = i;
+			break;
 		}
-		assert.equal(checked, wildBall.debrisCount);
-		assert.ok(Math.abs(ledgerDrift(world)) < 1e-6);
+		wildBall.debrisX[grain] = plate.x - 1.0;
+		wildBall.debrisY[grain] = plate.y + deck + 0.8;
+		wildBall.debrisVx[grain] = 0;
+		wildBall.debrisVy[grain] = 0;
+		const beforeCells = ceiling.state.cargoCells;
+		const beforeValue = ceiling.state.cargoValue;
+		world.initialEnergy = physics.totalEnergy(world);
+		for (let i = 0; i < 240 * 4; i++) physics.step(world, physics.config.step);
+		assert.ok(ceiling.state.cargoCells > beforeCells, 'the collector scooped the grain');
+		assert.ok(ceiling.state.cargoValue > beforeValue, 'the grain brought its value with it');
+		assert.ok(Math.abs(ledgerDrift(world)) < 1e-6, 'the catch is ledger-exact: ' + ledgerDrift(world));
 	} finally {
 		resetClassic();
 	}

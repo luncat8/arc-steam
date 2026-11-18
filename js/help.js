@@ -197,15 +197,17 @@
 			title: 'Wild Mine fuel from cargo and condensate',
 			text: [
 				'Wild Mine has no charge pad or refuelling wall, so the installed engine burns what you collect instead. It keeps the reserve topped up at its own reload rate, in the same seconds-to-full the centre pad would take: oil refills fastest, then electric, nuclear and coal. Tools that draw more power than that run the reserve buffer down, exactly as a pad-fed machine would.',
-				'Coal and electric are solid-fuel engines and burn stone, sand and quartz. Oil burns gas rock, fizzy halite, fluorite, vitriol and halite. Nuclear burns the reactive metals: iron, copper, corundum, silver and gold. Each family has its own chemical energy per kilogram, so a gas-rich hopper is worth far more to the oil engine than the same mass of host rock is to the electric one.',
+				'Each engine burns one family and the families are deliberately small: coal and electric burn stone and sand (the coal them in the cave), oil burns fizzy halite and vitriol, and nuclear burns gas rock. Nothing else is fuel — ore stays ore and sells, it does not heat the boiler. Each family has its own chemical energy per kilogram, so a fizzy-rich hopper is worth far more to the oil engine than host rock is to the coal one.',
 				'A burn takes the cheapest loaded cell per joule in its own family first, using the live market quote, so ore stays in the hopper whenever cheaper fuel is beside it. The removed cell loses its sale value, its chemical energy enters the reserve, and the gravitational potential that was already counted is reconciled against the imported share, so the energy-balance readout stays exact.',
-				'Oil uses condensate from the water tank first (24 kJ/kg), then the cheapest compatible cargo. It does not burn spray water. If the oil reserve is flat, park over a blue seep with the intake on: the crew hand-pumps slowly until the engine has enough condensate to restart.'
+				'Oil uses condensate from the water tank first (24 kJ/kg), then the cheapest compatible cargo. It does not burn spray water. If the oil reserve is flat, park over a blue seep with the intake on: the crew hand-pumps slowly until the engine has enough condensate to restart.',
+				'The service cart that buys your load keeps back 20% of every fuel-grade mineral — stone, sand, fizzy halite, vitriol and gas rock — so the engine can always be refuelled from the hopper. Everything else sells out in full.'
 			],
 			keys: [
-				['Coal / Electric', 'Solid fuel · stone, sand, quartz'],
-				['Oil', 'Tank condensate, then gas rock, fizzy halite, fluorite, vitriol or halite'],
-				['Nuclear', 'Fissile fuel · iron, copper, corundum, silver, gold'],
+				['Coal / Electric', 'Solid fuel · stone, sand'],
+				['Oil', 'Tank condensate, then fizzy halite or vitriol'],
+				['Nuclear', 'Fissile fuel · gas rock'],
 				['Cargo fuel', 'Cheapest compatible cell per joule first'],
+				['Service cart', 'Keeps 20% of fuel-grade cargo for the engine, sells the rest'],
 				['Hand', 'No fuel cycle · the crew can still crank the platform']
 			]
 		},
@@ -310,9 +312,26 @@
 			title: 'Cargo and storage',
 			text: [
 				'Storage holds 100 cells at 0.6 kg each. A full load equals the dry platform mass, so cargo slows acceleration and participates in capture momentum, braking and kinetic energy.',
-				'Fragments are caught only by the amber collector; the rest pile up on the floor heightmap as lost rubble. The road grader works a 1.5 m swath under the platform centre and shaves that rubble back down, and the blade keeps half of the shaved value for its owner — booked as one settlement when the swath goes quiet rather than thrown away.',
+				'Fragments are caught only by the amber collector; the rest pile up on the floor heightmap as lost rubble. The road grader works a 1.5 m swath under the platform centre and shaves that rubble back down, and the blade keeps half of the shaved value for its owner — booked as one settlement when the swath goes quiet rather than thrown away. In Wild Mine the grader ships preinstalled with the machine; in the test chamber it is a purchase.',
 				'The commercial grader calls the free garage bot on the right bay instead: it sweeps wall to wall and pays a 50% share of everything it lifts. Calling it first is the strongest opening the economy has measured; the road grader is a later purchase, because its 300 cr and its rolling resistance buy the most once the drive and pulse chain already carries them.',
 				'Touch either wall marked SELL with a load aboard to sell it in one go.'
+			]
+		},
+		{
+			id: 'cart',
+			label: 'Service cart',
+			title: 'The Wild Mine service cart',
+			text: [
+				'Wild Mine has no SELL wall: the mine’s service cart does the buying. When the hopper fills — or once a minute while it is not empty — the cart arrives from the depot tunnel near the start of the section, drawn as a storyline cut-in rather than part of the cave: it comes out of the screen, docks beside the rig, and waits.',
+				'Click the cart while it is there to sell the load: everything in the hopper is sold at the live quote except 20% of each fuel-grade mineral (stone, sand, fizzy halite, vitriol, gas rock), which stays aboard for the engine. One sale is booked in the ledger as a single entry. The cart lingers a moment and is gone until its next scheduled call.',
+				'The “Service cart: autosell on arrival” checkbox sells automatically every time the cart appears, so a parked, working rig never has to be clicked. Uncheck it to sell manually. The cart keeps back the fuel reservation either way — autosell never sells the engine’s fuel.',
+				'If the cart docks and the hopper holds nothing sellable beyond the fuel reservation, the call passes without a sale.'
+			],
+			keys: [
+				['Click the cart', 'Sell the hopper at the live quote, minus the 20% fuel reservation'],
+				['Autosell checkbox', 'Sell automatically at every arrival'],
+				['Fuel reservation', 'Stone, sand, fizzy halite, vitriol and gas rock keep 20% by mass'],
+				['Ledger', 'One frozen sale entry per call']
 			]
 		},
 		{

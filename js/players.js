@@ -592,13 +592,24 @@
 
 	function grade(rival, dt) {
 		const ceiling = root.SteamCeiling;
-		if (!ceiling || !ceiling.harvest) return;
+		if (!ceiling) return;
 		const limit = ceiling.state.storageLimit || loadLimitDefault;
 		const capacity = limit - rival.cargoCells;
 		if (capacity <= 0) return;
 		harvest.value = 0;
 		harvest.cells = 0;
-		ceiling.harvest(rival.x, bladeSwath * 0.5, bladeCut * dt, capacity, harvest);
+		// In the Wild Mine the rubble the blade rides through is the shared
+		// heightmap (js/wild-rubble.js), not the chamber's flat floor; only the
+		// face under this body is shaved, so a pile parked on a ledge above the
+		// blade keeps its material.
+		const mine = root.SteamWildMine;
+		const wild = mine && typeof mine.isWild === 'function' && mine.isWild();
+		const rubble = wild ? root.SteamWildRubble : null;
+		if (rubble && rubble.harvest) {
+			rubble.harvest(rival.x, bladeSwath * 0.5, bladeCut * dt, capacity, harvest, rival.y);
+		} else if (ceiling.harvest) {
+			ceiling.harvest(rival.x, bladeSwath * 0.5, bladeCut * dt, capacity, harvest);
+		}
 		if (harvest.cells <= 0) return;
 		rival.cargoCells += harvest.cells;
 		rival.cargoValue += harvest.value;

@@ -10,8 +10,10 @@
 	const physicsRef = node ? require('./physics.js') : root.SteamPhysics;
 	const ballRef = node ? require('./wild-ball.js') : null;
 	const water = node ? require('./wild-water.js') : root.SteamWildWater;
+	const rubbleRef = node ? require('./wild-rubble.js') : root.SteamWildRubble;
 
 	function phys() { return physicsRef || root.SteamPhysics; }
+	function rubble() { return rubbleRef || root.SteamWildRubble || null; }
 	// Loaded after this file in the page, so the ball is resolved at call time.
 	function ballApi() { return ballRef || root.SteamWildBall; }
 
@@ -122,9 +124,18 @@
 		camera.vy = nextVy;
 	}
 
+	const groundScratch = { face: NaN, crest: NaN, height: 0, nx: 0, ny: 1, hasPile: false, row: -1 };
 	function groundAt(x, refY) {
 		if (!cave) return 0;
 		const probeY = Number.isFinite(refY) ? refY : camera.y;
+		const pile = rubble();
+		if (pile) {
+			// The rubble crest rides the rock face it stands on: one query gives
+			// face and smoothed height together, verified against a mined-out
+			// supporting cell before it is trusted.
+			const s = pile.surfaceAt(x, probeY, groundScratch);
+			return Number.isFinite(s.crest) ? s.crest : 0;
+		}
 		const floor = cave.floorBelow(x, probeY);
 		return Number.isFinite(floor) ? floor : 0;
 	}
@@ -211,6 +222,16 @@
 	function init(world, options) {
 		const opts = options || {};
 		if (opts.seed !== undefined) seed = opts.seed;
+		const pile = rubble();
+		if (pile && pile.reset) pile.reset();
+		if (root.SteamWildCart && root.SteamWildCart.reset) root.SteamWildCart.reset();
+		// Wild rubble re-lays at the finer 1.5:1 tile, not the chamber's 4:1
+		// default (the plan's D9); classic keeps whatever the select says.
+		const ceiling = root.SteamCeiling;
+		if (ceiling && ceiling.setFloorCompression) ceiling.setFloorCompression(1.5);
+		// The road grader ships with the machine: the wild blade is what pays
+		// for the ore, so it is preinstalled rather than sold.
+		if (root.SteamEquipment && root.SteamEquipment.grant) root.SteamEquipment.grant('grader', world);
 		cave = caveApi.create({ seed });
 		const startX = cave.state.spawnX;
 		cave.stream(startX - viewWidth, startX + viewWidth, Infinity);
@@ -272,6 +293,15 @@
 		water.stepIntake(world, dt);
 		if (root.SteamWater) root.SteamWater.stepWild(world, cave, dt);
 		p.advancePiston(world, dt);
+		// The road grader works the rubble the platform rides, exactly like the
+		// chamber's blade: it shaves while moving and settles as one ledger entry
+		// when the stint ends. It ships preinstalled with the machine.
+		if (root.SteamEquipment && root.SteamEquipment.isInstalled('grader')) {
+			const pile = rubble();
+			if (pile) pile.grade(world, dt);
+		}
+		// The service cart's arrival and dwell are part of the frame.
+		if (root.SteamWildCart && root.SteamWildCart.step) root.SteamWildCart.step(world, dt);
 		const ballModule = ballApi();
 		if (ballModule) ballModule.step(world, cave, dt);
 		p.cool(world, dt);
