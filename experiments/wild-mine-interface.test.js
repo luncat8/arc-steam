@@ -527,3 +527,36 @@ test('hammer buffer controls stay hidden in Classic, aim by slider or cursor in 
 	mode.dispatch('change');
 	assert.equal(panel.hidden, true, 'switching back to Classic hides hammer buffer controls');
 });
+
+test('Wild road grader mode controls pitch, tunnel grade and smoothing without changing Classic', () => {
+	const mode = dom.element('game-mode');
+	const panel = dom.element('wild-grader-controls');
+	const select = dom.element('wild-grader-mode');
+	const status = dom.element('wild-grader-status');
+	mode.value = 'classic';
+	mode.dispatch('change');
+	assert.equal(panel.hidden, true);
+	mode.value = 'wild';
+	mode.dispatch('change');
+	advance(4);
+	assert.equal(panel.hidden, false);
+	assert.equal(select.value, 'platform');
+	assert.match(status.textContent, /Platform pitch/);
+	select.value = 'bore';
+	select.dispatch('change');
+	assert.equal(window.SteamWildRubble.gradeMode, 'bore');
+	assert.match(status.textContent, /Tunnel grade/);
+	select.value = 'smooth';
+	select.dispatch('change');
+	assert.match(status.textContent, /without shaving/);
+	mode.value = 'classic';
+	mode.dispatch('change');
+	assert.equal(panel.hidden, true);
+	mode.value = 'wild';
+	mode.dispatch('change');
+	advance(2);
+	assert.equal(select.value, 'smooth', 'selection survives new runs');
+	window.SteamWildRubble.setGradeMode('platform');
+	mode.value = 'classic';
+	mode.dispatch('change');
+});

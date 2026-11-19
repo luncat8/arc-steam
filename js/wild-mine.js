@@ -311,9 +311,8 @@
 		water.stepIntake(world, dt);
 		if (root.SteamWater) root.SteamWater.stepWild(world, cave, dt);
 		p.advancePiston(world, dt);
-		// The road grader works the rubble the platform rides, exactly like the
-		// chamber's blade: it shaves while moving and settles as one ledger entry
-		// when the stint ends. It ships preinstalled with the machine.
+		// The Wild blade works connected rubble while moving. Smooth mode keeps
+		// material for ramps; angle-following modes settle their shaved value.
 		if (root.SteamEquipment && root.SteamEquipment.isInstalled('grader')) rubble.grade(world, dt);
 		// The service cart's arrival and dwell are part of the frame.
 		if (root.SteamWildCart && root.SteamWildCart.step) root.SteamWildCart.step(world, dt);

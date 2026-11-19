@@ -11,10 +11,13 @@
 	let cave = null;
 	let cell = 0;
 	let depositedCells = 0, depositedValue = 0, lostCells = 0, lostValue = 0;
-	let collapseCount = 0, bladeCells = 0;
+	let collapseCount = 0, bladeCells = 0, bladeValueTotal = 0;
+	let gradeMode = 'platform';
+	const gradeRows = new Int32Array(64);
 	const blade = { value: 0, idle: 0 };
-	const cutScratch = { cells: 0, value: 0 };
 	const bladeSettleDelay = 0.25;
+	// Diffusion across many 12.5 cm bins must work within a driving pass.
+	const gradeRate = 12;
 
 	class Bin {
 		constructor(row) {
@@ -143,10 +146,10 @@
 	// Below that it is a real edge: even a thin layer on a one-cell pedestal
 	// stays on its top rather than being averaged into the gallery below.
 	function nextOnBed(column, row, direction) {
-		const next = cave.adjacentFloor(column, row, direction);
+		const next = cave.connectedFloor(column, row, direction);
 		if (next < 0 || next === row) return next;
 		const lowerHeight = next > row ? height(column, row) : height(column + direction, next);
-		return lowerHeight >= cell ? next : -1;
+		return lowerHeight + 1e-10 >= Math.abs(next - row) * cell ? next : -1;
 	}
 
 	function level(column, row) { return (row + 1) * cell + height(column, row); }
@@ -168,8 +171,10 @@
 		const roof = roofAt(column, row);
 		const leftRoof = left < 0 ? roof : Math.min(roof, roofAt(column - 1, left));
 		const rightRoof = right < 0 ? roof : Math.min(roof, roofAt(column + 1, right));
-		const y0 = Math.max(base, Math.min(leftRoof, (ll + 3 * l + 3 * h + r) / 8));
-		const y1 = Math.max(base, Math.min(rightRoof, (l + 3 * h + 3 * r + rr) / 8));
+		const leftBase = left < 0 ? base : Math.max(base, (left + 1) * cell);
+		const rightBase = right < 0 ? base : Math.max(base, (right + 1) * cell);
+		const y0 = Math.max(leftBase, Math.min(leftRoof, (ll + 3 * l + 3 * h + r) / 8));
+		const y1 = Math.max(rightBase, Math.min(rightRoof, (l + 3 * h + 3 * r + rr) / 8));
 		if (y0 <= base && y1 <= base) return;
 		let strip = profile.strips[profile.count];
 		if (!strip) profile.strips.push(strip = {});
@@ -300,12 +305,12 @@
 		return out;
 	}
 
-	function levelEdge(right, leftFace, rightFace, ease) {
+	function levelEdge(right, leftFace, rightFace, ease, slope) {
 		const left = right - 1, leftRow = cave.rowAt(leftFace) - 1, rightRow = cave.rowAt(rightFace) - 1;
 		const a = binAt(left, leftRow), b = binAt(right, rightRow);
 		if (!a && !b) return;
-		if (leftRow !== rightRow && cave.adjacentFloor(left, leftRow, 1) !== rightRow) return;
-		const difference = leftFace - rightFace + (a ? a.height : 0) - (b ? b.height : 0);
+		if (cave.connectedFloor(left, leftRow, 1) !== rightRow) return;
+		const difference = leftFace - rightFace + (a ? a.height : 0) - (b ? b.height : 0) + slope * cell;
 		if (!difference) return;
 		const source = difference > 0 ? a : b, dest = difference > 0 ? b : a;
 		if (!source) return;
@@ -319,7 +324,23 @@
 		add(to, destRow, n, value);
 	}
 
+	function setGradeMode(mode) {
+		if (mode === 'platform' || mode === 'bore' || mode === 'smooth') gradeMode = mode;
+		return gradeMode;
+	}
+
+	function gradeSlope(world) {
+		if (gradeMode === 'smooth') return 0;
+		if (gradeMode === 'platform') return Math.tan(world.platform.angle || 0);
+		const bore = root.SteamWildBore;
+		if (!bore) return 0;
+		const direction = (!world.brake && (world.direction || (Number.isFinite(world.target) && Math.abs(world.target - world.platform.x) > 0.05
+			? Math.sign(world.target - world.platform.x) : 0))) || bore.side;
+		return direction * Math.tan(bore.grade);
+	}
+
 	function grade(world, dt) {
+		if (!cave || !world || !(dt > 0)) return;
 		if (blade.value > 0) {
 			blade.idle += dt;
 			if (blade.idle >= bladeSettleDelay) settleBlade(world);
@@ -327,20 +348,44 @@
 		const platform = world.platform;
 		if (!piles.size || !(Math.abs(platform.vx) > 0.02 || world.direction !== 0)) return;
 		const half = ceiling.state.graderSwath * 0.5;
-		const first = cave.columnAt(platform.x - half), last = cave.columnAt(platform.x + half);
-		const ease = Math.min(1, ceiling.state.graderSmooth * dt);
+		const first = cave.columnAt(platform.x - half) - 1;
+		const last = cave.columnAt(platform.x + half) + 1;
+		const center = cave.columnAt(platform.x);
+		if (last - first >= gradeRows.length) return;
+		gradeRows.fill(-1);
 		const y = platform.y;
-		let previous = cave.floorBelow(cave.worldX(first - 1), y);
-		for (let c = first; c <= last + 1; c++) {
-			const face = cave.floorBelow(cave.worldX(c), y);
-			if (previous <= y && face <= y) levelEdge(c, previous, face, ease);
-			previous = face;
+		const face = cave.floorBelow(cave.worldX(center), y + 0.05);
+		if (!Number.isFinite(face) || face > y + 0.05) return;
+		gradeRows[center - first] = cave.rowAt(face) - 1;
+		for (let dir = -1; dir <= 1; dir += 2) {
+			let row = gradeRows[center - first];
+			for (let c = center + dir; c >= first && c <= last; c += dir) {
+				row = cave.connectedFloor(c - dir, row, dir);
+				if (row < 0 || (row + 1) * cell > y + 0.6) break;
+				gradeRows[c - first] = row;
+			}
 		}
-		harvest(platform.x, half, ceiling.state.graderCut * dt, Infinity, cutScratch, y);
-		if (cutScratch.cells <= 0) return;
-		bladeCells += cutScratch.cells;
-		blade.value += cutScratch.value;
-		blade.idle = 0;
+		const ease = Math.min(1, gradeRate * dt);
+		const slope = gradeSlope(world);
+		for (let c = first + 1; c <= last; c++) {
+			const left = gradeRows[c - first - 1], right = gradeRows[c - first];
+			if (left >= 0 && right >= 0) levelEdge(c, (left + 1) * cell, (right + 1) * cell, ease, slope);
+		}
+		// Smooth mode keeps every grain for ramps; the two grade-following
+		// settings retain the normal blade's slow shave and settlement.
+		if (gradeMode === 'smooth') return;
+		const perBin = ceiling.state.graderCut * dt / ceiling.state.floorCellHeight;
+		for (let c = first + 1; c < last; c++) {
+			const row = gradeRows[c - first];
+			const bin = row < 0 ? null : binAt(c, row);
+			if (!bin) continue;
+			const n = Math.min(bin.cells, perBin);
+			const value = take(c, bin, n);
+			bladeCells += n;
+			bladeValueTotal += value;
+			blade.value += value;
+			blade.idle = 0;
+		}
 	}
 
 	function settleBlade(world) {
@@ -354,7 +399,7 @@
 		if (cave) cell = cave.state.cell;
 		piles.clear();
 		profiles.clear();
-		depositedCells = depositedValue = lostCells = lostValue = collapseCount = bladeCells = 0;
+		depositedCells = depositedValue = lostCells = lostValue = collapseCount = bladeCells = bladeValueTotal = 0;
 		blade.value = blade.idle = 0;
 	}
 
@@ -369,11 +414,12 @@
 			cells += bin.cells;
 			value += bin.value;
 		}
-		return { segments, cells, value, depositedCells, depositedValue, lostCells, lostValue, collapseCount, bladeCells, bladeValue: blade.value };
+		return { segments, cells, value, depositedCells, depositedValue, lostCells, lostValue, collapseCount, bladeCells, bladeValueTotal, bladeValue: blade.value, gradeMode };
 	}
 
 	const api = { reset, deposit, rockOpened, rescale, surfaceAt, crestAt, heightAt, traceCrest,
-		harvest, grade, settleBlade, eachStrip, eachColumn, bookLost, state,
+		harvest, grade, setGradeMode, gradeSlope, settleBlade, eachStrip, eachColumn, bookLost, state,
+		get gradeMode() { return gradeMode; },
 		get bladeValue() { return blade.value; },
 		get lostCells() { return lostCells; }
 	};

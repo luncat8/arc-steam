@@ -81,6 +81,12 @@
 							<p id="bore-status" class="hint" role="status" hidden></p>
 							<p id="bore-yield" class="hint tool-yield" hidden></p>
 						</div>
+						<div id="wild-grader-controls" class="bore-controls" data-topic="cargo" hidden>
+							<div class="eyebrow-row"><p class="eyebrow">ROAD GRADER</p></div>
+							<label for="wild-grader-mode">Blade mode</label>
+							<select id="wild-grader-mode" autocomplete="off"><option value="platform">Follow platform pitch</option><option value="bore">Follow tunnel grade</option><option value="smooth">Smooth rubble · keep material</option></select>
+							<p id="wild-grader-status" class="hint" role="status"></p>
+						</div>
 						<div class="eyebrow-row"><p class="eyebrow">ROCKETS</p><button id="help-rockets" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: rockets">?</button></div>
 						<div class="rocket-row"><button id="rocket-fire" type="button" aria-keyshortcuts="R" disabled>Fire 0 / 6 <span>R</span></button><button id="rocket-buy" type="button" disabled>Buy</button></div>
 						<div class="autopilot" id="rocket-orders"><label><input type="checkbox" id="rocket-auto" autocomplete="off"><span>Auto-buy up to 3 at each SELL wall</span></label></div>

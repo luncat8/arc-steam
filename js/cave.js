@@ -424,6 +424,29 @@
 			return -1;
 		}
 
+		// Follow an exposed floor across a vertical drop of any height. The high
+		// side must be solid down to the lower floor, and the intervening space
+		// must be open: stacked galleries and floating shelves cannot exchange soil.
+		function connectedFloor(column, row, direction) {
+			const next = column + direction;
+			if (!solidCell(column, row) || solidCell(column, row + 1)) return -1;
+			if (solidCell(next, row)) {
+				let r = row;
+				while (r < rows - 1 && solidCell(next, r + 1)) {
+					r++;
+					if (solidCell(column, r)) return -1;
+				}
+				return !solidCell(column, r + 1) ? r : -1;
+			}
+			if (solidCell(next, row + 1)) return -1;
+			let r = row;
+			while (r > 0 && !solidCell(next, r)) {
+				if (!solidCell(column, r)) return -1;
+				r--;
+			}
+			return solidCell(column, r) ? r : -1;
+		}
+
 		function sdfCell(column, row) {
 			if (row < 0 || row >= rows) return -bandMeters;
 			const chunk = chunkFor(column);
@@ -854,7 +877,7 @@
 			state,
 			columnAt, rowAt, worldX, worldY,
 			stream, chunkFor, eachChunk,
-			solidAt, solidCell, sdfAt, normalAt, traceCircle, floorBelow, adjacentFloor, roofAbove, spanAt,
+			solidAt, solidCell, sdfAt, normalAt, traceCircle, floorBelow, adjacentFloor, connectedFloor, roofAbove, spanAt,
 			weaken, boreCells, dig, damageAt, strengthAt, elementsAt, mixAt,
 			carveAt,
 			get removedCount() { return removedCount; },

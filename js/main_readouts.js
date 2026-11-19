@@ -517,6 +517,7 @@ function toolYieldReadout(driveOn) {
 	if (typeof wildIsActive === 'function' && wildIsActive()) {
 		wildPistonReadout(driveOn);
 		wildBoreReadout();
+		wildGraderReadout();
 		setMessage(ui['sandblast-yield'], '', '');
 		setMessage(ui['water-yield'], '', '');
 		setMessage(ui['grader-yield'], '', '');

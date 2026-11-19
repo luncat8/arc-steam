@@ -698,6 +698,7 @@ function wildSyncMode(nextMode) {
 	}
 	setHidden(ui['ball-controls'], !wild);
 	setHidden(ui['wild-bore-controls'], !wild);
+	setHidden(ui['wild-grader-controls'], !wild);
 	setHidden(ui['wild-water-controls'], !wild);
 	setHidden(ui['classic-pump-order'], wild);
 	setHidden(ui['classic-solute-order'], wild);
@@ -863,6 +864,19 @@ function wildWaterReadout(installed) {
 		: world.battery < physics.reserveCost(SteamWater.state.shotEnergy) ? 'Reserve too low to pressurize a droplet'
 		: '';
 	setMessage(ui['water-status'], reason, '');
+}
+
+function wildGraderReadout() {
+	const rubble = window.SteamWildRubble;
+	const fitted = SteamEquipment.isInstalled('grader', 'rig');
+	const mode = rubble.gradeMode;
+	if (ui['wild-grader-mode'].value !== mode) ui['wild-grader-mode'].value = mode;
+	setDisabled(ui['wild-grader-mode'], !fitted);
+	const angle = Math.round(Math.atan(rubble.gradeSlope(world)) * 180 / Math.PI);
+	const note = !fitted ? 'Fit the road grader to work rubble.'
+		: mode === 'smooth' ? 'Smooths connected rubble without shaving. Drive back and forth to build ramps.'
+		: (mode === 'bore' ? 'Tunnel grade' : 'Platform pitch') + ' · ' + (angle > 0 ? '+' : '') + angle + '° world slope · shaves for blade settlement.';
+	setText(ui['wild-grader-status'], note);
 }
 
 function wildBoreReadout() {

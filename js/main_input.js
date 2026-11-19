@@ -557,6 +557,12 @@ function bindInput() {
 		sceneDirty = true;
 		refresh();
 	});
+	ui['wild-grader-mode'].addEventListener('change', function () {
+		if (!wildIsActive()) return;
+		window.SteamWildRubble.setGradeMode(ui['wild-grader-mode'].value);
+		sceneDirty = true;
+		refresh();
+	});
 	ui['bore-auto'].addEventListener('change', function () {
 		if (!window.SteamWildBore) return;
 		window.SteamWildBore.setAuto(ui['bore-auto'].checked);
