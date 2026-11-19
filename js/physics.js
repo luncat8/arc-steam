@@ -727,7 +727,8 @@
 		const machine = world ? machineById(world, ownerId(owner)) : null;
 		if (!next || !machine) return false;
 		const platform = machineBody(machine);
-		if (Math.abs(platform.vx) > 0.1 || platform.x > platformMin() + 0.2) return false;
+		if (Math.abs(platform.vx) > 0.1) return false;
+		if (!wildMode() && platform.x > platformMin() + 0.2) return false;
 		const oldMass = machineMass(world, machine);
 		if (platform.id === world.platform.id) engine = next;
 		else platform.engineId = id;
@@ -1008,7 +1009,9 @@
 		if (root.SteamRockets) root.SteamRockets.reset();
 		if (root.SteamSandblaster) root.SteamSandblaster.reset();
 		if (root.SteamWater) root.SteamWater.reset();
+		if (root.SteamRocketFab) root.SteamRocketFab.reset();
 		if (root.SteamFuel) root.SteamFuel.reset();
+		if (root.SteamWildBore) root.SteamWildBore.reset();
 		const world = {
 			time: 0, battery: config.battery, heat: 0, cooledEnergy: 0, fractureEnergy: 0, importedEnergy: 0, exportedProduct: 0, chargedEnergy: 0, crankEnergy: 0, terrainWork: 0, platformWork: 0,
 			initialEnergy: 0,

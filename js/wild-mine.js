@@ -131,7 +131,18 @@
 
 	function groundAt(x, refY) {
 		if (!cave) return 0;
-		const floor = rubble.crestAt(x, Number.isFinite(refY) ? refY : camera.y);
+		let probeY = Number.isFinite(refY) ? refY : camera.y;
+		// When a pitched hull samples within a couple of cells of a low tunnel
+		// roof, step just below the ceiling into the open passage rather than
+		// mistaking the roof cell for a floor ledge.
+		if (cave.solidAt(x, probeY)) {
+			const cell = cave.state.cell;
+			for (let drop = 1; drop <= 3; drop++) {
+				const below = probeY - drop * cell;
+				if (!cave.solidAt(x, below)) { probeY = below; break; }
+			}
+		}
+		const floor = rubble.crestAt(x, probeY);
 		return Number.isFinite(floor) ? floor : 0;
 	}
 
@@ -233,6 +244,7 @@
 		cave = caveApi.create({ seed, onOpen: rockOpened });
 		rubble.reset(cave);
 		if (root.SteamWildCart && root.SteamWildCart.reset) root.SteamWildCart.reset();
+		if (root.SteamWildBore && root.SteamWildBore.reset) root.SteamWildBore.reset();
 		// Wild rubble re-lays at the finer 1.5:1 tile, not the chamber's 4:1
 		// default (the plan's D9); classic keeps whatever the select says.
 		ceiling.setFloorCompression(opts.compression === undefined ? 1.5 : opts.compression);
@@ -291,6 +303,7 @@
 		// No charge pad in the cave: the installed engine burns cargo fuel to
 		// keep the reserve up before this frame's work is paid for.
 		if (root.SteamFuel) root.SteamFuel.step(world, dt);
+		if (root.SteamWildBore) root.SteamWildBore.step(world, cave, dt);
 		const p = phys();
 		p.movePlatform(world, dt);
 		p.updatePlatformTerrain(world, dt);

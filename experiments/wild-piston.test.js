@@ -94,6 +94,43 @@ test('the upgraded piston uses deck retention, not strike-head loss, and counts 
 		near(world.lastPush, useful);
 		near(reserve - world.battery, useful / physics.engineNow().efficiency);
 		assert.equal(world.pushes, pushes + (useful > 0 ? 1 : 0));
+		assert.ok(world.pistonOffset > 0, 'front-face piston hit compresses the piston spring');
 		near(physics.totalEnergy(world), world.initialEnergy, 1e-8);
 	}
+});
+
+test('moving-deck bounce recycling is frame-invariant and unpowered launch leaves the piston still', () => {
+	// Measure recuperated battery gain against a tilted piston on standing, advancing and retreating decks.
+	const gains = [];
+	for (const stepVx of [0, 4, -4]) {
+		const world = parked();
+		world.drive = false;
+		world.pistonAngle = -Math.PI / 2; // piston normal points +x
+		const ball = world.balls[0];
+		ball.state = 'flying';
+		ball.holder = null;
+		ball.recycle = true;
+		ball.battery = 0;
+		ball.x = world.platform.x + c.pistonCentre + c.radius * 0.9;
+		ball.y = world.platform.y + c.deck;
+		world.platform.stepVx = stepVx;
+		ball.vx = stepVx - 5; // identical -5 m/s deck-frame normal approach in all three cases
+		ball.vy = 0;
+		sync(world);
+		wildBall.step(world, mine.cave, c.step);
+		gains.push(ball.battery);
+		assert.ok(ball.battery > 0, `deck stepVx ${stepVx} recuperates normal bounce loss`);
+		near(physics.totalEnergy(world), world.initialEnergy, 1e-8);
+	}
+	near(gains[1], gains[0], 1e-6);
+	near(gains[2], gains[0], 1e-6);
+
+	// An unpowered release must not fake a powered piston stroke.
+	const dry = parked();
+	dry.battery = 0;
+	dry.pistonOffset = 0;
+	sync(dry);
+	assert.ok(physics.launch(dry, dry.balls[0]));
+	assert.equal(dry.pistonOffset, 0);
+	near(physics.totalEnergy(dry), dry.initialEnergy, 1e-8);
 });

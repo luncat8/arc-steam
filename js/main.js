@@ -26,6 +26,7 @@ const ids = ['chamber-title', 'game-mode', 'clock', 'drive', 'launch', 'status-b
 	'water-fire', 'water-aim', 'water-auto', 'water-pump', 'water-pump-solute', 'water-status', 'water-yield',
 	'classic-pump-order', 'classic-solute-order', 'pad-key', 'seep-key',
 	'wild-water-controls', 'wild-tank-level', 'wild-tank-meter', 'wild-tank-mix', 'wild-tank-drain', 'wild-intake', 'wild-intake-note',
+	'wild-bore-controls', 'bore-fire', 'bore-cursor', 'bore-angle', 'bore-angle-value', 'bore-auto', 'bore-status', 'bore-yield',
 	'cart-orders', 'cart-autosell', 'cart-status'];
 // One mark per help topic, plus the drawer it feeds.
 for (const topic of window.SteamHelp.topics) ids.push('help-' + topic.id);

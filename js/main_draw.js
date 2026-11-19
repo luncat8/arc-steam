@@ -187,6 +187,9 @@ function drawRigMachinery(context, player) {
 	const pistonTx = pistonNy;
 	const pistonTy = -pistonNx;
 	const pistonOffset = Number.isFinite(machine.pistonOffset) ? machine.pistonOffset : 0;
+	if (physics.wildMode() && player.id === 'rig' && SteamEquipment.isInstalled('bore', player.id) && window.SteamWildBore) {
+		drawBoreBuffers();
+	}
 	const pistonCentreX = config.pistonCentre - pistonNx * pistonOffset;
 	const pistonCentreY = config.deck - pistonNy * pistonOffset;
 	context.strokeStyle = '#718d75';
@@ -204,6 +207,37 @@ function drawRigMachinery(context, player) {
 	context.lineTo(pistonCentreX - pistonTx * config.pistonHalf - pistonNx * 0.15, pistonCentreY - pistonTy * config.pistonHalf - pistonNy * 0.15);
 	context.closePath();
 	context.fill();
+	context.lineWidth = 1 / scale;
+}
+
+function drawBoreBuffers() {
+	const bore = window.SteamWildBore;
+	const half = config.platformWidth * 0.5;
+	const grade = bore.grade;
+	const activeSide = bore.side;
+	const cutting = bore.active;
+	for (let i = 0; i < 2; i++) {
+		const side = i === 0 ? -1 : 1;
+		const working = side === activeSide;
+		const shift = working ? bore.stroke : 0;
+		const headX = side * (half + 0.08 + shift);
+		const collarX = side * (half - 0.04);
+		const tiltY = working ? Math.sin(grade) * 0.08 : 0;
+		context.strokeStyle = working && cutting ? '#e8bd6a' : '#7b8d91';
+		context.lineWidth = 0.065;
+		context.beginPath();
+		context.moveTo(collarX, 0.44);
+		context.lineTo(headX, 0.44 + tiltY);
+		context.stroke();
+		context.fillStyle = working ? (cutting ? '#f2c977' : '#c99b52') : '#66787c';
+		context.beginPath();
+		context.moveTo(headX, 0.25 + tiltY);
+		context.lineTo(headX + side * 0.09, 0.30 + tiltY);
+		context.lineTo(headX + side * 0.09, 0.58 + tiltY);
+		context.lineTo(headX, 0.63 + tiltY);
+		context.closePath();
+		context.fill();
+	}
 	context.lineWidth = 1 / scale;
 }
 

@@ -764,6 +764,53 @@
 			return Math.min(energy, spent / gain);
 		}
 
+		// Spend up to `strengthBudget` J in candidate order for the tunnel bore,
+		// keeping the section's border band intact and refreshing the SDF once.
+		function boreCells(cols, rws, count, strengthBudget, out) {
+			removedCount = 0;
+			out.weakened = 0;
+			out.opened = 0;
+			if (!(strengthBudget > 0) || !(count > 0)) return out;
+			let remaining = strengthBudget;
+			for (let k = 0; k < count && remaining > 1e-12; k++) {
+				const col = cols[k], r = rws[k];
+				if (r < edgeRows || r >= rows - edgeRows) continue;
+				const chunk = chunkFor(col);
+				const i = r * stride + col - chunk.column0 + pad;
+				if (!chunk.solid[i]) continue;
+				const before = ensureStrength(chunk, i, col, r);
+				if (remaining + 1e-12 >= before) {
+					if (removedCount >= maxRemoved) break;
+					out.weakened += before;
+					remaining -= before;
+					removedColumns[removedCount] = col;
+					removedRows[removedCount++] = r;
+					continue;
+				}
+				const susceptibility = 1 + weakRockSensitivity * (materials.maxStrength / before - 1);
+				chunk.damage[i] = Math.min(1, chunk.damage[i] + remaining / before * loosedPerWeakened * susceptibility);
+				chunk.strength[i] = before - remaining;
+				chunk.edited = true;
+				chunk.editStamp++;
+				out.weakened += remaining;
+				remaining = 0;
+			}
+			if (!removedCount) return out;
+			let left = removedColumns[0], right = left, low = removedRows[0], high = low;
+			for (let i = 0; i < removedCount; i++) {
+				const c = removedColumns[i], r = removedRows[i];
+				openCell(chunkFor(c), c, r, true);
+				if (c < left) left = c;
+				if (c > right) right = c;
+				if (r < low) low = r;
+				if (r > high) high = r;
+			}
+			refreshAround(left, right, low, high);
+			out.opened = removedCount;
+			if (settings.onOpen) for (let i = 0; i < removedCount; i++) settings.onOpen(removedColumns[i], removedRows[i], false);
+			return out;
+		}
+
 		// Remove one cell outright: the cart's shelf cut, a test's prepared
 		// tunnel, a blast that leaves nothing to hold. Section border rows stay
 		// solid so surface queries never fall out of the section.
@@ -807,8 +854,8 @@
 			state,
 			columnAt, rowAt, worldX, worldY,
 			stream, chunkFor, eachChunk,
-			solidAt, sdfAt, normalAt, traceCircle, floorBelow, adjacentFloor, roofAbove, spanAt,
-			weaken, dig, damageAt, strengthAt, elementsAt, mixAt,
+			solidAt, solidCell, sdfAt, normalAt, traceCircle, floorBelow, adjacentFloor, roofAbove, spanAt,
+			weaken, boreCells, dig, damageAt, strengthAt, elementsAt, mixAt,
 			carveAt,
 			get removedCount() { return removedCount; },
 			get removedColumn() { return removedColumns; },

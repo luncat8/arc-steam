@@ -447,13 +447,16 @@ function buildUpgrades() {
 			const fuel = window.SteamFuel;
 			const grade = fuel ? fuel.engineGrades[entry.id] : undefined;
 			const wildFuel = grade === undefined ? '' : grade < 0 ? ' · Wild: hand crank' : ' · Wild: ' + fuel.gradeIds[grade] + ' fuel';
-			return entry.mass + ' kg · ' + (entry.density / 1000) + ' kJ/kg · ' + entry.reload + ' s refill · ' + Math.round(entry.efficiency * 100) + '% eff · ×' + entry.force + ' force · ×' + entry.speed + ' speed · left shop' + wildFuel;
+			const shopRule = physics.wildMode() ? ' · stopped' : ' · left shop';
+			return entry.mass + ' kg · ' + (entry.density / 1000) + ' kJ/kg · ' + entry.reload + ' s refill · ' + Math.round(entry.efficiency * 100) + '% eff · ×' + entry.force + ' force · ×' + entry.speed + ' speed' + shopRule + wildFuel;
 		},
 		install: function (id) { return SteamEquipment.buyEngine(id, world, activePlayerId()); },
 		preview: function (entry) { previewDeltas.engine = entry; },
 		refuse: function (entry) {
 			if (physics.engineNow(activePlayerId()).id === entry.id) return entry.name + ' engine is already installed.';
-			if (!SteamEquipment.atShop(world, activePlayerId())) return 'Park at the left shop to buy or swap engines.';
+			if (!SteamEquipment.atShop(world, activePlayerId())) {
+				return physics.wildMode() ? 'Stop the platform to buy or swap engines.' : 'Park at the left shop to buy or swap engines.';
+			}
 			return 'Not enough funds for the ' + entry.name + ' engine (' + SteamEquipment.engineCosts[entry.id] + ' cr needed).';
 		}
 	});

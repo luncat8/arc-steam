@@ -25,6 +25,7 @@
 				['R', 'Fire from the selected player’s installed rack'],
 				['F', 'Throw a sand grain from the selected player’s nozzle; hold to keep the stream'],
 				['G', 'Spray a water droplet from the selected player’s gun; hold to keep the jet'],
+				['V', 'Wild Mine only · hammer the aimed tunnel ahead while held'],
 				['X', 'Autopilot · chase the predicted landing'],
 				['⇧X', 'Autopilot · timed intercept'],
 				['↑ / ← / →', 'Wild Mine only · jump and run the P2 ball'],
@@ -365,6 +366,21 @@
 				'Touching either SELL wall sells the whole load automatically. This rig panel breaks the rig’s cargo and lifetime sales down by mineral, and its ledger records every rig sale, purchase, research payment and recharge. Competitor purses and purchase ledgers stay separate. The live quote table shows each mineral’s cr/cell price, drift against its seed base price and 1-minute rate: each run opens with seed-random demand, and every quote moves on its own slow cycle, so a common ore can be dear for a few minutes. A broken fragment is booked at the price of the moment it breaks, which keeps cargo, rubble and the ledger exact while the market moves.',
 				'The emergency resupply imports energy instantly at the price shown, buying only what the funds cover; the centre pad remains the free route. The return note below emergency resupply compares your best active mining tool against that cr/kJ import rate.',
 				'For the rig, sales, spending and imports all move one funds balance, so this ledger and the funds card always agree.'
+			]
+		},
+		{
+			id: 'bore',
+			label: 'Bore',
+			title: 'Hammer buffers and sloped tunnels',
+			text: [
+				'Researching Impact forging unlocks matched percussion hammer buffers on both noses of the Wild Mine platform. Each head opens a 1.13 m corridor — 1.5× the rig’s clearance height — so the chassis can drive straight into adjacent chambers, new ore seams and distant blue seeps.',
+				'Set Tunnel grade between −30° (descent) and +30° (climb), or press Cursor aim so the nearer buffer follows the pointer’s side and incline live; moving the slider returns to a fixed grade. Hold V or Bore to cut while parked, or enable Auto-bore ahead while driving so A, D or a ground click hammers through rock ahead of the leading nose.',
+				'Reserve cost scales with remaining rock strength: soft salts cut cheaply while hard corundum draws roughly four times as much and heats the hull faster. Pre-fractured rock cuts for less and open air costs nothing. Bored rock is pulverised to leave corridors clear rather than yielding cargo, so stop before valuable veins and mine them with the piston, ball or rockets.'
+			],
+			keys: [
+				['V', 'Hold to hammer the aimed tunnel ahead'],
+				['Cursor aim', 'Follow pointer side and slope live'],
+				['A / D', 'Drive left or right (engages that nose with Auto-bore on)']
 			]
 		},
 		{

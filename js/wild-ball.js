@@ -885,16 +885,21 @@
 			ball.vx += (passiveOut - vn) * hit.nx;
 			ball.vy += (passiveOut - vn) * hit.ny;
 			const passiveAfter = mechanicalEnergy(ball);
+			const config = phys().config;
 			bookMech(world, before, passiveAfter);
+			if (hit.piston && hit.front) {
+				world.pistonImpact = -vn;
+				world.pistonOffset = Math.min(config.pistonTravel, Math.max(world.pistonOffset || 0, -vn * config.pistonCompression));
+			}
 			let outVn = passiveOut;
 			if (ball.recycle) {
 				const dampedVn = passiveOut * Math.sqrt(1 - recycleDamping);
 				outVn = dampedVn < bounceFloor && hit.lny > 0.5 ? 0 : dampedVn;
 				ball.vx += (outVn - passiveOut) * hit.nx;
 				ball.vy += (outVn - passiveOut) * hit.ny;
-				const dampedAfter = mechanicalEnergy(ball);
-				if (passiveAfter > dampedAfter) recycleEnergy(world, ball, passiveAfter - dampedAfter);
-				else bookMech(world, passiveAfter, dampedAfter);
+				const damped = Math.max(0, 0.5 * m * (passiveOut * passiveOut - outVn * outVn));
+				recycleEnergy(world, ball, damped);
+				bookMech(world, passiveAfter - damped, mechanicalEnergy(ball));
 			}
 			const useful = hit.piston ? takePistonPulse(world, hit.front && phys().machineDrive(world)) : 0;
 			if (useful > 0) {
@@ -1021,8 +1026,10 @@
 		// Before release this mass already carried horizontal energy in platformMass.
 		const carried = 0.5 * m * plate.vx * plate.vx;
 		bookMech(world, carried + useful, mechanicalEnergy(ball));
-		holder.pistonOffset = p.config.pistonTravel * 0.6;
-		holder.pistonVelocity = 0;
+		if (useful > 0) {
+			holder.pistonOffset = p.config.pistonTravel * 0.6;
+			holder.pistonVelocity = 0;
+		}
 		return true;
 	}
 

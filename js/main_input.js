@@ -195,7 +195,17 @@ function updateDirection() {
 	sceneDirty = true;
 }
 
-function clearInput() { world.brake = false; leftHeld = false; rightHeld = false; ballLeftHeld = false; ballRightHeld = false; setBallMotor(); playerApi.clearCommand(); updateDirection(); }
+function clearInput() {
+	world.brake = false;
+	leftHeld = false;
+	rightHeld = false;
+	ballLeftHeld = false;
+	ballRightHeld = false;
+	if (window.SteamWildBore) window.SteamWildBore.setHeld(false);
+	setBallMotor();
+	playerApi.clearCommand();
+	updateDirection();
+}
 
 // One writer for P2's motor, the same shape as P1's direction: the held arrow
 // or button that is down is the command, and a release stops the torque.
@@ -289,8 +299,12 @@ function worldYOf(event) {
 
 function isGameKey(code) {
 	return code === 'Space' || code === 'KeyQ' || code === 'KeyA' || code === 'KeyD' || code === 'KeyW' || code === 'KeyS' || code === 'KeyE'
-		|| code === 'KeyR' || code === 'KeyB' || code === 'KeyX' || code === 'KeyZ' || code === 'KeyC' || code === 'KeyM' || code === 'KeyF' || code === 'KeyG' || code === 'F4'
+		|| code === 'KeyR' || code === 'KeyB' || code === 'KeyX' || code === 'KeyZ' || code === 'KeyC' || code === 'KeyM' || code === 'KeyF' || code === 'KeyG' || code === 'KeyV' || code === 'F4'
 		|| code === 'ArrowLeft' || code === 'ArrowRight' || code === 'ArrowUp' || code === 'ArrowDown';
+}
+
+function isWildOnlyKey(code) {
+	return code === 'KeyV' || code === 'ArrowLeft' || code === 'ArrowRight' || code === 'ArrowUp' || code === 'ArrowDown';
 }
 
 function keydown(event) {
@@ -299,9 +313,8 @@ function keydown(event) {
 	if (helpKey(event)) return;
 	const key = event.code;
 	const wildBallOn = typeof wildIsActive === 'function' && wildIsActive();
-	// The arrows are P2's commands in Wild Mine and do nothing in the chamber, so
-	// the chamber leaves them to the browser instead of swallowing the scroll.
-	if (!wildBallOn && (key === 'ArrowLeft' || key === 'ArrowRight' || key === 'ArrowUp' || key === 'ArrowDown')) return;
+	// Wild-only keys stay untouched in the chamber so browsers keep their defaults.
+	if (!wildBallOn && isWildOnlyKey(key)) return;
 	if (!isGameKey(key)) return;
 	event.preventDefault();
 	if (document.activeElement && document.activeElement !== canvas && document.activeElement !== document.body) {
@@ -315,6 +328,7 @@ function keydown(event) {
 	if (key === 'KeyD') rightHeld = true;
 	if (key === 'KeyF') blastHeld = true;
 	if (key === 'KeyG') sprayHeld = true;
+	if (key === 'KeyV' && window.SteamWildBore) { window.SteamWildBore.setHeld(true); sceneDirty = true; }
 	if (key === 'ArrowLeft') { ballLeftHeld = true; setBallMotor(); }
 	if (key === 'ArrowRight') { ballRightHeld = true; setBallMotor(); }
 	if (key === 'KeyA' || key === 'KeyD') updateDirection();
@@ -343,6 +357,7 @@ function keyup(event) {
 	if (key === 'KeyD') rightHeld = false;
 	if (key === 'KeyF') blastHeld = false;
 	if (key === 'KeyG') sprayHeld = false;
+	if (key === 'KeyV' && window.SteamWildBore) { window.SteamWildBore.setHeld(false); sceneDirty = true; }
 	if (key === 'ArrowLeft') { ballLeftHeld = false; setBallMotor(); }
 	if (key === 'ArrowRight') { ballRightHeld = false; setBallMotor(); }
 	if (key === 'KeyA' || key === 'KeyD') updateDirection();
@@ -514,6 +529,39 @@ function bindInput() {
 		if (window.SteamWildCart && window.SteamWildCart.setAutosell) window.SteamWildCart.setAutosell(ui['cart-autosell'].checked);
 		refresh();
 	});
+	const stopBore = function () {
+		if (!window.SteamWildBore) return;
+		window.SteamWildBore.setHeld(false);
+		sceneDirty = true;
+		refresh();
+	};
+	ui['bore-fire'].addEventListener('pointerdown', function (event) {
+		if (!window.SteamWildBore) return;
+		ui['bore-fire'].setPointerCapture(event.pointerId);
+		window.SteamWildBore.setHeld(true);
+		sceneDirty = true;
+		refresh();
+	});
+	ui['bore-fire'].addEventListener('pointerup', stopBore);
+	ui['bore-fire'].addEventListener('pointercancel', stopBore);
+	ui['bore-fire'].addEventListener('lostpointercapture', stopBore);
+	ui['bore-cursor'].addEventListener('click', function () {
+		if (!window.SteamWildBore) return;
+		window.SteamWildBore.setCursorAim(!window.SteamWildBore.cursorAim, world);
+		sceneDirty = true;
+		refresh();
+	});
+	ui['bore-angle'].addEventListener('input', function () {
+		if (!window.SteamWildBore) return;
+		window.SteamWildBore.setGradeDegrees(Number(ui['bore-angle'].value));
+		sceneDirty = true;
+		refresh();
+	});
+	ui['bore-auto'].addEventListener('change', function () {
+		if (!window.SteamWildBore) return;
+		window.SteamWildBore.setAuto(ui['bore-auto'].checked);
+		refresh();
+	});
 	ui['water-pump'].addEventListener('change', function () {
 		SteamWater.setPump(ui['water-pump'].checked);
 		refresh();
@@ -611,7 +659,15 @@ function bindInput() {
 		inspectRockAtPointer(event);
 		// The nozzle follows the pointer: a water aim is an order to the gun, not
 		// a travel target, so hovering the chamber never moves the platform.
-		SteamWater.setAim(worldXOf(event), worldYOf(event));
+		const hoverX = worldXOf(event), hoverY = worldYOf(event);
+		SteamWater.setAim(hoverX, hoverY);
+		if (typeof wildIsActive === 'function' && wildIsActive() && window.SteamWildBore) {
+			window.SteamWildBore.updatePointer(world, hoverX, hoverY);
+			if (window.SteamWildBore.cursorAim) {
+				wildBoreReadout();
+				sceneDirty = true;
+			}
+		}
 	});
 	canvas.addEventListener('pointerleave', function () { setHidden(ui['mineral-tooltip'], true); });
 	canvas.addEventListener('pointerup', endPistonDrag);

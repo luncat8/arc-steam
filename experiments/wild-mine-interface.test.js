@@ -450,3 +450,80 @@ test('the cave renderer fills from each rock face to both projected crest vertic
 	mode.value = 'classic';
 	mode.dispatch('change');
 });
+
+test('hammer buffer controls stay hidden in Classic, aim by slider or cursor in Wild, and bore on drive or hold', () => {
+	const mode = dom.element('game-mode');
+	const panel = dom.element('wild-bore-controls');
+	const fire = dom.element('bore-fire');
+	const cursorBtn = dom.element('bore-cursor');
+	const slider = dom.element('bore-angle');
+	const label = dom.element('bore-angle-value');
+	const autoBox = dom.element('bore-auto');
+	const status = dom.element('bore-status');
+	const yieldNote = dom.element('bore-yield');
+	const bore = window.SteamWildBore;
+
+	assert.equal(panel.hidden, true, 'Classic hides hammer buffer controls');
+	dom.key('KeyV');
+	assert.equal(bore.held, false, 'Classic ignores the Wild bore shortcut');
+
+	mode.value = 'wild';
+	mode.dispatch('change');
+	assert.equal(panel.hidden, false, 'Wild shows hammer buffer controls');
+	assert.equal(fire.disabled, true, 'disabled before purchase');
+	assert.equal(cursorBtn.disabled, true);
+	assert.equal(slider.disabled, true);
+	assert.match(status.textContent, /No hammer buffers installed/);
+	assert.equal(yieldNote.hidden, true);
+
+	dom.element('help-bore').dispatch('click');
+	assert.equal(dom.element('help-drawer').dataset.open, 'true');
+	assert.match(dom.element('help-title').textContent, /Hammer buffers/);
+	dom.key('Escape');
+
+	// Fit hammer buffers via Test Mode, verify manual grade, cursor aim, V hold and auto-bore.
+	const testBox = dom.element('test-mode');
+	testBox.checked = true;
+	testBox.dispatch('change');
+	assert.equal(fire.disabled, false);
+	assert.equal(cursorBtn.disabled, false);
+	assert.equal(slider.disabled, false);
+	assert.equal(status.hidden, true);
+	assert.match(yieldNote.textContent, /Right nose/);
+
+	slider.value = '18';
+	slider.dispatch('input');
+	assert.equal(label.textContent, '+18° · climb · right');
+
+	cursorBtn.dispatch('click');
+	assert.equal(cursorBtn.getAttribute('aria-pressed'), 'true');
+	dom.element('c').dispatch('pointermove', { clientX: 60, clientY: 520 });
+	assert.match(label.textContent, /descent · left/);
+
+	slider.value = '0';
+	slider.dispatch('input');
+	assert.equal(cursorBtn.getAttribute('aria-pressed'), 'false', 'slider edit leaves cursor aim');
+	assert.equal(label.textContent, '0° · level · left');
+
+	dom.key('KeyV');
+	assert.equal(bore.held, true);
+	dom.keyUp('KeyV');
+	assert.equal(bore.held, false);
+
+	// Auto-bore into the left wall clears cells and updates the Bore button count.
+	autoBox.checked = true;
+	autoBox.dispatch('change');
+	dom.key('KeyA');
+	advance(140);
+	dom.keyUp('KeyA');
+	assert.ok(bore.cellsCut > 0, 'auto-bore opened cave cells while driving left');
+	assert.match(fire.firstChild.textContent, /^Bore \d+ $/);
+
+	autoBox.checked = false;
+	autoBox.dispatch('change');
+	testBox.checked = false;
+	testBox.dispatch('change');
+	mode.value = 'classic';
+	mode.dispatch('change');
+	assert.equal(panel.hidden, true, 'switching back to Classic hides hammer buffer controls');
+});

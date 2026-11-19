@@ -58,6 +58,10 @@
 			effect: 'Mounts an abrasive nozzle in the collector; hold F or set auto-fire to throw up to 20 grains a second at the ceiling. Each grain puts 135 J into 20 g of hopper sand or stone (charged from the reserve at engine efficiency, 169 J on stock electric) and falls back to be caught again.'
 		}),
 		Object.freeze({
+			id: 'bore', name: 'Hammer buffers', cost: 620, mass: 14, requires: 'impact',
+			effect: 'Wild Mine only · mounts percussion buffers on both ends of the chassis to bore drivable 1.1 m (1.5× hull height) level or sloped tunnels (±30°) at a reserve cost scaled to rock strength (+14 kg).'
+		}),
+		Object.freeze({
 			id: 'watergun', name: 'Water gun', cost: 900, mass: 9, requires: 'hydrology',
 			effect: 'Mounts a water cannon in the collector; hold G or set auto-fire to spray up to 46 droplets a second (36 J useful per droplet, plus 120 J per water unit pumped, charged at engine efficiency). Water dissolves salt seams on contact and the under-hull pump lifts the brine into the hopper; vented gas is lost.'
 		})
@@ -250,11 +254,13 @@
 		else world.heat -= delta;
 	}
 
+	// Engines install at the Classic left shop, or anywhere a Wild Mine rig stops.
 	function atShop(world, owner) {
 		const physics = root.SteamPhysics;
 		if (!world || !physics) return false;
 		const body = physics.machineBody(physics.machineById(world, ownerId(owner)));
-		return body.x <= physics.platformMin() + 0.2 && Math.abs(body.vx) <= 0.1;
+		if (Math.abs(body.vx) > 0.1) return false;
+		return physics.wildMode() || body.x <= physics.platformMin() + 0.2;
 	}
 
 	function buyEngine(id, world, owner) {

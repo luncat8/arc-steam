@@ -72,6 +72,15 @@
 						<div class="eyebrow-row"><p class="eyebrow">RIG AUTOPILOT</p><button id="help-autopilot" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: autopilot duties">?</button></div>
 						<div class="autopilot" id="autopilot"><label><input type="checkbox" id="auto-move" autocomplete="off"><span>Chase the predicted landing</span><i>X</i></label><label><input type="checkbox" id="auto-smart" autocomplete="off"><span>Timed intercept · economy brake</span><i>⇧X</i></label><label><input type="checkbox" id="auto-drive" autocomplete="off"><span>Drive keeper · hit the rock hard</span><i>Z</i></label><label><input type="checkbox" id="auto-angle" autocomplete="off"><span>Level bounce · reflect straight up</span><i>C</i></label></div>
 						<p id="autopilot-status" class="hint" role="status" hidden></p>
+						<div id="wild-bore-controls" class="bore-controls" data-topic="bore" hidden>
+							<div class="eyebrow-row"><p class="eyebrow">HAMMER BUFFERS</p><button id="help-bore" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: hammer buffers and sloped tunnels">?</button></div>
+							<div class="rocket-row"><button id="bore-fire" type="button" aria-keyshortcuts="V" disabled>Bore <span>V</span></button><button id="bore-cursor" class="drive" type="button" aria-pressed="false" disabled>Cursor aim</button></div>
+							<label for="bore-angle">Tunnel grade <output id="bore-angle-value">0° · level · right</output></label>
+							<input id="bore-angle" type="range" min="-30" max="30" step="1" value="0" disabled>
+							<div class="autopilot" id="bore-orders"><label><input type="checkbox" id="bore-auto" autocomplete="off"><span>Auto-bore ahead while driving</span></label></div>
+							<p id="bore-status" class="hint" role="status" hidden></p>
+							<p id="bore-yield" class="hint tool-yield" hidden></p>
+						</div>
 						<div class="eyebrow-row"><p class="eyebrow">ROCKETS</p><button id="help-rockets" class="help-mark" type="button" aria-haspopup="dialog" aria-controls="help-drawer" aria-expanded="false" aria-label="Help: rockets">?</button></div>
 						<div class="rocket-row"><button id="rocket-fire" type="button" aria-keyshortcuts="R" disabled>Fire 0 / 6 <span>R</span></button><button id="rocket-buy" type="button" disabled>Buy</button></div>
 						<div class="autopilot" id="rocket-orders"><label><input type="checkbox" id="rocket-auto" autocomplete="off"><span>Auto-buy up to 3 at each SELL wall</span></label></div>
@@ -202,6 +211,7 @@
 	<script src="js/wild-water.js"></script>
 	<script src="js/wild-rubble.js"></script>
 	<script src="js/wild-cart.js"></script>
+	<script src="js/wild-bore.js"></script>
 	<script src="js/wild-mine.js"></script>
 	<script src="js/wild-ball.js"></script>
 	<script src="js/rockets.js"></script>

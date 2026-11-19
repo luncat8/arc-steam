@@ -359,6 +359,40 @@ function wildDrawGrid(wild, minX, maxX, minWorldY, maxWorldY) {
 	context.stroke();
 }
 
+const wildBoreBox = {
+	side: 1, grade: 0, originX: 0, originY: 0, anchorX: 0, anchorY: 0,
+	noseX: 0, noseY: 0, startRun: 0, maxRun: 0, height: 0,
+	verticalSpan: 0, slopeTan: 0, cosG: 1
+};
+const wildBoreDash = [0.12, 0.1];
+const wildSolidDash = [];
+
+function wildDrawBore(wild, anchorY) {
+	const bore = window.SteamWildBore;
+	if (!bore || !SteamEquipment.isInstalled('bore', 'rig')) return;
+	const box = bore.envelopeInto(world, bore.side, bore.grade, wildBoreBox, false);
+	const x0 = box.noseX;
+	const x1 = box.originX + box.side * box.maxRun;
+	const floor0 = box.anchorY + box.side * (x0 - box.anchorX) * box.slopeTan;
+	const floor1 = box.anchorY + box.side * (x1 - box.anchorX) * box.slopeTan;
+	const roof0 = floor0 + box.verticalSpan;
+	const roof1 = floor1 + box.verticalSpan;
+	const df0 = wild.drawnY(floor0, anchorY), df1 = wild.drawnY(floor1, anchorY);
+	const dr0 = wild.drawnY(roof0, anchorY), dr1 = wild.drawnY(roof1, anchorY);
+	context.save();
+	context.strokeStyle = bore.active ? 'rgba(242, 201, 119, 0.85)' : 'rgba(201, 155, 82, 0.42)';
+	context.lineWidth = (bore.active ? 1.8 : 1.2) / scale;
+	context.setLineDash(wildBoreDash);
+	context.beginPath();
+	context.moveTo(x0, df0);
+	context.lineTo(x1, df1);
+	context.lineTo(x1, dr1);
+	context.lineTo(x0, dr0);
+	context.stroke();
+	context.setLineDash(wildSolidDash);
+	context.restore();
+}
+
 function wildDraw() {
 	const wild = window.SteamWildMine;
 	const cave = wild.cave;
@@ -395,6 +429,7 @@ function wildDraw() {
 	wildDrawCave(cave, minX, maxX, minRow, maxRow);
 	wildDrawWater(wild, cave, anchorY, minX, maxX, minRow, maxRow);
 	wildDrawRubble(cave.columnAt(minX), cave.columnAt(maxX));
+	wildDrawBore(wild, anchorY);
 	wildDrawDebris(wild, anchorY, minRow * cell, (maxRow + 1) * cell);
 	window.SteamRockets.draw(context, wild.drawnY, wild.scaleAt);
 	context.lineWidth = 1 / scale;
@@ -662,6 +697,7 @@ function wildSyncMode(nextMode) {
 		setText(ui['chamber-title'], wild ? 'ARC STEAM · WILD MINE / CAVE SECTION' : 'ARC STEAM · TEST CHAMBER / 24 × 15 M');
 	}
 	setHidden(ui['ball-controls'], !wild);
+	setHidden(ui['wild-bore-controls'], !wild);
 	setHidden(ui['wild-water-controls'], !wild);
 	setHidden(ui['classic-pump-order'], wild);
 	setHidden(ui['classic-solute-order'], wild);
@@ -734,8 +770,10 @@ function wildPointerDown(event) {
 	}
 	const worldX = (event.clientX - bounds.left - offsetX) / scale;
 	const worldY = wildWorldYOf(event);
+	if (window.SteamWildBore) window.SteamWildBore.updatePointer(world, worldX, worldY);
 	if (cave.solidAt(worldX, worldY)) {
 		wildInspectRockAtPointer(event);
+		refresh();
 		canvas.focus();
 		return;
 	}
@@ -825,6 +863,46 @@ function wildWaterReadout(installed) {
 		: world.battery < physics.reserveCost(SteamWater.state.shotEnergy) ? 'Reserve too low to pressurize a droplet'
 		: '';
 	setMessage(ui['water-status'], reason, '');
+}
+
+function wildBoreReadout() {
+	const bore = window.SteamWildBore;
+	if (!bore || !ui['wild-bore-controls']) return;
+	const state = bore.readout(world, window.SteamWildMine.cave);
+	const fitted = state.installed;
+	const canFire = fitted && physics.thermalFactor(world) > 0 && world.battery > 1e-9;
+	setDisabled(ui['bore-fire'], !canFire);
+	setText(ui['bore-fire'].firstChild, (state.cellsCut > 0 ? 'Bore ' + state.cellsCut : 'Bore') + ' ');
+	setDisabled(ui['bore-cursor'], !fitted);
+	const cursorPressed = String(fitted && state.cursorAim);
+	if (ui['bore-cursor'].getAttribute('aria-pressed') !== cursorPressed) {
+		ui['bore-cursor'].setAttribute('aria-pressed', cursorPressed);
+	}
+	setDisabled(ui['bore-angle'], !fitted);
+	if (Number(ui['bore-angle'].value) !== state.gradeDegrees) ui['bore-angle'].value = state.gradeDegrees;
+	const deg = state.gradeDegrees;
+	const degText = (deg > 0 ? '+' + deg : deg < 0 ? '−' + Math.abs(deg) : '0') + '°';
+	const slopeText = deg > 0 ? 'climb' : deg < 0 ? 'descent' : 'level';
+	const sideText = state.side < 0 ? 'left' : 'right';
+	setText(ui['bore-angle-value'], degText + ' · ' + slopeText + ' · ' + sideText);
+	setChecked(ui['bore-auto'], state.auto);
+	const warn = fitted && (state.status === 'hot' || state.status === 'empty');
+	setMessage(ui['bore-status'], state.reason, warn ? 'warn' : '');
+	if (!fitted) {
+		setMessage(ui['bore-yield'], '', '');
+		return;
+	}
+	const sideCap = state.side < 0 ? 'Left nose' : 'Right nose';
+	let summary = sideCap + ' · heading clear';
+	if (state.headingCells > 0) {
+		const est = state.headingReserve >= 1000
+			? (state.headingReserve / 1000).toFixed(2) + ' kJ'
+			: state.headingReserve.toFixed(0) + ' J';
+		summary = sideCap + ' · ' + state.headingCells + ' cells · est. ' + est + ' reserve';
+	} else if (state.cellsCut > 0) {
+		summary += ' · ' + state.cellsCut + ' cut (' + (state.reserveSpent / 1000).toFixed(1) + ' kJ)';
+	}
+	setMessage(ui['bore-yield'], summary, '');
 }
 
 function wildPistonReadout(driveOn) {
